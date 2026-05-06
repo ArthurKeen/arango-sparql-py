@@ -33,6 +33,17 @@ service with a standalone Python microservice that:
    to the sister project's `nl2cypher`.
 5. **Mirrors the architecture of [`arango-cypher-py`](https://github.com/ArthurKeen/arango-cypher-py)**
    so the two services are operationally and developmentally interchangeable.
+6. **Supports third-party Semantic Web tools natively** — Protégé, Microsoft
+   Ontology Playground (Microsoft Fabric IQ family), TopBraid Composer,
+   YASGUI, and any standard SPARQL Protocol client must be able to talk
+   to the service without bespoke shims. See §11 for the conformance
+   matrix.
+7. **Acts as the SPARQL substrate for sister projects in the ArangoDB
+   semantic stack** — most importantly
+   [`arango-ontoextract`](https://github.com/ArthurKeen/arango-ontoextract)
+   (LLM-driven OWL extraction + curation) and
+   [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-mapper)
+   (the physical-schema introspector). See §12.
 
 ## 2. Non-goals (v1)
 
@@ -100,9 +111,31 @@ service with a standalone Python microservice that:
    shape, same rate-limit buckets, same SSRF guard, same
    `_require_analyzer_unless_opted_out()` startup guard with
    `ARANGO_SPARQL_ALLOW_HEURISTIC=1` opt-out.
-9. **Public release readiness** — repo published, CI green on every
-   supported Python version, MIT LICENSE, CONTRIBUTING + SECURITY
-   documents, repeatable Docker-Compose dev loop.
+9. **UI feature parity with `arango-cypher-py`'s workbench** — the
+   SPARQL workbench ships a dual-pane CodeMirror 6 editor (SPARQL on
+   the left, AQL on the right), schema-aware completion driven by the
+   loaded ontology, hover docs, clause outline, prefix manager,
+   parameter panel, query history, sample queries, mapping panel
+   (JSON + graph + OWL import/export), results panel
+   (table / JSON / Cytoscape graph / explain / profile), connection
+   dialog with auto-defaults and schema introspection, optional tenant
+   selector, and the same toolbar shortcuts (`Mod-Enter` translate,
+   `Shift-Enter` run, `Mod-Shift-E` explain, `Mod-Shift-P` profile).
+   See §10.
+10. **Validated third-party tool compatibility** — the `/sparql`
+    endpoint is verified against the Compatibility Matrix in §11
+    (Protégé 5.x, YASGUI, `rdflib.SPARQLWrapper`, Apache Jena Fuseki
+    client, Oxigraph CLI), and the `/mapping/export-owl` endpoint is
+    verified to round-trip through Microsoft Ontology Playground's
+    RDF/XML import (Microsoft Fabric IQ ontology serialisation).
+11. **`arango-ontoextract` integration** — AOE can (a) point its
+    “Read-only SPARQL endpoint for standard RDF tooling” open
+    question (PRD Q7) at this service, (b) consume our
+    `/mapping/export-owl` to seed an ontology library entry, and
+    (c) push curated OWL back via `/mapping/import-owl`. See §12.
+12. **Public release readiness** — repo published, CI green on every
+    supported Python version, MIT LICENSE, CONTRIBUTING + SECURITY
+    documents, repeatable Docker-Compose dev loop.
 
 ---
 
@@ -246,6 +279,17 @@ Works against `localhost:8529`.
   `sd:BasicFederatedQuery`, etc.),
 - a link to this PRD as `sd:endpoint`'s `dcterms:description`.
 
+**CORS posture for browser-resident SPARQL clients** (YASGUI, Microsoft
+Ontology Playground when used as an embed, etc.): the `/sparql` route is
+under the same CORS configuration as the rest of the service
+(`CORS_ALLOWED_ORIGINS` env var). For public-mode deployments serving
+browser editors cross-origin, operators must explicitly allowlist the
+editor's origin and the response sets `Access-Control-Expose-Headers`
+to include `X-Response-Time`, `X-Schema-Warnings-Count`,
+`X-Aql-Bindings-Count`, and (when `?showAQL=true`) `X-Aql-Query-B64`,
+mirroring the legacy Foxx headers so a browser-side debug panel can
+read them.
+
 ### 5.3 Out-of-scope endpoints (v1)
 
 - SPARQL Update Protocol (`POST /update`)
@@ -381,7 +425,20 @@ heuristic-path conventions); `metadata.detectedPatterns` lists string
 tags `PG_ENTITY_COLLECTION`, `LPG_LABEL`, `RPT_TRIPLES`,
 `PG_DEDICATED_EDGE`, `LPG_GENERIC_EDGE`, `RPT_OBJECT_PROPERTY`.
 
-#### 6.3.2 Analyzer-backed acquisition (preferred)
+#### 6.3.2 Analyzer-backed acquisition (preferred — the canonical path)
+
+> **Hard dependency contract.** The
+> [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-mapper)
+> package (PyPI name `arangodb-schema-analyzer`, import name
+> `schema_analyzer`, ≥ 0.6.1) is a **first-class dependency** of
+> `arango-sparql-py`, not an optional extra. Heuristic detection
+> (§6.3.1) exists as a **diagnostic / dev-loop fallback only**; the
+> production posture is "analyzer is installed and is the source of
+> truth for all entity styles, relationship styles, statistics,
+> tenancy scope, sharding profile, and OWL emission". The startup
+> guard in §6.3.4 enforces this. The shipped `[analyzer]` extra in
+> `pyproject.toml` pins `arangodb-schema-analyzer >= 0.6.1, < 0.7.0`,
+> matching the sister project's pinning policy.
 
 Module: `arango_sparql.schema.acquire`
 
@@ -633,9 +690,345 @@ advisories like `W_RESULT_TRUNCATED`).
 
 ---
 
-## 10. Conformance & testing
+## 10. UI / Workbench
 
-### 10.1 Test categories
+The shipped UI under [`ui/`](../../ui/) is a single-page Vite + React +
+TypeScript application that mirrors `arango-cypher-py`'s workbench
+component-for-component, with the deliberate substitutions called out
+below. It is the *primary* tool for human users (developers, data
+modellers, ontology authors) — the third-party-tool compatibility
+matrix in §11 covers the other primary surface (machine SPARQL
+clients).
+
+### 10.1 Editor stack — versions and dependency contract
+
+The UI pins the same CodeMirror 6 / Lezer family as the sister
+project (UI parity is easier when both workbenches live on the same
+toolchain):
+
+| Package | Pin | Why |
+| --- | --- | --- |
+| `codemirror` | `^6.0.2` | Editor framework |
+| `@codemirror/state`, `@codemirror/view`, `@codemirror/language`, `@codemirror/commands` | latest 6.x | Core extensions |
+| `@codemirror/autocomplete` | `^6.20.1` | Schema-aware completion |
+| `@codemirror/search`, `@codemirror/lint` | latest 6.x | Find-replace, future linting hook |
+| `@lezer/common`, `@lezer/highlight`, `@lezer/lr` | latest 1.x | Stream parsers + highlight tags |
+| `cytoscape` | `^3.33.2` | Graph rendering in `CytoscapeGraph` |
+
+A custom `StreamLanguage` is used per language (no `@codemirror/lang-sql`
+generic mode) because both Cypher and SPARQL deviate substantially from
+SQL tokenisation.
+
+### 10.2 SPARQL editor (`ui/src/components/SparqlEditor.tsx`)
+
+Achieves **parity with `arango-cypher-py`'s `CypherEditor.tsx`** and
+adds the three SPARQL-specific affordances.
+
+| Capability | Source |
+| --- | --- |
+| Custom `StreamLanguage` for SPARQL 1.1 (keywords, IRIs, prefixed names, `?var` and `$var` variables, blank-node labels `_:`, language tags `@en`, datatype suffixes `^^xsd:int`, `<...>` IRI literals, comments) | `ui/src/lang/sparql.ts` (custom; mirrors `lang/cypher.ts`'s structure) |
+| Syntax highlighting via `oneDark` theme (`HighlightStyle` mapping `keyword`, `string`, `number`, `function`, `variableName`, `special(variableName)`, `typeName`, `lineComment`, `blockComment`, `operator`, `bracket`, `punctuation`) | `ui/src/components/theme.ts` (shared with AQL editor) |
+| **Schema-aware completion** (the central differentiator vs hand-typing): | `ui/src/lang/sparql-completion.ts` |
+| — after `?` / `$` → variable names already in scope | |
+| — after `:` (PrefixedName separator) → local names from the active prefix's namespace as known to the OWL ontology | |
+| — after `<http…/` → IRI suggestions from the ontology's class/property catalog | |
+| — after `a ` (the SPARQL `rdf:type` shorthand) → class IRIs | |
+| — inside the predicate position of a triple → property IRIs filtered by the bound subject's class (when known from a preceding `?s a :Class` triple) | |
+| **Hover docs** for SPARQL keywords/built-in functions (analogous to `cypher-hover.ts`) | `ui/src/lang/sparql-hover.ts` |
+| Bracket matching, close brackets, fold gutter, indent on input, draw selection, drop cursor, highlight special chars, `indentWithTab`, search | Standard CodeMirror extensions |
+| **PREFIX manager** — pure-SPARQL affordance not present in Cypher editor: panel that lists all `PREFIX` declarations parsed from the editor body, lets the user add/remove a prefix, and (via the connection mapping) suggests the analyzer's discovered namespace prefixes | `ui/src/components/PrefixManager.tsx` (new) |
+| **`?var` parameter panel** — same role as `arango-cypher-py`'s `ParameterPanel` for `$param` substitutions; adapted to populate SPARQL `VALUES` clauses or pre-bind selected variables | `ui/src/components/ParameterPanel.tsx` |
+| **Clause outline** — regex-based outline of `SELECT` / `WHERE` / `OPTIONAL` / `FILTER` / `BIND` / `ORDER BY` / `LIMIT` etc.; click-to-jump | `ui/src/components/ClauseOutline.tsx` (already present, adapted to SPARQL clauses) |
+| Workbench keymap — `Mod-Enter` translate, `Shift-Enter` run, `Mod-Shift-E` explain, `Mod-Shift-P` profile, `Mod-K` command palette | `SparqlEditor.tsx` |
+| **Cross-pane line correspondence** — hovering a line in the SPARQL editor highlights the corresponding line(s) in the AQL editor (and vice versa); reuses the `arango-cypher-py` correspondence-map machinery, fed by translator-emitted source-map metadata in `TranslateResponse` | `App.tsx` |
+
+### 10.3 AQL editor (`ui/src/components/AqlEditor.tsx`)
+
+The AQL editor is a **wholesale port** of `arango-cypher-py`'s
+`AqlEditor.tsx`. The user explicitly asked for the AQL functionality
+to be borrowed; this section names every feature carried over so the
+port is a checklist, not a rewrite.
+
+| Capability | Carried over | Notes |
+| --- | --- | --- |
+| Custom `StreamLanguage` for AQL with snippet-aware completion (`FOR`, `FILTER`, `COLLECT`, `LIMIT`, `RETURN`, `FOR v, e IN OUTBOUND`, etc.) | ✅ verbatim | `ui/src/lang/aql.ts` (port of `cypher-py`'s file with the same name) |
+| Static keyword + function completion (full AQL keyword list + the AQL function library) | ✅ verbatim | |
+| Snippet completion via `snippetCompletion(...)` for the multi-line forms | ✅ verbatim | |
+| **`var.property` schema-driven completion** — when a `FOR v IN @@coll` is in scope and `@@coll` resolves to a known class via the active mapping, suggest property names from the OWL class | ✅ verbatim | Reuses `setAqlSchemaContext({ entities, relationships, bindVars })` from `physical_mapping` |
+| `_from` / `_to` / `_key` / `_id` completion when the FOR target is an edge collection | ✅ verbatim | |
+| `@bind` and `@@coll` value resolution from the bind-vars JSON | ✅ verbatim | |
+| `bracketMatching`, `closeBrackets`, `foldGutter`, `indentOnInput`, `drawSelection`, `dropCursor`, `highlightSpecialChars`, `indentWithTab`, `search` | ✅ verbatim | |
+| **Heuristic AQL formatter** — explicit "Format" button runs `formatAql()` (tokenise-by-whitespace + clause-based reindent) | ✅ verbatim | `formatAql()` from `AqlEditor.tsx` |
+| **Bind-variable inspector** — collapsible footer rendering `JSON.stringify(bindVars, null, 2)` when non-empty, read-only | ✅ verbatim | |
+| **Edit-and-rerun-as-AQL** — manual edits to the AQL pane can be re-executed without re-translating from SPARQL, via the existing `/execute-aql` endpoint (§5.1) | ✅ verbatim, **with the alignment fix**: the v1.0 implementation reads the live CodeMirror document on Run rather than the reducer's cached `state.aql`, fixing the cypher-py bug where stale state could be re-run after editing | This is the one case where we deliberately diverge to fix a bug; tracked in v1.0 deliverables |
+| Same `oneDark` theme | ✅ verbatim | |
+
+### 10.4 Mapping panel (`ui/src/components/MappingPanel.tsx`)
+
+Carries over the dual JSON-edit + graph-view component:
+
+- JSON view backed by `@codemirror/lang-json` with live `JSON.parse`
+  → `onChange(mapping)` and parse-error display.
+- Graph view via `SchemaGraph` showing conceptual entities and
+  relationships; for SPARQL the node tooltip additionally shows the
+  IRI of each class / property (Cypher version shows labels only).
+- "Shard families" summary block when
+  `physical_mapping.shardFamilies` is present.
+- **OWL roundtrip**: "Import OWL" → `POST /mapping/import-owl`,
+  "Export OWL" → `POST /mapping/export-owl`. This is the integration
+  point for Microsoft Ontology Playground (§11) — the user clicks
+  "Export OWL → Save as RDF/XML" and drops the file into Playground.
+
+### 10.5 Results panel (`ui/src/components/ResultsPanel.tsx`)
+
+Three permanent tabs (**Table**, **JSON**, **Graph**) plus two
+conditional tabs (**Explain** when `explainPlan` is present,
+**Profile** when `profileData` is present). Carry-over from
+`cypher-py`:
+
+- **Table view**: dynamic columns, row index, sticky header,
+  sentinel-string rendering (`NULL`, `N/A`, etc.) with hover
+  explanation, CSV / JSON export.
+- **JSON view**: pretty-printed `JSON.stringify` with copy button.
+- **Graph view**: Cytoscape-rendered nodes/edges extracted from
+  `_id` / `_from` / `_to` in result rows; node inspector side panel
+  on click; **literal-collapse toggle** (SPARQL-specific addition):
+  when SELECT bindings include both IRI nodes and literal nodes, the
+  toggle hides literal nodes and re-anchors them as labels on the
+  parent IRI node. Literal-rich SELECT result sets are otherwise
+  unreadable in graph form.
+- **Explain view**: recursive `PlanNode` tree (type, cost, rows,
+  indexes, filters); fallback to raw JSON; optimizer-rules and
+  collections sections when present.
+- **Profile view**: execution-statistics grid, profile JSON, heuristic
+  warnings (full scans, low selectivity, high cost) via `analyzeProfile`.
+- **WarningsBanner** at top, fed from `TranslateResponse.warnings`
+  and `TranslateResponse.schema_warnings` (the schema-warnings
+  projection — §6.7 — is rendered with a distinct icon so the user
+  can tell a schema-mapping advisory from an operational one).
+
+### 10.6 Connection dialog (`ui/src/components/ConnectionDialog.tsx`)
+
+- Auto-seeds URL / database / username / password from
+  `getConnectDefaults()` on mount; if password is present and the user
+  is still disconnected, runs `doConnect` once.
+- After connect: lists databases, then runs schema introspection
+  (`POST /schema/introspect`) and surfaces `schema_warnings` (e.g.
+  `W_SCHEMA_HEURISTIC_FALLBACK`) in the dialog before letting the user
+  proceed.
+- "Refresh schema" button bypasses cache (`POST /schema/force-reacquire`).
+- **Tenant selector** appears in the header when
+  `metadata.multitenancy` indicates a tenant root entity. Tenant
+  context is persisted to `localStorage` keyed by `(url, database)`,
+  matching the sister project's behaviour.
+
+### 10.7 Sample queries, history, command palette
+
+- **Sample queries**: static SPARQL list (`SAMPLE_SPARQL` in
+  `SampleQueries.tsx`) plus API-loaded corpus via `GET /sample-queries`
+  (route mirrored from `cypher-py`). Selecting a sample loads it into
+  the SPARQL editor and (when auto-translate is on) runs the translation.
+- **Query history**: `localStorage` workbench key
+  `"sparql-workbench"` persists `{sparql, mapping, params, history}`
+  with a 50-entry cap. `HistoryEntry` shape:
+  `{sparql: string, timestamp: number, aqlPreview: string}` (first
+  120 chars of AQL). Selecting an entry restores the SPARQL
+  (re-translation is a separate user action).
+- **NL ask history**: separate `localStorage` key `"nl_history"`
+  (matches sister-project convention).
+- **Command palette**: `Mod-K` opens a searchable command palette for
+  Catalogue / Designer-equivalent actions (jump to mapping panel,
+  open OWL roundtrip dialog, switch tenant, etc.).
+
+### 10.8 Theme
+
+Single dark theme (`oneDark` via `theme.ts`) for v1.0, matching the
+sister project. Light mode is a v1.1 deliverable.
+
+---
+
+## 11. Third-party tool compatibility (the SPARQL Protocol audience)
+
+Once the W3C Protocol endpoint (§5.2) ships, *machine* clients become
+the second primary user (alongside the human workbench in §10). This
+section pins the compatibility matrix.
+
+### 11.1 Compatibility matrix
+
+| Client | Use case | Talks to | Required behaviour | v1.0 status |
+| --- | --- | --- | --- | --- |
+| **Protégé 5.x** (Stanford, free, JVM desktop OWL editor) | Browse / edit / query the ontology backed by a live ArangoDB | `GET/POST /sparql` | Default `Accept` is `application/sparql-results+xml` for SELECT and `application/rdf+xml` for CONSTRUCT/DESCRIBE; expects `text/turtle` for `GET /sparql` Service Description | Verified-compatible at v1.0; covered by `tests/integration/test_protege_compat.py` (Docker, headless `arq`-driven smoke) |
+| **[Microsoft Ontology Playground](https://github.com/microsoft/Ontology-Playground)** (Microsoft Fabric IQ family, static React app) | Author / inspect / share OWL ontologies; Microsoft Fabric IQ-style RDF/XML round-trip | **No live SPARQL** — file-based: user exports OWL/RDF/XML from `arango-sparql-py` then imports into Playground (or vice versa) | `POST /mapping/export-owl` must support `Accept: application/rdf+xml` returning OWL 2 RDF/XML with classes, datatype properties, object properties (with cardinality restrictions). Round-trip via `POST /mapping/import-owl` accepting the same media type | Verified-compatible at v1.0; covered by `tests/integration/test_ontology_playground_roundtrip.py` (loads a Playground catalogue ontology, imports it, re-exports, asserts triple-bag equality) |
+| **YASGUI** (browser-based SPARQL editor; embeddable JS widget) | Lightweight SPARQL prototyping in a browser | `GET/POST /sparql` (CORS) | `application/sparql-results+json`; needs CORS preflight; reads `X-Response-Time` header for the timer chip | Verified-compatible at v1.0; manual smoke documented in `docs/howto/yasgui.md` |
+| **`rdflib.SPARQLWrapper`** (Python) | Programmatic SPARQL from Python notebooks / scripts | `POST /sparql` (`application/sparql-query`) | All four W3C result formats; honours the wrapper's `setReturnFormat(JSON)` etc. | Verified-compatible at v1.0; `tests/integration/test_sparqlwrapper_smoke.py` |
+| **Apache Jena `arq` CLI** (JVM SPARQL CLI) | Smoke-test queries from a shell | `POST /sparql` | Same as `rdflib`; explicitly used by the Protégé compat test as the headless driver | Verified-compatible at v1.0 |
+| **Oxigraph CLI / pyoxigraph SPARQL client** | Cross-validate against the W3C reference impl | `POST /sparql` | Same | Verified-compatible at v1.0 (already used by `tests/cross/`) |
+| **TopBraid Composer** (TopQuadrant, commercial, OWL editor — listed as AOE's editor parity target, not an `arango-sparql-py` direct target) | Some users may try it against our endpoint | `GET/POST /sparql` | Default behaviour as Protégé | Best-effort; unverified at v1.0 |
+| **SPARQL Update clients** | Write back to the store | — | n/a | **Out of scope** (§2 + §5.3) |
+
+### 11.2 Protégé-specific compatibility notes
+
+- **Default `Accept` header for SELECT** is `application/sparql-results+xml`,
+  not JSON. The Protocol endpoint must serve XML correctly even when
+  the JSON path is the daily-driver shape — `tests/protocol/` includes
+  XML conformance cases.
+- **Service Description fetch on first connect**: Protégé issues
+  `GET /sparql` with `Accept: text/turtle` to discover capabilities;
+  the response must declare the absence of `sd:BasicFederatedQuery`
+  and the absence of `sd:UpdateLanguage` so Protégé hides those
+  affordances in its UI. Failing to declare these absences makes
+  Protégé show greyed-out menus that emit confusing errors.
+- **Named-graph dispatch**: until v1.2 ships `visit_Graph`, queries
+  with `FROM <…>` / `FROM NAMED <…>` are translated as if the dataset
+  were the union default graph (warning surfaced as
+  `W_GRAPH_DATASET_IGNORED`).
+- **Auth**: Protégé sends Basic auth from its connect dialog; the
+  service accepts Basic on `/sparql` and exchanges it for a
+  short-lived session under the hood (no persistent session UI in
+  Protégé, so credentials per-request are the norm).
+
+### 11.3 Microsoft Ontology Playground compatibility notes
+
+The Playground is a static, browser-resident, zero-backend React app
+that reads/writes **RDF/XML**. Its production target is **Microsoft
+Fabric IQ** (Microsoft's enterprise data-fabric ontology platform).
+Compatibility with `arango-sparql-py` is therefore *file-based*, not
+live-SPARQL:
+
+- The user exports the active mapping as RDF/XML via the workbench's
+  "Export OWL → RDF/XML" button (which calls `POST /mapping/export-owl`
+  with `Accept: application/rdf+xml`) and imports the file in
+  Playground's "Import RDF" dialog.
+- Conversely, the user can author an ontology in Playground, export
+  it as RDF/XML, and import via `POST /mapping/import-owl` with
+  `Content-Type: application/rdf+xml` (the resolver's existing OWL
+  loader extends to handle RDF/XML, not just Turtle).
+- The RDF/XML emitter must respect Microsoft Fabric IQ's expected
+  serialisation (OWL 2 classes, `owl:DatatypeProperty` /
+  `owl:ObjectProperty` with cardinality `owl:Restriction` blocks).
+  v1.0 ships with a `tests/integration/test_ontology_playground_roundtrip.py`
+  case that loads one of Playground's official catalogue ontologies
+  (e.g. *Cosmic Coffee Company*), imports it, re-exports it, and
+  asserts triple-bag equality (modulo blank-node renaming).
+
+> **Future opportunity** (post-v1.0): if Microsoft Fabric IQ ships a
+> queryable SPARQL endpoint that the Playground can target live, we
+> revisit the file-based integration and add a CORS-tuned
+> Playground-targeted `/sparql` deployment guide.
+
+### 11.4 Connectivity recipes (`docs/howto/`)
+
+Each tool gets a one-page how-to under `docs/howto/`:
+`protege.md`, `ontology-playground.md`, `yasgui.md`,
+`sparqlwrapper.md`, `arq.md`, `oxigraph.md`. Each recipe covers:
+
+1. The exact endpoint URL to enter in the tool's connect dialog.
+2. Auth model (Basic / Bearer / session token).
+3. Verified-compatible operations and known gaps.
+4. A "first query" copy-pasteable SPARQL string the tool can run end-to-end.
+
+---
+
+## 12. Cross-project integration
+
+`arango-sparql-py` is not built in a vacuum. Three sister projects in
+the ArangoDB semantic stack either depend on it or feed it:
+
+```
+                    ┌─────────────────────────────┐
+                    │ arangodb-schema-analyzer    │
+                    │ (PyPI: arangodb-schema-     │
+                    │  analyzer ≥ 0.6.1)          │
+                    └──────────────┬──────────────┘
+                                   │ MappingBundle + OWL
+                                   ▼
+   ┌─────────────────┐       ┌─────────────────────┐       ┌──────────────────┐
+   │ arango-         │       │                     │       │                  │
+   │ ontoextract     │ ◄───► │  arango-sparql-py   │ ◄───► │ arango-cypher-py │
+   │ (LLM-driven OWL │       │  (this project)     │       │ (sister Cypher   │
+   │  extraction +   │       │                     │       │  transpiler;     │
+   │  curation)      │       └─────────────────────┘       │  shared mapping) │
+   └─────────────────┘                                     └──────────────────┘
+```
+
+### 12.1 `arangodb-schema-analyzer` (upstream — we depend on it)
+
+Already covered in §6.3; restated here for the integration map:
+
+- **Pinned dependency**: `arangodb-schema-analyzer >= 0.6.1, < 0.7.0`
+  (`pyproject.toml` extra `[analyzer]`, included in `[service]`).
+- **Consumed contracts**:
+  - `AgenticSchemaAnalyzer.analyze_physical_schema(db, ...)` →
+    canonical `AnalysisResult`.
+  - `export_mapping(analysis, target="cypher")` → wire-format
+    `MappingBundle` we feed into `SchemaResolver`.
+  - `export_conceptual_model_as_owl_turtle(...)` → Turtle for the
+    `/mapping/export-owl` endpoint.
+  - `fingerprint_physical_shape(db)`, `fingerprint_physical_counts(db)`
+    → cache invalidation.
+- **Safety env vars enforced upstream** that we must respect when we
+  invoke the analyzer in-process: `SCHEMA_ANALYZER_ALLOWED_HOSTS`,
+  `SCHEMA_ANALYZER_CACHE_ROOT`. Our Helm chart / Docker docs surface
+  these as required configuration in production deployments.
+- **Lockstep upgrades**: when the analyzer ships a minor version that
+  changes `physicalMapping` shape, our `mapping_from_wire_dict`
+  changes in the same release window. The CI pipeline runs against
+  both the floor and the ceiling of the analyzer pin.
+
+### 12.2 `arango-ontoextract` (downstream — it depends on us)
+
+[`arango-ontoextract`](https://github.com/ArthurKeen/arango-ontoextract)
+(AOE) is the LLM-driven OWL extraction and curation platform.
+**Today** AOE is AQL-primary (talks to ArangoDB via `python-arango`,
+stores ontologies via ArangoRDF's PGT mapping, exports OWL/Turtle
+through its REST `GET /api/v1/ontology/{ontology_id}/export`
+endpoint). Its PRD lists "Read-only SPARQL endpoint for standard RDF
+tooling (Protégé, reasoners). Possible via Oxigraph sidecar or
+ArangoDB RDF adapter" as **Open Question Q7** — `arango-sparql-py`
+**is the answer to that open question**.
+
+Concrete integration commitments (v1.0 acceptance, criterion §3.11):
+
+| AOE need | `arango-sparql-py` provides | How |
+| --- | --- | --- |
+| "Point Protégé / a reasoner at our ontologies" | `GET/POST /sparql` over the same ArangoDB connection AOE writes to | Operator runs both services against the same DB; AOE provides the OWL via its export endpoint or via this project's `/mapping/import-owl` |
+| "Get a Turtle/RDF-XML rendering of the active mapping for Microsoft Ontology Playground" | `POST /mapping/export-owl` with `Accept: text/turtle` or `application/rdf+xml` | §11.3 |
+| "Push a curated OWL back to the live mapping" | `POST /mapping/import-owl` | OWL parser handles Turtle, RDF/XML, JSON-LD, N-Triples |
+| "Stay tenant-isolated when AOE is multi-tenant on `org_id`" | `tenantScope` enforcement at AQL emit (§6.5) | AOE forwards its JWT (with the `org_id` claim) as `Authorization: Bearer …`; our session layer translates the claim into an `X-Tenant-Id` binding before AQL emission |
+| "Cross-origin browser editor in the AOE frontend can call us" | CORS-allowlist the AOE origin; expose the same headers AOE expects (`Authorization`, `Content-Type`, `X-Request-ID`) | `CORS_ALLOWED_ORIGINS` and `CORS_ALLOWED_HEADERS` env vars; defaults documented in `docs/howto/arango-ontoextract.md` |
+| "Validate proposed ontology edits against existing data before promotion" | `POST /validate` (parse-only) for syntactic checks; `POST /sparql` with ASK queries for instance-data assertions; `POST /explain` for plan inspection | AOE's promotion workflow can chain these calls before flipping a `Draft` ontology to `Active` |
+| "Reverse the dependency for offline analysis: AOE owns the OWL, we own the live SPARQL" | The same `MappingBundle` shape is portable between the two | Both projects consume `mapping_from_wire_dict`; AOE-authored bundles validate-load via `/mapping/import-owl` |
+
+A `docs/howto/arango-ontoextract.md` recipe ships with the v1.0 release
+covering: (a) the recommended deployment topology (both services
+behind one ingress, sharing one ArangoDB), (b) JWT token forwarding,
+(c) the CORS configuration, (d) the bidirectional OWL roundtrip, and
+(e) the AOE-side configuration changes (a single env var pointing to
+this project's `/sparql` URL is the entire integration).
+
+### 12.3 `arango-cypher-py` (sister — shared substrate)
+
+Not a dependency in either direction, but operationally and
+developmentally a sister:
+
+- **Shared `MappingBundle` wire shape** (camelCase / snake_case via
+  `mapping_from_wire_dict`) — the same fixture corpus exercises both
+  projects (`tests/schema/fixtures/*.export.json` is portable).
+- **Shared UI patterns** — §10 explicitly mirrors the sister's
+  workbench so a developer fluent in one is immediately productive
+  in the other.
+- **Future shared core** (`arango-query-core`, mentioned in the
+  sister's `docs/polyglot_strategy.md`): the resolver, the schema
+  cache, the fingerprint policy, and the analyzer integration are
+  expected to factor out into a shared package when both projects
+  reach v1.0. The PRD acknowledges this as a v1.x carve-out, not a
+  v1.0 deliverable.
+
+---
+
+## 13. Conformance & testing
+
+### 13.1 Test categories
 
 | Category | Marker | Typical runtime | Gate |
 | --- | --- | --- | --- |
@@ -652,7 +1045,7 @@ advisories like `W_RESULT_TRUNCATED`).
 | Translator perf benchmark (translation-only timings, gauge regressions) | `bench` | ~ 30 s | per-PR (gauge only — fails only on > 50 % regression) |
 | NL eval | `eval` | minutes | gated on `RUN_EVAL=1`; baseline-comparison CI-blocking once it lands |
 
-### 10.2 W3C ground-truth strategy
+### 13.2 W3C ground-truth strategy
 
 - **Translation-only harness** (`tests/w3c/test_w3c_query_evaluation.py`)
   parses every DAWG query and asks the visitor to emit AQL. Anything that
@@ -676,7 +1069,7 @@ advisories like `W_RESULT_TRUNCATED`).
   catch a translator bug — every visitor change should land with at least
   one cross case.
 
-### 10.3 Schema-detection corpus
+### 13.3 Schema-detection corpus
 
 Lives at `tests/schema/fixtures/*.export.json`, mirroring the sister
 project's `tests/fixtures/mappings/` layout (same JSON wire shape). The
@@ -704,7 +1097,7 @@ For each fixture, the harness asserts:
 4. For RPT fixtures, the emitted AQL references the correct triples
    collection name and column names.
 
-### 10.4 Legacy Foxx round-trip regression
+### 13.4 Legacy Foxx round-trip regression
 
 Module: `tests/legacy_roundtrip/`. Docker-Compose spins up both the
 legacy `arango-sparql` Foxx service and `arango-sparql-py` against the
@@ -724,7 +1117,7 @@ either a Foxx bug we can ignore (cite the legacy commit), a known-gap
 in v1's translator (xfail with link to issue), or a real regression to
 fix before tagging v1.0.
 
-### 10.5 Coverage targets per release
+### 13.5 Coverage targets per release
 
 | Release | W3C query-evaluation | Cross cases | Goldens | Schema fixtures | Legacy round-trip parity |
 | --- | --- | --- | --- | --- | --- |
@@ -735,7 +1128,7 @@ fix before tagging v1.0.
 
 ---
 
-## 11. Release roadmap
+## 14. Release roadmap
 
 ### v0.x (current — v1 prep)
 
@@ -794,20 +1187,74 @@ fix before tagging v1.0.
   session header
 - Sharding: `physicalMapping.shardFamilies` honoured in cross-shard AQL
 
+**UI / Workbench (§10)**
+
+- SPARQL editor (`SparqlEditor.tsx`) at parity with `arango-cypher-py`'s
+  `CypherEditor.tsx` (custom StreamLanguage, schema-aware completion,
+  hover docs, clause outline, `Mod-Enter` / `Shift-Enter` /
+  `Mod-Shift-E` / `Mod-Shift-P` keymap)
+- AQL editor (`AqlEditor.tsx`) wholesale-ported from the sister project
+  including snippet completion, `var.property` schema-aware completion,
+  `_from`/`_to`/`_key`/`_id` for edges, heuristic format button,
+  bind-variable inspector, and the **edit-and-rerun-as-AQL alignment
+  fix** (Run reads the live editor document, not stale reducer state)
+- PREFIX manager panel (SPARQL-specific affordance)
+- Mapping panel with OWL roundtrip (`/mapping/import-owl`,
+  `/mapping/export-owl`)
+- Results panel with literal-collapse toggle on the graph tab
+- Connection dialog with auto-defaults, schema introspection,
+  optional tenant selector
+- `localStorage` workbench (`"sparql-workbench"`) with 50-entry history
+- `Mod-K` command palette
+- Single dark theme (`oneDark`)
+
+**Third-party tool compatibility (§11)**
+
+- Verified-compatible with **Protégé 5.x** (Service Description fetch,
+  XML SELECT results, ASK boolean, CONSTRUCT/DESCRIBE RDF responses);
+  smoke test in `tests/integration/test_protege_compat.py`
+- Verified-compatible with **Microsoft Ontology Playground**
+  (RDF/XML round-trip via `/mapping/{import,export}-owl`); smoke test
+  in `tests/integration/test_ontology_playground_roundtrip.py`
+- Verified-compatible with **YASGUI**, **`rdflib.SPARQLWrapper`**,
+  **Apache Jena `arq`**, **Oxigraph CLI**
+- One-page how-tos under `docs/howto/` for each tool
+
+**Cross-project integration (§12)**
+
+- `arango-ontoextract` integration recipe (`docs/howto/arango-ontoextract.md`):
+  bidirectional OWL roundtrip, JWT forwarding, CORS, deployment
+  topology
+- AOE PRD Q7 ("Read-only SPARQL endpoint for standard RDF tooling")
+  marked as resolved with a back-link to this PRD
+- Shared schema-fixture corpus with `arango-cypher-py` (the fixtures
+  in `tests/schema/fixtures/` are the same shape both projects parse
+  via `mapping_from_wire_dict`)
+
 **Release**
 
 - First public PyPI release
 - Schema-detection corpus complete (PG, LPG, RPT, all four hybrid
-  permutations, multi-tenant, sharded — §10.3)
-- Legacy round-trip parity ≥ 90 % (§10.4)
+  permutations, multi-tenant, sharded — §13.3)
+- Legacy round-trip parity ≥ 90 % (§13.4)
+- All five `docs/howto/*.md` recipes published
 
-### v1.1 (depth on translation)
+### v1.1 (depth on translation + UI polish)
 
 - `visit_Minus` (anti-join)
 - `visit_ToMultiSet` (subqueries)
 - Property-path expansion (`MulPath`, `SequencePath`, `AlternativePath`)
-- `visit_ConstructQuery` (RDF output → `text/turtle` / `application/n-triples`)
+- `visit_ConstructQuery` (RDF output → `text/turtle` /
+  `application/n-triples` / `application/rdf+xml` / `application/ld+json`)
 - W3C query-evaluation coverage ≥ 35 %
+- UI light theme (workbench parity completion)
+- "Schema-discovered prefix" autocompletion in the SPARQL editor:
+  the analyzer's surfaced namespaces become typed suggestions in the
+  prefix manager
+- TopBraid Composer compatibility verified (best-effort target promoted
+  to verified)
+- `arango-query-core` extraction kicked off (shared resolver / cache /
+  fingerprint policy / analyzer integration with `arango-cypher-py`)
 
 ### v1.2 (graph dispatch)
 
@@ -824,21 +1271,30 @@ fix before tagging v1.0.
 
 ---
 
-## 12. Glossary
+## 15. Glossary
 
 | Term | Definition |
 | --- | --- |
+| **AOE** | Short for [`arango-ontoextract`](https://github.com/ArthurKeen/arango-ontoextract) — the LLM-driven OWL extraction and curation platform. AOE is downstream of `arango-sparql-py` (it consumes our SPARQL endpoint as the answer to its PRD's open question Q7). See §12.2. |
 | **AQL** | ArangoDB Query Language — the canonical query language for ArangoDB |
+| **`arango-cypher-py`** | The sister project — Cypher → AQL transpiler. Shares the `MappingBundle` shape, the schema fixture corpus, and the workbench architecture with this project. |
+| **`arango-query-core`** | (Planned, v1.x) shared Python package factoring out the resolver, schema cache, fingerprint policy, and analyzer integration that `arango-cypher-py` and `arango-sparql-py` currently each carry. |
 | **AgenticSchemaAnalyzer** | The class in `arangodb-schema-analyzer` (PyPI) that introspects an ArangoDB database and emits a `MappingBundle`. The same package was originally repo-named `arango-schema-mapper`. |
+| **ArangoRDF PGT** | The Property Graph Translation that AOE uses to store OWL ontologies in ArangoDB (one collection per OWL class, one edge collection per object property). Different from this project's RPT physical model — but a `MappingBundle` describing an AOE-stored ontology will use `style "COLLECTION"` / `"DEDICATED_COLLECTION"`, which is exactly what our resolver already understands. |
+| **CodeMirror 6** | Editor framework used in the workbench; pinned at `^6.0.2` with the same family of `@codemirror/*` packages as the sister project. |
+| **`CytoscapeGraph`** | UI component (`ui/src/components/CytoscapeGraph.tsx`) that renders SELECT result rows as an interactive graph; SPARQL build adds a literal-collapse toggle for literal-rich result sets. |
 | **DAWG** | Data Access Working Group — the W3C group whose SPARQL 1.1 evaluation test suite is the conformance ground-truth |
 | **`fingerprint_physical_shape`** | Cheap structural fingerprint (collections + index digests) — invalidates the mapping cache when topology changes |
 | **`fingerprint_physical_counts`** | Shape fingerprint extended with per-collection `count()` — distinguishes "same schema, different volume" from "schema unchanged" |
 | **Hybrid schema** | An ArangoDB schema that uses two or more of the physical models (`COLLECTION` / `LABEL` / `RPT` / `DOCUMENT`) at the same time. *Not* a fifth model — just the case where the bundle's `physicalMapping.entities[*].style` values are mixed. |
 | **LPG** | Labeled Property Graph — physical model where one shared collection holds multiple OWL classes, discriminated by a `typeField`. OWL annotation: `phys:mappingStyle "LABEL"`. |
+| **Microsoft Fabric IQ** | Microsoft's enterprise data-fabric ontology platform; targets RDF/XML as its OWL serialisation. The Microsoft Ontology Playground is a Microsoft-maintained reference / learning app for Fabric IQ ontologies. |
+| **Microsoft Ontology Playground** | [Static React app](https://github.com/microsoft/Ontology-Playground) for authoring / inspecting / sharing OWL ontologies in the Microsoft Fabric IQ family. Compatibility with `arango-sparql-py` is file-based (RDF/XML round-trip via `/mapping/{import,export}-owl`). See §11.3. |
 | **`MappingBundle`** | The wire-format dict returned by both the heuristic detector and the analyzer: `{conceptualSchema, physicalMapping, metadata, owl_turtle?}`. The `arango_sparql.translate.resolver.SchemaResolver` consumes the `physicalMapping` half. |
 | **`mapping_from_wire_dict`** | Spelling normaliser (snake_case ↔ camelCase) shared with the sister project. Single entry-point for parsing analyzer output and OWL-derived mappings. |
 | **PG** | Property Graph — physical model where each OWL class lives in its own ArangoDB collection. OWL annotation: `phys:mappingStyle "COLLECTION"`. |
 | **`pyoxigraph`** | Python bindings for the Rust [Oxigraph](https://github.com/oxigraph/oxigraph) RDF store; used here as the W3C-compliant reference triplestore for cross-validation |
+| **Protégé** | Stanford's free, JVM-based, desktop OWL editor — the canonical third-party SPARQL Protocol client. Verified-compatible at v1.0; see §11.2. |
 | **RPC routes** | The service's native JSON contract (§5.1), distinguished from the W3C SPARQL Protocol endpoint (§5.2) |
 | **RPT** | Resource-style triples / RDF physical layout — a triple-row collection (legacy default name `_triples`) with `subject_uri` / `predicate` / `object_uri` / `object_value` columns. The legacy Foxx `arango-sparql` service's default storage shape. OWL annotation: `phys:mappingStyle "RPT"`. |
 | **`SchemaResolver`** | The single module in `arango_sparql.translate.resolver` that reads OWL `phys:*` annotations and dispatches the visitor's read pattern by `style`. |
@@ -847,6 +1303,8 @@ fix before tagging v1.0.
 | **`shardFamilies`** | Optional `physicalMapping` block from the analyzer naming the related shards a cross-shard query must broadcast across. The translator emits a `WITH @@coll1, @@coll2, …` clause when present. |
 | **`tenantScope`** | Per-entity metadata block from the analyzer naming the tenant discriminator field. The translator inserts `FILTER doc.<tenantField> == @<tenantBind>` for every read of that entity. |
 | **TCK** | Test Compatibility Kit — the openCypher equivalent of DAWG, used by the sister project `arango-cypher-py` |
+| **TopBraid Composer** | Commercial OWL editor by TopQuadrant — listed as the parity target for AOE's *own* built-in ontology editor (not as an `arango-sparql-py` direct target). Treated as a best-effort SPARQL client at v1.0; promoted to verified at v1.1. |
+| **YASGUI** | Browser-based SPARQL query editor; embeddable JS widget. Verified-compatible at v1.0 (CORS-tuned). |
 
 ---
 
