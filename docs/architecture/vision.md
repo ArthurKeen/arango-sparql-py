@@ -1,3 +1,18 @@
+# Vision — `arango-sparql-py` inception narrative
+
+> **Status**: This is the original v0 design memo that motivated the
+> project. It captures the *why* and the high-level technical bets
+> (rdflib, pyoxigraph, OWL via arango-schema-mapper, mirroring
+> arango-cypher-py). For the *what* — the binding spec including the
+> HTTP surface, supported physical schema shapes, conformance targets,
+> and release roadmap — see [`PRD.md`](PRD.md).
+>
+> Where this document and the PRD disagree, the PRD wins. This file is
+> kept as the historical record because it explains decisions the PRD
+> takes for granted.
+
+---
+
 Transitioning `arango-sparql` from a Foxx service to a Python-based microservice (`arango-sparql-py`) while adopting the architectural patterns you established in `arango-cypher-py` is a highly logical and strategic move. Since you are moving to a standalone service, you can leverage rich Python ecosystems for both the Semantic Web (RDF/SPARQL) and AI (for your NL capabilities).
 
 Here is a comprehensive roadmap and advice on how to structure `arango-sparql-py`, based on a review of the repositories you shared.
