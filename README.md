@@ -1,12 +1,67 @@
 # arango-sparql-py
 
-Python-native SPARQL 1.1 → AQL transpiler and microservice for ArangoDB.
+[![CI](https://img.shields.io/github/actions/workflow/status/ArthurKeen/arango-sparql-py/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ArthurKeen/arango-sparql-py/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue?logo=python&logoColor=white)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![W3C DAWG](https://img.shields.io/badge/W3C%20DAWG%20query%20eval-15.0%25-orange)](tests/w3c/COVERAGE_REPORT.md)
 
-This is the modernization of the legacy JavaScript Foxx service
-[`arango-sparql`](../arango-sparql/) and the sister project to
-[`arango-cypher-py`](../arango-cypher-py/). It deliberately mirrors the
-architecture of `arango-cypher-py` so a developer fluent in one repo can
-read the other immediately.
+> **Status: v0.1 — active development.** The translator and HTTP service
+> are working; a W3C-conformant `/sparql` Protocol endpoint is on the v1.0
+> roadmap. See [`docs/architecture/PRD.md`](docs/architecture/PRD.md) for
+> the full v1 spec, scope, and release milestones.
+
+Python-native **SPARQL 1.1 → ArangoDB AQL** transpiler and FastAPI
+microservice. Modernizes the legacy JavaScript Foxx
+[`arango-sparql`](https://github.com/ArthurKeen/arango-sparql) service and
+deliberately mirrors the architecture of its sister project
+[`arango-cypher-py`](https://github.com/ArthurKeen/arango-cypher-py), so a
+developer fluent in one repo can read the other immediately.
+
+## Why this exists
+
+ArangoDB is a multi-model database with a powerful native query language
+(AQL), but lots of teams have invested in **SPARQL** — for ontology-driven
+data, federated knowledge graphs, or simply because their data already
+lives as RDF/Turtle. `arango-sparql-py` lets those teams point a
+SPARQL 1.1 query at ArangoDB without first re-modeling their data:
+
+1. The query is parsed by [`rdflib`](https://rdflib.readthedocs.io/)
+   (W3C-grade SPARQL 1.1 parser).
+2. An [OWL ontology](https://github.com/ArthurKeen/arango-schema-mapper)
+   describing the physical schema is loaded once at startup; IRIs in the
+   query are resolved to ArangoDB collection / property names.
+3. The algebra walker emits parameterized AQL with bind variables (no
+   string interpolation, no injection vector).
+4. Optionally: the AQL is executed against ArangoDB and results are
+   surfaced back as bindings.
+
+Cross-validation against [`pyoxigraph`](https://pyoxigraph.readthedocs.io/)
+(W3C-conformant Rust triplestore via Python bindings) keeps every
+translation honest.
+
+## Example: SPARQL in → AQL out
+
+```sparql
+PREFIX : <http://ex.org/>
+SELECT ?n ?title WHERE {
+  { ?p   a :Person  ; :name  ?n }
+  { ?prj a :Project ; :title ?title ; :owner ?p }
+}
+ORDER BY ?n LIMIT 10
+```
+
+translates to:
+
+```aql
+FOR doc1 IN @@c1_Person
+FOR doc2 IN @@c2_Project
+FILTER doc2.owner == doc1._uri
+SORT doc1.name ASC
+LIMIT 10
+RETURN { n: doc1.name, title: doc2.title }
+```
+
+with `bind_vars = {"@c1_Person": "Person", "@c2_Project": "Project"}`.
 
 ## Architecture at a glance
 
@@ -14,75 +69,129 @@ read the other immediately.
 | --------------------- | -------------------------------------------------------------------- |
 | SPARQL parsing        | `rdflib.plugins.sparql.parser.parseQuery` + Algebra translation      |
 | AQL emission          | Parameterized AQL builder (port of legacy `aql-query-builder.js`)    |
-| Schema mapping        | OWL/Turtle ontology from `arango-schema-mapper`, loaded once into `rdflib.Graph` |
-| HTTP service          | FastAPI (`arango_sparql.service`) — mirror of `arango_cypher.service`|
-| NL → SPARQL           | `arango_sparql.nl2sparql` — mirror of `arango_cypher.nl2cypher`      |
-| Reference triplestore | `pyoxigraph`, embedded, W3C-compliant — used as cross-validation gold|
-| Test harnesses        | `pytest` + W3C SPARQL 1.1 DAWG runner (`tests/w3c/`)                 |
-| Frontend              | Vite + React + TypeScript, CodeMirror SPARQL mode, Cytoscape.js      |
+| Schema mapping        | OWL/Turtle ontology from [`arango-schema-mapper`](https://github.com/ArthurKeen/arango-schema-mapper), loaded once into `rdflib.Graph` |
+| HTTP service          | FastAPI (`arango_sparql.service`) — mirror of [`arango_cypher.service`](https://github.com/ArthurKeen/arango-cypher-py) |
+| NL → SPARQL           | LLM-backed pipeline (`arango_sparql.nl2sparql`) with cost accounting + repair loop |
+| Reference triplestore | [`pyoxigraph`](https://pyoxigraph.readthedocs.io/), embedded, W3C-compliant — used as cross-validation gold |
+| Test harnesses        | `pytest` + W3C SPARQL 1.1 DAWG runner (`tests/w3c/`) + cross-validation suite |
+| Frontend              | Vite + React + TypeScript, CodeMirror SPARQL mode, Cytoscape.js graph view |
 
 ## Quickstart
 
 ```bash
-# 1. Install (uv preferred)
+git clone https://github.com/ArthurKeen/arango-sparql-py.git
+cd arango-sparql-py
+
+# 1. Install (works with `uv` or plain `pip install -e ".[dev]"`)
 uv sync --all-extras
 
-# 2. Link in the sibling repos as read-only references
-./scripts/setup_references.sh
+# 2. Run the smoke tests (no DB needed)
+uv run pytest -q -m "not integration and not w3c and not eval"
 
-# 3. Run the smoke tests
-uv run pytest -q
-
-# 4. Boot the service
+# 3. Boot the service (defaults to http://localhost:8000)
 uv run python main.py
-# or
-uv run arango-sparql-py serve --port 8000
 
-# 5. (optional) Stand up ArangoDB
+# 4. (optional) Stand up ArangoDB for /execute round-trips
 docker compose up -d
+
+# 5. (optional) Translate a query from the CLI
+uv run arango-sparql-py translate \
+  --sparql 'PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s a :Person }' \
+  --ontology-file my-schema.ttl
 ```
+
+> Sibling-repo work (porting from the legacy Foxx service or mirroring
+> patterns from `arango-cypher-py`)? Run `./scripts/setup_references.sh`
+> to symlink them under `references/`. Symlinks are gitignored — they
+> only matter for AI agents and porting work.
+
+## HTTP surface (current)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET`  | `/health` | Liveness probe |
+| `POST` | `/connect` / `/disconnect` | Open / close an ArangoDB session |
+| `POST` | `/translate` | SPARQL → AQL (no DB access) |
+| `POST` | `/validate` | SPARQL parse-only validation |
+| `POST` | `/execute` | SPARQL → AQL → ArangoDB → bindings |
+| `POST` | `/execute-aql` | Pass-through AQL with the same session |
+| `POST` | `/explain` / `/profile` | AQL execution plan / per-stage profile |
+| `POST` | `/nl-translate`, `/nl-explain`, `/nl-execute` | LLM-backed NL → SPARQL → AQL |
+
+The W3C-conformant `GET/POST /sparql` Protocol endpoint
+(content-negotiated SPARQL Results JSON / XML / CSV / TSV, plus
+Service Description) is the headline v1.0 deliverable — see PRD §5.2.
+
+## SPARQL conformance
+
+W3C SPARQL 1.1 DAWG translation-only coverage at `main`:
+
+| Category | Coverage |
+| --- | --- |
+| Syntax (positive) | **100.0 %** (63/63) |
+| Syntax (negative) | **67.4 %** (29/43, the 14 xfails are rdflib parser-permissiveness gaps, not translator gaps) |
+| Query evaluation | **15.0 %** (38/253) — see [`COVERAGE_REPORT.md`](tests/w3c/COVERAGE_REPORT.md) for the full XFAIL ledger driving the visitor priority queue |
+
+Visitors shipped today: `BGP`, `Filter`, `Project`, `Distinct`, `Slice`,
+`OrderBy`, `AskQuery`, `Extend` (BIND), `LeftJoin` (OPTIONAL),
+`AggregateJoin` (`COUNT` / `SUM` / `AVG` / `MIN` / `MAX` /
+`GROUP_CONCAT` + `GROUP BY` + `HAVING`), and `Join` (multi-subject BGPs
+lowered to AQL equality FILTERs).
 
 ## Repository layout
 
 ```
 arango_sparql/
   api.py                # public translate() entry point
-  errors.py             # typed SparqlError hierarchy
-  cli.py                # typer CLI (mirror of arango_cypher.cli)
+  errors.py             # typed SparqlError hierarchy (E_SPARQL_*, E_SCHEMA_RESOLVE, …)
+  cli.py                # typer CLI
+  _env.py               # central env-var resolver (ARANGO_PASSWORD, …)
   translate/
     parser.py           # rdflib parser wrapper
     visitor.py          # one visit_<NodeType> per Algebra op
     builder.py          # parameterized AQL query builder
-    resolver.py         # OWL URI -> ArangoDB collection resolver
+    resolver.py         # OWL → ArangoDB collection / property resolver
   service/
     app.py              # FastAPI app + CORS + public-mode guardrails
     models.py           # pydantic request/response models + _MAX_* limits
+    security.py         # sessions, rate limit, SSRF guard, error redaction
     routes/
       health.py
-      sparql.py         # /translate, /execute
+      connect.py        # /connect, /disconnect, /connect/defaults
+      sparql.py         # /translate, /validate, /execute*, /explain, /profile
+      nl.py             # /nl-translate, /nl-explain, /nl-execute
   nl2sparql/
-    _core.py            # NL pipeline orchestrator + result dataclass
+    pipeline.py         # NL → SPARQL pipeline (LLM + repair loop + cost)
+    prompt.py, client.py, repair.py, cost.py, models.py
 tests/
-  translate/            # parser unit tests + golden tests
-  cross/                # pyoxigraph cross-validation tests
-  w3c/                  # W3C SPARQL 1.1 DAWG runner + harness
-  nl2sparql/eval/       # NL eval harness (slow, gated)
+  translate/            # parser unit tests + YAML-driven goldens
+  cross/                # pyoxigraph cross-validation
+  w3c/                  # W3C SPARQL 1.1 DAWG runner + COVERAGE_REPORT.md
+  nl2sparql/eval/       # NL eval harness (slow, gated on RUN_EVAL=1)
   helpers/oxi.py        # pyoxigraph fixtures
-ui/                     # Vite + React + TS frontend (placeholder)
-references/             # symlinks to sibling repos (read-only)
-docs/architecture/      # PRD, vision
+ui/                     # Vite + React + TS frontend
+references/             # symlinks to sibling repos (gitignored, recreated locally)
+docs/architecture/      # PRD (the v1 spec) + vision (inception narrative)
 .cursor/
-  rules/                # scoped Cursor rules (000-context, 100-backend, ...)
+  rules/                # scoped Cursor rules (000-context, 100-backend, 200-testing, …)
   skills/sparql-to-aql/ # SPARQL→AQL porting recipe (read this first)
-AGENTS.md               # shared agent contract for AI tooling
 ```
 
-## For AI agents
+## Documentation
 
-Read [`AGENTS.md`](AGENTS.md) before making any change. It points at the
-scoped rule files under `.cursor/rules/` and the porting recipe under
-`.cursor/skills/sparql-to-aql/SKILL.md`.
+- **[`docs/architecture/PRD.md`](docs/architecture/PRD.md)** — the v1
+  spec: HTTP surface, supported physical schema shapes (document, hybrid
+  multi-class, edge traversal, named graphs), conformance targets, release
+  milestones.
+- **[`docs/architecture/vision.md`](docs/architecture/vision.md)** — the
+  inception narrative (the *why*; the PRD covers the *what*).
+- **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — dev setup, test gates,
+  porting recipe pointer.
+- **[`SECURITY.md`](SECURITY.md)** — vulnerability reporting flow.
+- **[`AGENTS.md`](AGENTS.md)** — shared contract for AI coding agents
+  working on this repo (Cursor, Claude Code, Codex CLI, Copilot
+  Workspace).
 
 ## License
 
-MIT.
+[MIT](LICENSE). Copyright (c) 2026 Arthur Keen.
