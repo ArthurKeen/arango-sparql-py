@@ -1,0 +1,145 @@
+# Golden corpus for FILTER translation.
+#
+# These cases lock in the AQL the visitor emits for SPARQL FILTER
+# expressions today. Each case is independent. Update by hand only.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+cases:
+  - name: equality_var_to_string_literal
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(?n = "Alice") }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER (doc1.name == @_p1)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "Alice"
+
+  - name: range_filter_numeric
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a > 18 && ?a < 65) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER ((doc1.age > @_p1) && (doc1.age < @_p2))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 18
+      "_p2": 65
+
+  - name: regex_with_case_insensitive_flag
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(REGEX(?n, "^a", "i")) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER REGEX_TEST(doc1.name, @_p1, true)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "^a"
+
+  - name: bound_check
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(BOUND(?n)) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER (doc1.name != null)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: not_bound
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(!BOUND(?n)) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER !((doc1.name != null))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: str_then_equality
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(STR(?n) = "Alice") }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER (TO_STRING(doc1.name) == @_p1)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "Alice"
+
+  - name: contains
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(CONTAINS(?n, "li")) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER CONTAINS(doc1.name, @_p1)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "li"
+
+  - name: or_and_combination
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER((?n = "Alice" || ?n = "Bob") && BOUND(?n)) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER (((doc1.name == @_p1) || (doc1.name == @_p2)) && (doc1.name != null))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "Alice"
+      "_p2": "Bob"
+
+  - name: arithmetic_in_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a + 1 > 21) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER ((doc1.age + @_p1) > @_p2)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 1
+      "_p2": 21
+
+  - name: not_equals
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(?n != "Alice") }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER (doc1.name != @_p1)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "Alice"
+
+  - name: starts_with
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(STRSTARTS(?n, "Al")) }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER STARTS_WITH(doc1.name, @_p1)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "Al"

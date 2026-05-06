@@ -1,0 +1,86 @@
+---
+description: Backend Python conventions — FastAPI service, rdflib parsing, AQL builder, OWL schema mapping
+globs:
+  - "arango_sparql/**/*.py"
+  - "main.py"
+  - "scripts/**/*.py"
+---
+
+# Backend Python rules
+
+## Tooling
+- Dependency manager: **`uv`** (no `poetry`, no bare `pip`). Add deps with
+  `uv add ...`; update lock with `uv lock`.
+- Python: **>=3.11**, `from __future__ import annotations` at top of every
+  module.
+- Lint/format: **`ruff`** with `line-length = 110`, `target-version = "py311"`.
+- Typing: prefer PEP 604 unions (`str | None`), `dataclass` for plain data,
+  `pydantic.BaseModel` for any HTTP request/response or external contract.
+
+## SPARQL parsing — always rdflib
+- Entry point for parsing:
+  `from rdflib.plugins.sparql.parser import parseQuery`
+  followed by `from rdflib.plugins.sparql.algebra import translateQuery` to
+  obtain the Algebra tree.
+- The translator is a **visitor over the Algebra**, not over the parse
+  tree. Every Algebra node type (`BGP`, `Project`, `Filter`, `LeftJoin`,
+  `Union`, `Slice`, `OrderBy`, `Distinct`, `Extend`, `Group`, `AggregateJoin`,
+  `Service`, …) gets one `visit_<NodeType>` method.
+- Unknown nodes must raise a typed error (e.g. `UnsupportedSparqlError`) —
+  never fall through silently.
+
+## AQL emission — always the builder
+- All AQL strings flow through the AQL query builder (port of
+  `references/arango-sparql/src/lib/aql-query-builder.js`). Never concatenate
+  AQL with `+` or f-strings outside the builder.
+- Variables from SPARQL bind to AQL bind variables (`@var`). Literal values
+  always become bind variables; never inline them into the AQL string.
+- The builder owns aliasing — do not generate FOR-loop variable names
+  manually; ask the builder for a fresh alias.
+
+## OWL / schema mapping
+- Load the ontology produced by `arango-schema-mapper` into a single
+  `rdflib.Graph` at app startup; cache by ontology hash.
+- URI → physical collection/edge/property resolution goes through one
+  `SchemaResolver` class. SPARQL visitors call the resolver; they never
+  reach into the graph directly.
+- Treat the OWL graph as immutable after load. If schema can change at
+  runtime, version the resolver and swap atomically.
+
+## FastAPI service shape (mirror `arango_cypher/service/`)
+- `app.py` owns the `FastAPI(...)` instance, CORS middleware, observability
+  install, and import-time guards. Route modules import `app` from here.
+- `models.py` holds every pydantic request/response model and the
+  `_MAX_*` length constants (e.g. `_MAX_SPARQL_LENGTH`,
+  `_MAX_AQL_LENGTH`, `_MAX_TURTLE_LENGTH`). All user-controlled string
+  fields use `Field(..., max_length=_MAX_*)`.
+- `security.py` collects sessions, rate limit, SSRF guard, error redaction,
+  pydantic 422 handler.
+- `routes/` — one module per resource: `sparql.py`, `nl.py`, `schema.py`,
+  `owl.py`, `connect.py`, `health.py`. Each route uses
+  `Depends(_check_compute_rate_limit)` and `Depends(_get_session)` exactly
+  like the Cypher service.
+- `mapping.py` adapts incoming JSON mapping payloads to the in-memory
+  schema/resolver objects.
+- Multitenancy guards: every endpoint that runs AQL must enforce a
+  `TenantContext`; physical-tenant collection rewriting happens in one
+  place, not scattered.
+
+## Errors
+- Define a typed error hierarchy:
+  `SparqlError` → `SparqlParseError`, `UnsupportedSparqlError`,
+  `SchemaResolutionError`, `AqlEmitError`. Each carries a stable
+  `code` string for the HTTP layer to surface.
+- Service layer maps `SparqlError` → `HTTPException(status_code=422)` with
+  `{"error": <sanitized>, "code": <code>}`; all other exceptions are
+  500s after sanitization.
+
+## Logging
+- Module-level `logger = logging.getLogger(__name__)`. Do not use
+  `print()`. Correlation-ID middleware (mirror Cypher's
+  `CorrelationIdMiddleware`) tags every request log line.
+
+## Forbidden
+- ANTLR runtime, hand-written SPARQL parsers, raw AQL string
+  concatenation, top-level mutable globals (other than the FastAPI `app`,
+  module-level loggers, and the immutable schema cache).

@@ -1,0 +1,48 @@
+---
+description: NL→SPARQL pipeline rules — Turtle prompts, providers, fewshot, tenant guardrails
+globs:
+  - "arango_sparql/nl2sparql/**/*.py"
+  - "tests/nl2sparql/**/*.py"
+---
+
+# NL→SPARQL rules
+
+## Structure (mirror `arango_cypher/nl2cypher/`)
+- `_core.py` — pipeline orchestrator and `NL2SparqlResult` dataclass.
+- `providers.py` — `LLMProvider` protocol + concrete `OpenAIProvider`,
+  `AnthropicProvider`, plus the test-only `ScriptedProvider` mock.
+- `fewshot.py` — BM25-backed few-shot index over a curated corpus.
+- `tenant_guardrail.py` + `tenant_scope.py` — same multitenancy posture
+  as Cypher: physical-tenant collection rewriting and prompt-side scope
+  hints, enforced before the AQL ever runs.
+- `entity_resolution.py` — optional ER hook (mirrors Cypher's).
+- `_aql.py` — final AQL emission step (translates the LLM's SPARQL
+  through the same parser/visitor/builder pipeline the `/translate`
+  endpoint uses; never asks the LLM for AQL directly).
+
+## Prompt construction
+- Always provide the **OWL ontology in Turtle (`.ttl`)** as the schema
+  context. LLMs read Turtle far better than JSON-LD or XML. Generate
+  Turtle from `arango-schema-mapper`'s OWL output.
+- Prompt header: pin the SPARQL dialect (`SPARQL 1.1`), forbid vendor
+  extensions, require fully-qualified IRIs (no bare prefixes the model
+  invents), and constrain output to a fenced ```sparql``` block.
+- Few-shot examples come from the BM25 index over a curated YAML corpus;
+  never inline more than 3 shots — token budget is real.
+
+## Result type
+- `NL2SparqlResult` carries: `sparql`, `explanation`, `confidence`,
+  `method` (`"llm"` | `"rule_based"` | `"cached"`), `schema_context`,
+  `prompt_tokens`, `completion_tokens`, `total_tokens`, `cached_tokens`,
+  `retries`. Match Cypher's `NL2CypherResult` field-for-field where the
+  semantics carry over — easier cross-repo telemetry.
+
+## Caching / corrections
+- Persist user corrections in `nl_corrections.db` (SQLite, WAL mode),
+  identical schema shape to Cypher. Lookups happen before any LLM call.
+
+## Forbidden
+- Asking the LLM to emit AQL directly. The LLM's job is SPARQL only;
+  the deterministic transpiler turns SPARQL into AQL.
+- Inlining the entire OWL ontology when a tenant-scoped slice would do
+  — pre-trim the Turtle to the tenant's reachable classes/properties.

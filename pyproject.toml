@@ -1,0 +1,90 @@
+[project]
+name = "arango-sparql-py"
+version = "0.1.0"
+description = "Python-native SPARQL 1.1 to AQL transpiler for ArangoDB."
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+dependencies = [
+  "python-arango>=8.1.1",
+  "rdflib>=7.0",
+  "fastapi>=0.100.0",
+  "uvicorn[standard]>=0.20.0",
+  "pydantic>=2.6",
+]
+
+[project.urls]
+Homepage = "https://github.com/ArthurKeen/arango-sparql-py"
+Repository = "https://github.com/ArthurKeen/arango-sparql-py"
+Issues = "https://github.com/ArthurKeen/arango-sparql-py/issues"
+
+[project.optional-dependencies]
+analyzer = [
+  # Mirror arango-cypher-py: pin the schema analyzer band so
+  # service installs fail fast on heuristic mappings.
+  "arangodb-schema-analyzer>=0.6.1,<0.7.0",
+]
+service = [
+  "arango-sparql-py[analyzer]",
+  "typer>=0.9.0",
+  "rich>=13.0.0",
+  "python-dotenv>=1.0.0",
+]
+cli = [
+  "typer>=0.9.0",
+  "rich>=13.0.0",
+]
+nl = [
+  "openai>=1.0.0",
+  "anthropic>=0.20.0",
+  "rank_bm25>=0.2.2",
+  "PyYAML>=6.0.0",
+]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+  "ruff>=0.6.0",
+  "httpx>=0.24.0",
+  "PyYAML>=6.0.0",
+  # pyoxigraph is the W3C-compliant reference triplestore for
+  # cross-validation tests (analog of Neo4j in arango-cypher-py).
+  "pyoxigraph>=0.3.22",
+  "arango-sparql-py[analyzer]",
+  "typer>=0.9.0",
+]
+
+[project.scripts]
+arango-sparql-py = "arango_sparql.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+markers = [
+  "integration: requires a running ArangoDB (see README); use docker-compose.yml",
+  "w3c: SPARQL 1.1 W3C DAWG evaluation harness",
+  "cross: cross-validates transpiled AQL bindings against pyoxigraph as the W3C reference store",
+  "eval: NL->SPARQL evaluation harness; slow, gated behind RUN_EVAL=1",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = [
+  "E501",
+  "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["E402", "F401", "F841"]
+"scripts/**/*.py" = ["E402"]
+"arango_sparql/service/__init__.py" = ["F401", "E402", "I001"]
+
+[build-system]
+requires = ["hatchling>=1.21.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["arango_sparql"]

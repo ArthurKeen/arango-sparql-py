@@ -1,0 +1,100 @@
+# Golden corpus for BGP + SELECT translation.
+#
+# Each entry is one independent SPARQL query plus the AQL/bind_vars we
+# expect from the current visitor. Update goldens by hand when the
+# translator's output legitimately changes — never auto-regenerate them.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+  :Order  a owl:Class ;
+    phys:collectionName "Orders" ;
+    phys:typeField "kind" ;
+    phys:typeValue "order" .
+
+cases:
+  - name: type_pattern_only
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: type_with_unmapped_property
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: type_with_literal_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name "Alice" }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER doc1.name == @_p1_name
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_name": "Alice"
+
+  - name: hybrid_collection_emits_type_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?o WHERE { ?o a :Order }
+    expected_aql: |
+      FOR doc1 IN @@c1_Orders
+      FILTER doc1.kind == @_p1_kind
+      RETURN { o: doc1._uri }
+    expected_bind_vars:
+      "@c1_Orders": "Orders"
+      "_p1_kind": "order"
+
+  - name: distinct_with_limit
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT DISTINCT ?n WHERE { ?s a :Person ; :name ?n } LIMIT 5
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      LIMIT 5
+      RETURN DISTINCT { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: select_star
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT * WHERE { ?s a :Person ; :name ?n }
+    # SELECT * column order is implementation-defined per W3C. We use
+    # the visitor's variable-binding insertion order (deterministic given
+    # the BGP triple sort) rather than rdflib's Project.PV — the latter
+    # is a set-iteration order that varies across Python runs. Type
+    # pattern binds ?s first; the property triple binds ?n second.
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: integer_literal_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age 30 }
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER doc1.age == @_p1_age
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_age": 30

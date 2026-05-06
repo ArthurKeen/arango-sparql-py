@@ -1,0 +1,18 @@
+services:
+  arangodb:
+    image: arangodb:3.12
+    container_name: arango-sparql-py-arango
+    environment:
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:-rootpw}
+    ports:
+      - "8529:8529"
+    volumes:
+      - arango_data:/var/lib/arangodb3
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:8529/_api/version"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  arango_data:

@@ -1,0 +1,114 @@
+# Golden corpus for multi-subject BGPs and explicit ``Join`` nodes.
+#
+# rdflib produces two algebra shapes for the same logical join:
+#   * a single ``BGP`` whose triples mention multiple subjects, when
+#     the user wrote one flat WHERE clause; and
+#   * an explicit ``Join(p1=BGP, p2=BGP)`` node, when the user wrote
+#     two ``{ … }`` groups in the WHERE clause.
+#
+# Both lower to the same AQL: one ``FOR`` per type-pattern subject, an
+# equality ``FILTER`` for each shared variable, and a single
+# ``RETURN`` projection — exactly the shape ArangoDB's optimizer
+# rewrites into a hash join when the cost model favors it.
+#
+# The visitor doesn't need a separate ``visit_Join`` body for the
+# multi-subject single-BGP case: ``visit_BGP`` already iterates every
+# triple, and the equality FILTERs are emitted by ``_emit_triple``
+# whenever it sees an object Variable that's already bound to a
+# different AQL expression. ``visit_Join`` exists purely to delegate
+# into both children for the grouped-pattern case.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person  a owl:Class ; phys:collectionName "Person" .
+  :Project a owl:Class ; phys:collectionName "Project" .
+
+cases:
+  - name: multi_subject_single_bgp
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?p ?o WHERE {
+        ?p a :Person ; :name ?n .
+        ?o a :Project ; :owner ?p
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR doc2 IN @@c2_Project
+      FILTER doc2.owner == doc1._uri
+      RETURN { p: doc1._uri, o: doc2._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Project": "Project"
+
+  - name: explicit_join_grouped_patterns
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?title WHERE {
+        { ?p a :Person ; :name ?n }
+        { ?prj a :Project ; :title ?title ; :owner ?p }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR doc2 IN @@c2_Project
+      FILTER doc2.owner == doc1._uri
+      RETURN { n: doc1.name, title: doc2.title }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Project": "Project"
+
+  - name: cross_join_disjoint_groups
+    # No shared variable between the two groups → genuine Cartesian
+    # product. AQL handles this natively (one ``FOR`` per loop, no
+    # join FILTER); the user is on the hook for whether they meant it.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?title WHERE {
+        { ?p a :Person ; :name ?n }
+        { ?prj a :Project ; :title ?title }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR doc2 IN @@c2_Project
+      RETURN { n: doc1.name, title: doc2.title }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Project": "Project"
+
+  - name: join_with_filter_on_each_side
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?title WHERE {
+        { ?p a :Person ; :name ?n . FILTER (STRSTARTS(?n, "A")) }
+        { ?prj a :Project ; :title ?title ; :owner ?p }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER STARTS_WITH(doc1.name, @_p1)
+      FOR doc2 IN @@c2_Project
+      FILTER doc2.owner == doc1._uri
+      RETURN { n: doc1.name, title: doc2.title }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Project": "Project"
+      "_p1": "A"
+
+  - name: join_with_outer_order_and_limit
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?title WHERE {
+        { ?p a :Person ; :name ?n }
+        { ?prj a :Project ; :title ?title ; :owner ?p }
+      } ORDER BY ?n LIMIT 10
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR doc2 IN @@c2_Project
+      FILTER doc2.owner == doc1._uri
+      SORT doc1.name ASC
+      LIMIT 10
+      RETURN { n: doc1.name, title: doc2.title }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Project": "Project"

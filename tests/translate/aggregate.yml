@@ -1,0 +1,146 @@
+# Golden corpus for SPARQL aggregates (rdflib's ``AggregateJoin`` over
+# a ``Group``). Covers COUNT (with the ``WITH COUNT INTO`` shorthand),
+# COUNT DISTINCT (via AQL's ``COUNT_DISTINCT``), SUM/AVG/MIN/MAX
+# (mapped to AQL aggregate functions), GROUP_CONCAT (mapped to AQL
+# ``CONCAT_SEPARATOR``), GROUP BY, and HAVING (which is a plain FILTER
+# above the AggregateJoin in the algebra).
+#
+# Per legacy ``aql-query-builder.js#collect``: the idiomatic AQL form
+# is ``COLLECT k = e WITH COUNT INTO c`` for single-COUNT queries and
+# ``COLLECT k = e AGGREGATE a = f(e), …`` for everything else. The
+# visitor picks the shorthand when there's exactly one COUNT and no
+# DISTINCT modifier, and falls back to the AGGREGATE form otherwise
+# (mixed aggregates, COUNT DISTINCT, GROUP_CONCAT, etc.).
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+cases:
+  - name: count_star_ungrouped
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(*) AS ?c) WHERE { ?s a :Person }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT WITH COUNT INTO agg2
+      RETURN { c: agg2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: count_var_ungrouped
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(?s) AS ?c) WHERE { ?s a :Person }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT WITH COUNT INTO agg2
+      RETURN { c: agg2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: count_distinct_ungrouped
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(DISTINCT ?d) AS ?c) WHERE { ?s a :Person ; :dept ?d }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT AGGREGATE agg2 = COUNT_DISTINCT(doc1.dept)
+      RETURN { c: agg2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_count
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
+      RETURN { d: grp2, c: agg3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_avg_sum
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (AVG(?a) AS ?avg) (SUM(?a) AS ?tot) WHERE {
+        ?s a :Person ; :dept ?d ; :age ?a
+      } GROUP BY ?d
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = AVG(doc1.age), agg4 = SUM(doc1.age)
+      RETURN { d: grp2, avg: agg3, tot: agg4 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_min_max
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (MIN(?a) AS ?mn) (MAX(?a) AS ?mx) WHERE {
+        ?s a :Person ; :dept ?d ; :age ?a
+      } GROUP BY ?d
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = MIN(doc1.age), agg4 = MAX(doc1.age)
+      RETURN { d: grp2, mn: agg3, mx: agg4 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_concat_with_separator
+    # SPARQL GROUP_CONCAT defaults to a single-space separator; the
+    # explicit ``SEPARATOR=…`` overrides go through ``agg.separator``
+    # as an rdflib Literal which we unwrap to a Python string before
+    # binding.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (GROUP_CONCAT(?n; SEPARATOR=", ") AS ?names) WHERE {
+        ?s a :Person ; :dept ?d ; :name ?n
+      } GROUP BY ?d
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = CONCAT_SEPARATOR(@_p1_sep, doc1.name)
+      RETURN { d: grp2, names: agg3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_sep": ", "
+
+  - name: group_by_having
+    # HAVING is a plain ``Filter`` node in the algebra, sitting ABOVE
+    # the post-aggregation Extend chain. The filter expression
+    # references the synthetic ``__agg_N__`` slot, which is mapped to
+    # the COLLECT alias by the time the FILTER is visited — so the
+    # emitted FILTER references ``aggN`` directly.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (COUNT(?s) AS ?c) WHERE {
+        ?s a :Person ; :dept ?d
+      } GROUP BY ?d HAVING (COUNT(?s) > 1)
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = COUNT(doc1._uri), agg4 = COUNT(doc1._uri)
+      FILTER (agg4 > @_p1)
+      RETURN { d: grp2, c: agg3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 1
+
+  - name: group_by_count_order_by_count_desc
+    # ORDER BY references the user-facing aggregate alias ``?c``, which
+    # by the time visit_OrderBy runs has been remapped through the
+    # Extend rename chain to the COLLECT output ``agg3``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (COUNT(?s) AS ?c) WHERE {
+        ?s a :Person ; :dept ?d
+      } GROUP BY ?d ORDER BY DESC(?c)
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
+      SORT agg3 DESC
+      RETURN { d: grp2, c: agg3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"

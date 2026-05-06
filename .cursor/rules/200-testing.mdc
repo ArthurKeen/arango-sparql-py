@@ -1,0 +1,62 @@
+---
+description: Testing rules — pyoxigraph as ground truth, W3C DAWG harness, golden tests, eval harness
+globs:
+  - "tests/**/*.py"
+  - "conftest.py"
+---
+
+# Testing rules
+
+## Frameworks
+- `pytest` is the only test runner. Use `pytest -q -ra` locally.
+- Markers (declared in `pyproject.toml`):
+  - `integration` — requires a running ArangoDB.
+  - `w3c` — W3C SPARQL 1.1 DAWG harness.
+  - `cross` — cross-validation against `pyoxigraph` as the reference
+    triplestore (the SPARQL analog of the Cypher project's `cross`/Neo4j
+    marker).
+  - `eval` — NL→SPARQL eval harness (slow; gated behind env var).
+
+## Reference triplestore — `pyoxigraph`
+- Use `pyoxigraph` as the **embedded W3C-compliant ground truth** for
+  every SPARQL semantics test. It runs in-process (no Docker) so tests
+  stay fast.
+- Cross-validation pattern: load the same RDF data into `pyoxigraph` and
+  into ArangoDB (via the schema-mapper-defined mapping), execute the same
+  SPARQL against `pyoxigraph` directly and against ArangoDB via
+  `arango-sparql-py`'s transpiled AQL, then assert the result bindings
+  match — order-insensitive for SELECT, set-equality for ASK/CONSTRUCT.
+- Helpers live in `tests/helpers/oxi.py` (loader + binding-equality
+  comparator). Do not call `pyoxigraph` directly from individual test
+  files.
+
+## W3C DAWG harness (mirror `tests/tck/`)
+- Vendor the W3C SPARQL 1.1 Evaluation tests under
+  `tests/w3c/data/` (gitignored if large; provide a `make fetch-w3c`
+  script).
+- `tests/w3c/runner.py` enumerates manifests (`mf:Manifest`) via `rdflib`
+  and yields `(query_file, data_files, expected_results)` tuples.
+- Each test is a single pytest case parametrized over the manifest entry
+  IRI so failures point back to the W3C test name.
+- Maintain a `tests/w3c/SKIP_REASONS.md` listing intentionally skipped
+  tests with the reason (analog of the TCK skip file).
+
+## Golden tests for translation
+- Pattern: one test file per SPARQL feature — e.g.
+  `test_translate_optional_goldens.py`, `test_translate_filter_goldens.py`.
+- Inputs and expected AQL/bind_vars live in YAML next to the test file
+  (mirror Cypher's golden YAML format). Updates require explicit human
+  review — never auto-regenerate goldens in CI.
+
+## NL→SPARQL eval harness (mirror `tests/nl2cypher/eval/`)
+- `tests/nl2sparql/eval/runner.py` consumes `corpus.yml` + `configs.yml`,
+  produces JSON + Markdown reports under `tests/nl2sparql/eval/reports/`
+  (gitignored — only `baseline.json` is checked in as the regression gate).
+- The runner accepts any `LLMProvider`, so unit tests use a scripted mock
+  and CI uses the real provider only on demand.
+
+## Forbidden
+- Calling LLM providers from non-`eval`-marked tests.
+- Hitting a real ArangoDB from non-`integration`-marked tests.
+- Comparing AQL strings character-for-character outside the goldens —
+  semantic equivalence is what matters everywhere else.

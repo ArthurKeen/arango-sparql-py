@@ -1,0 +1,103 @@
+# Golden corpus for OPTIONAL (rdflib's ``LeftJoin`` algebra node).
+#
+# Contract — same-subject OPTIONAL collapses to attribute lookups:
+#   * Plain OPTIONAL ``{ ?s :p ?o }`` rebinds ``?o`` → ``<doc>.<attr>``.
+#     Missing attributes return ``null`` in AQL, exactly matching
+#     SPARQL's "unbound" semantics for the optional binding.
+#   * OPTIONAL ``{ ?s :p ?o . FILTER(<F>) }`` becomes
+#     ``LET opt<N> = (<F> ? <doc>.<attr> : null)`` so the row is kept
+#     and ``?o`` resolves to NULL when the filter rejects.
+#
+# Cross-subject OPTIONAL (which would need a real ``LET o = (FOR x IN
+# coll FILTER … RETURN x)[0]`` subquery, à la
+# ``aql-translator.js#processOptionalPatterns``) is intentionally
+# rejected with ``E_SPARQL_UNSUPPORTED`` for now.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+cases:
+  - name: optional_single_attribute
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?email WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :email ?email }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      RETURN { n: doc1.name, email: doc1.email }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: optional_two_separate_blocks
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?email ?phone WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :email ?email }
+        OPTIONAL { ?s :phone ?phone }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      RETURN { n: doc1.name, email: doc1.email, phone: doc1.phone }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: optional_with_inner_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?email WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :email ?email . FILTER(STRSTARTS(?email, "a")) }
+      }
+    # The explicit ``doc1.email != null`` guard makes the all-or-nothing
+    # contract obvious to a reader; STARTS_WITH(null, ...) would also
+    # short-circuit to false in AQL, but this keeps SPARQL's "match as
+    # a unit" semantics readable in the rendered query.
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET opt2 = ((doc1.email != null && STARTS_WITH(doc1.email, @_p1)) ? doc1.email : null)
+      RETURN { n: doc1.name, email: opt2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "a"
+
+  - name: optional_multi_var_in_one_block
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?email ?phone WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :email ?email ; :phone ?phone }
+      }
+    # SPARQL OPTIONAL is all-or-nothing per group: if any triple in the
+    # block fails to match, every var the block would have bound stays
+    # unbound. We emit a shared null-check predicate per LET so a row
+    # missing ``phone`` doesn't bleed its ``email`` into the result.
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET opt2 = ((doc1.email != null && doc1.phone != null) ? doc1.email : null)
+      LET opt3 = ((doc1.email != null && doc1.phone != null) ? doc1.phone : null)
+      RETURN { n: doc1.name, email: opt2, phone: opt3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: optional_then_filter_on_required_side
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?email WHERE {
+        ?s a :Person ; :name ?n ; :age ?a .
+        OPTIONAL { ?s :email ?email }
+        FILTER(?a > 18)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER (doc1.age > @_p1)
+      RETURN { n: doc1.name, email: doc1.email }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 18

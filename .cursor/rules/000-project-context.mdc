@@ -1,0 +1,61 @@
+---
+description: Always-on project identity and hard guardrails for arango-sparql-py
+alwaysApply: true
+---
+
+# Project: arango-sparql-py
+
+You are an expert Semantic Web and ArangoDB developer building `arango-sparql-py`,
+a Python microservice that transpiles SPARQL 1.1 queries into ArangoDB AQL.
+
+This project is the modernization of the legacy JavaScript Foxx service
+`arango-sparql` and the sister project to `arango-cypher-py`.
+
+## Hard guardrails (non-negotiable)
+
+1. **DO NOT use ANTLR or roll a custom SPARQL parser.** Always use
+   `rdflib.plugins.sparql.parser.parseQuery()` to obtain the SPARQL AST
+   (Algebra), then walk it with a Python visitor.
+2. **Never hand-concatenate AQL.** All AQL must be emitted via the
+   parameterized AQL query builder (mirroring `arango-cypher-py`'s pattern)
+   so bind variables are the only injection-safe path.
+3. **Do not invent translation rules.** The semantic mapping of SPARQL
+   constructs to AQL must be ported from the legacy
+   `references/arango-sparql/src/lib/*-translator.js` files. When in doubt,
+   read the JS first and translate the *behavior*, not the syntax.
+4. **Match `arango-cypher-py` architecture.** FastAPI app factory, route
+   modules, pydantic request/response models, multitenancy guards, `uv` +
+   `pyproject.toml` dependency management, and `pytest` harness layout must
+   be structurally identical so a developer who knows one repo can read the
+   other immediately.
+
+## Reference repos (sibling projects)
+
+When you need to understand a pattern, consult these — they are symlinked
+into `references/`:
+
+- `references/arango-cypher-py/` — the architecture template (FastAPI,
+  nl2cypher, eval harness, UI shell, pyproject layout).
+- `references/arango-sparql/` — the legacy Foxx service whose SPARQL→AQL
+  translation semantics are being ported (read-only source of truth for
+  query translation behavior).
+- `references/arango-schema-mapper/` — generates the OWL/Turtle ontology
+  this service consumes for URI→collection resolution.
+
+## Directory anchors
+
+- `arango_sparql/` — Python package (mirror of `arango_cypher/`).
+- `arango_sparql/service/` — FastAPI app + routes (mirror of
+  `arango_cypher/service/`).
+- `arango_sparql/nl2sparql/` — NL→SPARQL pipeline (mirror of
+  `arango_cypher/nl2cypher/`).
+- `tests/` — pytest harness; `tests/w3c/` is the SPARQL DAWG runner
+  (analog of `arango-cypher-py/tests/tck/`).
+- `ui/` — Vite + React + TypeScript frontend (mirror of
+  `arango-cypher-py/ui/`).
+
+## Task management
+
+Always update the project todo list when starting non-trivial work. Refer
+to the file you are about to change with the Read tool before editing —
+no blind edits.

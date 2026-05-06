@@ -1,0 +1,104 @@
+# Golden corpus for ORDER BY translation.
+#
+# `visit_OrderBy` walks the inner pattern first, then enqueues each
+# `OrderCondition_` as one ``SORT … <ASC|DESC>`` key on the builder.
+# Multiple keys collapse into a single comma-separated SORT clause —
+# the legacy `aql-query-builder.js#sort` form.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+cases:
+  - name: order_by_single_var_ascending_default
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE { ?s a :Person ; :name ?n } ORDER BY ?n
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      SORT doc1.name ASC
+      RETURN { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: order_by_explicit_asc
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE { ?s a :Person ; :name ?n } ORDER BY ASC(?n)
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      SORT doc1.name ASC
+      RETURN { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: order_by_descending
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a WHERE { ?s a :Person ; :age ?a } ORDER BY DESC(?a)
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      SORT doc1.age DESC
+      RETURN { a: doc1.age }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: order_by_multi_key_mixed_directions
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?a WHERE { ?s a :Person ; :name ?n ; :age ?a }
+      ORDER BY DESC(?a) ?n
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      SORT doc1.age DESC, doc1.name ASC
+      RETURN { n: doc1.name, a: doc1.age }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: order_by_with_limit_offset
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE { ?s a :Person ; :name ?n } ORDER BY ?n LIMIT 5 OFFSET 10
+    # Builder finalize() always renders body → SORT → LIMIT → RETURN
+    # regardless of the visitor's traversal order. ORDER BY before
+    # LIMIT/OFFSET is the canonical AQL shape.
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      SORT doc1.name ASC
+      LIMIT 10, 5
+      RETURN { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: order_by_arithmetic_expr
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE { ?s a :Person ; :name ?n ; :age ?a }
+      ORDER BY (?a + 1)
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      SORT (doc1.age + @_p1) ASC
+      RETURN { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 1
+
+  - name: order_by_with_filter_and_distinct
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT DISTINCT ?n WHERE {
+        ?s a :Person ; :name ?n ; :age ?a .
+        FILTER (?a >= 18)
+      }
+      ORDER BY ?n
+    expected_aql: |
+      FOR doc1 IN @@c1_Person
+      FILTER (doc1.age >= @_p1)
+      SORT doc1.name ASC
+      RETURN DISTINCT { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 18

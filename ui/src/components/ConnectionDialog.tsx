@@ -1,0 +1,260 @@
+import { useEffect, useRef, useState } from "react";
+import {
+  connect,
+  disconnect,
+  getConnectDefaults,
+  type ConnectDefaults,
+} from "../api/client";
+import type { Action, ConnectionState } from "../api/store";
+
+// Streamlined `ConnectionDialog` for the SPARQL UI. The Cypher version
+// also kicks off a `/schema/introspect` round-trip on connect; the
+// SPARQL service exposes its schema via OWL/Turtle (the OntologyPanel
+// owns that input), so we keep the dialog focused on the connection
+// step only. When `/schema/owl` lands, App.tsx will fetch it and feed
+// it into the OntologyPanel — not here.
+
+interface Props {
+  connection: ConnectionState;
+  dispatch: (action: Action) => void;
+}
+
+export default function ConnectionDialog({ connection, dispatch }: Props) {
+  const [form, setForm] = useState({
+    url: connection.url,
+    database: connection.database,
+    username: connection.username,
+    password: "",
+  });
+  const [open, setOpen] = useState(false);
+  const autoConnectAttempted = useRef(false);
+
+  useEffect(() => {
+    if (connection.status === "disconnected") {
+      setForm((f) => ({
+        ...f,
+        url: connection.url,
+        database: connection.database,
+        username: connection.username,
+      }));
+    }
+  }, [connection.status, connection.url, connection.database, connection.username]);
+
+  useEffect(() => {
+    getConnectDefaults()
+      .then((defaults: ConnectDefaults) => {
+        const newForm = {
+          url: defaults.url || form.url,
+          database:
+            form.database && form.database !== "_system"
+              ? form.database
+              : defaults.database || form.database,
+          username: defaults.username || form.username,
+          password: defaults.password || form.password,
+        };
+        setForm(newForm);
+
+        if (
+          !autoConnectAttempted.current &&
+          defaults.password &&
+          connection.status === "disconnected"
+        ) {
+          autoConnectAttempted.current = true;
+          doConnect(newForm);
+        }
+      })
+      .catch((err) => {
+        // /connect/defaults may not be implemented on the SPARQL
+        // backend yet (the endpoint is documented as future-work in
+        // models.py). Surface in the console rather than silently
+        // dropping — the form falls back to its hardcoded defaults.
+        console.warn("Failed to load /connect/defaults:", err);
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function doConnect(f: typeof form) {
+    dispatch({
+      type: "CONNECT_START",
+      url: f.url,
+      database: f.database,
+      username: f.username,
+    });
+    try {
+      const resp = await connect({
+        url: f.url,
+        database: f.database,
+        username: f.username,
+        password: f.password,
+      });
+      dispatch({
+        type: "CONNECT_SUCCESS",
+        token: resp.token,
+        databases: resp.databases,
+        url: f.url,
+        database: f.database,
+        username: f.username,
+        password: f.password,
+      });
+      setOpen(false);
+    } catch (err) {
+      dispatch({
+        type: "CONNECT_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  async function handleConnect() {
+    await doConnect(form);
+  }
+
+  async function handleSwitchDb(newDb: string) {
+    if (newDb === connection.database) return;
+
+    if (connection.token) {
+      try {
+        await disconnect(connection.token);
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    const f = { ...form, database: newDb };
+    setForm(f);
+    await doConnect(f);
+  }
+
+  async function handleDisconnect() {
+    if (connection.token) {
+      try {
+        await disconnect(connection.token);
+      } catch {
+        /* best-effort */
+      }
+    }
+    dispatch({ type: "DISCONNECT" });
+  }
+
+  if (connection.status === "connected") {
+    return (
+      <div className="flex items-center gap-3 text-sm">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
+          <span
+            className="text-gray-400 text-xs truncate max-w-[200px]"
+            title={connection.url}
+          >
+            {connection.url.replace(/^https?:\/\//, "")}/
+          </span>
+          {connection.databases.length > 1 ? (
+            <select
+              value={connection.database}
+              onChange={(e) => handleSwitchDb(e.target.value)}
+              className="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded px-1.5 py-0.5 focus:border-indigo-500 focus:outline-none cursor-pointer"
+            >
+              {connection.databases.map((db) => (
+                <option key={db} value={db}>
+                  {db}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-gray-300">{connection.database}</span>
+          )}
+        </span>
+        <button
+          onClick={handleDisconnect}
+          className="px-2.5 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+        >
+          Disconnect
+        </button>
+      </div>
+    );
+  }
+
+  if (!open && connection.status === "connecting") {
+    return <span className="text-sm text-gray-400">Connecting...</span>;
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="px-3 py-1.5 text-sm rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+      >
+        Connect to ArangoDB
+      </button>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-gray-800 rounded-lg shadow-2xl p-6 w-full max-w-md border border-gray-700">
+        <h2 className="text-lg font-semibold mb-4 text-white">
+          Connect to ArangoDB
+        </h2>
+
+        {connection.error && (
+          <div className="mb-4 p-3 rounded bg-red-900/50 border border-red-700 text-red-300 text-sm">
+            {connection.error}
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <label>
+            <span className="text-xs text-gray-400 block mb-1">URL</span>
+            <input
+              value={form.url}
+              onChange={(e) => setForm({ ...form, url: e.target.value })}
+              placeholder="http://localhost:8529 or https://cloud.arangodb.com"
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            />
+          </label>
+          <label>
+            <span className="text-xs text-gray-400 block mb-1">Database</span>
+            <input
+              value={form.database}
+              onChange={(e) => setForm({ ...form, database: e.target.value })}
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            />
+          </label>
+          <label>
+            <span className="text-xs text-gray-400 block mb-1">Username</span>
+            <input
+              value={form.username}
+              onChange={(e) => setForm({ ...form, username: e.target.value })}
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            />
+          </label>
+          <label>
+            <span className="text-xs text-gray-400 block mb-1">Password</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm({ ...form, password: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && handleConnect()}
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+            />
+          </label>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button
+            onClick={() => setOpen(false)}
+            className="px-4 py-2 text-sm rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleConnect}
+            disabled={connection.status === "connecting"}
+            className="px-4 py-2 text-sm rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors disabled:opacity-50"
+          >
+            {connection.status === "connecting" ? "Connecting..." : "Connect"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

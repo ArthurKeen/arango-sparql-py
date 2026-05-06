@@ -1,0 +1,94 @@
+# Golden corpus for BIND (rdflib's ``Extend`` algebra node).
+#
+# Contract per legacy ``aql-query-builder.js#let``:
+#   BIND(<expr> AS ?v)  →  LET <fresh_alias> = <expr>
+# and ``?v`` becomes resolvable to ``<fresh_alias>`` in every subsequent
+# clause (FILTER, SORT, projection RETURN). The alias is freshly minted
+# with a ``bv`` prefix to avoid colliding with FOR aliases (``doc1``…)
+# or AQL reserved words that would otherwise clash with the user's
+# SPARQL variable name.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+cases:
+  - name: bind_ucase_in_projection
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?upper WHERE {
+        ?s a :Person ; :name ?n .
+        BIND(UCASE(?n) AS ?upper)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET bv2 = UPPER(doc1.name)
+      RETURN { n: doc1.name, upper: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: bind_arithmetic_then_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?dbl WHERE {
+        ?s a :Person ; :name ?n ; :age ?a .
+        BIND(?a * 2 AS ?dbl)
+        FILTER (?dbl >= 60)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET bv2 = (doc1.age * @_p1)
+      FILTER (bv2 >= @_p2)
+      RETURN { n: doc1.name, dbl: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 2
+      "_p2": 60
+
+  - name: bind_then_order_by_alias
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?upper WHERE {
+        ?s a :Person ; :name ?n .
+        BIND(UCASE(?n) AS ?upper)
+      } ORDER BY ?upper
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET bv2 = UPPER(doc1.name)
+      SORT bv2 ASC
+      RETURN { upper: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: bind_strlen
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?len WHERE {
+        ?s a :Person ; :name ?n .
+        BIND(STRLEN(?n) AS ?len)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET bv2 = LENGTH(doc1.name)
+      RETURN { n: doc1.name, len: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: bind_chained
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?lower ?upper WHERE {
+        ?s a :Person ; :name ?n .
+        BIND(LCASE(?n) AS ?lower)
+        BIND(UCASE(?lower) AS ?upper)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET bv2 = LOWER(doc1.name)
+      LET bv3 = UPPER(bv2)
+      RETURN { lower: bv2, upper: bv3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"

@@ -1,0 +1,58 @@
+---
+description: Frontend rules — Vite + React + TS + CodeMirror SPARQL + Cytoscape RDF visualization
+globs:
+  - "ui/**/*.{ts,tsx,css,html}"
+  - "ui/package.json"
+  - "ui/vite.config.ts"
+---
+
+# Frontend rules
+
+## Stack (mirror `arango-cypher-py/ui/`)
+- **Vite + React 19 + TypeScript**, ESM-only.
+- Editor: **CodeMirror 6** with `@codemirror/legacy-modes/mode/sparql`
+  for syntax highlighting. Mirror the structure of
+  `references/arango-cypher-py/ui/src/components/CypherEditor.tsx` in a
+  new `SparqlEditor.tsx`.
+- Graph viz: **Cytoscape.js**, mirror
+  `references/arango-cypher-py/ui/src/components/CytoscapeGraph.tsx`.
+- Tailwind v4 via `@tailwindcss/vite` (same as Cypher UI).
+
+## Component map (1:1 with Cypher UI where it carries over)
+- `SparqlEditor.tsx` ← `CypherEditor.tsx`
+- `AqlEditor.tsx` ← keep as-is, it's language-agnostic.
+- `CytoscapeGraph.tsx` — extended for RDF (see below).
+- `SchemaGraph.tsx` / `CytoscapeSchemaGraph.tsx` — render OWL classes
+  + properties from the ontology endpoint.
+- `MappingPanel.tsx`, `ParameterPanel.tsx`, `ResultsPanel.tsx`,
+  `QueryHistory.tsx`, `SampleQueries.tsx`, `ConnectionDialog.tsx`,
+  `TenantSelector.tsx`, `SchemaWarningBanner.tsx`, `ClauseOutline.tsx`,
+  `theme.ts` — port verbatim with SPARQL-flavored copy.
+
+## RDF graph rendering rule (the key UX delta vs Cypher)
+- In strict RDF every literal is a node. That clutters Cytoscape badly.
+- Default render mode: **collapse RDF literal nodes into properties on
+  their subject node**. Edges to literals become key/value pairs in the
+  subject's tooltip / side panel.
+- Provide a UI toggle ("Show literals as nodes") that opts back into the
+  raw triple view for power users.
+- IRI nodes keep their full IRI as a hover tooltip; the displayed label
+  is the local name (after `#` or last `/`), or `rdfs:label` when present.
+
+## Lang module
+- `ui/src/lang/sparql.ts` — wires the legacy SPARQL mode + a
+  hover/completion provider that pulls term definitions from the
+  ontology endpoint. Mirror `cypher.ts` / `cypher-completion.ts` /
+  `cypher-hover.ts`.
+
+## API client
+- `ui/src/api/` mirrors the Cypher project's API folder: typed wrappers
+  around `/translate`, `/execute`, `/execute-aql`, `/validate`,
+  `/explain`, `/nl/sparql`, `/schema/owl`, `/connect`. Use `fetch` with
+  `credentials: "include"` and pass through the session token header.
+
+## Forbidden
+- `react-router` unless the app actually grows multi-route — the Cypher
+  UI is single-page and so is this one initially.
+- Any Cypher-flavored editor mode in the SPARQL editor; pick `sparql`
+  explicitly, do not auto-detect.

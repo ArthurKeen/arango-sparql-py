@@ -1,0 +1,72 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+*.egg
+dist/
+build/
+wheels/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing / Coverage
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Distribution / Packaging
+*.tar.gz
+*.zip
+
+# Ruff / Linting cache
+.ruff_cache/
+.mypy_cache/
+
+# Misc
+*.log
+ui/node_modules/
+ui/dist/
+ui/*.tsbuildinfo
+
+# Local runtime state (corrections learning SQLite DB + WAL)
+corrections.db
+corrections.db-shm
+corrections.db-wal
+nl_corrections.db
+nl_corrections.db-shm
+nl_corrections.db-wal
+
+# NL->SPARQL eval harness run artifacts.
+# baseline.json is committed as the regression gate; per-run reports stay local.
+tests/nl2sparql/eval/reports/
+
+# W3C SPARQL test suite (large; fetched on demand by scripts/fetch_w3c.sh).
+tests/w3c/data/
+
+# Sibling-repo symlinks live under references/. They are recreated locally
+# per-developer via scripts/setup_references.sh; never check them in.
+references/arango-cypher-py
+references/arango-sparql
+references/arango-schema-mapper

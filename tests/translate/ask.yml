@@ -1,0 +1,73 @@
+# Golden corpus for ASK translation.
+#
+# Per legacy ``aql-translator.js``: "ASK is essentially SELECT LIMIT 1".
+# We translate the inner pattern via the ordinary BGP/FILTER/OPTIONAL
+# path, force a ``LIMIT 1`` short-circuit, and wrap the whole query in
+# ``RETURN LENGTH(<inner>) > 0`` so the executor gets a single-row
+# boolean result.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+cases:
+  - name: ask_type_only
+    sparql: |
+      PREFIX : <http://ex.org/>
+      ASK { ?s a :Person }
+    expected_aql: |-
+      RETURN LENGTH(
+        FOR doc1 IN @@c1_Person
+        LIMIT 1
+        RETURN 1
+      ) > 0
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: ask_with_literal_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      ASK { ?s a :Person ; :name "Alice" }
+    expected_aql: |-
+      RETURN LENGTH(
+        FOR doc1 IN @@c1_Person
+        FILTER doc1.name == @_p1_name
+        LIMIT 1
+        RETURN 1
+      ) > 0
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_name": "Alice"
+
+  - name: ask_with_filter_expression
+    sparql: |
+      PREFIX : <http://ex.org/>
+      ASK { ?s a :Person ; :age ?a . FILTER (?a > 18) }
+    expected_aql: |-
+      RETURN LENGTH(
+        FOR doc1 IN @@c1_Person
+        FILTER (doc1.age > @_p1)
+        LIMIT 1
+        RETURN 1
+      ) > 0
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 18
+
+  - name: ask_with_regex_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      ASK { ?s a :Person ; :name ?n . FILTER (REGEX(?n, "^A")) }
+    expected_aql: |-
+      RETURN LENGTH(
+        FOR doc1 IN @@c1_Person
+        FILTER REGEX_TEST(doc1.name, @_p1, false)
+        LIMIT 1
+        RETURN 1
+      ) > 0
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "^A"
