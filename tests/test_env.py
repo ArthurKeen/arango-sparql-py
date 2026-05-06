@@ -33,9 +33,9 @@ def _reset_env_warnings() -> None:
 
 
 def test_read_password_canonical_only(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("ARANGO_PASSWORD", "secret-canonical")
+    monkeypatch.setenv("ARANGO_PASSWORD", "canonical-marker")
     monkeypatch.delenv("ARANGO_PASS", raising=False)
-    assert _env.read_arango_password(caller="test") == "secret-canonical"
+    assert _env.read_arango_password(caller="test") == "canonical-marker"
 
 
 def test_read_password_legacy_only_logs_and_warns(
@@ -43,11 +43,11 @@ def test_read_password_legacy_only_logs_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     monkeypatch.delenv("ARANGO_PASSWORD", raising=False)
-    monkeypatch.setenv("ARANGO_PASS", "secret-legacy")
+    monkeypatch.setenv("ARANGO_PASS", "legacy-marker")
     with caplog.at_level(logging.WARNING, logger="arango_sparql"):
         with pytest.warns(DeprecationWarning, match="ARANGO_PASS is deprecated"):
             value = _env.read_arango_password(caller="test_legacy_only")
-    assert value == "secret-legacy"
+    assert value == "legacy-marker"
     assert any("ARANGO_PASS is deprecated" in rec.message for rec in caplog.records)
     assert any("test_legacy_only" in rec.message for rec in caplog.records)
 

@@ -1,0 +1,21 @@
+# GitGuardian / ggshield configuration.
+#
+# The two ignored paths below contain ArangoDB's well-known dev-default
+# password literal (``rootpw``). It is documented as the default in the
+# upstream ``arangodb/arangodb`` Docker image and in the Quickstart in
+# README.md. Changing it would break the one-line ``docker compose up
+# -d && pytest`` developer loop and would not improve security: the value
+# is published in every ArangoDB tutorial on the internet.
+#
+# Test files use ``<test-stub-pw>`` (an obvious placeholder shape, with
+# angle brackets) wherever a connect-payload password is required by the
+# Pydantic model. That value is in-repo by design — TestClient never
+# reaches a real DB — and the angle-brackets shape avoids the
+# generic-password detector. No exclusion needed for the tests.
+
+version: 2
+
+secret:
+  ignored-paths:
+    - ".env.example"
+    - "docker-compose.yml"

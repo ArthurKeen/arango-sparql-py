@@ -234,7 +234,7 @@ def _connect_session(client: TestClient) -> str:
             "url": "http://localhost:8529",
             "database": "_system",
             "username": "root",
-            "password": "openSesame",
+            "password": "<test-stub-pw>",
         },
     )
     assert resp.status_code == 200, resp.text
@@ -563,11 +563,11 @@ def test_connect_defaults_can_expose_password(
     client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("ARANGO_PASSWORD", "openSesame")
+    monkeypatch.setenv("ARANGO_PASSWORD", "<test-stub-pw>")
     monkeypatch.setenv("ARANGO_SPARQL_EXPOSE_DEFAULTS_PASSWORD", "1")
     resp = client.get("/connect/defaults")
     assert resp.status_code == 200
-    assert resp.json()["password"] == "openSesame"
+    assert resp.json()["password"] == "<test-stub-pw>"
     # Reset for hygiene — autouse fixtures don't cover env vars.
     os.environ.pop("ARANGO_SPARQL_EXPOSE_DEFAULTS_PASSWORD", None)
 

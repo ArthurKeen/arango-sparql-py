@@ -205,7 +205,7 @@ def _connect_session(client: TestClient) -> str:
             "url": "http://localhost:8529",
             "database": "_system",
             "username": "root",
-            "password": "openSesame",
+            "password": "<test-stub-pw>",
         },
     )
     assert resp.status_code == 200, resp.text
