@@ -688,6 +688,134 @@ UI's schema-mapping advisory panel can render `W_SCHEMA_*` codes
 distinctly from the general `warnings` array (which carries operational
 advisories like `W_RESULT_TRUNCATED`).
 
+### 9.4 Performance budgets (v1.0 SLOs)
+
+The following budgets define ship-blocking SLOs. CI **fails** if any
+budget regresses by more than 25% on the standard hardware profile
+(GitHub Actions `ubuntu-latest`, 2 vCPU / 7 GiB RAM, ArangoDB 3.12
+single-server in Docker, default config). Local measurement uses the
+benchmark suite under `tests/perf/` (added in v1.0).
+
+| Budget | Target (p50) | Target (p95) | SLO (p99) | How measured |
+| --- | --- | --- | --- | --- |
+| **`/translate` cold** (warm process, cold mapping) | ≤ 25 ms | ≤ 60 ms | ≤ 120 ms | `tests/perf/test_translate_latency.py`, 100-query workload covering all §6.6 shapes |
+| **`/translate` warm** (mapping cached, AST cache hit) | ≤ 5 ms | ≤ 12 ms | ≤ 25 ms | Same workload, second iteration |
+| **`/execute` overhead** (translate + dispatch, excluding AQL exec) | ≤ 35 ms | ≤ 80 ms | ≤ 150 ms | `tests/perf/test_execute_overhead.py`, AQL pinned to `RETURN 1` |
+| **`/sparql` GET** (W3C protocol, JSON results, 1k-row payload) | ≤ 60 ms | ≤ 150 ms | ≤ 300 ms | `tests/perf/test_sparql_protocol_latency.py` |
+| **`/nl-translate` (single LLM round-trip, no repair)** | n/a | ≤ 3.5 s | ≤ 8 s | `tests/perf/test_nl_latency.py` against `gpt-4o-mini` |
+| **`/schema/introspect` (analyzer-backed, cache miss, ≤ 1k collections)** | ≤ 800 ms | ≤ 2.5 s | ≤ 5 s | `tests/perf/test_schema_introspect_latency.py` |
+| **`/schema/introspect` (cache hit)** | ≤ 5 ms | ≤ 15 ms | ≤ 30 ms | Same |
+| **Memory ceiling, idle** | n/a | ≤ 250 MiB RSS | n/a | `tests/perf/test_memory_idle.py` |
+| **Memory ceiling, 100 concurrent `/execute`, 10k-row payloads** | n/a | ≤ 1.5 GiB RSS | n/a | `tests/perf/test_memory_load.py` |
+| **Concurrency ceiling** (no error budget burn at 100 concurrent `/execute` against pinned AQL) | n/a | ≥ 100 concurrent | n/a | `tests/perf/test_concurrency.py` |
+| **Result-streaming chunk size** (W3C protocol, JSON) | n/a | first byte ≤ 200 ms | n/a | `tests/perf/test_first_byte.py` |
+
+Out-of-scope budgets (deferred to v1.1+): query-cache hit rate, sub-100ms
+NL pipeline latency (LLM-bound), federated `SERVICE` (out of scope per
+§2).
+
+### 9.5 Metrics & tracing format
+
+The service emits **Prometheus-format metrics** on a separate port (default
+`9090`, override `METRICS_PORT`) at `GET /metrics`. The metrics port is
+**not** the API port — operators MUST NOT expose it publicly. The metrics
+endpoint requires no authentication; it is intended for in-cluster scrape
+only.
+
+| Metric (counter unless noted) | Labels | Notes |
+| --- | --- | --- |
+| `arango_sparql_requests_total` | `route`, `status_code`, `tenant` | Tenant label opt-in via `METRICS_LABEL_TENANT=true` (defaults off for privacy hygiene) |
+| `arango_sparql_request_duration_seconds` *(histogram)* | `route`, `status_code` | Buckets `[5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]` |
+| `arango_sparql_translate_aql_size_bytes` *(histogram)* | `feature_set` | `feature_set` = comma-sorted list of `BGP`,`OPT`,`FILTER`,`AGG`,`BIND`,`ORDER`,`UNION` |
+| `arango_sparql_warnings_total` | `code` (e.g., `W_SCHEMA_DEFAULT_COLLECTION`) | One increment per warning emission |
+| `arango_sparql_errors_total` | `code` (e.g., `E_TRANSLATE_UNSUPPORTED_ALGEBRA`), `route` | |
+| `arango_sparql_schema_acquisitions_total` | `outcome` (`hit`/`miss`/`fail`/`fallback_heuristic`) | |
+| `arango_sparql_schema_cache_size` *(gauge)* | `tier` (`l1_inproc`/`l2_arango`) | |
+| `arango_sparql_llm_calls_total` | `provider`, `model`, `outcome` (`ok`/`repair`/`fail`) | |
+| `arango_sparql_llm_cost_usd_total` | `provider`, `model` | Cumulative; rate gives per-second spend |
+| `arango_sparql_active_sessions` *(gauge)* | — | |
+| `arango_sparql_build_info` *(gauge)* | `version`, `git_sha`, `python_version` | Always `1`; for build-tagging |
+
+**OpenTelemetry tracing** is opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT`. When
+set, the service emits spans for every route plus child spans for
+`translate`, `aql_exec`, `schema_acquire`, `llm_call`, `repair_loop`. Span
+names use the convention `arango_sparql.<phase>` (e.g.,
+`arango_sparql.translate`). W3C `traceparent` headers are honoured on
+inbound requests.
+
+**Structured logs** are JSON-formatted to stdout (one event per line). The
+canonical envelope:
+
+```json
+{
+  "ts": "2026-05-05T16:11:00.123Z",
+  "level": "INFO",
+  "service": "arango-sparql-py",
+  "version": "1.0.0",
+  "trace_id": "00-<32hex>-<16hex>-01",
+  "span_id": "<16hex>",
+  "tenant": "<tenant-id-or-omitted>",
+  "session_id": "<sha256-prefix>",
+  "route": "/translate",
+  "elapsed_ms": 17.4,
+  "status": "ok",
+  "msg": "endpoint_timing",
+  "...route-specific keys per §9.1": "..."
+}
+```
+
+Tenant and session ID inclusion are governed by privacy controls
+(see Privacy section, added in the security-spine PRD revision). The
+default `LOG_FORMAT=json` may be flipped to `pretty` (human-readable) for
+local development; production deployments MUST use `json`.
+
+### 9.6 Health probes
+
+Three orthogonal endpoints support Kubernetes-style probes. None require
+authentication; all are rate-limited to 10 req/sec per source IP.
+
+| Endpoint | Probe type | Returns 200 when… | Returns 503 when… |
+| --- | --- | --- | --- |
+| `GET /health/live` | **Liveness** | Process is responsive (event loop running, no deadlock) | Internal supervisor reports stuck event loop > 30 s |
+| `GET /health/ready` | **Readiness** | All required dependencies reachable: ArangoDB ping OK *and* analyzer ping OK *and* (if NL enabled) LLM provider ping OK | Any required dependency is unreachable |
+| `GET /health/startup` | **Startup** | First `schema/introspect` for the bootstrap tenant has completed, OR `BOOTSTRAP_SCHEMA=false` is set | Bootstrap not yet complete |
+
+Body shape (all three) — used for human debugging and surfaced verbatim
+in the UI's connection-status footer:
+
+```json
+{
+  "status": "ok",
+  "version": "1.0.0",
+  "git_sha": "<short>",
+  "uptime_seconds": 12345,
+  "checks": {
+    "arangodb": {"status": "ok", "latency_ms": 4.1},
+    "analyzer": {"status": "ok", "latency_ms": 12.3, "version": "0.6.1"},
+    "llm_provider": {"status": "skipped", "reason": "NL_DISABLED"}
+  }
+}
+```
+
+### 9.7 Dashboards & alerts
+
+The repo ships canonical Grafana dashboards (`ops/grafana/`) and
+Prometheus alerting rules (`ops/prometheus/alerts.yaml`). Operators are
+free to substitute their own. The reference rules:
+
+| Alert | Severity | Condition | Suggested response |
+| --- | --- | --- | --- |
+| `SparqlHighErrorRate` | page | `rate(arango_sparql_errors_total[5m]) / rate(arango_sparql_requests_total[5m]) > 0.05` for 10 min | Check error code distribution; likely schema regression |
+| `SparqlSlowTranslate` | ticket | `histogram_quantile(0.95, sum by (le)(rate(arango_sparql_request_duration_seconds_bucket{route="/translate"}[5m]))) > 0.06` for 15 min | Mapping cache miss storm? Check `arango_sparql_schema_acquisitions_total{outcome="miss"}` |
+| `SparqlSlowExecute` | ticket | Same shape, route=`/execute`, p95 > 0.5s for 15 min | AQL plan regression; profile via `/profile` |
+| `SparqlSchemaAcquisitionFailures` | page | `rate(arango_sparql_schema_acquisitions_total{outcome="fail"}[5m]) > 0.1` for 5 min | Analyzer down or contract drift; see §12.1 lockstep policy |
+| `SparqlLLMCostBudget` | ticket | `increase(arango_sparql_llm_cost_usd_total[1h]) > LLM_HOURLY_BUDGET_USD` | Either prompt regression or NL abuse; check per-tenant spend |
+| `SparqlNoSessions` | info | `arango_sparql_active_sessions == 0` for 24 h on a non-staging deploy | Possible deploy / DNS / auth misconfig |
+| `SparqlReadinessFailing` | page | `up{job="arango-sparql-py-ready"} == 0` for 2 min | See §15.6 runbook |
+
+The repo's reference dashboards correspond 1:1 with the metrics in §9.5
+and the alerts above; they are version-controlled JSON, not screenshots.
+
 ---
 
 ## 10. UI / Workbench
@@ -1271,7 +1399,224 @@ fix before tagging v1.0.
 
 ---
 
-## 15. Glossary
+## 15. Deployment & operations
+
+This section is normative for v1.0 — operators should be able to ship the
+service into a real cluster from this spec alone. The reference artefacts
+live under [`ops/`](../../ops/) (added in v1.0).
+
+### 15.1 Reference deployment topologies
+
+| Topology | When to use | Notes |
+| --- | --- | --- |
+| **Single container, single ArangoDB** | Local dev, demos, AOE single-tenant install | The shipped `docker-compose.yml`. Single Uvicorn worker; metrics on `:9090`. |
+| **K8s `Deployment`, 2+ replicas, in-cluster ArangoDB cluster** | Default production | Replicas behind a `Service`; in-process session affinity required (see §15.4). Reference manifest: `ops/k8s/deployment.yaml`. |
+| **K8s `Deployment`, 2+ replicas, ArangoOasis (managed)** | Production with managed ArangoDB | Same as above; uses Oasis JWT and CA bundle via `ARANGO_CA_BUNDLE_PATH`. |
+| **Sidecar in AOE pod** | When AOE is the only consumer | One-replica deployment co-located with AOE; UDS or `localhost` only. |
+
+The reference Helm chart (`ops/helm/arango-sparql-py/`) is the source of
+truth — the manifests in `ops/k8s/` are generated from it for operators
+who don't run Helm.
+
+### 15.2 Resource sizing guidance
+
+| Profile | CPU | Memory | Replicas | Workload |
+| --- | --- | --- | --- | --- |
+| **Dev / demo** | 0.5 vCPU | 512 MiB | 1 | < 10 RPS, < 100 active sessions |
+| **Small prod** | 1 vCPU | 1 GiB | 2 | < 50 RPS, < 1k active sessions |
+| **Default prod** | 2 vCPU | 2 GiB | 3 | < 200 RPS, < 5k active sessions |
+| **Heavy NL workload** | 4 vCPU | 4 GiB | 3+ | NL pipeline dominates; LLM I/O is the bottleneck |
+
+These figures are derived from the §9.4 budgets at p95 with 30% headroom.
+The `ops/sizing-calculator.py` script computes a recommended profile from
+operator-supplied target RPS / session count / NL fraction.
+
+### 15.3 Process model
+
+* **HTTP server**: Uvicorn (ASGI). Default `WORKER_COUNT=1` per replica;
+  K8s scales out via replicas, not workers, so each replica has a single
+  in-process session table (see §15.4 for the implication).
+* **Graceful shutdown**: SIGTERM triggers (a) flip readiness probe to
+  failing, (b) drain in-flight requests up to `GRACEFUL_TIMEOUT`
+  (default 30 s), (c) close ArangoDB connection pool, (d) exit. K8s
+  `terminationGracePeriodSeconds` MUST be ≥ `GRACEFUL_TIMEOUT + 5 s`.
+* **HTTP keep-alive**: `KEEPALIVE` default 5 s.
+* **Connection pool**: `python-arango` connection pool sized
+  `ARANGO_POOL_SIZE` (default 16); per-tenant DB handles are
+  pool-multiplexed.
+
+### 15.4 Session affinity
+
+Sessions are **in-process**; the `/connect` → `session_id` binding lives
+in a per-replica dict. K8s `Service` MUST use one of:
+
+1. **`sessionAffinity: ClientIP`** (default in `ops/k8s/service.yaml`) —
+   simple; works for all clients including Protégé, Microsoft Ontology
+   Playground (file-based, but issues `/mapping/*` RPCs), AOE.
+2. **Cookie-based affinity at an ingress controller** (NGINX, Istio) —
+   needed when clients sit behind a shared NAT.
+
+Cross-replica session sharing is explicitly **out of scope for v1.0**.
+The Redis-backed session store is a v2 roadmap item (§14).
+
+### 15.5 Storage requirements
+
+| Data | Where | Sizing |
+| --- | --- | --- |
+| **Schema cache (L1, in-process)** | RAM | ≤ 50 MiB per active mapping; ≤ 256 MiB cap (`SCHEMA_L1_CACHE_MAX_BYTES`) |
+| **Schema cache (L2, ArangoDB)** | The session-bound DB, system-prefixed collection `_arango_sparql_schema_cache` | ≤ 5 MiB per `(tenant, fingerprint)` tuple; auto-evicted at `SCHEMA_CACHE_MAX_ENTRIES` (default 200) |
+| **NL prompt-prefix cache** | RAM | ≤ 100 KiB per cached prefix; ≤ 64 MiB cap |
+| **Logs** | stdout (operator-collected) | ~ 2 KiB / request avg; size your log aggregator accordingly |
+| **Metrics scrape** | Prometheus (operator-managed) | < 200 series per replica (mostly histogram buckets) |
+
+### 15.6 Operational runbook
+
+The repo ships `ops/runbook.md` with one play per page; the canonical
+plays:
+
+| Symptom | First diagnostic | Likely root causes | Remediation |
+| --- | --- | --- | --- |
+| `SparqlSlowTranslate` fires | `arango_sparql_schema_acquisitions_total{outcome="miss"}` rate | Mapping cache invalidation storm (DDL on tenant DB); analyzer slow | Pin analyzer version; warm cache via `/schema/force-reacquire`; investigate analyzer-side index |
+| `SparqlSchemaAcquisitionFailures` fires | `/health/ready` body's `analyzer.status` | Analyzer down; analyzer version mismatch | Roll analyzer; if mismatch, see §12.1 lockstep policy |
+| `/sparql` 5xx for one tenant only | Logs filtered to that tenant | Mapping bundle for that tenant has unsupported physical shape | Inspect `/mapping/export-owl?tenant=…`; raise `W_SCHEMA_*` to user |
+| LLM cost spike | `arango_sparql_llm_cost_usd_total` per (provider, model) | Repair-loop blowup; tenant abuse | Lower `NL_REPAIR_MAX_ATTEMPTS`; per-tenant rate-limit |
+| OOM kill | RSS trend per replica | Result truncation disabled and a tenant is shipping huge `CONSTRUCT` payloads | Re-enable `EXECUTE_RESULT_TRUNCATE_ROWS`; raise replica memory |
+| Readiness flapping | `/health/ready` body | ArangoDB pool exhaustion | Raise `ARANGO_POOL_SIZE`; check ArangoDB cluster health |
+| Translate succeeds but execute returns 0 rows | `/explain` response | Mapping selected wrong collection (heuristic fallback); shard-key mismatch | Check `W_SCHEMA_DEFAULT_COLLECTION`; force analyzer-backed mapping |
+
+The runbook is part of the v1.0 acceptance set — every alert in §9.7
+MUST have a corresponding play.
+
+### 15.7 Backup, DR, and migration
+
+* **Service state**: stateless modulo the schema-cache L2 collection
+  (`_arango_sparql_schema_cache`). Loss is non-fatal — caches re-warm on
+  next request. Operators may exclude it from backup.
+* **Tenant data**: not owned by this service; backed up by ArangoDB's
+  own DR (Hot Backup, `arangodump`).
+* **Configuration**: `.env` and Helm values are the only persisted
+  config; version-control them. The repo's `ops/example-values.yaml` is
+  an opinionated starting point.
+* **Cross-region failover**: out of scope; defer to ArangoDB DC2DC.
+* **Schema-cache rebuild after region failover**: first request per
+  `(tenant, fingerprint)` will pay the full §9.4 cold-acquisition cost.
+  Operators may pre-warm via `ops/warm-cache.py`.
+
+---
+
+## 16. Versioning & upgrades
+
+This section is the **API stability and upgrade contract**. v1.0 ships
+with this contract frozen for the life of the v1.x line.
+
+### 16.1 Service version & SemVer
+
+The service follows **SemVer 2.0.0**:
+
+* **MAJOR** bump → breaking change to RPC routes (§5.1), W3C protocol
+  responses (§5.2), schema-cache record shape (§15.5), or environment
+  variable semantics (Appendix A) — accompanied by a migration guide.
+* **MINOR** bump → backwards-compatible additions: new RPC routes, new
+  query-feature support, new env vars (with safe defaults), new metrics,
+  new warning codes.
+* **PATCH** bump → bugfixes, internal refactors, doc-only changes.
+
+The `arango_sparql.__version__` constant, the `arango_sparql_build_info`
+metric, the `/health/*` body, and the `Server` HTTP response header all
+carry the same version string.
+
+### 16.2 RPC API stability
+
+RPC routes (§5.1) and the W3C protocol (§5.2) are the **public API**.
+Stability tiers per route group:
+
+| Route group | Tier | Compatibility commitment |
+| --- | --- | --- |
+| `/translate`, `/execute`, `/validate`, `/connect`, `/disconnect`, `/health/*` | **Stable** | No breaking changes within v1.x. Field additions only. |
+| `/sparql` (W3C protocol) | **Stable** | W3C spec is the contract; we add formats but never break existing ones. |
+| `/schema/*`, `/mapping/*` | **Stable** | Same; the OWL contract in §6.2 is the on-the-wire contract. |
+| `/nl-*` | **Beta** | Response field shape may change in MINOR versions until v1.2. Document it in `CHANGELOG.md` per release. |
+| `/explain`, `/profile` | **Beta** | Response shape passes through ArangoDB's own format; that pass-through is stable, but additional fields we layer on top may change. |
+| `/connect/defaults` | **Internal** | UI-facing; not a stability commitment. |
+
+Beta routes are still SemVer-respected (i.e., we never break them in a
+PATCH) but reserve the right to evolve in MINOR releases with a
+deprecation note in `CHANGELOG.md` two MINOR versions ahead.
+
+### 16.3 Deprecation policy
+
+Deprecated routes / fields / env vars:
+
+1. Are marked in `CHANGELOG.md` under a `Deprecated` heading the release
+   they enter deprecation.
+2. Continue to work for **two MINOR versions** before removal in the
+   next MAJOR.
+3. Emit a `Deprecation` HTTP response header (RFC 9745) per request
+   touching the deprecated surface.
+4. Increment a `arango_sparql_deprecated_calls_total{surface="..."}`
+   counter so operators can quantify migration progress.
+
+### 16.4 Schema-cache forward/backward compatibility
+
+The L2 cache record (§15.5) carries a `_schema_version` integer field.
+At startup, the service reads any existing cache; records whose
+`_schema_version` does not match the current code are **silently
+discarded** (re-acquired on next request) — never read with risky
+coercion. Operators may pre-evict a stale cache via:
+
+```bash
+arango-sparql-py admin clear-cache --tenant=<id>   # safe; non-destructive
+```
+
+This ensures upgrade from v1.x → v1.y is always zero-downtime.
+
+### 16.5 Upgrade procedure
+
+The supported upgrade path is **rolling restart** (the default for K8s
+`Deployment` with `RollingUpdate` strategy):
+
+1. Operator publishes new image / Helm release.
+2. K8s rolls one replica at a time:
+   * New pod comes up, `/health/startup` passes after first
+     `schema/introspect` warms.
+   * `/health/ready` passes; ingress shifts traffic.
+   * Old pod's `/health/ready` flips to failing; drains; exits within
+     `GRACEFUL_TIMEOUT`.
+3. Existing sessions on rolled-out replicas are lost (clients receive
+   `E_SESSION_GONE` and re-`/connect`). UI handles this transparently;
+   3rd-party clients (Protégé, AOE) MUST re-connect.
+
+Downgrade is supported within MINOR versions only (e.g., v1.2.3 → v1.2.0
+is OK; v1.2.0 → v1.1.0 is **not** supported and may discard cache).
+
+### 16.6 Lockstep with upstream `arangodb-schema-analyzer`
+
+See §12.1 — the analyzer pin is a hard dependency. Upgrade order:
+
+1. Bump `arangodb-schema-analyzer` in our `pyproject.toml`.
+2. Run `tests/integration/test_analyzer_contract.py` against the new
+   pin; CI must be green.
+3. Cut a MINOR release of `arango-sparql-py`.
+4. Operators upgrade `arango-sparql-py` (the new pin comes in
+   transitively); no separate analyzer upgrade is needed (it's a Python
+   library, not a service).
+
+### 16.7 Database compatibility matrix
+
+| Component | v1.0 supported range | Notes |
+| --- | --- | --- |
+| **ArangoDB** | 3.11 LTS, 3.12 (default), 3.13 (when GA) | CI matrix includes 3.11 and 3.12 |
+| **Python** | 3.11, 3.12 (default), 3.13 | CI matrix on all three |
+| **Node.js** (UI build only) | 20 LTS, 22 LTS | UI build artefact is what ships |
+| **`arangodb-schema-analyzer`** | `>=0.6.1,<0.7.0` | See §12.1 |
+| **`rdflib`** | `>=7.0,<8.0` | |
+| **`pyoxigraph`** | `>=0.3.20,<0.5.0` (test-only) | |
+
+When dropping a component version, MAJOR bump applies.
+
+---
+
+## 17. Glossary
 
 | Term | Definition |
 | --- | --- |
@@ -1305,6 +1650,128 @@ fix before tagging v1.0.
 | **TCK** | Test Compatibility Kit — the openCypher equivalent of DAWG, used by the sister project `arango-cypher-py` |
 | **TopBraid Composer** | Commercial OWL editor by TopQuadrant — listed as the parity target for AOE's *own* built-in ontology editor (not as an `arango-sparql-py` direct target). Treated as a best-effort SPARQL client at v1.0; promoted to verified at v1.1. |
 | **YASGUI** | Browser-based SPARQL query editor; embeddable JS widget. Verified-compatible at v1.0 (CORS-tuned). |
+
+---
+
+## Appendix A. Configuration reference
+
+**This appendix is normative.** Every configuration knob the service
+honours is listed here. Adding a new env var without updating this
+appendix is a CI failure (enforced by `tests/test_config_appendix.py`,
+shipped in v1.0).
+
+Conventions: env var names are `SCREAMING_SNAKE_CASE`; precedence is
+*explicit env > `.env` file > built-in default*; booleans accept
+`{1, true, yes, on}` (case-insensitive) and the inverse for false.
+
+### A.1 Service & process
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `ARANGO_SPARQL_PORT` | `8001` | no | API port (Uvicorn bind) |
+| `ARANGO_SPARQL_HOST` | `0.0.0.0` | no | API bind address |
+| `WORKER_COUNT` | `1` | no | Uvicorn workers per replica; raise only when scaling vertically (most operators scale via K8s replicas) |
+| `GRACEFUL_TIMEOUT` | `30` | no | Seconds to drain on SIGTERM |
+| `KEEPALIVE` | `5` | no | HTTP keep-alive seconds |
+| `LOG_LEVEL` | `INFO` | no | One of `DEBUG`/`INFO`/`WARNING`/`ERROR` |
+| `LOG_FORMAT` | `json` | no | `json` (production) or `pretty` (dev) |
+| `BOOTSTRAP_SCHEMA` | `false` | no | If `true`, `/health/startup` waits for first `schema/introspect` to warm |
+
+### A.2 Public-mode posture (multitenancy/security)
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `ARANGO_SPARQL_PUBLIC_MODE` | `false` | no | Hosted multi-tenant posture — disables connect defaults, requires explicit `/connect` for every session (see §8.2) |
+| `ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS` | empty | yes when `PUBLIC_MODE=true` | Comma-separated allowlist of ArangoDB hostnames `/connect` may target (SSRF guard, §8.4) |
+| `ARANGO_SPARQL_DEFAULT_TENANT` | `default` | no | Tenant ID stamped on dev sessions when no explicit tenant is supplied |
+| `ARANGO_SPARQL_ALLOW_HEURISTIC` | `true` | no | Whether `/schema/introspect` may fall back to the heuristic detector when the analyzer is unavailable (forced `false` in PUBLIC_MODE) |
+
+### A.3 Sessions, rate limits, and execution caps
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `SESSION_TTL_SECONDS` | `3600` | no | Idle TTL before session eviction |
+| `MAX_SESSIONS` | `1024` | no | Per-replica session cap; oldest evicted on overflow |
+| `COMPUTE_RATE_LIMIT_PER_MINUTE` | `300` | no | Per-session limit on `/translate` + `/execute` + `/sparql` |
+| `NL_RATE_LIMIT_PER_MINUTE` | `30` | no | Per-session limit on `/nl-*` |
+| `SPARQL_PROTOCOL_TIMEOUT_SECONDS` | `30` | no | Hard cap on `/sparql` request handling |
+| `EXECUTE_RESULT_TRUNCATE_ROWS` | `10000` | no | Default execution row cap; emits `W_RESULT_TRUNCATED` |
+
+### A.4 ArangoDB connection (dev-mode defaults)
+
+These apply only outside `PUBLIC_MODE` (in `PUBLIC_MODE` the client
+supplies them per `/connect`).
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `ARANGO_HOST` | `localhost` | no | |
+| `ARANGO_PORT` | `8529` | no | |
+| `ARANGO_DB` | `_system` | no | |
+| `ARANGO_USER` | `root` | no | |
+| `ARANGO_PASSWORD` | empty | no | Documented dev-only default; never use in prod |
+| `ARANGO_USE_TLS` | `false` | no | |
+| `ARANGO_CA_BUNDLE_PATH` | empty | no | Path to PEM bundle for ArangoOasis or self-signed clusters |
+| `ARANGO_POOL_SIZE` | `16` | no | python-arango connection pool size per tenant |
+
+### A.5 Schema acquisition & cache
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `SCHEMA_MAPPING_CACHE_TTL_SECONDS` | `3600` | no | Soft TTL on cached `MappingBundle`; superseded by fingerprint mismatch |
+| `SCHEMA_L1_CACHE_MAX_BYTES` | `268435456` (256 MiB) | no | In-process mapping cache cap |
+| `SCHEMA_CACHE_MAX_ENTRIES` | `200` | no | L2 (ArangoDB-backed) cache cap per service install |
+| `SCHEMA_ANALYZER_REQUIRED` | `true` | no | When `true`, startup **fails** if `arangodb-schema-analyzer` import fails |
+| `SCHEMA_ANALYZER_ALLOWED_HOSTS` | empty | no | Subset of `CONNECT_ALLOWED_HOSTS` analyzer may also reach (defaults to the same allowlist) |
+| `SCHEMA_ANALYZER_CACHE_ROOT` | `/var/cache/arango-schema-analyzer` | no | Analyzer-side cache root; mount as PVC in K8s |
+
+### A.6 NL → SPARQL pipeline
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `NL2SPARQL_ENABLED` | `true` | no | Master switch — disables the entire `/nl-*` family when `false` |
+| `NL2SPARQL_PROVIDER` | `openai` | no | One of `openai`/`anthropic`/`openrouter` |
+| `NL2SPARQL_MODEL` | `gpt-4o-mini` | no | Model name within the provider |
+| `NL_REPAIR_MAX_ATTEMPTS` | `2` | no | Repair-loop ceiling; protects against blowup |
+| `NL_PROMPT_PREFIX_CACHE_BYTES` | `67108864` (64 MiB) | no | Prefix-cache cap |
+| `LLM_HOURLY_BUDGET_USD` | `5.00` | no | Used by alert `SparqlLLMCostBudget` (§9.7) |
+| `OPENAI_API_KEY` | empty | yes when provider=openai | |
+| `ANTHROPIC_API_KEY` | empty | yes when provider=anthropic | |
+| `OPENROUTER_API_KEY` | empty | yes when provider=openrouter | |
+
+### A.7 Observability
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `METRICS_ENABLED` | `true` | no | Toggles the `/metrics` endpoint and the metrics port listener |
+| `METRICS_PORT` | `9090` | no | Separate port for Prometheus scrape (NEVER expose publicly) |
+| `METRICS_NAMESPACE` | `arango_sparql` | no | Metric-name prefix |
+| `METRICS_LABEL_TENANT` | `false` | no | Add `tenant` label to per-request metrics (off by default for privacy hygiene) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | no | When set, OpenTelemetry tracing is enabled |
+| `OTEL_SERVICE_NAME` | `arango-sparql-py` | no | OTel service-name attribute |
+| `OTEL_TRACES_SAMPLER_ARG` | `0.1` | no | Default 10 % sampling |
+
+### A.8 CORS & 3rd-party tool integration
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `CORS_ALLOWED_ORIGINS` | empty | no | Comma-separated origin allowlist (e.g., `https://yasgui.example.com,https://aoe.example.com`) |
+| `CORS_ALLOWED_HEADERS` | `content-type,accept,authorization` | no | Augment as needed for client-specific headers |
+| `CORS_EXPOSE_HEADERS` | `x-arango-sparql-warnings,x-arango-sparql-version,deprecation` | no | Browser clients (YASGUI, AOE) can read these |
+| `JWT_FORWARD_ENABLED` | `false` | no | Forward upstream JWT to ArangoDB (used by AOE; see §12.2) |
+
+### A.9 UI build (compile-time, set in CI)
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `VITE_BASE_PATH` | `/` | no | UI base path when served from a sub-path |
+| `VITE_API_BASE_URL` | empty | no | Override API origin for cross-origin UI deployments |
+
+### A.10 Test-only & internal
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `RUN_INTEGRATION` | `false` | no | Opt-in for the live-ArangoDB test suite |
+| `RUN_EVAL` | `false` | no | Opt-in for the NL2SPARQL evaluation suite (incurs LLM cost) |
 
 ---
 
