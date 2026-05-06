@@ -251,13 +251,68 @@ A new route module (`arango_sparql/service/routes/protocol.py`) will expose:
 | `POST` | `/sparql` | body: `application/sparql-query` | Translate + execute; respond per `Accept` |
 | `POST` | `/sparql` | body: `application/x-www-form-urlencoded` with `query=` | Same as above |
 
-**Result-format negotiation** must support, in this priority order:
+**Result-format negotiation** must implement RFC 9110 §12.5.1 q-value
+parsing. The default media-type preference list (used when the request
+omits `Accept` or sends `*/*`) is, in this priority order:
 `application/sparql-results+json`, `application/sparql-results+xml`,
 `text/csv`, `text/tab-separated-values`. For `ASK` queries, the same media
 types apply but the body shape is the W3C SPARQL Results "boolean" form. For
 `CONSTRUCT` / `DESCRIBE` queries (when those visitors land), the response is
 RDF and negotiated against `text/turtle`, `application/n-triples`,
 `application/rdf+xml`, `application/ld+json`.
+
+Tie-breaking rules (asserted by `tests/test_sparql_protocol_accept.py`):
+
+1. Highest q-value wins.
+2. Ties broken by the order of the priority list above (so
+   `Accept: text/csv;q=0.9,application/sparql-results+xml;q=0.9` returns
+   XML — not CSV — because XML appears earlier in the list).
+3. Ties involving `*/*` resolve to the first list entry compatible with
+   the query form (SELECT/ASK ⇒ `application/sparql-results+json`;
+   CONSTRUCT/DESCRIBE ⇒ `text/turtle`).
+4. If no offered type matches, return **`406 Not Acceptable`** with a
+   JSON body listing the supported types in `Content-Type:
+   application/json`. This deliberately diverges from "always return
+   JSON" because spec-compliant clients (Apache Jena `arq`) rely on 406
+   to fall back.
+
+The selected response media type is echoed in the `Content-Type` response
+header; the `Vary: Accept` header is always emitted.
+
+**SPARQL Update is out of scope for v1.0** (see §5.3). The endpoint MUST
+NOT silently no-op an Update request — it returns a documented error so
+spec-compliant clients can fail loudly:
+
+* `POST /sparql` with `Content-Type: application/sparql-update`,
+  *or* a SELECT-shaped body that nonetheless parses as an Update form
+  (`INSERT`, `DELETE`, `LOAD`, `CLEAR`, `CREATE`, `DROP`, `COPY`, `MOVE`,
+  `ADD`) — the endpoint returns **`405 Method Not Allowed`** with body:
+
+  ```json
+  {
+    "error": "E_UPDATE_UNSUPPORTED",
+    "message": "SPARQL Update is not supported by this endpoint in v1.x.",
+    "see": "https://github.com/ArthurKeen/arango-sparql-py#non-goals",
+    "supported_methods": ["GET", "POST"],
+    "supported_query_forms": ["SELECT", "ASK", "CONSTRUCT", "DESCRIBE"]
+  }
+  ```
+
+  The `Allow` response header is set to `GET, POST, OPTIONS`.
+
+**Documented error responses** (the contract `tests/test_sparql_protocol_errors.py` enforces):
+
+| Condition | Status | Body shape | Notes |
+| --- | --- | --- | --- |
+| Update form (see above) | `405` | JSON `E_UPDATE_UNSUPPORTED` | `Allow` header set |
+| Malformed SPARQL syntax | `400` | JSON `E_SPARQL_PARSE` with `line`/`col` | Body of the `Content-Type: application/sparql-results+json` form when the request was a JSON-result Accept, else JSON envelope |
+| Unsupported algebra (`Service`, etc.) | `422` | JSON `E_TRANSLATE_UNSUPPORTED_ALGEBRA` | One per §13.5 coverage table row |
+| `Accept` matches nothing supported | `406` | JSON listing supported types | See above |
+| Schema acquisition fails (analyzer down, no fallback) | `503` | JSON `E_SCHEMA_UNAVAILABLE` | `Retry-After: 30` header |
+| Query timeout | `504` | JSON `E_TIMEOUT` | Includes `elapsed_ms` |
+| Hard result-row cap exceeded | `200` with truncated body | Result envelope + `X-Schema-Warnings-Count` + warning header `Warning: 299 - "W_RESULT_TRUNCATED"` | Per §9.1 |
+| Rate-limited | `429` | JSON `E_RATE_LIMITED` | `Retry-After` honoured |
+| Auth required (in `PUBLIC_MODE`) | `401` | JSON `E_AUTH_REQUIRED` | `WWW-Authenticate: Bearer` |
 
 **Query timeouts and result caps**: re-use `_MAX_RESULT_DOCS` from the
 existing routes. On overflow the response surfaces a `W_RESULT_TRUNCATED`
@@ -656,6 +711,70 @@ credential forms (`password=…`, `api_key=…`), and `Authorization: …`
 headers. Pydantic 422 validation responses use `_sanitize_pydantic_errors`
 to additionally redact the echoed `input` field.
 
+### 8.6 Threat model (STRIDE)
+
+This subsection is **normative** for v1.0. Operators MUST review it
+before public exposure; the security testing row in §13.1 verifies the
+stated mitigations remain in force.
+
+**Trust boundaries** (numbered for reference in the table below):
+
+1. **Client ↔ service** — untrusted in `PUBLIC_MODE`, trusted on
+   single-tenant local dev.
+2. **Service ↔ ArangoDB** — service is a trusted client of ArangoDB; the
+   per-tenant DB user provides the underlying authorisation.
+3. **Service ↔ analyzer** (`arangodb-schema-analyzer`) — in-process
+   library call; trust boundary collapses, but analyzer reaches out to
+   ArangoDB on the service's behalf — see §6.3.2 hard-dependency
+   contract for the allowlist.
+4. **Service ↔ LLM provider** — egress to a third-party HTTPS endpoint
+   carrying user-supplied prompts; treated as semi-trusted (we trust the
+   transport, not the response — see prompt-injection row).
+5. **Service ↔ Prometheus / OTel collector** — in-cluster only; metrics
+   port (`:9090`) MUST NOT be publicly exposed.
+
+**STRIDE matrix.** Every row is either mitigated in v1.0 or explicitly
+deferred / accepted (with rationale).
+
+| # | Threat | STRIDE | Boundary | Vector | Mitigation in v1.0 |
+| --- | --- | --- | --- | --- | --- |
+| T1 | Session-token theft / replay | **S** | 1 | Token leaked from logs, browser storage, or proxy | Tokens are opaque high-entropy random; never logged (redacted at `_sanitize_error`); short TTL (`SESSION_TTL_SECONDS`); `X-Arango-Session` preferred over `Authorization` to avoid platform-proxy rewriting; UI uses `sessionStorage` not `localStorage` |
+| T2 | JWT replay against AOE-forwarded JWTs | **S** | 1, 4 | Captured upstream JWT replayed past expiry | We forward upstream JWT verbatim; expiry check is delegated to ArangoDB; `Deprecation` header surfaces stale JWTs |
+| T3 | SPARQL request tampering in transit | **T** | 1 | MITM on a non-TLS deploy | TLS termination is operator-responsibility; `ARANGO_SPARQL_PUBLIC_MODE=1` requires TLS at ingress (CI test asserts the docs say so) |
+| T4 | Mapping-bundle tampering via `/mapping/import-owl` | **T** | 1 | Hostile OWL injects unintended `phys:*` annotations selecting wrong collections / leaking other tenants' data | Import is gated behind session auth (and per-tenant DB user); imported bundles are scoped to the importing tenant; `phys:triplesCollection` resolution refuses cross-tenant collection names |
+| T5 | Audit / repudiation gap | **R** | 1 | User denies running query; no log trail | Per-request structured log with `tenant`, `session_id` (sha256 prefix only — see §17.2), `route`, `elapsed_ms`, `status`. Operators MUST persist these to comply with their own audit policy. |
+| T6 | Schema disclosure via error leakage | **I** | 1 | Translator exception text echoes column / collection names | `_sanitize_error` redacts host:port + key=value patterns; `E_TRANSLATE_*` codes return generic messages in `PUBLIC_MODE`; full message remains in server logs only |
+| T7 | OWL bomb / exponential expansion in `/mapping/import-owl` | **D** | 1 | Hostile RDF/XML or Turtle that explodes during parse (entity expansion, exponential cardinality) | Parse uses `rdflib` with entity-expansion limits enabled; `MAPPING_IMPORT_MAX_BYTES=2_000_000` ceiling; `MAPPING_IMPORT_MAX_TRIPLES=200_000` post-parse cap |
+| T8 | BGP-DoS via cross-product blowup | **D** | 1 | Crafted SPARQL with unbound joins forces large AQL nested loops | `EXECUTE_RESULT_TRUNCATE_ROWS` cap; `SPARQL_PROTOCOL_TIMEOUT_SECONDS` hard timeout; rate limits per §8.3 |
+| T9 | NL prompt-injection escalating to harmful AQL | **E** | 4 | User natural-language input contains "ignore previous… DROP …" steering the LLM | NL pipeline emits **SPARQL** (not AQL); SPARQL is then parsed and translated through the same algebra walker as user-typed SPARQL — there is no path from prompt → AQL bypassing the parser. SPARQL Update is rejected on `/nl-translate` (read-only). |
+| T10 | NL repair-loop blowup | **D** | 4 | Adversarial input keeps failing repair, exhausting LLM budget | `NL_REPAIR_MAX_ATTEMPTS` ceiling (default 2); `LLM_HOURLY_BUDGET_USD` alert (§9.7); per-session NL rate limit (§8.3) |
+| T11 | SSRF via `/connect` to cloud metadata | **E** | 1, 2 | Untrusted client `/connect`-s to `http://169.254.169.254/…` | §8.4 SSRF guard — literal cloud-metadata hosts always rejected; in `PUBLIC_MODE` private IPs also rejected; **no** DNS resolution is performed |
+| T12 | Tenant-isolation bypass | **E** | 1, 2 | Client crafts SPARQL whose translated AQL reaches another tenant's collections | Tenant-scope filter (§6.5) is **emitted by the translator**, not by user input — there is no SPARQL path that suppresses it; integration test `tests/security/test_tenant_isolation.py` asserts cross-tenant reads return zero rows |
+| T13 | SQL/AQL injection via parameter binding | **E** | 1, 2 | User supplies a value that escapes the `@bind` and lands as raw AQL | All bindings flow through `AqlQueryBuilder.bind(...)` which uses python-arango's parameterised execution; collection names are resolved via `SchemaResolver`, never interpolated from user input. Property-based test `tests/security/test_no_aql_injection.py` |
+| T14 | Metrics exposure leaking PII | **I** | 5 | Tenant labels in Prometheus reveal tenant existence to anyone scraping | `METRICS_LABEL_TENANT=false` by default (§9.5); metrics port (`:9090`) is in-cluster only; `arango_sparql_build_info` is the only label-rich gauge |
+| T15 | Log exfiltration via `/explain` / `/profile` echoing query text | **I** | 1 | User triggers `/explain` then reads logs | Query bodies are NOT logged; only sizes (`sparql_len`, `aql_len`) and timing — see §9.1 |
+| T16 | Supply-chain compromise of LLM provider | **I**, **T** | 4 | Adversarial provider returns SPARQL that maliciously selects extra columns | Generated SPARQL is parsed and re-translated; the resolver caps the projection to user-specified `?vars`; no provider-supplied identifier reaches AQL without resolver mediation |
+| T17 | Dependency CVE in `rdflib` / `pyoxigraph` / `python-arango` | **I**, **D** | n/a | Known vuln in transitive | `pip-audit` runs in CI; `dependabot.yml` configured for weekly bumps; security testing row in §13.1 fails the build on `pip-audit` HIGH+ |
+
+**Threats explicitly accepted / deferred:**
+
+* **TLS termination** — operator-responsibility; documented in §15.1 and
+  the runbook.
+* **Authentication of `/health/*` probes** — accepted: probes are
+  unauthenticated to keep K8s manifests simple; rate-limited to 10
+  req/sec/IP. The body shape (§9.6) deliberately exposes only version
+  + dependency-up info, never tenant data.
+* **Cross-replica session theft via shared backend** — N/A in v1.0
+  (sessions are per-replica). Will be re-evaluated when v2 ships the
+  Redis backend.
+* **Side-channel timing attacks on token compare** — accepted; tokens
+  are 256-bit random; theoretical timing-leak window is below
+  exploitable threshold given network jitter.
+
+**Process commitment.** This matrix is reviewed (and updated) once per
+MINOR release. Any new RPC route added in §5.1 MUST be evaluated against
+each STRIDE category in the same PR — enforced by the PR template.
+
 ---
 
 ## 9. Observability
@@ -724,7 +843,7 @@ only.
 
 | Metric (counter unless noted) | Labels | Notes |
 | --- | --- | --- |
-| `arango_sparql_requests_total` | `route`, `status_code`, `tenant` | Tenant label opt-in via `METRICS_LABEL_TENANT=true` (defaults off for privacy hygiene) |
+| `arango_sparql_requests_total` | `route`, `status_code`, `tenant` | Tenant label opt-in via `METRICS_LABEL_TENANT=true` (defaults off — see §17.2) |
 | `arango_sparql_request_duration_seconds` *(histogram)* | `route`, `status_code` | Buckets `[5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s]` |
 | `arango_sparql_translate_aql_size_bytes` *(histogram)* | `feature_set` | `feature_set` = comma-sorted list of `BGP`,`OPT`,`FILTER`,`AGG`,`BIND`,`ORDER`,`UNION` |
 | `arango_sparql_warnings_total` | `code` (e.g., `W_SCHEMA_DEFAULT_COLLECTION`) | One increment per warning emission |
@@ -764,8 +883,7 @@ canonical envelope:
 }
 ```
 
-Tenant and session ID inclusion are governed by privacy controls
-(see Privacy section, added in the security-spine PRD revision). The
+Tenant and session ID inclusion are governed by §17.2 (Privacy). The
 default `LOG_FORMAT=json` may be flipped to `pretty` (human-readable) for
 local development; production deployments MUST use `json`.
 
@@ -1171,7 +1289,25 @@ developmentally a sister:
 | Legacy Foxx round-trip (Docker, both services live) | `legacy_roundtrip` + `integration` | ~ 90 s | nightly + on-demand |
 | Schema-detection live (Docker, against seeded PG/LPG/RPT/hybrid datasets) | `schema_live` + `integration` | ~ 30 s | nightly + on-demand |
 | Translator perf benchmark (translation-only timings, gauge regressions) | `bench` | ~ 30 s | per-PR (gauge only — fails only on > 50 % regression) |
+| Performance budget enforcement (§9.4 SLOs) | `perf` | ~ 60 s | per-PR (CI-blocking; > 25 % regression fails) |
+| Security testing (each row corresponds to a §8.6 STRIDE row) | `security` | ~ 30 s | per-PR (CI-blocking) |
+| Dependency CVE scan (`pip-audit`, `npm audit --omit=dev`) | n/a (CI step) | < 60 s | per-PR (CI-blocking on HIGH+) |
 | NL eval | `eval` | minutes | gated on `RUN_EVAL=1`; baseline-comparison CI-blocking once it lands |
+
+**Security testing rows** (the `security` marker maps to one test file
+per row in `tests/security/`):
+
+| Test file | Asserts (§8.6 row) |
+| --- | --- |
+| `test_no_aql_injection.py` | T13 — property-based: 1000 random user values cannot escape the bind-var contract |
+| `test_tenant_isolation.py` | T12 — cross-tenant SELECTs return zero rows even with crafted IRIs/predicates |
+| `test_ssrf_guard.py` | T11 — `/connect` rejects literal cloud-metadata + private IPs in `PUBLIC_MODE` |
+| `test_owl_bomb.py` | T7 — entity-expansion / triple-cap bounds on `/mapping/import-owl` |
+| `test_no_body_in_logs.py` | §17.3 — body content never reaches log lines |
+| `test_error_redaction.py` | T6 — `_sanitize_error` redacts URLs/host:port/key=value patterns |
+| `test_sparql_update_rejected.py` | §5.2 — Update forms return 405 with the documented body |
+| `test_nl_safety.py` | T9, T10 — prompt injection cannot reach AQL bypassing the parser; repair loop is bounded |
+| `test_metrics_no_pii.py` | T14 — metrics labels respect `METRICS_LABEL_TENANT=false` default |
 
 ### 13.2 W3C ground-truth strategy
 
@@ -1616,7 +1752,132 @@ When dropping a component version, MAJOR bump applies.
 
 ---
 
-## 17. Glossary
+## 17. Privacy & data handling
+
+This section is **normative** for v1.0. It is the data-protection
+contract operators agree to when they deploy the service into a
+multi-tenant or regulated environment.
+
+### 17.1 Data inventory
+
+The service handles five classes of data. The classification governs
+log-redaction, metric-labelling, and retention rules below.
+
+| Class | Examples | Persistence | Notes |
+| --- | --- | --- | --- |
+| **A. Tenant query content** | SPARQL request bodies, NL prompts, AQL produced, query results | None (request-scoped) | Never written to disk by this service; only sizes (`sparql_len`, `aql_len`, `rows`) are logged |
+| **B. Tenant identifiers** | Tenant IDs, ArangoDB DB names, OWL graph IRIs that name tenants | None | Per-request log inclusion is governed by §17.2 below |
+| **C. Authentication material** | Bearer tokens, JWT payloads, ArangoDB passwords from `/connect` | None (sessions hold opaque session-IDs only, not raw passwords) | Never logged; redacted by `_sanitize_error` |
+| **D. Schema metadata** | `MappingBundle` payloads, OWL turtle, schema fingerprints | L1 (in-process) + L2 (per-tenant ArangoDB collection `_arango_sparql_schema_cache`) | Per-tenant; never crosses the tenant boundary |
+| **E. NL pipeline byproducts** | LLM prompts, completions, repair attempts | Optionally cached prompt-prefix; never logged in full | `prompt_tokens` / `completion_tokens` / `cost_usd` are metrics-only |
+
+### 17.2 Tenant ID & session ID inclusion in logs/metrics
+
+Default-OFF for both metrics and logs. Operators opt in **per surface**:
+
+* **Logs (JSON envelope, §9.5)**:
+  * `tenant` field — controlled by `LOG_INCLUDE_TENANT` (default `false`
+    in `PUBLIC_MODE`, `true` otherwise).
+  * `session_id` field — always the **first 12 hex chars of
+    SHA-256(session_token)**, never the raw token. Provides correlation
+    without a stolen-log-replay risk.
+* **Metrics (Prometheus, §9.5)**:
+  * `tenant` label — controlled by `METRICS_LABEL_TENANT` (default
+    `false`). Off because Prometheus retention is typically 14d–1y and
+    label cardinality persists through that window.
+  * No session-level metric labels at any opt-in (cardinality risk).
+* **OpenTelemetry spans (§9.5)**:
+  * `tenant` attribute — controlled by `OTEL_INCLUDE_TENANT` (default
+    `false`).
+  * `session_id` attribute — same hashed shape as logs, default `true`.
+
+### 17.3 Query-content handling (the strongest guarantee)
+
+The service **never** persists raw SPARQL bodies, AQL bodies, NL prompts,
+LLM completions, or query results — neither to its own state nor to
+operator-visible logs. This is a hard architectural constraint, not a
+config knob:
+
+* `_sanitize_error` strips them from error messages.
+* The endpoint timing log (§9.1) emits sizes (`sparql_len`, `aql_len`,
+  `rows`), not bodies.
+* The metric vocabulary (§9.5) has no body-content metrics.
+* `/explain` and `/profile` echo bodies in **responses** (the user
+  asked) but never to logs.
+* Property-based test `tests/security/test_no_body_in_logs.py` randomly
+  fuzzes 500 queries through every route and asserts no log line
+  contains the request body.
+
+The single intentional exception: when the operator explicitly enables
+`DEBUG_LOG_QUERY_BODIES=true` (intended for local dev only). This flag
+is rejected at startup if `PUBLIC_MODE=true` — the process refuses to
+boot.
+
+### 17.4 NL pipeline data flow to third parties
+
+The NL pipeline (§7) sends user-supplied prompts to an external LLM
+provider (OpenAI / Anthropic / OpenRouter). The data sent:
+
+* The user's natural-language prompt verbatim.
+* The conceptual schema for the active tenant (class names, property
+  names, cardinality hints).
+* **NEVER**: tenant data, query results, JWTs, ArangoDB credentials,
+  raw OWL turtle (only the conceptual half of the `MappingBundle`).
+
+Operator obligations when enabling NL:
+* Choose a provider whose data-handling policy matches the operator's
+  jurisdiction (provider names + URLs to their DPAs ship in
+  `docs/howto/nl-providers.md`).
+* If the operator must keep all data in-tenancy, set
+  `NL2SPARQL_ENABLED=false`. The `/nl-*` endpoints then return 503
+  `E_NL_DISABLED`.
+
+The repo will ship a self-hosted-LLM connector recipe (Ollama, vLLM) in
+v1.1 to give operators a fully in-tenancy NL option.
+
+### 17.5 Retention & deletion
+
+* **Service state**: stateless modulo the L2 schema cache (§15.5).
+* **L2 schema cache** is per-tenant — when the tenant DB is deleted
+  (operator action), the cache disappears with it.
+* **Logs**: retention is operator-owned (the service writes to stdout).
+  Operators are encouraged to set their log aggregator's retention per
+  their compliance regime (typically 30–90 days; longer if SOX / HIPAA
+  apply).
+* **Metrics**: retention is operator-owned (Prometheus / Cortex / Mimir).
+* **Right-to-erasure**: when a tenant exercises GDPR Art. 17 (or
+  equivalent), the operator deletes the tenant DB; the service's L2
+  cache is purged transitively. Logs are purged via the operator's log
+  aggregator. There is no service-level "forget tenant" button — the
+  service has no first-class identity store.
+
+### 17.6 Compliance posture
+
+The service is **compliance-neutral** by design — operator deployments
+inherit their broader environment's compliance regime (HIPAA, GDPR,
+SOC 2, FedRAMP, …). Concrete commitments:
+
+* No PII is collected by the service itself (only operator-supplied
+  tenant IDs, which the operator controls).
+* No telemetry is emitted to project maintainers (no anonymous usage
+  pings; the service makes zero outbound calls except (a) ArangoDB,
+  (b) the configured LLM provider when NL is enabled, (c) the
+  operator-configured OTel collector when tracing is enabled).
+* Encryption-at-rest is delegated to the underlying ArangoDB deployment
+  (Hot Backup honours encrypted-at-rest config).
+* Encryption-in-transit is operator-responsibility (TLS termination at
+  ingress per §15.1).
+* The repo's SBOM is generated by CI on every release tag (CycloneDX
+  format under `release/sbom-<version>.json`).
+
+A compliance-mapping document (`docs/compliance/`) maps each commitment
+above to the relevant SOC 2 trust-service-criteria controls, GDPR
+articles, and HIPAA Security Rule §164.312 implementation
+specifications. It is a v1.0 deliverable.
+
+---
+
+## 18. Glossary
 
 | Term | Definition |
 | --- | --- |
@@ -1745,7 +2006,7 @@ supplies them per `/connect`).
 | `METRICS_ENABLED` | `true` | no | Toggles the `/metrics` endpoint and the metrics port listener |
 | `METRICS_PORT` | `9090` | no | Separate port for Prometheus scrape (NEVER expose publicly) |
 | `METRICS_NAMESPACE` | `arango_sparql` | no | Metric-name prefix |
-| `METRICS_LABEL_TENANT` | `false` | no | Add `tenant` label to per-request metrics (off by default for privacy hygiene) |
+| `METRICS_LABEL_TENANT` | `false` | no | Add `tenant` label to per-request metrics (off by default — see §17.2) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | no | When set, OpenTelemetry tracing is enabled |
 | `OTEL_SERVICE_NAME` | `arango-sparql-py` | no | OTel service-name attribute |
 | `OTEL_TRACES_SAMPLER_ARG` | `0.1` | no | Default 10 % sampling |
