@@ -67,81 +67,118 @@ service with a standalone Python microservice that:
 
 ## 3. Success criteria (v1.0 acceptance)
 
-1. **W3C DAWG query-evaluation coverage ≥ 25 %** (the source-of-truth
-   counter is [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md);
-   today's number is 15.0 %). Of that 25 %, no single XFAIL bucket may
-   exceed 30 % of remaining failures (i.e. no single missing visitor can
-   block more than a quarter of the gap).
-2. **Conformant SPARQL Protocol endpoint** — `GET/POST /sparql` returns
-   `application/sparql-results+json`, `application/sparql-results+xml`,
-   `text/csv`, and `text/tab-separated-values` per the request's `Accept`
-   header. `GET /sparql` (no query) returns the Service Description as
-   `text/turtle`.
-3. **Native physical-model coverage** — the translator emits correct AQL
-   against every supported physical layout in §6.1 (RPT triple-store,
-   PG dedicated collections, LPG type-discriminated collections, plain
-   document collections), with a fixture corpus under `tests/translate/`
-   that exercises each combination.
-4. **Hybrid translation in a single BGP** — a SPARQL query whose triples
-   touch two or more different physical models (e.g. one BGP that joins
-   an RPT-style class to a PG-style class via a shared subject) is
-   translated to a single AQL query rather than rejected. Acceptance
-   covered by `tests/translate/hybrid.yml` + cross-validation cases.
-5. **Schema detection** — both the algorithmic detector
-   (`arango_sparql.schema.detect.classify_schema`) and the
-   analyzer-backed detector (via `arangodb-schema-analyzer ≥ 0.6.1`)
-   ship, with the analyzer-backed path winning on `auto`. Detection
-   correctly classifies the sister project's full mapping-fixture corpus
-   (PG, LPG, hybrid, plus the new RPT fixtures introduced by this
-   project) with zero false-negatives.
-6. **Schema HTTP surface parity with `arango-cypher-py`** — `/schema/introspect`,
-   `/schema/properties`, `/schema/summary`, `/schema/statistics`,
-   `/schema/status`, `/schema/invalidate-cache`,
-   `/schema/force-reacquire`, `/mapping/import-owl`,
-   `/mapping/export-owl`. See §6.4.
-7. **Hybrid-schema parity with the legacy Foxx service** — every
-   `references/arango-sparql/tests/` fixture that the legacy
-   `aql-translator.js` could handle has a corresponding golden case under
-   `tests/translate/` that emits semantically equivalent AQL. Includes
-   the legacy's RPT (`_triples` collection, subject/predicate/object/object_uri/object_value
-   columns, `STARTS_WITH(_, '_:')` blank-node heuristic) and PGT (per-class
-   collections, `_uri` subject convention) translation paths.
-8. **Operational parity with `arango-cypher-py`** — same connection /
-   session model, same public-mode CORS posture, same observability log
-   shape, same rate-limit buckets, same SSRF guard, same
-   `_require_analyzer_unless_opted_out()` startup guard with
-   `ARANGO_SPARQL_ALLOW_HEURISTIC=1` opt-out.
-9. **UI feature parity with `arango-cypher-py`'s workbench** — the
-   SPARQL workbench ships a dual-pane CodeMirror 6 editor (SPARQL on
-   the left, AQL on the right), schema-aware completion driven by the
-   loaded ontology, hover docs, clause outline, prefix manager,
-   parameter panel, query history, sample queries, mapping panel
-   (JSON + graph + OWL import/export), results panel
-   (table / JSON / Cytoscape graph / explain / profile), connection
-   dialog with auto-defaults and schema introspection, optional tenant
-   selector, and the same toolbar shortcuts (`Mod-Enter` translate,
-   `Shift-Enter` run, `Mod-Shift-E` explain, `Mod-Shift-P` profile).
-   See §10.
-10. **Validated third-party tool compatibility** — the `/sparql`
-    endpoint is verified against the Compatibility Matrix in §11
-    (Protégé 5.x, YASGUI, `rdflib.SPARQLWrapper`, Apache Jena Fuseki
-    client, Oxigraph CLI), and the `/mapping/export-owl` endpoint is
-    verified to round-trip through Microsoft Ontology Playground's
-    RDF/XML import (Microsoft Fabric IQ ontology serialisation).
-11. **`arango-ontoextract` integration** — AOE can (a) point its
-    “Read-only SPARQL endpoint for standard RDF tooling” open
-    question (PRD Q7) at this service, (b) consume our
-    `/mapping/export-owl` to seed an ontology library entry, and
-    (c) push curated OWL back via `/mapping/import-owl`. See §12.
-12. **Public release readiness** — repo published, CI green on every
-    supported Python version, MIT LICENSE, CONTRIBUTING + SECURITY
-    documents, repeatable Docker-Compose dev loop.
+Each criterion is **independently measurable** by the test or artefact
+named in the *How measured* column. Criteria are numbered for stable
+external reference (e.g. `criterion §3.7`); they do not imply
+prioritisation order. Detail and rationale live in the section named
+under *Where detailed* — these one-line summaries are the contract.
+
+| #    | Criterion (one-line) | How measured | Where detailed |
+| ---- | --- | --- | --- |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (today: 15.0 %); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
+| §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
+| §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
+| §3.5 | **Schema detection (algorithmic + analyzer-backed)** — both detectors ship; analyzer wins on `auto`; classifies the sister project's mapping-fixture corpus + this project's RPT fixtures with zero false negatives | `tests/schema/test_classify.py`, `tests/schema/test_acquire.py`, `tests/schema/fixtures/*.export.json` | §6.3 |
+| §3.6 | **Schema HTTP surface parity with `arango-cypher-py`** — all 9 schema/mapping routes exist with documented response shapes | `tests/test_service_schema_routes.py`; route names listed in §5.1 | §5.1, §6.4 |
+| §3.7 | **Hybrid-schema parity with legacy Foxx (`arango-sparql`)** — every translatable legacy fixture has a corresponding golden under `tests/translate/` emitting semantically equivalent AQL | `tests/legacy/test_foxx_roundtrip.py` (Docker-gated; ≥ 90 % of legacy fixtures pass) | §13.4 |
+| §3.8 | **Operational parity with `arango-cypher-py`** — *measurable* parity: identical session / connect / public-mode / CORS / rate-limit / SSRF / redaction / startup-guard surface; one CI test per surface verifies behaviour | `tests/parity/test_cypher_py_*.py` (one file per row of §8) | §8 |
+| §3.9 | **UI feature parity with `arango-cypher-py`'s workbench** — every row of the §10.2 + §10.3 capability tables has a passing playwright test | `ui/tests/playwright/parity.spec.ts` (CI-blocking) | §10 |
+| §3.10 | **Validated 3rd-party tool compatibility** — every "verified-compatible" row of §11.1 has a passing smoke test exercising at least one SELECT, one ASK, and the Service Description fetch | `tests/integration/test_*_compat.py` (one file per tool) | §11 |
+| §3.11 | **`arango-ontoextract` integration** — AOE can (a) point its PRD Q7 endpoint at us, (b) `/mapping/export-owl` seeds an AOE library entry, (c) `/mapping/import-owl` accepts a curated OWL push | `tests/integration/test_aoe_roundtrip.py` (Docker-gated; both services live) | §12.2 |
+| §3.12 | **Performance SLOs in §9.4 met** — every budget row passes its `tests/perf/` benchmark within ≤ 25 % of the stated p95 | `tests/perf/test_*.py` (CI-blocking on > 25 % regression) | §9.4 |
+| §3.13 | **Threat-model mitigations enforced** — every row of the §8.6 STRIDE matrix has its asserting test under `tests/security/` | `tests/security/test_*.py` (CI-blocking) | §8.6, §13.1 |
+| §3.14 | **Privacy contract enforced** — no-bodies-in-logs property test passes; `LOG_FORMAT=json` default emits the §9.5 envelope; opt-in toggles for tenant labels behave per §17.2 | `tests/security/test_no_body_in_logs.py`, `tests/test_log_envelope.py` | §17 |
+| §3.15 | **Configuration appendix is normative** — adding a new env var without updating Appendix A fails CI | `tests/test_config_appendix.py` (introspects `arango_sparql/_env.py` against the appendix table) | Appendix A |
+| §3.16 | **Public release readiness** — repo public, CI green on Python 3.11/3.12/3.13 + ArangoDB 3.11/3.12, MIT LICENSE + CONTRIBUTING + SECURITY + Operational runbook published, repeatable `docker compose up` dev loop, SBOM artefact attached to the v1.0 release tag | GitHub releases page; CI history; `docker compose up && curl /health/ready` | §15, §16 |
 
 ---
 
 ## 4. Architecture overview
 
+The service has three logical layers — **HTTP surface**, **translator**,
+**schema acquisition** — that share a single `python-arango`
+connection pool to ArangoDB. The translator is mapping-driven (the
+mapping comes from the schema layer); the HTTP surface is the only
+caller of the translator that also validates auth / tenancy / rate
+limits.
+
+```mermaid
+flowchart TB
+    subgraph clients["Clients"]
+        UI["Workbench UI<br/>(Vite + React, §10)"]
+        TPT["3rd-party tools<br/>(Protégé, YASGUI,<br/>SPARQLWrapper, AOE)"]
+        NLU["NL caller<br/>(via /nl-translate)"]
+    end
+
+    subgraph http["HTTP surface (§5)"]
+        RPC["RPC routes<br/>/translate /execute /validate<br/>/explain /profile<br/>/schema/* /mapping/*"]
+        PROTO["W3C SPARQL Protocol<br/>GET POST /sparql<br/>(§5.2)"]
+        NL["NL2SPARQL routes<br/>/nl-translate /nl-execute<br/>/nl-explain"]
+        SEC["Auth, sessions, rate-limit,<br/>SSRF guard, redaction (§8)"]
+    end
+
+    subgraph translator["Translator (arango_sparql.translate.*)"]
+        PARSE["rdflib parser<br/>parseQuery → translateQuery"]
+        VISIT["AlgebraVisitor<br/>(one visit_&lt;Node&gt; per op)"]
+        BUILD["AqlQueryBuilder<br/>(parameterised, bind-only)"]
+        RESOLVE["SchemaResolver<br/>(reads phys:* annotations)"]
+        OUT[("TranslateResult<br/>{aql, bind_vars,<br/>warnings, schema_warnings,<br/>source_map}")]
+    end
+
+    subgraph schema["Schema acquisition (arango_sparql.schema.*)"]
+        DETECT["classify_schema<br/>(heuristic detector)"]
+        ACQ["acquire_mapping_bundle<br/>(analyzer-backed)"]
+        RPT["detect_rpt_pattern<br/>(RDF triple-store extension)"]
+        CACHE["ArangoSchemaCache<br/>(L1 in-process + L2 ArangoDB)"]
+        FP["fingerprint shape / counts"]
+        ANA["arangodb-schema-analyzer<br/>(in-process library, ≥0.6.1)"]
+    end
+
+    subgraph nlpipe["NL pipeline (arango_sparql.nl2sparql.*)"]
+        LLM["LLM client<br/>(OpenAI / Anthropic / OpenRouter)"]
+        REP["Repair loop<br/>(parser feedback → re-prompt)"]
+        COST["Cost accounting<br/>(prompt/completion/cached tokens)"]
+    end
+
+    DB[("ArangoDB 3.11+<br/>via python-arango pool")]
+
+    UI --> RPC
+    UI --> PROTO
+    TPT --> PROTO
+    NLU --> NL
+
+    RPC --> SEC
+    PROTO --> SEC
+    NL --> SEC
+
+    SEC --> PARSE
+    SEC -.->|conceptual schema only| LLM
+    NL --> LLM
+    LLM --> REP
+    REP --> PARSE
+    LLM --> COST
+
+    PARSE --> VISIT --> BUILD --> OUT
+    VISIT <-.->|resolve IRI / class / property| RESOLVE
+
+    RESOLVE -->|reads MappingBundle + OWL| CACHE
+    CACHE <-->|miss → acquire| ACQ
+    ACQ --> ANA
+    ACQ -.->|fallback when analyzer disabled| DETECT
+    ACQ --> RPT
+    ACQ --> FP
+
+    OUT -->|/translate response| RPC
+    OUT -->|AQL → execute| DB
+    ANA -->|introspect| DB
+    SEC -->|connect / session| DB
 ```
+
+<details>
+<summary>Text-only fallback (same flow, ASCII)</summary>
+
+```text
                  ┌────────────────────────────────────────────────┐
    SPARQL ───►  │  rdflib parser → algebra translateQuery        │
                  │            │                                   │
@@ -153,7 +190,7 @@ service with a standalone Python microservice that:
                  │            │                                          (consumes ┐
                  │            ▼                                           Mapping ─┼──┐
    AQL   ◄────  │  TranslateResult{aql, bind_vars, warnings,             Bundle  ┘  │
-                 │                  schema_warnings}                   + OWL  Turtle)│
+                 │                  schema_warnings, source_map}       + OWL Turtle)│
                  └────────────────────────────────────────────────┘                  │
                                   ▲                                                  │
                                   │                                                  ▼
@@ -174,6 +211,15 @@ service with a standalone Python microservice that:
                                   ▼
                             ArangoDB (3.11+)
 ```
+
+</details>
+
+**Reading the diagram.** Solid arrows are synchronous request-flow (the
+HTTP request blocks on them); dashed arrows are out-of-band (cache miss,
+LLM egress, analyzer introspection). The translator and the schema
+layer never call out — they only consume what the HTTP layer fetches.
+This is the contract that makes per-tenant isolation auditable: every
+DB-bound side-effect is gated by `SEC`.
 
 Source-of-truth modules:
 
@@ -582,22 +628,141 @@ to the compute rate-limit bucket.
 
 ### 6.5 Multi-tenancy and sharding from analyzer metadata
 
-The analyzer surfaces three blocks the SPARQL planner respects:
+The analyzer surfaces three blocks the SPARQL planner respects.
 
-- **`metadata.tenantScope`** (per-entity) — when present, every AQL emit
-  for that entity adds `FILTER doc.<tenantField> == @<tenantBind>`. The
-  bind value is sourced from the session's `X-Tenant-Id` header (fall
-  back to the env-default `ARANGO_SPARQL_DEFAULT_TENANT` in dev). Routes
-  that touch DB always pass the tenant filter through; `/translate`
-  without a session uses the env-default.
-- **`metadata.multitenancy`** (database-wide) — names the tenant root
-  entity / discriminator strategy. Used by `/schema/introspect` to
-  expose the tenant model to the UI.
-- **`physicalMapping.shardFamilies`** — when present, AQL emit for a
-  cross-shard query inserts a `WITH @@coll1, @@coll2, ...` clause so
-  the optimiser can plan the broadcast. This *is* relevant for SPARQL
-  because RPT-style queries against `_triples` often need to scan
-  multiple shard family members.
+#### 6.5.1 `metadata.tenantScope` — per-entity tenant filter
+
+When present on an entity, every AQL emit for that entity adds
+`FILTER doc.<tenantField> == @<tenantBind>`. The bind value is sourced
+from the session's `X-Tenant-Id` header (fall back to the env-default
+`ARANGO_SPARQL_DEFAULT_TENANT` in dev). Routes that touch DB always
+pass the tenant filter through; `/translate` without a session uses the
+env-default. The filter is **emitted by the translator**, not by user
+input — there is no SPARQL syntax that suppresses it (this is the
+mitigation for §8.6 T12).
+
+**Concrete example.** With this minimal mapping:
+
+```turtle
+:Person a owl:Class ;
+    phys:collectionName "Person" ;
+    phys:typeField "type" ;
+    phys:typeValue "person" ;
+    phys:tenantField "org_id" ;
+    phys:tenantEntity "Org" .
+```
+
+…the SPARQL:
+
+```sparql
+SELECT ?name WHERE { ?p a :Person ; :name ?name . }
+```
+
+…translates to AQL where the tenant predicate is bound, never
+interpolated:
+
+```aql
+FOR doc1 IN @@coll_Person
+  FILTER doc1.type == @lit_typeValue_1
+  FILTER doc1.org_id == @tenant_id
+  RETURN { name: doc1.name }
+```
+
+…with bind variables:
+
+```json
+{
+  "@coll_Person": "Person",
+  "lit_typeValue_1": "person",
+  "tenant_id": "<resolved from X-Tenant-Id>"
+}
+```
+
+**Cross-tenant joins are forbidden.** When two BGP triples touch two
+entities that have different `tenantEntity` values, the translator
+raises `E_TRANSLATE_CROSS_TENANT_JOIN` (HTTP 422) rather than emit a
+join that could broadcast across tenant boundaries.
+
+#### 6.5.2 `metadata.multitenancy` — database-wide tenant model
+
+Names the tenant root entity / discriminator strategy. Used by
+`/schema/introspect` to expose the tenant model to the UI (so the
+connection dialog can render the tenant selector). Three supported
+strategies:
+
+| Strategy | Discriminator | UI affordance |
+| --- | --- | --- |
+| `field` | A column on each entity (the common case above) | Tenant selector dropdown sourced from a `tenants` collection |
+| `database` | One ArangoDB DB per tenant | Tenant selector swaps `ARANGO_DB` per session |
+| `none` | Single-tenant deployment | UI hides the tenant selector entirely |
+
+#### 6.5.3 `physicalMapping.shardFamilies` — cross-shard broadcast hint
+
+When present, AQL emit for a cross-shard query inserts a `WITH @@coll1,
+@@coll2, ...` clause so the optimiser can plan the broadcast. This *is*
+relevant for SPARQL because RPT-style queries against `_triples` often
+need to scan multiple shard family members.
+
+**Concrete example.** With this mapping fragment:
+
+```json
+{
+  "physicalMapping": {
+    "entities": [
+      {
+        "iri": "urn:Triples",
+        "style": "RPT",
+        "phys": {
+          "triplesCollection": "_triples",
+          "subjectColumn": "subject_uri",
+          "predicateColumn": "predicate",
+          "objectUriColumn": "object_uri",
+          "objectValueColumn": "object_value"
+        }
+      }
+    ],
+    "shardFamilies": [
+      ["_triples_us", "_triples_eu", "_triples_apac"]
+    ]
+  }
+}
+```
+
+…the SPARQL:
+
+```sparql
+SELECT ?o WHERE { <urn:thing> :hasValue ?o . }
+```
+
+…emits AQL with a `WITH` clause (so the cluster optimiser can plan the
+broadcast at parse time, not at execution):
+
+```aql
+WITH @@coll_us, @@coll_eu, @@coll_apac
+FOR row IN UNION_DISTINCT(
+    (FOR t IN @@coll_us FILTER t.subject_uri == @subj_1 AND t.predicate == @pred_1 RETURN t),
+    (FOR t IN @@coll_eu FILTER t.subject_uri == @subj_1 AND t.predicate == @pred_1 RETURN t),
+    (FOR t IN @@coll_apac FILTER t.subject_uri == @subj_1 AND t.predicate == @pred_1 RETURN t)
+)
+  RETURN { o: COALESCE(row.object_uri, row.object_value) }
+```
+
+…with bind variables:
+
+```json
+{
+  "@coll_us": "_triples_us",
+  "@coll_eu": "_triples_eu",
+  "@coll_apac": "_triples_apac",
+  "subj_1": "urn:thing",
+  "pred_1": "<https://example.com/hasValue>"
+}
+```
+
+When the analyzer reports `shardFamilies` is empty (or absent), the
+translator emits the single-collection form without `WITH` and without
+`UNION_DISTINCT`. This avoids the cross-shard cost on single-shard
+deployments.
 
 ### 6.6 Supported physical schema shapes — status table
 
@@ -636,23 +801,167 @@ advisories" panel.
 
 ## 7. NL → SPARQL pipeline
 
-`arango_sparql/nl2sparql/` mirrors `arango_cypher/nl2cypher/` with these
-deliberate differences:
+`arango_sparql/nl2sparql/` mirrors `arango_cypher/nl2cypher/` with the
+deliberate differences enumerated below.
+
+### 7.1 Top-level decisions
 
 | Concern | Decision |
 | --- | --- |
-| Output language | SPARQL 1.1 SELECT/ASK (CONSTRUCT/DESCRIBE only when those visitors ship) |
-| Schema delivery to the LLM | **Conceptual-only summary** — class IRIs (with `rdfs:label`), object properties (with `domain` / `range`), and datatype properties (with `domain` / `xsd:` datatype). Mirrors `arango-cypher-py`'s `_build_schema_summary`. **Never** sends physical mapping details (collection names, `typeField`/`typeValue`, `triplesCollection`, etc.) — those are physics, not vocabulary. |
+| Output language | SPARQL 1.1 SELECT/ASK (CONSTRUCT/DESCRIBE only when those visitors ship); SPARQL Update is **rejected** at the route layer — `/nl-translate` is read-only |
+| Schema delivery to the LLM | **Conceptual-only summary** — class IRIs (with `rdfs:label`), object properties (with `domain` / `range`), and datatype properties (with `domain` / `xsd:` datatype). Mirrors `arango-cypher-py`'s `_build_schema_summary`. **Never** sends physical mapping details (collection names, `typeField`/`typeValue`, `triplesCollection`, etc.) — those are physics, not vocabulary. Per §17.4 this is a hard privacy boundary, not a convention. |
 | LLM prompt-prefix caching | Schema block placed first in the prompt so OpenAI prefix cache (≥1024 tokens) hits across NL turns; Anthropic prompt is split at `## Examples` for the same reason. `NL2SparqlResult` carries `prompt_tokens` and `cached_tokens` so the UI can surface cache-hit ratio. |
-| Repair loop | Up to `max_repairs=2` round-trips. Each repair feeds the LLM the previous SPARQL plus the `SparqlError.code` + sanitised message |
-| Provider selection | Env-driven. `NL2SPARQL_PROVIDER` takes precedence over the Cypher-style `LLM_PROVIDER` so a single-shell setup that already configured the Cypher service doesn't need duplicate vars |
-| Cost accounting | Per-call USD estimate via a static pricing table (`cost.py`); the response surfaces `cost_usd` so the UI can render running totals |
-| Failure-as-outcome | Pipeline returns `PipelineOutcome` with empty `aql` + `W_NL_TRANSLATION_FAILED` warning rather than throwing. The route layer maps empty-AQL outcomes to a 422 with the same provenance fields as success |
+| Repair loop | Up to `NL_REPAIR_MAX_ATTEMPTS=2` round-trips (see §7.3 for algorithm). Each repair feeds the LLM the previous SPARQL plus the `SparqlError.code` + sanitised message. |
+| Provider selection | Env-driven. `NL2SPARQL_PROVIDER` takes precedence over the Cypher-style `LLM_PROVIDER` so a single-shell setup that already configured the Cypher service doesn't need duplicate vars. |
+| Cost accounting | Per-call USD estimate via a static pricing table (`cost.py`); the response surfaces `cost_usd` so the UI can render running totals; the metric `arango_sparql_llm_cost_usd_total` (§9.5) is the per-tenant aggregator. |
+| Failure-as-outcome | Pipeline returns `PipelineOutcome` with empty `aql` + `W_NL_TRANSLATION_FAILED` warning rather than throwing. The route layer maps empty-AQL outcomes to a 422 with the same provenance fields as success. |
+
+### 7.2 Prompt structure
+
+Every NL call assembles the prompt from four blocks **in this order**
+(the order matters for prefix-cache hit-rate):
+
+```text
+1. SYSTEM block
+   ─────────────
+   "You are a SPARQL 1.1 translator. Output ONLY a SPARQL SELECT or
+    ASK query in a fenced ```sparql block. Never explain. Never use
+    SPARQL Update forms (INSERT, DELETE, …). Use only IRIs declared
+    in the schema below."
+
+2. SCHEMA block (conceptual-only — see §17.4)
+   ──────────────────────────────────────────
+   ## Classes
+   - <iri> (rdfs:label "Person")
+   - <iri> (rdfs:label "Organization")
+   ## Object properties
+   - <iri> :worksFor (domain Person, range Organization)
+   ## Datatype properties
+   - <iri> :name (domain Person, range xsd:string)
+
+3. EXAMPLES block (5–10 hand-curated NL ⇄ SPARQL pairs;
+   ─────────────  shape-matched to the active schema's class types)
+   Q: List all people who work for "Acme".
+   A: ```sparql
+      PREFIX : <https://example.com/>
+      SELECT ?p ?name WHERE {
+          ?p a :Person ; :name ?name ; :worksFor ?o .
+          ?o :name "Acme" .
+      } ```
+
+4. USER block
+   ──────────
+   Q: <user's natural-language question>
+   A:
+```
+
+Blocks 1–3 are deterministic given the active schema (cache-friendly).
+Block 4 is the only per-turn novel content. OpenAI honours prefix
+caching at the `system+user[0]` boundary (≥ 1024 tokens); Anthropic's
+prompt-caching beta honours explicit `<<<cache>>>` markers placed at
+the end of block 3.
+
+The schema block is rendered by
+`arango_sparql.nl2sparql.schema_summary.build_schema_summary(bundle)`
+and is identical in shape to `arango-cypher-py`'s output (different
+keyword: `Class` vs `Label`). Cache hit-rate is observable as the
+`cached_tokens / prompt_tokens` ratio in `NL2SparqlResult`.
+
+### 7.3 Repair-loop algorithm
+
+```text
+PipelineOutcome run(question):
+    schema      = active conceptual schema (already cached in-process)
+    prompt      = build_prompt(SYSTEM, SCHEMA(schema), EXAMPLES(schema), USER(question))
+    attempts    = []
+    sparql      = llm.complete(prompt).strip_fences()
+    attempts.append(sparql)
+
+    for i in range(NL_REPAIR_MAX_ATTEMPTS):
+        try:
+            translate_result = translate(sparql)
+            return PipelineOutcome.ok(
+                sparql=sparql,
+                aql=translate_result.aql,
+                bind_vars=translate_result.bind_vars,
+                warnings=translate_result.warnings,
+                attempts=attempts,
+                cost_usd=accumulated_cost(),
+            )
+        except (SparqlParseError, UnsupportedSparqlError, SchemaResolutionError) as e:
+            repair_prompt = build_repair(prompt,
+                                         previous_sparql=sparql,
+                                         error_code=e.code,
+                                         error_msg=sanitize(e.message))
+            sparql = llm.complete(repair_prompt).strip_fences()
+            attempts.append(sparql)
+
+    return PipelineOutcome.failed(
+        attempts=attempts,
+        last_error=e,
+        warning="W_NL_TRANSLATION_FAILED",
+        cost_usd=accumulated_cost(),
+    )
+```
+
+Properties asserted by `tests/nl2sparql/test_repair_loop.py`:
+
+* The repair loop is **bounded** — it cannot exceed
+  `NL_REPAIR_MAX_ATTEMPTS + 1` total LLM calls.
+* The repair prompt **never** includes the original schema in full
+  again (token-cost optimisation); only a delta if the schema has
+  drifted mid-turn.
+* The repair prompt **never** includes raw bodies of other tenants'
+  data (per §17.3 and §17.4 — only the user's own SPARQL and the
+  parser's typed error code/message).
+* On final failure, the response includes **all** `attempts` so the UI
+  can surface the iteration trace; per §17.3, attempts are not logged
+  on the server.
+
+### 7.4 Evaluation methodology
 
 NL evaluation lives under `tests/nl2sparql/eval/` and is gated behind
-`RUN_EVAL=1`. The eval harness reports per-case correctness against a
-baseline JSON; baseline regressions are CI-blocking once the harness lands
-in the workflow (post-v1.0).
+`RUN_EVAL=1` (so it does not incur per-PR LLM cost). The harness:
+
+1. **Fixtures.** Each `tests/nl2sparql/eval/cases/*.yml` case carries:
+   ```yaml
+   id: nl-eval-001
+   schema_fixture: tests/schema/fixtures/pg_companies.export.json
+   question: "List all people who work for Acme."
+   gold_sparql: |
+     SELECT ?p ?name WHERE {
+       ?p a :Person ; :name ?name ; :worksFor ?o .
+       ?o :name "Acme" .
+     }
+   gold_bindings: tests/nl2sparql/eval/expected/nl-eval-001.bindings.json
+   provider: openai          # may be overridden by EVAL_PROVIDER
+   model: gpt-4o-mini
+   ```
+2. **Equivalence.** Generated SPARQL is run through `pyoxigraph`
+   against a small in-memory dataset; the resulting bindings are
+   compared bag-equal to `gold_bindings`. **Bindings equivalence**
+   (not string equality with `gold_sparql`) is the metric — multiple
+   correct SPARQL forms exist for any question.
+3. **Metrics reported per run** (`tests/nl2sparql/eval/reports/<ts>.json`):
+   * `pass@1` — fraction passing on the first LLM call (no repair).
+   * `pass@k` — fraction passing within k attempts (for `k ≤
+     NL_REPAIR_MAX_ATTEMPTS + 1`).
+   * `cost_usd_per_pass` — total LLM USD divided by pass count.
+   * `tokens_per_pass` — same with tokens.
+   * `repair_rate` — fraction of passes that needed at least one
+     repair.
+4. **Regression gate.** A baseline (`tests/nl2sparql/eval/baseline.json`)
+   is committed; CI fails if `pass@1` regresses by > 5 % relative or
+   `cost_usd_per_pass` rises by > 25 % relative. The baseline is
+   refreshed manually after model upgrades, with the diff reviewed in
+   the same PR.
+5. **Evaluation set composition.** v1.0 ships ≥ 100 hand-curated cases
+   stratified across: (a) class types — `Person`, `Org`, `Document`,
+   `Event`; (b) clause complexity — single-triple BGP, OPTIONAL,
+   FILTER, aggregation; (c) physical model — PG, LPG, RPT, hybrid;
+   (d) length — 1-clause, 2-clause, 3+ clause questions.
+6. **Reports** are gitignored (cost-control); the baseline JSON is
+   versioned.
 
 ---
 
@@ -1091,6 +1400,66 @@ conditional tabs (**Explain** when `explainPlan` is present,
 Single dark theme (`oneDark` via `theme.ts`) for v1.0, matching the
 sister project. Light mode is a v1.1 deliverable.
 
+### 10.9 Operational states
+
+Every component renders four explicit states; the `tests/playwright/`
+suite asserts each is reachable. Skipping a state in implementation
+fails the parity check (criterion §3.9).
+
+| State | When | What renders |
+| --- | --- | --- |
+| **Loading** | Async work in flight (`/translate`, `/execute`, `/schema/introspect`, `/nl-translate`, OWL import) | Skeleton placeholders matching the eventual layout (table column widths, graph canvas), `aria-busy="true"` on the parent, top-of-page indeterminate progress bar |
+| **Empty** | No data yet (no SPARQL written, results panel before first run, mapping panel pre-introspection) | Friendly call-to-action, sample-query suggestion, link to the relevant `docs/howto/` page |
+| **Error** | API returned 4xx/5xx, network error, `PipelineOutcome.failed`, OWL parse failure | Banner with error code (`E_*` from §5.1), redacted message (per §8.5), "What to try" suggestion, "Copy diagnostic" button (copies code + sanitised message + correlation ID) — never the raw stack trace |
+| **Partial** | Result truncation, `W_SCHEMA_HEURISTIC_FALLBACK`, `W_RESULT_TRUNCATED`, NL repair-loop succeeded after retries | Inline warning (distinct icon for schema vs operational), explicit count ("showing 10,000 of N rows"), "Re-run with higher cap" affordance where applicable |
+
+Toast notifications (top-right) are reserved for **transient
+acknowledgements** (saved to history, prefix added, OWL exported).
+Persistent failures live in inline error states, not toasts —
+Playwright cases assert the toast queue stays empty in error scenarios.
+
+### 10.10 Accessibility (a11y)
+
+The workbench commits to **WCAG 2.1 AA** conformance for the v1.0
+release. Concrete commitments:
+
+| Surface | Commitment | How verified |
+| --- | --- | --- |
+| Keyboard navigation | All actions reachable without a mouse; focus-visible ring on every focusable element; tab order matches reading order; `Esc` dismisses every overlay | `tests/playwright/a11y_keyboard.spec.ts` traverses every primary action by `Tab`+`Enter` |
+| Colour contrast | Text + UI component contrast ≥ 4.5:1; large text ≥ 3:1; non-text contrast ≥ 3:1 (covers `oneDark` defaults — verified, not assumed) | `tests/playwright/a11y_contrast.spec.ts` runs `axe-core` |
+| Screen-reader labels | All icon-only buttons have `aria-label`; all editors have a visible label and `role="textbox"`; result tables expose row/col headers; status changes are announced via `aria-live="polite"` | `tests/playwright/a11y_aria.spec.ts` |
+| Reduced motion | Respect `prefers-reduced-motion` — disable canvas auto-centring animation, panel slide transitions, and the loading-bar pulse | Playwright test sets the media-query and asserts no `transition` / `animation` styles compute |
+| Editor a11y | CodeMirror 6 ARIA defaults preserved; completion popup is `role="listbox"` with arrow-key navigation; hover docs are reachable via `Mod-K` (not hover-only) | Manual audit checklist in `docs/a11y-audit.md` |
+| Forms (connection dialog, prefix manager, params) | Every input has a programmatic label; errors are linked via `aria-describedby`; submit on `Enter` only inside an explicit form context | `tests/playwright/a11y_forms.spec.ts` |
+| Internationalisation hooks | All user-visible strings live in `ui/src/i18n/en.ts`; component code uses `t("key")` indirection. **No translations ship in v1.0** — the indirection ensures we don't have to refactor when they do (post-v1.0) | `ui/scripts/check-no-hardcoded-strings.mjs` runs in CI |
+
+Non-goals for v1.0: full RTL support, voice-control optimisation,
+high-contrast theme variant. These are tracked under v1.1 ("UI light
+theme + a11y polish").
+
+### 10.11 UI performance budgets
+
+The shipped UI must respect the budgets below. Local enforcement uses
+Lighthouse CI (`ui/lighthouse.json`); per-PR enforcement uses a
+shared-runner snapshot with throttled "Mobile slow 4G" + 4× CPU
+slowdown.
+
+| Budget | Target | How measured |
+| --- | --- | --- |
+| First Contentful Paint (FCP) | ≤ 1.8 s | Lighthouse, `Performance > FCP` |
+| Largest Contentful Paint (LCP) | ≤ 2.5 s | Lighthouse, `Performance > LCP` |
+| Time to Interactive (TTI) | ≤ 3.5 s | Lighthouse, `Performance > TTI` |
+| Total Blocking Time (TBT) | ≤ 300 ms | Lighthouse, `Performance > TBT` |
+| Cumulative Layout Shift (CLS) | ≤ 0.10 | Lighthouse, `Performance > CLS` |
+| JS bundle (gzipped, app + vendor) | ≤ 600 KiB | `vite build` size-report fails CI on regress |
+| First-row render after `/execute` 1k-row response | ≤ 200 ms | `tests/playwright/perf_results.spec.ts` |
+| Cytoscape graph initial layout, 500 nodes / 1000 edges | ≤ 1.5 s | `tests/playwright/perf_graph.spec.ts` |
+| Editor keystroke latency, 5k-line SPARQL document | ≤ 16 ms p95 | `tests/playwright/perf_editor.spec.ts` (synthetic typing benchmark) |
+| Mode switch (lens / table ↔ graph / SPARQL ↔ AQL pane focus) | ≤ 80 ms | Playwright timing assertion |
+
+Regression > 25 % on any budget fails CI; smaller regressions surface
+as a non-blocking comment on the PR.
+
 ---
 
 ## 11. Third-party tool compatibility (the SPARQL Protocol audience)
@@ -1164,14 +1533,54 @@ live-SPARQL:
 
 ### 11.4 Connectivity recipes (`docs/howto/`)
 
-Each tool gets a one-page how-to under `docs/howto/`:
-`protege.md`, `ontology-playground.md`, `yasgui.md`,
-`sparqlwrapper.md`, `arq.md`, `oxigraph.md`. Each recipe covers:
+Each tool gets a one-page how-to under `docs/howto/`. Each recipe is
+**testable** — the same SPARQL string the recipe ships as "first
+query" is the body of the tool's smoke test
+(`tests/integration/test_<tool>_compat.py`). Recipe + test stay in
+lockstep; CI fails if the recipe's snippet drifts from the test's.
 
-1. The exact endpoint URL to enter in the tool's connect dialog.
-2. Auth model (Basic / Bearer / session token).
-3. Verified-compatible operations and known gaps.
-4. A "first query" copy-pasteable SPARQL string the tool can run end-to-end.
+Common recipe template (every page):
+
+1. **Endpoint URL** — exactly what to paste into the tool's connect
+   dialog (`http://localhost:8001/sparql` for dev,
+   `https://<host>/sparql` for cloud); when the tool needs a
+   distinct query / update endpoint, both URLs are listed (update is
+   "not supported, see §5.3" — the recipe shows the 405 response so
+   users learn it's a feature not a bug).
+2. **Auth model** — Basic / Bearer / session token / none; for tools
+   that *only* speak Basic we ship a "wrap with `nginx` Bearer
+   adapter" snippet under each recipe.
+3. **Verified-compatible operations** — checked checkboxes for every
+   row of §11.1 row's "verified-compatible operations" column.
+4. **Known gaps** — explicit list (e.g. Protégé named-graph 404 with
+   a one-line workaround; YASGUI's auto-completion not seeing our
+   schema; SPARQLWrapper's prefix-rewriting quirks).
+5. **First query** — a 3-line SPARQL snippet the tool can run
+   end-to-end against the bundled `docker compose up` dev dataset.
+6. **Troubleshooting matrix** — the tool's most common error symptom
+   ↔ root cause (`401` → recipe step 2; `405` → §5.3; `406` →
+   `Accept` header drift).
+7. **Round-trip checklist** — for editors with file roundtrip
+   (Protégé OWL save, Microsoft Ontology Playground RDF/XML), the
+   exact `/mapping/{import,export}-owl` calls + the file-format
+   dialog choices that survive the round-trip.
+
+Per-recipe scope (each page is ~ 1 screen; longer pages break the
+"recipe" pattern):
+
+| Recipe | Defining decisions per recipe |
+| --- | --- |
+| `docs/howto/protege.md` | Default `Accept: application/sparql-results+xml`; Service Description fetch; named-graph degradation note (treat the default graph as the union of named graphs); Basic-auth with `nginx` Bearer-adapter sidecar snippet |
+| `docs/howto/ontology-playground.md` | File-based round-trip via `/mapping/{import,export}-owl` with RDF/XML; Microsoft Fabric IQ namespace conventions; how to diff Playground-edited OWL against the live mapping before pushing back |
+| `docs/howto/yasgui.md` | Embed snippet (`<div id="yasgui">` + `Yasgui.default(...)` constructor); CORS allowlist (`CORS_ALLOWED_ORIGINS`, `CORS_EXPOSE_HEADERS`); auto-prefix integration via the analyzer's namespaces |
+| `docs/howto/sparqlwrapper.md` | Python snippet using `rdflib.SPARQLWrapper` with both Bearer + Basic; result-format kwargs (`returnFormat=JSON|XML|CSV|TSV`); pagination pattern via `OFFSET`/`LIMIT` with our truncation warning |
+| `docs/howto/arq.md` | Apache Jena `arq` CLI invocation; `--service` form; ARQ's stricter `Accept` defaults and how the recipe exploits our 406 fallback (§5.2) |
+| `docs/howto/oxigraph.md` | Oxigraph CLI `oxigraph query` against our endpoint; useful as a sanity-check diff vs `pyoxigraph` (the embedded Rust library that backs our cross-validation tests) |
+| `docs/howto/arango-ontoextract.md` | Cross-project deployment topology; one-env-var integration on the AOE side (`AOE_SPARQL_ENDPOINT`); JWT forwarding; CORS allowlist; bidirectional OWL roundtrip |
+
+A `docs/howto/index.md` table-of-contents lists every recipe with a
+single-line "what's special" summary, so an operator can find the
+right page in one click.
 
 ---
 
@@ -1394,19 +1803,52 @@ fix before tagging v1.0.
 
 ## 14. Release roadmap
 
+This roadmap is organised by milestone (v0.x → v1.0 → v1.1 → v1.2 →
+v2). For each milestone we list:
+
+* **Theme** — the one-line "shape" of the release.
+* **Exit criteria** — every item is mapped to a §3 success-criterion
+  number where one applies. Shipping the milestone means every exit
+  criterion's CI signal is green on `main`.
+* **Out of scope** — explicit list of common requests that do *not*
+  block this milestone (so reviewers can see what we're not doing).
+* **Sequencing notes** — when ordering matters (e.g. blocked by
+  upstream `arangodb-schema-analyzer`).
+
+Calendar dates are deliberately omitted; this is an OSS roadmap and we
+target *order* and *exit criteria*, not Gantt charts.
+
 ### v0.x (current — v1 prep)
 
-- ✅ Visitors: BGP, Filter, Project, Distinct, Slice, OrderBy, AskQuery,
-  Extend, LeftJoin, AggregateJoin, Join
-- ✅ RPC routes (§5.1)
-- ✅ NL2SPARQL pipeline + routes
-- ✅ Schema warnings + resolver
-- ✅ W3C harness (translation-only + live)
-- ✅ Cross-validation harness
-- ✅ Public-mode posture, sessions, rate limits, SSRF guard, redaction
-- ✅ MIT LICENSE, CONTRIBUTING, SECURITY, CI workflow
+**Theme.** Foundations — the visitor surface, the service shell, and
+the development loop.
+
+| Exit criterion | §-ref | Status |
+| --- | --- | --- |
+| Visitors: BGP / Filter / Project / Distinct / Slice / OrderBy / AskQuery / Extend / LeftJoin / AggregateJoin / Join | §3.1 | ✅ |
+| RPC routes per §5.1 | §3.6 | ✅ |
+| NL2SPARQL pipeline + routes | §3.11 (precursor) | ✅ |
+| Schema warnings + resolver | §3.5 | ✅ |
+| W3C translation-only + live harnesses | §3.1 | ✅ |
+| Cross-validation harness vs `pyoxigraph` | §3.1 | ✅ |
+| Public-mode posture / sessions / rate limits / SSRF guard / redaction | §3.8, §3.13 | ✅ |
+| MIT LICENSE, CONTRIBUTING, SECURITY, CI workflow | §3.16 | ✅ |
+| Initial PRD published; Round 1 + Round 2 PRD revisions on `main` | n/a | ✅ |
+
+**Out of scope for v0.x.** W3C SPARQL Protocol (`/sparql`); RPT
+visitor; multi-tenancy enforcement at AQL emit; performance budgets;
+threat model; UI workbench beyond skeleton.
 
 ### v1.0 (the "complete SPARQL service" milestone)
+
+**Theme.** Everything in this PRD's §3 acceptance table is green.
+
+**Sequencing.** The translator deliverables (`Translator + protocol`,
+`Physical-model coverage`) and the schema layer are independent and
+land in parallel. UI / 3rd-party / cross-project work blocks on the
+W3C Protocol endpoint shipping. Operations spine (perf budgets,
+observability, deployment, runbook) and security spine (threat-model
+test enforcement, security-testing rows) gate the public release tag.
 
 **Translator + protocol**
 
@@ -1497,41 +1939,85 @@ fix before tagging v1.0.
 
 **Release**
 
-- First public PyPI release
+- First public PyPI release (§3.16)
 - Schema-detection corpus complete (PG, LPG, RPT, all four hybrid
-  permutations, multi-tenant, sharded — §13.3)
-- Legacy round-trip parity ≥ 90 % (§13.4)
-- All five `docs/howto/*.md` recipes published
+  permutations, multi-tenant, sharded — §13.3) (§3.5)
+- Legacy round-trip parity ≥ 90 % (§13.4) (§3.7)
+- All seven `docs/howto/*.md` recipes published (§11.4) (§3.10)
+- SBOM artefact attached to v1.0 git tag (§16) (§3.16)
+- Operational runbook published (`ops/runbook.md`) (§15.6) (§3.16)
+- Compliance-mapping document published (`docs/compliance/`) (§17.6) (§3.14)
+
+**Out of scope for v1.0** (deferred or non-goal — listed so reviewers
+can see what we're not doing):
+
+- SPARQL Update — explicit non-goal (§2, §5.3); endpoint returns 405.
+- `SERVICE` keyword for federation — non-goal (§2); deferred to v2.
+- WebSocket / SSE streaming variants — deferred to v2.
+- UI light theme — deferred to v1.1.
+- TopBraid Composer verified-compatibility — deferred to v1.1
+  (best-effort at v1.0).
+- Self-hosted-LLM connector recipe (Ollama / vLLM) — deferred to
+  v1.1.
+- Cross-replica session backend (Redis) — deferred to v2 (v1.0 keeps
+  in-process sessions per §15.4).
+- `arango-query-core` extraction — deferred to v1.x (architectural
+  carve-out only after both projects reach v1.0).
+- Property-path expansion (`MulPath` etc.) — deferred to v1.1.
+- Named-graph dispatch (`visit_Graph`) — deferred to v1.2.
 
 ### v1.1 (depth on translation + UI polish)
 
-- `visit_Minus` (anti-join)
-- `visit_ToMultiSet` (subqueries)
-- Property-path expansion (`MulPath`, `SequencePath`, `AlternativePath`)
-- `visit_ConstructQuery` (RDF output → `text/turtle` /
-  `application/n-triples` / `application/rdf+xml` / `application/ld+json`)
-- W3C query-evaluation coverage ≥ 35 %
-- UI light theme (workbench parity completion)
-- "Schema-discovered prefix" autocompletion in the SPARQL editor:
-  the analyzer's surfaced namespaces become typed suggestions in the
-  prefix manager
-- TopBraid Composer compatibility verified (best-effort target promoted
-  to verified)
-- `arango-query-core` extraction kicked off (shared resolver / cache /
-  fingerprint policy / analyzer integration with `arango-cypher-py`)
+**Theme.** Translation depth (the high-value missing visitors) and
+the workbench polish that v1.0 deferred.
+
+| Exit criterion | §-ref / Notes |
+| --- | --- |
+| `visit_Minus` (anti-join) | §6.6 / new `tests/translate/minus.yml` |
+| `visit_ToMultiSet` (subqueries) | §6.6 |
+| Property-path expansion (`MulPath`, `SequencePath`, `AlternativePath`) | §6.6 row promoted from 🔴 → ✅ |
+| `visit_ConstructQuery` (RDF output: `text/turtle` / `application/n-triples` / `application/rdf+xml` / `application/ld+json`) | §5.2 RDF formats |
+| W3C query-evaluation coverage ≥ 35 % | §13.5 v1.1 row |
+| UI light theme | §10.8 (workbench parity completion) |
+| "Schema-discovered prefix" autocompletion in the SPARQL editor | §10.2 (analyzer namespaces → typed prefix suggestions) |
+| TopBraid Composer compatibility verified | §11.1 best-effort row promoted to verified |
+| `arango-query-core` extraction kicked off | §12.3 (shared resolver / cache / fingerprint / analyzer integration with `arango-cypher-py`) |
+| Self-hosted-LLM connector recipe (Ollama, vLLM) | §17.4 closing paragraph |
+| Light-theme a11y audit complete | §10.10 expanded to cover both themes |
+
+**Out of scope for v1.1.** Named-graph dispatch (v1.2); SPARQL Update
+(non-goal); federation (v2).
 
 ### v1.2 (graph dispatch)
 
-- `visit_Graph` — named-graph routing to per-graph collections or to a
-  graph-name attribute discriminator
-- `Variable predicates` lowered via multi-collection UNION
-- Graph Store HTTP Protocol (`/graph?graph=…`)
+**Theme.** Named graphs and variable predicates — the SPARQL features
+that need a fundamentally different AQL emission strategy.
+
+| Exit criterion | §-ref / Notes |
+| --- | --- |
+| `visit_Graph` — named-graph routing to per-graph collections or to a graph-name attribute discriminator | §6.6 row promoted from 🔴 → ✅ |
+| `Variable predicates` lowered via multi-collection UNION | §6.6 row promoted from 🔴 → ✅ |
+| Graph Store HTTP Protocol (`/graph?graph=…`) | §5.3 row promoted to in-scope |
+| W3C query-evaluation coverage ≥ 50 % | §13.5 |
+| `arango-query-core` first stable release (consumed by both `-cypher-py` and `-sparql-py`) | §12.3 |
+
+**Out of scope for v1.2.** Federation; Redis session backend.
 
 ### v2 (federation + scaling, only if customer-driven)
 
-- `SERVICE` keyword for cross-Arango-database federation
-- Cross-process session backend (Redis)
-- Streaming response variants
+**Theme.** Multi-database federation and horizontal scale-out. Gated
+on customer demand — not pursued speculatively.
+
+| Exit criterion | §-ref / Notes |
+| --- | --- |
+| `SERVICE` keyword for cross-ArangoDB federation | §2 (currently non-goal); §6.6 row promoted |
+| Cross-process session backend (Redis) | §15.4 (currently per-replica) |
+| Streaming response variants (WebSocket, SSE) | §5.3 row promoted |
+| Major-version SemVer bump (breaking-change window for unrelated cleanup) | §16 |
+
+**Out of scope for v2.** SPARQL Update remains non-goal — v2 is about
+read scale, not write semantics. (If a customer needs Update, that's a
+v3 conversation.)
 
 ---
 
