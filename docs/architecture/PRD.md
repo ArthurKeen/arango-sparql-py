@@ -9,6 +9,38 @@ now lives in [`vision.md`](vision.md) as the inception narrative.)
 Platform team that consumes this as a BYOC service), and AI agents working on
 the repo.
 
+**Conventions.** This document uses [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)
+keywords (**MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, **MAY**) where a
+requirement is normative. Sections marked *normative* (§9.4, §9.5, §9.6, §15,
+§16, §17, Appendix A, and the §3 acceptance table) are the spec; everything
+else is rationale that supports the spec but is not itself enforceable.
+
+---
+
+## Table of contents
+
+| §  | Section                                                | Normative? |
+| -- | ------------------------------------------------------ | ---------- |
+| 1  | [Mission](#1-mission)                                  |            |
+| 2  | [Non-goals (v1)](#2-non-goals-v1)                      |            |
+| 3  | [Success criteria (v1.0 acceptance)](#3-success-criteria-v10-acceptance) | ✅ |
+| 4  | [Architecture overview](#4-architecture-overview)      |            |
+| 5  | [HTTP surface](#5-http-surface)                        | ✅ (5.1, 5.2) |
+| 6  | [Schema model & physical layouts](#6-schema-model--physical-layouts) | ✅ (6.2, 6.5) |
+| 7  | [NL → SPARQL pipeline](#7-nl--sparql-pipeline)         |            |
+| 8  | [Multitenancy & security](#8-multitenancy--security)   | ✅ (8.6) |
+| 9  | [Observability](#9-observability)                      | ✅ (9.4–9.7) |
+| 10 | [UI / Workbench](#10-ui--workbench)                    | ✅ (10.10, 10.11) |
+| 11 | [Third-party tool compatibility](#11-third-party-tool-compatibility-the-sparql-protocol-audience) |            |
+| 12 | [Cross-project integration](#12-cross-project-integration) |        |
+| 13 | [Conformance & testing](#13-conformance--testing)      | ✅ (13.1) |
+| 14 | [Release roadmap](#14-release-roadmap)                 |            |
+| 15 | [Deployment & operations](#15-deployment--operations)  | ✅ |
+| 16 | [Versioning & upgrades](#16-versioning--upgrades)      | ✅ |
+| 17 | [Privacy & data handling](#17-privacy--data-handling)  | ✅ |
+| 18 | [Glossary](#18-glossary)                               |            |
+| A  | [Appendix A: Configuration reference](#appendix-a-configuration-reference) | ✅ |
+
 ---
 
 ## 1. Mission
@@ -434,7 +466,7 @@ above coexist in one database*. Concretely, a single SPARQL query can
 have one BGP triple resolve to `COLLECTION` (read a PG collection
 directly), the next to `RPT` (look the same subject up in `_triples`),
 and the third to `LABEL` (filter a shared collection by `typeField`) —
-joined on a shared subject URI. The translator must emit one AQL query
+joined on a shared subject URI. The translator MUST emit one AQL query
 that does all three and joins them with `FILTER` clauses on `_uri` (or
 the equivalent triple-store subject column). Acceptance for this is
 criterion §3.4.
@@ -1484,7 +1516,7 @@ section pins the compatibility matrix.
 ### 11.2 Protégé-specific compatibility notes
 
 - **Default `Accept` header for SELECT** is `application/sparql-results+xml`,
-  not JSON. The Protocol endpoint must serve XML correctly even when
+  not JSON. The Protocol endpoint MUST serve XML correctly even when
   the JSON path is the daily-driver shape — `tests/protocol/` includes
   XML conformance cases.
 - **Service Description fetch on first connect**: Protégé issues
@@ -1551,7 +1583,7 @@ Common recipe template (every page):
    that *only* speak Basic we ship a "wrap with `nginx` Bearer
    adapter" snippet under each recipe.
 3. **Verified-compatible operations** — checked checkboxes for every
-   row of §11.1 row's "verified-compatible operations" column.
+   entry in this tool's row of the §11.1 compatibility matrix.
 4. **Known gaps** — explicit list (e.g. Protégé named-graph 404 with
    a one-line workaround; YASGUI's auto-completion not seeing our
    schema; SPARQLWrapper's prefix-rewriting quirks).
@@ -1988,6 +2020,17 @@ the workbench polish that v1.0 deferred.
 **Out of scope for v1.1.** Named-graph dispatch (v1.2); SPARQL Update
 (non-goal); federation (v2).
 
+**Editorial follow-up tracked here.** §6 of this PRD has grown to ~400
+lines after the §6.5 multi-tenancy/sharding expansion. v1.1 may split
+it into a normative §6 conceptual section + a separate `docs/architecture/
+schema-mapping-reference.md` containing the OWL contract tables and
+schema-shape status table — keeping §6 short while preserving the
+detail for operators. This is a documentation refactor, not a
+behavioural change; deferred to v1.1 because (a) the cross-references
+are settled and don't need to move during v1.0, and (b) the §6 content
+changes frequently as new physical models land — splitting now would
+multiply the per-PR maintenance cost.
+
 ### v1.2 (graph dispatch)
 
 **Theme.** Named graphs and variable predicates — the SPARQL features
@@ -2365,6 +2408,8 @@ specifications. It is a v1.0 deliverable.
 
 ## 18. Glossary
 
+Terms are alphabetised; reference the section where each first appears.
+
 | Term | Definition |
 | --- | --- |
 | **AOE** | Short for [`arango-ontoextract`](https://github.com/ArthurKeen/arango-ontoextract) — the LLM-driven OWL extraction and curation platform. AOE is downstream of `arango-sparql-py` (it consumes our SPARQL endpoint as the answer to its PRD's open question Q7). See §12.2. |
@@ -2373,29 +2418,57 @@ specifications. It is a v1.0 deliverable.
 | **`arango-query-core`** | (Planned, v1.x) shared Python package factoring out the resolver, schema cache, fingerprint policy, and analyzer integration that `arango-cypher-py` and `arango-sparql-py` currently each carry. |
 | **AgenticSchemaAnalyzer** | The class in `arangodb-schema-analyzer` (PyPI) that introspects an ArangoDB database and emits a `MappingBundle`. The same package was originally repo-named `arango-schema-mapper`. |
 | **ArangoRDF PGT** | The Property Graph Translation that AOE uses to store OWL ontologies in ArangoDB (one collection per OWL class, one edge collection per object property). Different from this project's RPT physical model — but a `MappingBundle` describing an AOE-stored ontology will use `style "COLLECTION"` / `"DEDICATED_COLLECTION"`, which is exactly what our resolver already understands. |
+| **axe-core** | [Open-source accessibility-testing engine](https://github.com/dequelabs/axe-core) by Deque Systems. Drives the §10.10 a11y assertions in `tests/playwright/a11y_*.spec.ts`. |
 | **CodeMirror 6** | Editor framework used in the workbench; pinned at `^6.0.2` with the same family of `@codemirror/*` packages as the sister project. |
+| **CORS** | Cross-Origin Resource Sharing — the browser security mechanism that gates which origins may call the service from JS. v1.0 exposes `CORS_ALLOWED_ORIGINS`, `CORS_ALLOWED_HEADERS`, `CORS_EXPOSE_HEADERS` (Appendix A.8). |
+| **CycloneDX** | An [OWASP standard](https://cyclonedx.org/) for Software Bill of Materials documents. v1.0 emits a CycloneDX-format SBOM per release tag (§17.6). |
 | **`CytoscapeGraph`** | UI component (`ui/src/components/CytoscapeGraph.tsx`) that renders SELECT result rows as an interactive graph; SPARQL build adds a literal-collapse toggle for literal-rich result sets. |
 | **DAWG** | Data Access Working Group — the W3C group whose SPARQL 1.1 evaluation test suite is the conformance ground-truth |
 | **`fingerprint_physical_shape`** | Cheap structural fingerprint (collections + index digests) — invalidates the mapping cache when topology changes |
 | **`fingerprint_physical_counts`** | Shape fingerprint extended with per-collection `count()` — distinguishes "same schema, different volume" from "schema unchanged" |
+| **GDPR Art. 17** | EU [General Data Protection Regulation Article 17](https://gdpr-info.eu/art-17-gdpr/) — the "right to erasure" / "right to be forgotten". §17.5 documents how operators satisfy it: delete tenant DB → cascading L2-cache + log purge. |
+| **Helm chart** | Package format for Kubernetes deployments. v1.0 ships `ops/helm/arango-sparql-py/` as the source-of-truth for production deployments (§15.1); raw `ops/k8s/*.yaml` manifests are generated from it. |
+| **HIPAA Security Rule §164.312** | US healthcare-data security regulation. v1.0 ships a compliance-mapping document (§17.6) tying our concrete commitments to its implementation specifications. |
 | **Hybrid schema** | An ArangoDB schema that uses two or more of the physical models (`COLLECTION` / `LABEL` / `RPT` / `DOCUMENT`) at the same time. *Not* a fifth model — just the case where the bundle's `physicalMapping.entities[*].style` values are mixed. |
+| **JWT** | JSON Web Token (RFC 7519). The auth-bearer format AOE forwards into the SPARQL service when the deployment uses upstream-issued tokens (§12.2 row 4); we never validate signatures, only forward (§8.6 T2). |
+| **K8s probes** (liveness / readiness / startup) | Three orthogonal Kubernetes-style health checks (§9.6). Liveness restarts a stuck pod; readiness gates ingress traffic; startup gates the readiness check during long warm-up windows. |
+| **Lighthouse CI** | [Google's automated web-performance testing tool](https://github.com/GoogleChrome/lighthouse-ci). Drives §10.11 UI performance budget enforcement. |
 | **LPG** | Labeled Property Graph — physical model where one shared collection holds multiple OWL classes, discriminated by a `typeField`. OWL annotation: `phys:mappingStyle "LABEL"`. |
-| **Microsoft Fabric IQ** | Microsoft's enterprise data-fabric ontology platform; targets RDF/XML as its OWL serialisation. The Microsoft Ontology Playground is a Microsoft-maintained reference / learning app for Fabric IQ ontologies. |
-| **Microsoft Ontology Playground** | [Static React app](https://github.com/microsoft/Ontology-Playground) for authoring / inspecting / sharing OWL ontologies in the Microsoft Fabric IQ family. Compatibility with `arango-sparql-py` is file-based (RDF/XML round-trip via `/mapping/{import,export}-owl`). See §11.3. |
+| **LRU** | Least-Recently-Used cache eviction policy. Used by the L1 in-process schema cache (§15.5) and by the session table when `MAX_SESSIONS` overflows (§8.1). |
 | **`MappingBundle`** | The wire-format dict returned by both the heuristic detector and the analyzer: `{conceptualSchema, physicalMapping, metadata, owl_turtle?}`. The `arango_sparql.translate.resolver.SchemaResolver` consumes the `physicalMapping` half. |
 | **`mapping_from_wire_dict`** | Spelling normaliser (snake_case ↔ camelCase) shared with the sister project. Single entry-point for parsing analyzer output and OWL-derived mappings. |
+| **Microsoft Fabric IQ** | Microsoft's enterprise data-fabric ontology platform; targets RDF/XML as its OWL serialisation. The Microsoft Ontology Playground is a Microsoft-maintained reference / learning app for Fabric IQ ontologies. |
+| **Microsoft Ontology Playground** | [Static React app](https://github.com/microsoft/Ontology-Playground) for authoring / inspecting / sharing OWL ontologies in the Microsoft Fabric IQ family. Compatibility with `arango-sparql-py` is file-based (RDF/XML round-trip via `/mapping/{import,export}-owl`). See §11.3. |
+| **OpenTelemetry / OTLP** | The CNCF observability framework and its [OTLP wire protocol](https://opentelemetry.io/docs/specs/otlp/). Tracing is opt-in via `OTEL_EXPORTER_OTLP_ENDPOINT` (§9.5, Appendix A.7). |
+| **OWL bomb** | An adversarial OWL/RDF document crafted to cause runaway resource consumption during parse (entity expansion, exponential cardinality). Mitigated at `/mapping/import-owl` via byte and triple caps (§8.6 T7). |
+| **`pass@k`** | NL-evaluation metric: fraction of cases that pass within k LLM attempts (k = 1 → no repair; k > 1 → up to `k - 1` repair attempts). See §7.4. |
 | **PG** | Property Graph — physical model where each OWL class lives in its own ArangoDB collection. OWL annotation: `phys:mappingStyle "COLLECTION"`. |
-| **`pyoxigraph`** | Python bindings for the Rust [Oxigraph](https://github.com/oxigraph/oxigraph) RDF store; used here as the W3C-compliant reference triplestore for cross-validation |
+| **`p50` / `p95` / `p99`** | Latency percentiles: the 50th, 95th, and 99th percentile of a distribution. The §9.4 SLO table uses p95 as its primary threshold. |
+| **Prometheus** | The de-facto open-source metrics scrape protocol and time-series database. v1.0 emits Prometheus-format metrics on a separate port (§9.5). |
+| **prompt injection** | An attack class where adversarial natural-language input steers an LLM toward unintended output. v1.0 mitigation: the NL pipeline emits SPARQL (not AQL) which is then parsed and translated through the same algebra walker as user-typed SPARQL (§8.6 T9). |
+| **Property-based test** | A test that generates many random inputs from a property declaration (typically via the [Hypothesis](https://hypothesis.readthedocs.io/) library on the Python side) and asserts an invariant holds across all of them. Used in `tests/security/` for §8.6 T13 (no AQL injection) and §17.3 (no bodies in logs). |
 | **Protégé** | Stanford's free, JVM-based, desktop OWL editor — the canonical third-party SPARQL Protocol client. Verified-compatible at v1.0; see §11.2. |
+| **`pyoxigraph`** | Python bindings for the Rust [Oxigraph](https://github.com/oxigraph/oxigraph) RDF store; used here as the W3C-compliant reference triplestore for cross-validation |
+| **PVC** | Persistent Volume Claim — a Kubernetes-native request for a piece of durable storage. Used to host the analyzer's cache root in production (§15.1 Helm-chart values). |
+| **RFC 2119** | [IETF best-practice doc](https://www.rfc-editor.org/rfc/rfc2119) defining MUST / MUST NOT / SHOULD / SHOULD NOT / MAY for normative spec language. This PRD's normative sections use those keywords. |
+| **RFC 9110** | [IETF HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110) — the source for §5.2's Accept-header q-value parsing rules. |
+| **RFC 9745** | [IETF Deprecation HTTP Header](https://www.rfc-editor.org/rfc/rfc9745). v1.0 emits this header on every request touching a deprecated surface (§16.3). |
 | **RPC routes** | The service's native JSON contract (§5.1), distinguished from the W3C SPARQL Protocol endpoint (§5.2) |
 | **RPT** | Resource-style triples / RDF physical layout — a triple-row collection (legacy default name `_triples`) with `subject_uri` / `predicate` / `object_uri` / `object_value` columns. The legacy Foxx `arango-sparql` service's default storage shape. OWL annotation: `phys:mappingStyle "RPT"`. |
+| **SBOM** | Software Bill of Materials — a machine-readable inventory of every dependency in a release artefact. v1.0 emits a CycloneDX-format SBOM per tag (§17.6). |
 | **`SchemaResolver`** | The single module in `arango_sparql.translate.resolver` that reads OWL `phys:*` annotations and dispatches the visitor's read pattern by `style`. |
 | **Schema warning** | A non-fatal advisory emitted by `SchemaResolver` or the schema-detection layer when a resolution succeeds via fallback or the operator should review a low-confidence inference; carries a `W_SCHEMA_*` code |
+| **SemVer 2.0.0** | The [Semantic Versioning 2.0.0 spec](https://semver.org/spec/v2.0.0.html). The service follows MAJOR.MINOR.PATCH semantics with the per-route stability tiers documented in §16.2. |
 | **Service Description** | The W3C-spec'd Turtle document a SPARQL endpoint returns from `GET /sparql` (no query) advertising its capabilities |
 | **`shardFamilies`** | Optional `physicalMapping` block from the analyzer naming the related shards a cross-shard query must broadcast across. The translator emits a `WITH @@coll1, @@coll2, …` clause when present. |
+| **SLO** | Service Level Objective — a quantitative reliability/performance target the service commits to. The §9.4 table defines v1.0 SLOs for translate latency, execute overhead, etc. |
+| **SOC 2** | American Institute of CPAs trust-services-criteria framework for service organisations. v1.0 ships a compliance-mapping document (§17.6) showing which controls our concrete commitments satisfy. |
+| **SSRF** | Server-Side Request Forgery — an attack class where the service is induced to make outbound requests to internal hosts on behalf of an attacker. The `/connect` SSRF guard mitigates this (§8.4, §8.6 T11). |
+| **STRIDE** | Microsoft-coined threat-classification taxonomy: **S**poofing, **T**ampering, **R**epudiation, **I**nformation disclosure, **D**enial of service, **E**levation of privilege. The §8.6 threat model is organised by STRIDE rows. |
 | **`tenantScope`** | Per-entity metadata block from the analyzer naming the tenant discriminator field. The translator inserts `FILTER doc.<tenantField> == @<tenantBind>` for every read of that entity. |
 | **TCK** | Test Compatibility Kit — the openCypher equivalent of DAWG, used by the sister project `arango-cypher-py` |
 | **TopBraid Composer** | Commercial OWL editor by TopQuadrant — listed as the parity target for AOE's *own* built-in ontology editor (not as an `arango-sparql-py` direct target). Treated as a best-effort SPARQL client at v1.0; promoted to verified at v1.1. |
+| **WCAG 2.1 AA** | [W3C Web Content Accessibility Guidelines](https://www.w3.org/TR/WCAG21/) version 2.1, conformance level AA. The v1.0 UI accessibility commitment (§10.10). |
 | **YASGUI** | Browser-based SPARQL query editor; embeddable JS widget. Verified-compatible at v1.0 (CORS-tuned). |
 
 ---
