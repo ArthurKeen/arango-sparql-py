@@ -26,13 +26,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
+from urllib.parse import quote
 
-from rdflib import OWL, RDF, RDFS, Graph, Namespace, URIRef
+from rdflib import OWL, RDF, RDFS, Graph, Literal, Namespace, URIRef
 
 from ..errors import SchemaResolutionError
 
 if TYPE_CHECKING:
-    pass
+    from .mapping import MappingBundle
 
 # Both physical-IRI spellings the mapper has shipped historically. We
 # accept either so an ontology produced by an older mapper still
@@ -42,6 +43,19 @@ _PHYS_NAMESPACES = (
     Namespace("https://arango-schema-mapper.example.org/phys#"),
 )
 _LOCAL_NAME_RE = re.compile(r"[#/]([^#/]+)$")
+
+# Synthetic-IRI namespace used by :meth:`SchemaResolver.from_mapping_bundle`
+# when a :class:`~arango_sparql.translate.mapping.MappingBundle` carries no
+# inline OWL ontology. The choice of ``urn:`` rather than a resolvable
+# ``https:`` IRI is deliberate — the synthesized concepts are not meant to
+# be dereferenced, only to give the resolver a stable IRI per entity/
+# relationship label.
+_SYNTHETIC_CONCEPT_NS = Namespace("urn:arango-sparql:concept#")
+# Canonical ``phys:*`` namespace used by the synthesizer. Matches the
+# first entry in :data:`_PHYS_NAMESPACES` so the resolver's lookup logic
+# (which accepts either spelling) finds the annotations on the first
+# probe.
+_SYNTHETIC_PHYS_NS = _PHYS_NAMESPACES[0]
 
 
 def local_name(iri: URIRef | str) -> str:
@@ -115,6 +129,47 @@ class SchemaResolver:
         graph = Graph()
         if ttl:
             graph.parse(data=ttl, format="turtle")
+        return cls(ontology=graph, default_collection=default_collection)
+
+    @classmethod
+    def from_mapping_bundle(
+        cls,
+        bundle: MappingBundle,
+        *,
+        default_collection: str = "Document",
+    ) -> SchemaResolver:
+        """Build a resolver from a :class:`~arango_sparql.translate.mapping.MappingBundle`.
+
+        Two paths, picked at runtime:
+
+        1. **Inline OWL** — when ``bundle.owl_turtle`` is set (the typical
+           analyzer output, see PRD §6.3.1), we parse it directly. The
+           analyzer is responsible for embedding ``phys:*`` annotations on
+           every ``owl:Class`` and ``owl:ObjectProperty`` so the resolver
+           can dereference them without further work.
+
+        2. **Synthetic** — when no inline OWL is present (heuristic or
+           hand-authored mappings; see PRD §6.3.2), we synthesize a
+           minimal ``rdflib.Graph`` from ``bundle.physical_mapping``.
+           Each entity becomes one ``owl:Class`` with a
+           ``urn:arango-sparql:concept#<Label>`` IRI; each relationship
+           becomes one ``owl:ObjectProperty``. Physical annotations
+           (``collectionName``, ``edgeCollectionName``, ``typeField`` /
+           ``typeValue``, RPT column overrides) are attached as
+           ``phys:*`` literals so the existing ``resolve_class`` /
+           ``resolve_property`` paths work unchanged.
+
+        Callers that need IRIs in their own namespace (e.g. SPARQL
+        queries using ``http://customer.example/onto#``) should supply
+        an OWL ontology via ``bundle.owl_turtle`` rather than rely on
+        the synthetic ``urn:`` namespace.
+        """
+
+        if bundle.owl_turtle:
+            return cls.from_turtle(
+                bundle.owl_turtle, default_collection=default_collection
+            )
+        graph = _synthesize_graph_from_bundle(bundle)
         return cls(ontology=graph, default_collection=default_collection)
 
     # ------------------------------------------------------------------
@@ -233,3 +288,119 @@ class SchemaResolver:
     def _first_object(self, subject: URIRef, predicate: URIRef) -> str | None:
         value = self.ontology.value(subject=subject, predicate=predicate)
         return str(value) if value is not None else None
+
+
+# ---------------------------------------------------------------------------
+# MappingBundle → synthetic rdflib.Graph
+# ---------------------------------------------------------------------------
+
+
+# Physical-annotation predicates we project from MappingBundle entity- and
+# relationship-spec dicts into the synthesized graph. The mapping is
+# intentionally explicit (not a generic `for k, v in spec.items()`) so a
+# future bundle field with the same camelCase shape but a different
+# semantic does not accidentally leak into the ontology. Add a row here
+# when extending the bundle wire shape.
+_BUNDLE_ENTITY_ANNOTATIONS: tuple[tuple[str, str], ...] = (
+    ("typeField", "typeField"),
+    ("typeValue", "typeValue"),
+    ("triplesCollection", "triplesCollection"),
+    ("subjectColumn", "subjectColumn"),
+    ("predicateColumn", "predicateColumn"),
+    ("objectUriColumn", "objectUriColumn"),
+    ("objectValueColumn", "objectValueColumn"),
+    ("tenantField", "tenantField"),
+)
+
+_BUNDLE_RELATIONSHIP_ANNOTATIONS: tuple[tuple[str, str], ...] = (
+    ("typeField", "typeField"),
+    ("typeValue", "typeValue"),
+    ("triplesCollection", "triplesCollection"),
+)
+
+
+def _synthetic_iri(label: str) -> URIRef:
+    """Return a stable ``urn:arango-sparql:concept#<Label>`` IRI.
+
+    Percent-encodes characters that are not valid in an IRI fragment so
+    labels with spaces, slashes, or other punctuation (rare but possible
+    when the analyzer surfaces a customer's literal label) still produce
+    a round-trippable IRI.
+    """
+
+    return URIRef(str(_SYNTHETIC_CONCEPT_NS) + quote(label, safe=""))
+
+
+def _synthesize_graph_from_bundle(bundle: MappingBundle) -> Graph:
+    """Build a minimal rdflib graph carrying the bundle's physical
+    mapping as ``phys:*`` annotations on synthesized ``owl:Class`` and
+    ``owl:ObjectProperty`` resources.
+
+    The output is *not* a faithful OWL ontology — it carries no
+    ``rdfs:label`` strings and no domain/range axioms beyond what the
+    bundle itself declares. Its sole purpose is to give the resolver a
+    graph it can read using its existing lookup paths.
+    """
+
+    g = Graph()
+    for label, spec in bundle.entities().items():
+        if not isinstance(label, str) or not label:
+            continue
+        iri = _synthetic_iri(label)
+        g.add((iri, RDF.type, OWL.Class))
+
+        style = str(spec.get("style") or "COLLECTION")
+        # For RPT entities the resolver-visible "collection" is the
+        # triples table itself — that is where the engine reads rows.
+        collection = spec.get("collectionName")
+        if style == "RPT" and not collection:
+            collection = spec.get("triplesCollection") or "_triples"
+        if collection:
+            g.add(
+                (iri, _SYNTHETIC_PHYS_NS["collectionName"], Literal(str(collection)))
+            )
+        g.add((iri, _SYNTHETIC_PHYS_NS["mappingStyle"], Literal(style)))
+
+        for src_key, phys_local in _BUNDLE_ENTITY_ANNOTATIONS:
+            value = spec.get(src_key)
+            if value is None:
+                continue
+            g.add((iri, _SYNTHETIC_PHYS_NS[phys_local], Literal(str(value))))
+
+    for rtype, spec in bundle.relationships().items():
+        if not isinstance(rtype, str) or not rtype:
+            continue
+        iri = _synthetic_iri(rtype)
+        g.add((iri, RDF.type, OWL.ObjectProperty))
+
+        edge_collection = spec.get("edgeCollectionName")
+        style = str(spec.get("style") or "DEDICATED_COLLECTION")
+        # RPT_EDGE relationships ride the entity's triples table; if no
+        # explicit edge collection is provided, fall back to the
+        # bundle's triples collection (if any).
+        if style == "RPT_EDGE" and not edge_collection:
+            edge_collection = spec.get("triplesCollection") or "_triples"
+        if edge_collection:
+            g.add(
+                (
+                    iri,
+                    _SYNTHETIC_PHYS_NS["edgeCollectionName"],
+                    Literal(str(edge_collection)),
+                )
+            )
+        g.add((iri, _SYNTHETIC_PHYS_NS["mappingStyle"], Literal(style)))
+
+        from_entity = spec.get("fromEntity")
+        to_entity = spec.get("toEntity")
+        if isinstance(from_entity, str) and from_entity:
+            g.add((iri, RDFS.domain, _synthetic_iri(from_entity)))
+        if isinstance(to_entity, str) and to_entity:
+            g.add((iri, RDFS.range, _synthetic_iri(to_entity)))
+
+        for src_key, phys_local in _BUNDLE_RELATIONSHIP_ANNOTATIONS:
+            value = spec.get(src_key)
+            if value is None:
+                continue
+            g.add((iri, _SYNTHETIC_PHYS_NS[phys_local], Literal(str(value))))
+
+    return g
