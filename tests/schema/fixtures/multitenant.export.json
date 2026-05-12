@@ -1,0 +1,95 @@
+{
+  "conceptualSchema": {
+    "entities": [
+      {
+        "labels": ["Org"],
+        "name": "Org",
+        "properties": []
+      },
+      {
+        "labels": ["Person"],
+        "name": "Person",
+        "properties": []
+      },
+      {
+        "labels": ["Doc"],
+        "name": "Doc",
+        "properties": []
+      }
+    ],
+    "properties": [],
+    "relationships": [
+      {
+        "fromEntity": "Person",
+        "properties": [],
+        "toEntity": "Doc",
+        "type": "AUTHORED"
+      }
+    ]
+  },
+  "metadata": {
+    "analyzedCollectionCounts": {
+      "documentCollections": 3,
+      "edgeCollections": 1
+    },
+    "assumptions": [
+      "Org is the tenant root; every Person and Doc carries an org_id pointing at Org._key"
+    ],
+    "confidence": 0.9,
+    "detectedPatterns": ["PG", "MULTITENANT"],
+    "model": null,
+    "provider": null,
+    "repairAttempts": 0,
+    "reviewRequired": false,
+    "timestamp": "2026-05-12T00:00:00Z",
+    "usedBaseline": false,
+    "warnings": [],
+    "multitenancy": {
+      "strategy": "field",
+      "tenantRootEntity": "Org",
+      "tenantKeyAttribute": "_key"
+    },
+    "tenantScope": {
+      "Person": {
+        "tenantField": "org_id",
+        "tenantEntity": "Org"
+      },
+      "Doc": {
+        "tenantField": "org_id",
+        "tenantEntity": "Org"
+      }
+    }
+  },
+  "physicalMapping": {
+    "entities": {
+      "Org": {
+        "collectionName": "orgs",
+        "style": "COLLECTION"
+      },
+      "Person": {
+        "collectionName": "persons",
+        "style": "COLLECTION",
+        "tenantField": "org_id",
+        "tenantEntity": "Org"
+      },
+      "Doc": {
+        "collectionName": "docs",
+        "style": "COLLECTION",
+        "tenantField": "org_id",
+        "tenantEntity": "Org"
+      }
+    },
+    "relationships": {
+      "AUTHORED": {
+        "edgeCollectionName": "authored",
+        "style": "DEDICATED_COLLECTION",
+        "fromEntity": "Person",
+        "toEntity": "Doc"
+      }
+    }
+  },
+  "source": {
+    "kind": "analyzer",
+    "notes": "Exercises PRD \u00a76.5.1 tenantScope and \u00a76.5.2 multitenancy.strategy='field'."
+  }
+}

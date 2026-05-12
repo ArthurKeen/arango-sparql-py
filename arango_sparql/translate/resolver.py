@@ -310,6 +310,7 @@ _BUNDLE_ENTITY_ANNOTATIONS: tuple[tuple[str, str], ...] = (
     ("objectUriColumn", "objectUriColumn"),
     ("objectValueColumn", "objectValueColumn"),
     ("tenantField", "tenantField"),
+    ("tenantEntity", "tenantEntity"),
 )
 
 _BUNDLE_RELATIONSHIP_ANNOTATIONS: tuple[tuple[str, str], ...] = (

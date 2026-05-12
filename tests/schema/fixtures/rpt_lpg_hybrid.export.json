@@ -1,0 +1,98 @@
+{
+  "conceptualSchema": {
+    "entities": [
+      {
+        "labels": ["Person"],
+        "name": "Person",
+        "properties": []
+      },
+      {
+        "labels": ["Doc"],
+        "name": "Doc",
+        "properties": []
+      },
+      {
+        "labels": ["Tag"],
+        "name": "Tag",
+        "properties": []
+      }
+    ],
+    "properties": [],
+    "relationships": [
+      {
+        "fromEntity": "Person",
+        "properties": [],
+        "toEntity": "Doc",
+        "type": "AUTHORED"
+      },
+      {
+        "fromEntity": "Doc",
+        "properties": [],
+        "toEntity": "Tag",
+        "type": "TAGGED_WITH"
+      }
+    ]
+  },
+  "metadata": {
+    "analyzedCollectionCounts": {
+      "documentCollections": 1,
+      "edgeCollections": 1
+    },
+    "assumptions": [
+      "Person/Doc consolidated into single LPG vertex collection; Tag retained in legacy _triples"
+    ],
+    "confidence": 0.75,
+    "detectedPatterns": ["RPT", "LPG"],
+    "model": null,
+    "provider": null,
+    "repairAttempts": 0,
+    "reviewRequired": true,
+    "timestamp": "2026-05-12T00:00:00Z",
+    "usedBaseline": false,
+    "warnings": [
+      "Mixed-model BGP may require RPT->LPG result-set join; see PRD \u00a73.4"
+    ]
+  },
+  "physicalMapping": {
+    "entities": {
+      "Person": {
+        "collectionName": "vertices",
+        "style": "LABEL",
+        "typeField": "type",
+        "typeValue": "Person"
+      },
+      "Doc": {
+        "collectionName": "vertices",
+        "style": "LABEL",
+        "typeField": "type",
+        "typeValue": "Doc"
+      },
+      "Tag": {
+        "style": "RPT",
+        "triplesCollection": "_triples",
+        "subjectColumn": "subject_uri",
+        "predicateColumn": "predicate",
+        "objectUriColumn": "object_uri",
+        "objectValueColumn": "object_value"
+      }
+    },
+    "relationships": {
+      "AUTHORED": {
+        "collectionName": "edges",
+        "style": "GENERIC_WITH_TYPE",
+        "typeField": "type",
+        "typeValue": "AUTHORED"
+      },
+      "TAGGED_WITH": {
+        "style": "RPT_EDGE",
+        "triplesCollection": "_triples",
+        "fromEntity": "Doc",
+        "toEntity": "Tag"
+      }
+    }
+  },
+  "source": {
+    "kind": "manual",
+    "notes": "Exercises PRD \u00a73.4 mixed-model BGP (RPT + LPG). Note relationships use sister-project bare collectionName spelling for the edge collection."
+  }
+}

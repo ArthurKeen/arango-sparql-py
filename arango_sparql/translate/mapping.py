@@ -286,8 +286,14 @@ def _normalise_top_level(d: dict[str, Any]) -> dict[str, Any]:
 def _normalise_spec(spec: Any, *, label: str, where: str) -> dict[str, Any]:
     """Normalise a single entity- or relationship-spec dict.
 
-    *label* and *where* are used purely for diagnostic messages so the
-    caller can pinpoint which entry was malformed.
+    *label* and *where* are used both for diagnostic messages and to
+    pick context-specific aliases. The sister project's LPG fixtures
+    spell the edge-collection field as bare ``"collectionName"`` on a
+    relationship spec (rather than ``"edgeCollectionName"``); since the
+    field unambiguously means *edge* collection there, we normalise it
+    to the canonical SPARQL spelling. Doing so keeps the wire-shape
+    portable between the two projects without forcing the sister to
+    rewrite its fixtures.
     """
 
     if not isinstance(spec, dict):
@@ -295,14 +301,17 @@ def _normalise_spec(spec: Any, *, label: str, where: str) -> dict[str, Any]:
             f"physicalMapping.{where}[{label!r}] must be a dict, got "
             f"{type(spec).__name__!r}"
         )
+    is_relationship = where == "relationships"
     out: dict[str, Any] = {}
     for k, v in spec.items():
-        canonical = _SPEC_FIELD_ALIASES.get(k, k)
-        if canonical in out and canonical != k:
+        if is_relationship and k in {"collectionName", "collection_name"}:
+            canonical = "edgeCollectionName"
+        else:
+            canonical = _SPEC_FIELD_ALIASES.get(k, k)
+        if canonical in out:
             raise MappingError(
                 f"physicalMapping.{where}[{label!r}] has duplicate "
-                f"{canonical!r} field (both camelCase and snake_case "
-                "spellings present)"
+                f"{canonical!r} field (both spellings present)"
             )
         out[canonical] = v
     return out

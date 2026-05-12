@@ -1,0 +1,51 @@
+{
+  "conceptualSchema": {
+    "entities": [
+      {
+        "labels": ["Triples"],
+        "name": "Triples",
+        "properties": []
+      }
+    ],
+    "properties": [],
+    "relationships": []
+  },
+  "metadata": {
+    "analyzedCollectionCounts": {
+      "documentCollections": 3,
+      "edgeCollections": 0
+    },
+    "assumptions": [
+      "Three-region RPT deployment; _triples sharded by region for data sovereignty"
+    ],
+    "confidence": 0.95,
+    "detectedPatterns": ["RPT", "SHARDED"],
+    "model": null,
+    "provider": null,
+    "repairAttempts": 0,
+    "reviewRequired": false,
+    "timestamp": "2026-05-12T00:00:00Z",
+    "usedBaseline": false,
+    "warnings": []
+  },
+  "physicalMapping": {
+    "entities": {
+      "Triples": {
+        "style": "RPT",
+        "triplesCollection": "_triples_us",
+        "subjectColumn": "subject_uri",
+        "predicateColumn": "predicate",
+        "objectUriColumn": "object_uri",
+        "objectValueColumn": "object_value"
+      }
+    },
+    "relationships": {},
+    "shardFamilies": [
+      ["_triples_us", "_triples_eu", "_triples_apac"]
+    ]
+  },
+  "source": {
+    "kind": "analyzer",
+    "notes": "Exercises PRD \u00a76.5.3 cross-shard RPT broadcast via shardFamilies."
+  }
+}

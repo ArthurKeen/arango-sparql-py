@@ -1,0 +1,87 @@
+{
+  "conceptualSchema": {
+    "entities": [
+      {
+        "labels": ["Person"],
+        "name": "Person",
+        "properties": []
+      },
+      {
+        "labels": ["Doc"],
+        "name": "Doc",
+        "properties": []
+      }
+    ],
+    "properties": [],
+    "relationships": [
+      {
+        "fromEntity": "Person",
+        "properties": [],
+        "toEntity": "Doc",
+        "type": "AUTHORED"
+      },
+      {
+        "fromEntity": "Person",
+        "properties": [],
+        "toEntity": "Person",
+        "type": "KNOWS"
+      }
+    ]
+  },
+  "metadata": {
+    "analyzedCollectionCounts": {
+      "documentCollections": 1,
+      "edgeCollections": 0
+    },
+    "assumptions": [
+      "All triples colocated in legacy Foxx-style _triples collection"
+    ],
+    "confidence": 0.95,
+    "detectedPatterns": ["RPT"],
+    "model": null,
+    "provider": null,
+    "repairAttempts": 0,
+    "reviewRequired": false,
+    "timestamp": "2026-05-12T00:00:00Z",
+    "usedBaseline": false,
+    "warnings": []
+  },
+  "physicalMapping": {
+    "entities": {
+      "Person": {
+        "style": "RPT",
+        "triplesCollection": "_triples",
+        "subjectColumn": "subject_uri",
+        "predicateColumn": "predicate",
+        "objectUriColumn": "object_uri",
+        "objectValueColumn": "object_value"
+      },
+      "Doc": {
+        "style": "RPT",
+        "triplesCollection": "_triples",
+        "subjectColumn": "subject_uri",
+        "predicateColumn": "predicate",
+        "objectUriColumn": "object_uri",
+        "objectValueColumn": "object_value"
+      }
+    },
+    "relationships": {
+      "AUTHORED": {
+        "style": "RPT_EDGE",
+        "triplesCollection": "_triples",
+        "fromEntity": "Person",
+        "toEntity": "Doc"
+      },
+      "KNOWS": {
+        "style": "RPT_EDGE",
+        "triplesCollection": "_triples",
+        "fromEntity": "Person",
+        "toEntity": "Person"
+      }
+    }
+  },
+  "source": {
+    "kind": "imported_owl",
+    "notes": "Hand-authored to mirror the legacy arango-sparql Foxx _triples layout (PRD \u00a76.2 RPT table)."
+  }
+}

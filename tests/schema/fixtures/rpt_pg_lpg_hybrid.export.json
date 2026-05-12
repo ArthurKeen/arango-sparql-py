@@ -1,0 +1,119 @@
+{
+  "conceptualSchema": {
+    "entities": [
+      {
+        "labels": ["Person"],
+        "name": "Person",
+        "properties": []
+      },
+      {
+        "labels": ["Doc"],
+        "name": "Doc",
+        "properties": []
+      },
+      {
+        "labels": ["Note"],
+        "name": "Note",
+        "properties": []
+      },
+      {
+        "labels": ["Tag"],
+        "name": "Tag",
+        "properties": []
+      }
+    ],
+    "properties": [],
+    "relationships": [
+      {
+        "fromEntity": "Person",
+        "properties": [],
+        "toEntity": "Doc",
+        "type": "AUTHORED"
+      },
+      {
+        "fromEntity": "Doc",
+        "properties": [],
+        "toEntity": "Note",
+        "type": "ANNOTATED_BY"
+      },
+      {
+        "fromEntity": "Doc",
+        "properties": [],
+        "toEntity": "Tag",
+        "type": "TAGGED_WITH"
+      }
+    ]
+  },
+  "metadata": {
+    "analyzedCollectionCounts": {
+      "documentCollections": 2,
+      "edgeCollections": 2
+    },
+    "assumptions": [
+      "Person on its own COLLECTION; Doc+Note share an LPG vertex collection; Tag still RPT"
+    ],
+    "confidence": 0.7,
+    "detectedPatterns": ["RPT", "PG", "LPG"],
+    "model": null,
+    "provider": null,
+    "repairAttempts": 0,
+    "reviewRequired": true,
+    "timestamp": "2026-05-12T00:00:00Z",
+    "usedBaseline": false,
+    "warnings": [
+      "Three-way hybrid: BGP planner must dispatch each pattern to the right physical store; see PRD \u00a73.4"
+    ]
+  },
+  "physicalMapping": {
+    "entities": {
+      "Person": {
+        "collectionName": "persons",
+        "style": "COLLECTION"
+      },
+      "Doc": {
+        "collectionName": "vertices",
+        "style": "LABEL",
+        "typeField": "type",
+        "typeValue": "Doc"
+      },
+      "Note": {
+        "collectionName": "vertices",
+        "style": "LABEL",
+        "typeField": "type",
+        "typeValue": "Note"
+      },
+      "Tag": {
+        "style": "RPT",
+        "triplesCollection": "_triples",
+        "subjectColumn": "subject_uri",
+        "predicateColumn": "predicate",
+        "objectUriColumn": "object_uri",
+        "objectValueColumn": "object_value"
+      }
+    },
+    "relationships": {
+      "AUTHORED": {
+        "edgeCollectionName": "authored",
+        "style": "DEDICATED_COLLECTION",
+        "fromEntity": "Person",
+        "toEntity": "Doc"
+      },
+      "ANNOTATED_BY": {
+        "edgeCollectionName": "edges",
+        "style": "GENERIC_WITH_TYPE",
+        "typeField": "type",
+        "typeValue": "ANNOTATED_BY"
+      },
+      "TAGGED_WITH": {
+        "style": "RPT_EDGE",
+        "triplesCollection": "_triples",
+        "fromEntity": "Doc",
+        "toEntity": "Tag"
+      }
+    }
+  },
+  "source": {
+    "kind": "manual",
+    "notes": "The full hybrid case from PRD \u00a73.4 \u2014 PG, LPG, and RPT entities co-resident."
+  }
+}

@@ -180,6 +180,74 @@ def test_from_wire_dict_snake_case_aliases_normalise_to_camel() -> None:
     assert rel["toEntity"] == "Person"
 
 
+def test_from_wire_dict_relationship_collection_name_aliases_to_edge() -> None:
+    """The sister project's LPG fixtures spell the edge-collection
+    field as bare ``"collectionName"`` on a relationship spec. Since
+    the field unambiguously means *edge* collection in that context,
+    our normaliser must rewrite it to ``"edgeCollectionName"`` so
+    every downstream layer sees one canonical spelling.
+    """
+
+    wire = {
+        "physicalMapping": {
+            "entities": {},
+            "relationships": {
+                "FOLLOWS": {
+                    "collectionName": "edges",
+                    "style": "GENERIC_WITH_TYPE",
+                    "typeField": "type",
+                    "typeValue": "FOLLOWS",
+                },
+            },
+        },
+    }
+    spec = mapping_from_wire_dict(wire).relationships()["FOLLOWS"]
+    assert spec["edgeCollectionName"] == "edges"
+    assert "collectionName" not in spec
+
+
+def test_from_wire_dict_relationship_alias_conflict_raises() -> None:
+    """A relationship spec that carries BOTH ``collectionName`` and
+    ``edgeCollectionName`` is ambiguous (which one wins?). We refuse
+    rather than silently picking one.
+    """
+
+    with pytest.raises(MappingError) as exc:
+        mapping_from_wire_dict(
+            {
+                "physicalMapping": {
+                    "entities": {},
+                    "relationships": {
+                        "FOLLOWS": {
+                            "collectionName": "edges",
+                            "edgeCollectionName": "follows",
+                        },
+                    },
+                },
+            }
+        )
+    assert "FOLLOWS" in str(exc.value)
+
+
+def test_from_wire_dict_entity_collection_name_is_not_aliased_to_edge() -> None:
+    """Mirror-image of the relationship alias: on an *entity* spec,
+    ``"collectionName"`` means document collection and must NOT be
+    rewritten to ``edgeCollectionName``.
+    """
+
+    wire = {
+        "physicalMapping": {
+            "entities": {
+                "Person": {"collectionName": "persons", "style": "COLLECTION"},
+            },
+            "relationships": {},
+        },
+    }
+    spec = mapping_from_wire_dict(wire).entities()["Person"]
+    assert spec["collectionName"] == "persons"
+    assert "edgeCollectionName" not in spec
+
+
 def test_from_wire_dict_preserves_lpg_type_discriminator() -> None:
     wire = {
         "physicalMapping": {
