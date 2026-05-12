@@ -11,9 +11,12 @@ the repo.
 
 **Conventions.** This document uses [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119)
 keywords (**MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, **MAY**) where a
-requirement is normative. Sections marked *normative* (§9.4, §9.5, §9.6, §15,
-§16, §17, Appendix A, and the §3 acceptance table) are the spec; everything
-else is rationale that supports the spec but is not itself enforceable.
+requirement is normative. The "Normative?" column in the table of contents
+below is the authoritative list of normative sections; everything else is
+rationale that supports the spec but is not itself enforceable. The §3
+acceptance criteria are the contract — section bodies elaborate the
+contract, and the bodies marked normative in the TOC carry concrete
+behavioural rules (the rest is architecture description).
 
 ---
 
@@ -303,7 +306,7 @@ that already speak our shape.
 | `GET`  | `/schema/statistics` | session + rate-limited | Cardinality statistics block from `arangodb-schema-analyzer` |
 | `GET`  | `/schema/status` | session + rate-limited | Schema-drift report (shape vs counts fingerprints) |
 | `POST` | `/schema/invalidate-cache` | session + rate-limited | Drop the per-database mapping cache entry |
-| `POST` | `/schema/force-reacquire` | session + rate-limited | Re-run analyzer (bypass cache); 503 if analyzer not installed and `ARANGO_SPARQL_ALLOW_HEURISTIC` not set |
+| `POST` | `/schema/force-reacquire` | session + rate-limited | Re-run analyzer (bypass cache); 503 if `SCHEMA_ANALYZER_REQUIRED=false` (no analyzer installed) and `ARANGO_SPARQL_ALLOW_HEURISTIC=false` (heuristic fallback also disabled) — see §6.3.4 |
 | `POST` | `/mapping/import-owl` | session + rate-limited | Replace the active mapping with one parsed from a posted OWL/Turtle ontology |
 | `POST` | `/mapping/export-owl` | session + rate-limited | Render the active mapping as `text/turtle` |
 
@@ -318,7 +321,7 @@ codes are stable strings from `arango_sparql.errors`:
 | `E_AQL_EMIT` | `AqlEmitError` | Builder produced no FOR clause, or a structurally invalid plan |
 | `E_SPARQL` | `SparqlError` | Catch-all base; should never appear unaltered in production |
 
-### 5.2 W3C SPARQL 1.1 Protocol endpoint (planned for v1.0)
+### 5.2 W3C SPARQL 1.1 Protocol endpoint
 
 A new route module (`arango_sparql/service/routes/protocol.py`) will expose:
 
@@ -392,10 +395,13 @@ spec-compliant clients can fail loudly:
 | Rate-limited | `429` | JSON `E_RATE_LIMITED` | `Retry-After` honoured |
 | Auth required (in `PUBLIC_MODE`) | `401` | JSON `E_AUTH_REQUIRED` | `WWW-Authenticate: Bearer` |
 
-**Query timeouts and result caps**: re-use `_MAX_RESULT_DOCS` from the
-existing routes. On overflow the response surfaces a `W_RESULT_TRUNCATED`
-warning header (same code the RPC routes use). Hard timeout default 60 s,
-overridable via `SPARQL_PROTOCOL_TIMEOUT_SECONDS`.
+**Query timeouts and result caps**: the row cap is governed by the
+`EXECUTE_RESULT_TRUNCATE_ROWS` env var (Appendix A.3); the in-process
+constant `_MAX_RESULT_DOCS` (in `arango_sparql.service.routes`) is bound
+from it at startup. On overflow the response surfaces a
+`W_RESULT_TRUNCATED` warning header (same code the RPC routes use). Hard
+timeout default 30 s, overridable via `SPARQL_PROTOCOL_TIMEOUT_SECONDS`
+(Appendix A.3).
 
 **Session binding**: `GET /sparql` accepts `?session=<token>` (or the
 existing `X-Arango-Session` / `Authorization: Bearer …` headers); `POST` uses
@@ -613,7 +619,7 @@ Two-tier persistence:
 
 | Layer | Where | Keyed by | Lifetime |
 | --- | --- | --- | --- |
-| In-process LRU | `_mapping_cache` dict | `db.name` | TTL 300 s (`SCHEMA_MAPPING_CACHE_TTL_SECONDS`) |
+| In-process LRU | `_mapping_cache` dict | `db.name` | TTL 3600 s (`SCHEMA_MAPPING_CACHE_TTL_SECONDS`, Appendix A.5) |
 | Persistent | `arango_sparql_schema_cache` collection in the customer's own DB | `(db.name, key="mapping")` | Until invalidated |
 
 Refresh policy uses the analyzer's two cheap fingerprints:
@@ -630,11 +636,34 @@ re-derived. When shape changes, the full mapping is re-acquired.
 #### 6.3.4 Required-analyzer guard at startup
 
 Mirrors `arango-cypher-py`. `arango_sparql/service/app.py` calls
-`_require_analyzer_unless_opted_out()` at import time. If
-`arangodb-schema-analyzer` is not importable and
-`ARANGO_SPARQL_ALLOW_HEURISTIC` is unset, the service refuses to
-start. The opt-out is *deliberately verbose* so a heuristic-only
-deployment is a conscious operator decision, not a silent default.
+`_require_analyzer_unless_opted_out()` at import time. Two env vars
+govern this — they are deliberately split because they answer two
+different questions:
+
+| Env var | Default | Question it answers | Failure mode when violated |
+| --- | --- | --- | --- |
+| `SCHEMA_ANALYZER_REQUIRED` (Appendix A.5) | `true` | "Must the analyzer be importable for the service to boot at all?" | Startup refuses (`ImportError`-shaped exit code) |
+| `ARANGO_SPARQL_ALLOW_HEURISTIC` (Appendix A.2) | `true` (forced `false` in `PUBLIC_MODE`) | "When the analyzer is reachable but a specific introspection fails, may we fall back to the heuristic detector for that request?" | Per-request `503 E_SCHEMA_UNAVAILABLE` |
+
+The four reachable combinations:
+
+1. `SCHEMA_ANALYZER_REQUIRED=true` + `ARANGO_SPARQL_ALLOW_HEURISTIC=true`
+   (default) — analyzer required at boot; transient introspection
+   failures fall back to heuristic with `W_SCHEMA_HEURISTIC_FALLBACK`.
+2. `SCHEMA_ANALYZER_REQUIRED=true` + `ARANGO_SPARQL_ALLOW_HEURISTIC=false`
+   (PUBLIC_MODE-equivalent) — analyzer required at boot AND for every
+   request; failures return 503.
+3. `SCHEMA_ANALYZER_REQUIRED=false` + `ARANGO_SPARQL_ALLOW_HEURISTIC=true`
+   — heuristic-only deployment; service boots without the analyzer at
+   all.
+4. `SCHEMA_ANALYZER_REQUIRED=false` + `ARANGO_SPARQL_ALLOW_HEURISTIC=false`
+   — service boots but no schema acquisition path is available; every
+   `/schema/introspect` returns 503. Useful only for `/translate`-only
+   deployments where mappings are pushed via `/mapping/import-owl`.
+
+Both opt-outs are *deliberately verbose* so a heuristic-only or
+schema-less deployment is a conscious operator decision, not a silent
+default.
 
 ### 6.4 Schema HTTP surface
 
@@ -650,7 +679,7 @@ Mirrors the sister project's `arango_cypher.service.routes.schema` and
 | `GET` | `/schema/statistics` | — | `metadata.statistics` block | Cardinality, in/out degree, selectivity per relationship |
 | `GET` | `/schema/status` | — | `{stats_changed, shape_unchanged, fingerprints, last_acquired_at}` | Schema-drift report; cheap |
 | `POST` | `/schema/invalidate-cache` | — | `{invalidated: bool}` | Drops the cache entry for the connected DB |
-| `POST` | `/schema/force-reacquire` | — | fresh `MappingBundle` | Re-runs analyzer; `503` if analyzer missing and `ARANGO_SPARQL_ALLOW_HEURISTIC` not set |
+| `POST` | `/schema/force-reacquire` | — | fresh `MappingBundle` | Re-runs analyzer; `503` if both `SCHEMA_ANALYZER_REQUIRED` and `ARANGO_SPARQL_ALLOW_HEURISTIC` are `false` — see §6.3.4 |
 | `POST` | `/mapping/import-owl` | body: `text/turtle` | `{accepted: bool, mapping}` | Replaces the active mapping with one parsed from a posted OWL ontology |
 | `POST` | `/mapping/export-owl` | — | `text/turtle` | Renders the active mapping as Turtle |
 
@@ -824,7 +853,7 @@ advisories" panel.
 | `W_SCHEMA_DEFAULT_COLLECTION` | A class is declared `owl:Class` but lacks `phys:collectionName`. Resolver falls back to the IRI's local name as the collection name. |
 | `W_SCHEMA_RPT_INFERRED` | The RPT detector flagged a collection as triples-shaped but the OWL ontology did not declare it as such. Resolver treats it as RPT and surfaces this so the operator can either accept the inference or annotate the OWL. |
 | `W_SCHEMA_HYBRID_DETECTED` | The mapping contains entities of two or more `style` values (e.g. one `RPT` + one `LABEL`). Informational only; useful for the UI banner. |
-| `W_SCHEMA_HEURISTIC_FALLBACK` | The mapping was acquired heuristically because `arangodb-schema-analyzer` was not importable. Pairs with the route-layer `503` when `ARANGO_SPARQL_ALLOW_HEURISTIC` is unset. |
+| `W_SCHEMA_HEURISTIC_FALLBACK` | The mapping was acquired heuristically because `arangodb-schema-analyzer` was not importable (`SCHEMA_ANALYZER_REQUIRED=false`) or because a transient analyzer error fell back per `ARANGO_SPARQL_ALLOW_HEURISTIC=true`. Pairs with the route-layer `503` only when both opt-outs are off (see §6.3.4). |
 | `W_SCHEMA_LOW_CONFIDENCE` | `metadata.confidence < 0.5`; the operator should review the mapping before relying on it for a production workload. |
 | `W_SCHEMA_DRIFT_STATS` | `/schema/status` detected a counts-fingerprint change since last refresh. Cardinality-aware planning may be stale. |
 | `W_SCHEMA_DRIFT_SHAPE` | `/schema/status` detected a shape-fingerprint change since last refresh. The mapping itself is stale; a re-acquire is recommended. |
@@ -1002,8 +1031,8 @@ NL evaluation lives under `tests/nl2sparql/eval/` and is gated behind
 ### 8.1 Sessions
 
 - In-memory dict keyed by an opaque token returned from `POST /connect`.
-- TTL: `SESSION_TTL_SECONDS` (default 1800).
-- Capacity: `MAX_SESSIONS` (default 100), LRU-evicted.
+- TTL: `SESSION_TTL_SECONDS` (default 3600 — Appendix A.3).
+- Capacity: `MAX_SESSIONS` (default 1024 — Appendix A.3), LRU-evicted.
 - Token transport: prefer `X-Arango-Session` (the ArangoDB platform proxy
   rewrites the standard `Authorization` header before forwarding to BYOC
   containers), fall back to `Authorization: Bearer …`.
@@ -1024,15 +1053,26 @@ local dev" to "untrusted internet exposure". When set:
 
 ### 8.3 Rate limits
 
-Two token buckets, per-client (Authorization header → IP → `"anon"`):
+Two token-bucket *families* (compute and LLM), each with two *tiers* —
+the request is rate-limited at whichever tier matches first:
 
-| Bucket | Default | Endpoints |
-| --- | --- | --- |
-| Compute | 100 req/min | `/translate`, `/validate`, `/execute*`, `/explain`, `/profile`, `/sparql` |
-| LLM | 10 req/min | `/nl-translate`, `/nl-explain`, `/nl-execute` |
+| Tier | Keyed by | Purpose | Default (compute / LLM) |
+| --- | --- | --- | --- |
+| **Pre-session** | `Authorization` header → source IP → literal `"anon"` | Protects the service when no session is bound yet (e.g. an unauthenticated `/sparql` smoke test, or a `/connect` storm). Lower default ceiling. | `COMPUTE_RATE_LIMIT_ANON_PER_MINUTE` (default `100`) / `NL_RATE_LIMIT_ANON_PER_MINUTE` (default `10`) |
+| **Per-session** | Session token (`X-Arango-Session` / `Authorization: Bearer`) | Once a `/connect` succeeds, the session bucket replaces the pre-session bucket for that client. Higher default ceiling. | `COMPUTE_RATE_LIMIT_PER_MINUTE` (default `300` — Appendix A.3) / `NL_RATE_LIMIT_PER_MINUTE` (default `30` — Appendix A.3) |
 
-Both overridable via `COMPUTE_RATE_LIMIT_PER_MINUTE` /
-`NL_RATE_LIMIT_PER_MINUTE`.
+Endpoint coverage:
+
+| Family | Endpoints |
+| --- | --- |
+| Compute | `/translate`, `/validate`, `/execute*`, `/explain`, `/profile`, `/sparql` |
+| LLM | `/nl-translate`, `/nl-explain`, `/nl-execute` |
+
+A 429 response carries `Retry-After` (seconds) plus `X-RateLimit-Tier`
+(`anon` or `session`) so clients can distinguish "I should authenticate"
+from "I'm sending too much under my session". The pre-session ceilings
+are tuned conservatively so an unauthenticated browser cannot exhaust
+the per-replica session table by spamming `/connect`.
 
 ### 8.4 SSRF guard on `/connect`
 
@@ -1865,7 +1905,7 @@ the development loop.
 | Cross-validation harness vs `pyoxigraph` | §3.1 | ✅ |
 | Public-mode posture / sessions / rate limits / SSRF guard / redaction | §3.8, §3.13 | ✅ |
 | MIT LICENSE, CONTRIBUTING, SECURITY, CI workflow | §3.16 | ✅ |
-| Initial PRD published; Round 1 + Round 2 PRD revisions on `main` | n/a | ✅ |
+| Initial PRD published; Round 1 (ops + security spines) + Round 2 (hardening + spec-fill) + Round 3 (TOC + glossary + RFC 2119 conventions) + Round 4 (cross-section consistency + Appendix A coverage) PRD revisions on `main` | n/a | ✅ |
 
 **Out of scope for v0.x.** W3C SPARQL Protocol (`/sparql`); RPT
 visitor; multi-tenancy enforcement at AQL emit; performance budgets;
@@ -1916,8 +1956,9 @@ test enforcement, security-testing rows) gate the public release tag.
   with heuristic fallback; `strategy ∈ {auto, analyzer, heuristic}`)
 - `arango_sparql.schema.cache.ArangoSchemaCache` (persistent in
   `arango_sparql_schema_cache` collection; two-tier with in-process LRU)
-- `_require_analyzer_unless_opted_out()` startup guard +
-  `ARANGO_SPARQL_ALLOW_HEURISTIC=1` env opt-out
+- `_require_analyzer_unless_opted_out()` startup guard, gated by
+  `SCHEMA_ANALYZER_REQUIRED` (boot-time) + `ARANGO_SPARQL_ALLOW_HEURISTIC`
+  (per-request fallback) — the four combinations documented in §6.3.4
 - Schema HTTP surface: `/schema/{introspect, properties, summary,
   statistics, status, invalidate-cache, force-reacquire}` +
   `/mapping/{import-owl, export-owl}` (§6.4)
@@ -2504,7 +2545,9 @@ Conventions: env var names are `SCREAMING_SNAKE_CASE`; precedence is
 | `ARANGO_SPARQL_PUBLIC_MODE` | `false` | no | Hosted multi-tenant posture — disables connect defaults, requires explicit `/connect` for every session (see §8.2) |
 | `ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS` | empty | yes when `PUBLIC_MODE=true` | Comma-separated allowlist of ArangoDB hostnames `/connect` may target (SSRF guard, §8.4) |
 | `ARANGO_SPARQL_DEFAULT_TENANT` | `default` | no | Tenant ID stamped on dev sessions when no explicit tenant is supplied |
-| `ARANGO_SPARQL_ALLOW_HEURISTIC` | `true` | no | Whether `/schema/introspect` may fall back to the heuristic detector when the analyzer is unavailable (forced `false` in PUBLIC_MODE) |
+| `ARANGO_SPARQL_ALLOW_HEURISTIC` | `true` | no | **Per-request** fallback gate (distinct from the startup gate `SCHEMA_ANALYZER_REQUIRED` in A.5). When `true`, `/schema/introspect` may fall back to the heuristic detector for a single request that the analyzer cannot serve (e.g. transient analyzer error). Forced `false` in `PUBLIC_MODE`. See the four-cell decision table in §6.3.4. |
+| `MAPPING_IMPORT_MAX_BYTES` | `2000000` (≈ 2 MB) | no | OWL-bomb defence (§8.6 T7): byte ceiling on `/mapping/import-owl` request bodies. Exceeding returns 413. |
+| `MAPPING_IMPORT_MAX_TRIPLES` | `200000` | no | OWL-bomb defence (§8.6 T7): post-parse triple-count ceiling. Exceeding returns 422 `E_OWL_TOO_LARGE`. |
 
 ### A.3 Sessions, rate limits, and execution caps
 
@@ -2512,8 +2555,10 @@ Conventions: env var names are `SCREAMING_SNAKE_CASE`; precedence is
 | --- | --- | --- | --- |
 | `SESSION_TTL_SECONDS` | `3600` | no | Idle TTL before session eviction |
 | `MAX_SESSIONS` | `1024` | no | Per-replica session cap; oldest evicted on overflow |
-| `COMPUTE_RATE_LIMIT_PER_MINUTE` | `300` | no | Per-session limit on `/translate` + `/execute` + `/sparql` |
-| `NL_RATE_LIMIT_PER_MINUTE` | `30` | no | Per-session limit on `/nl-*` |
+| `COMPUTE_RATE_LIMIT_PER_MINUTE` | `300` | no | Per-**session** ceiling on `/translate` + `/execute*` + `/explain` + `/profile` + `/sparql` (§8.3 tier 2) |
+| `COMPUTE_RATE_LIMIT_ANON_PER_MINUTE` | `100` | no | Pre-session ceiling (keyed by `Authorization` → IP → `"anon"`) on the same endpoints (§8.3 tier 1) |
+| `NL_RATE_LIMIT_PER_MINUTE` | `30` | no | Per-**session** ceiling on `/nl-*` (§8.3 tier 2) |
+| `NL_RATE_LIMIT_ANON_PER_MINUTE` | `10` | no | Pre-session ceiling on `/nl-*` (§8.3 tier 1) |
 | `SPARQL_PROTOCOL_TIMEOUT_SECONDS` | `30` | no | Hard cap on `/sparql` request handling |
 | `EXECUTE_RESULT_TRUNCATE_ROWS` | `10000` | no | Default execution row cap; emits `W_RESULT_TRUNCATED` |
 
@@ -2540,7 +2585,7 @@ supplies them per `/connect`).
 | `SCHEMA_MAPPING_CACHE_TTL_SECONDS` | `3600` | no | Soft TTL on cached `MappingBundle`; superseded by fingerprint mismatch |
 | `SCHEMA_L1_CACHE_MAX_BYTES` | `268435456` (256 MiB) | no | In-process mapping cache cap |
 | `SCHEMA_CACHE_MAX_ENTRIES` | `200` | no | L2 (ArangoDB-backed) cache cap per service install |
-| `SCHEMA_ANALYZER_REQUIRED` | `true` | no | When `true`, startup **fails** if `arangodb-schema-analyzer` import fails |
+| `SCHEMA_ANALYZER_REQUIRED` | `true` | no | **Startup** gate (distinct from the per-request fallback gate `ARANGO_SPARQL_ALLOW_HEURISTIC` in A.2). When `true`, the service refuses to boot if `arangodb-schema-analyzer` is not importable. See the four-cell decision table in §6.3.4. |
 | `SCHEMA_ANALYZER_ALLOWED_HOSTS` | empty | no | Subset of `CONNECT_ALLOWED_HOSTS` analyzer may also reach (defaults to the same allowlist) |
 | `SCHEMA_ANALYZER_CACHE_ROOT` | `/var/cache/arango-schema-analyzer` | no | Analyzer-side cache root; mount as PVC in K8s |
 
@@ -2566,9 +2611,12 @@ supplies them per `/connect`).
 | `METRICS_PORT` | `9090` | no | Separate port for Prometheus scrape (NEVER expose publicly) |
 | `METRICS_NAMESPACE` | `arango_sparql` | no | Metric-name prefix |
 | `METRICS_LABEL_TENANT` | `false` | no | Add `tenant` label to per-request metrics (off by default — see §17.2) |
+| `LOG_INCLUDE_TENANT` | `true` outside `PUBLIC_MODE`; `false` in `PUBLIC_MODE` | no | Whether the JSON log envelope (§9.5) carries the `tenant` field. Privacy-default per §17.2. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | no | When set, OpenTelemetry tracing is enabled |
 | `OTEL_SERVICE_NAME` | `arango-sparql-py` | no | OTel service-name attribute |
 | `OTEL_TRACES_SAMPLER_ARG` | `0.1` | no | Default 10 % sampling |
+| `OTEL_INCLUDE_TENANT` | `false` | no | Whether OTel spans carry a `tenant` attribute (§17.2). Off by default — sampling means tenant-identifying spans persist for the trace-store retention window. |
+| `DEBUG_LOG_QUERY_BODIES` | `false` | no | Local-dev escape hatch (§17.3): when `true`, the endpoint timing log includes the raw SPARQL/AQL/NL bodies. **Boot fails** if this is set together with `ARANGO_SPARQL_PUBLIC_MODE=true`. |
 
 ### A.8 CORS & 3rd-party tool integration
 
