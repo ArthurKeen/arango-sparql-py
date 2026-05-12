@@ -18,6 +18,16 @@ Pending slices add detection (``detect.py``), acquisition
 (``acquire.py``), and the L1+L2 cache (``cache.py``).
 """
 
+from arango_sparql.schema.detect import (
+    COVERAGE_THRESHOLD,
+    DEFAULT_SAMPLE_SIZE,
+    CollectionClassification,
+    RptDetectionResult,
+    SchemaType,
+    build_heuristic_mapping,
+    classify_schema,
+    detect_rpt_pattern,
+)
 from arango_sparql.schema.fingerprint import (
     FINGERPRINT_PAYLOAD_VERSION,
     BundleFingerprint,
@@ -29,9 +39,17 @@ from arango_sparql.schema.fingerprint import (
 
 __all__ = [
     "BundleFingerprint",
+    "COVERAGE_THRESHOLD",
+    "CollectionClassification",
+    "DEFAULT_SAMPLE_SIZE",
     "FINGERPRINT_PAYLOAD_VERSION",
     "FingerprintDrift",
+    "RptDetectionResult",
+    "SchemaType",
+    "build_heuristic_mapping",
     "bundle_counts_fingerprint",
     "bundle_shape_fingerprint",
+    "classify_schema",
     "compute_bundle_fingerprint",
+    "detect_rpt_pattern",
 ]
