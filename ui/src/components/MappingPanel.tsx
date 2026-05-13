@@ -6,6 +6,12 @@ import { bracketMatching } from "@codemirror/language";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { oneDark } from "./theme";
 import SchemaGraph from "./SchemaGraph";
+import {
+  ApiError,
+  exportOwlAsTurtle,
+  importOwl,
+} from "../api/client";
+import type { Action } from "../api/store";
 
 // "Mapping" panel for the SPARQL UI. Where the Cypher project edits a
 // JSON schema-mapping object, the SPARQL service expects an OWL/Turtle
@@ -14,11 +20,37 @@ import SchemaGraph from "./SchemaGraph";
 // the Cypher UI can find it instantly — the contents are now a plain
 // CodeMirror Turtle text editor with a "Graph" toggle that defers to
 // `SchemaGraph` (placeholder until `/schema/owl` lands).
+//
+// Import / Export buttons are server-backed (PRD §6.4 rows 8 & 9):
+//
+// * Import → POST /mapping/import-owl with the file contents. The
+//   backend's OWL-bomb defences (§8.6 T7) catch malformed or
+//   oversized OWL bodies before they hit our editor; on success we
+//   replace the editor contents with the canonical Turtle the
+//   importer normalised.
+// * Export → POST /mapping/export-owl with `Accept: text/turtle`.
+//   This goes through the synthesizer so the downloaded ontology
+//   includes the same `phys:*` annotations a freshly-acquired
+//   bundle would carry.
+//
+// Both paths fall back to the local-file behaviour when there is
+// no active session — a disconnected user can still load a Turtle
+// blob into the editor and copy the editor text out via standard
+// browser select-all + save.
 
 interface Props {
   ontologyTtl: string;
   onChange: (ttl: string) => void;
   onClose?: () => void;
+  /** Active session token; when null, Import/Export degrade to
+   * pure-local behaviour (file picker / blob download of the
+   * editor contents). */
+  sessionToken?: string | null;
+  /** Optional dispatch — used to surface OWL-bomb / parse errors as
+   * top-of-app errors and to record the imported triple count
+   * (`SCHEMA_IMPORT_SUCCESS`). When not provided the panel
+   * gracefully degrades to console.warn. */
+  dispatch?: (action: Action) => void;
 }
 
 const SAMPLE_TTL = `@prefix rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
@@ -40,12 +72,23 @@ ex:name a owl:DatatypeProperty ;
     rdfs:label  "name" .
 `;
 
-export default function MappingPanel({ ontologyTtl, onChange, onClose }: Props) {
+export default function MappingPanel({
+  ontologyTtl,
+  onChange,
+  onClose,
+  sessionToken,
+  dispatch,
+}: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [viewMode, setViewMode] = useState<"text" | "graph">("text");
+  const [busy, setBusy] = useState<"import" | "export" | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const tokenRef = useRef(sessionToken);
+  tokenRef.current = sessionToken;
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
 
   // Counter-based guard mirrors the Cypher MappingPanel: incremented
   // before every programmatic dispatch so the asynchronous update
@@ -113,6 +156,17 @@ export default function MappingPanel({ ontologyTtl, onChange, onClose }: Props) 
     }
   }, [ontologyTtl]);
 
+  const replaceEditor = useCallback((text: string) => {
+    onChangeRef.current(text);
+    const view = viewRef.current;
+    if (view) {
+      externalUpdateCount.current += 1;
+      view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: text },
+      });
+    }
+  }, []);
+
   const handleImportTtl = useCallback(() => {
     const input = document.createElement("input");
     input.type = "file";
@@ -121,26 +175,84 @@ export default function MappingPanel({ ontologyTtl, onChange, onClose }: Props) 
       const file = input.files?.[0];
       if (!file) return;
       const text = await file.text();
-      onChangeRef.current(text);
-      const view = viewRef.current;
-      if (view) {
-        externalUpdateCount.current += 1;
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: text },
+      const token = tokenRef.current;
+      if (!token) {
+        // Disconnected — local-file fallback. The editor is the
+        // only source of truth in this case; the AQL preview
+        // already takes the editor contents on Translate.
+        replaceEditor(text);
+        return;
+      }
+      setBusy("import");
+      try {
+        const resp = await importOwl(text, token, `imported file: ${file.name}`);
+        // Server-canonical Turtle wins — it's been normalised by
+        // `mapping_to_turtle` in the round-trip path of the
+        // backend's MappingBundle. Falls back to the file text
+        // when the response did not include the OWL.
+        const mappingTurtle =
+          (resp.mapping?.owlTurtle as string | undefined) ??
+          (resp.mapping?.owl_turtle as string | undefined) ??
+          text;
+        replaceEditor(mappingTurtle);
+        dispatchRef.current?.({
+          type: "SCHEMA_IMPORT_SUCCESS",
+          tripleCount: resp.triple_count,
         });
+      } catch (err) {
+        const message =
+          err instanceof ApiError
+            ? `Import failed: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        // No CLEAR_ERROR / dedicated SCHEMA_IMPORT_ERROR action —
+        // surfacing the failure via the existing top-of-app error
+        // banner (TRANSLATE_ERROR's slot) keeps the UI symmetric
+        // with the analyzer-warning path.
+        dispatchRef.current?.({
+          type: "SCHEMA_REFRESH_ERROR",
+          error: message,
+        });
+        console.error("OWL import failed:", err);
+      } finally {
+        setBusy(null);
       }
     };
     input.click();
-  }, []);
+  }, [replaceEditor]);
 
-  const handleExportTtl = useCallback(() => {
+  const handleExportTtl = useCallback(async () => {
     const view = viewRef.current;
     if (!view) return;
-    const blob = new Blob([view.state.doc.toString()], { type: "text/turtle" });
+    const editorText = view.state.doc.toString();
+    const token = tokenRef.current;
+    let downloadable: string;
+    let filename = "ontology.ttl";
+    if (!token) {
+      // Disconnected — local download of the editor contents.
+      downloadable = editorText;
+    } else {
+      setBusy("export");
+      try {
+        const resp = await exportOwlAsTurtle(null, editorText, token);
+        downloadable = resp.turtle;
+        filename = `ontology-${resp.tripleCount}-triples.ttl`;
+      } catch (err) {
+        // Export failures fall through to a local download of
+        // exactly what's in the editor — the user still gets
+        // their bytes, just without server-side normalisation.
+        console.warn("OWL export via backend failed; falling back to local:", err);
+        downloadable = editorText;
+      } finally {
+        setBusy(null);
+      }
+    }
+    const blob = new Blob([downloadable], { type: "text/turtle" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "ontology.ttl";
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(url);
   }, []);
@@ -166,17 +278,27 @@ export default function MappingPanel({ ontologyTtl, onChange, onClose }: Props) 
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleImportTtl}
-            className="px-2 py-0.5 text-[10px] rounded bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
-            title="Import OWL/Turtle ontology from file"
+            disabled={busy !== null}
+            className="px-2 py-0.5 text-[10px] rounded bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={
+              sessionToken
+                ? "Import OWL/Turtle ontology — parsed by /mapping/import-owl with OWL-bomb defences"
+                : "Import OWL/Turtle ontology from file (local; connect to validate via backend)"
+            }
           >
-            Import
+            {busy === "import" ? "Importing\u2026" : "Import"}
           </button>
           <button
             onClick={handleExportTtl}
-            className="px-2 py-0.5 text-[10px] rounded bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
-            title="Download current ontology as Turtle"
+            disabled={busy !== null}
+            className="px-2 py-0.5 text-[10px] rounded bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            title={
+              sessionToken
+                ? "Download current ontology as Turtle (rendered by /mapping/export-owl)"
+                : "Download editor contents as Turtle (local; connect to round-trip through backend)"
+            }
           >
-            Export
+            {busy === "export" ? "Exporting\u2026" : "Export"}
           </button>
           {onClose && (
             <>

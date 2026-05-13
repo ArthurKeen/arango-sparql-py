@@ -9,11 +9,13 @@ import QueryHistory from "./components/QueryHistory";
 import SampleQueries from "./components/SampleQueries";
 import ClauseOutline from "./components/ClauseOutline";
 import ResultsPanel from "./components/ResultsPanel";
+import SchemaWarningBanner from "./components/SchemaWarningBanner";
 import { useAppState } from "./api/store";
 import {
   translateSparql,
   executeSparql,
   isAuthError,
+  schemaForceReacquire,
 } from "./api/client";
 
 // App.tsx mirrors the layout of arango-cypher-py/ui/src/App.tsx but
@@ -122,6 +124,51 @@ export default function App() {
     }
   }, [dispatch, buildRequest, addToHistory, handleMaybeAuthError]);
 
+  const handleRefreshSchema = useCallback(async () => {
+    if (!state.connection.token) return;
+    dispatch({ type: "SCHEMA_REFRESH_START" });
+    try {
+      const resp = await schemaForceReacquire(state.connection.token, {
+        database: state.connection.database,
+        include_owl: true,
+        include_statistics: true,
+      });
+      dispatch({
+        type: "SCHEMA_LOADED",
+        mapping: resp.mapping ?? null,
+        summary: resp.summary ?? null,
+        warnings: (resp.warnings ?? []).map((w) => ({
+          code: w.code,
+          message: w.message,
+          install_hint: w.install_hint,
+        })),
+        cacheHit: false,
+      });
+      // If the analyzer emitted inline OWL, prefill the editor so
+      // the user sees the freshly-acquired ontology without
+      // hand-import. Both spellings honoured (camelCase from the
+      // wire, snake_case from a Python-emitted bundle).
+      const mapping = resp.mapping as Record<string, unknown> | undefined;
+      const owl =
+        (mapping?.owlTurtle as string | undefined) ??
+        (mapping?.owl_turtle as string | undefined);
+      if (typeof owl === "string" && owl.trim().length > 0) {
+        dispatch({ type: "SET_ONTOLOGY_TTL", ontologyTtl: owl });
+      }
+    } catch (err) {
+      dispatch({
+        type: "SCHEMA_REFRESH_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      handleMaybeAuthError(err);
+    }
+  }, [
+    dispatch,
+    state.connection.token,
+    state.connection.database,
+    handleMaybeAuthError,
+  ]);
+
   const handleExecute = useCallback(async () => {
     if (!state.connection.token) return;
     if (!sparqlRef.current.trim()) return;
@@ -184,7 +231,38 @@ export default function App() {
           <ConnectionDialog
             connection={state.connection}
             dispatch={dispatch}
+            onSchemaLoaded={(turtle) => {
+              if (turtle) {
+                dispatch({ type: "SET_ONTOLOGY_TTL", ontologyTtl: turtle });
+              }
+            }}
           />
+          {isConnected && (
+            <button
+              onClick={handleRefreshSchema}
+              disabled={state.schema.refreshing}
+              className="px-2 py-1 text-[11px] rounded bg-gray-800 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title="Force re-acquire of the schema mapping (POST /schema/force-reacquire)"
+            >
+              {state.schema.refreshing ? "Refreshing\u2026" : "Refresh schema"}
+            </button>
+          )}
+          {state.schema.cacheHit && !state.schema.refreshing && (
+            <span
+              className="text-[10px] text-gray-500 tabular-nums"
+              title="Last /schema/introspect was served from the L1 cache"
+            >
+              cached
+            </span>
+          )}
+          {state.schema.lastImportTripleCount != null && (
+            <span
+              className="text-[10px] text-gray-500 tabular-nums"
+              title="Triples in the most recently imported OWL ontology"
+            >
+              {state.schema.lastImportTripleCount} triples
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -241,6 +319,26 @@ export default function App() {
         </div>
       )}
 
+      {/* Schema-acquisition warnings (PRD §10.2). Sits above the main
+          editor so analyzer-not-installed and W_SCHEMA_* messages are
+          visible without scrolling. The banner uses a per-(url, db,
+          code) dismissed-set so a returning user does not re-see
+          warnings they have already acknowledged. */}
+      <SchemaWarningBanner
+        warnings={state.schema.warnings}
+        url={state.connection.url}
+        database={state.connection.database}
+        token={state.connection.token}
+        dispatch={dispatch}
+      />
+      {state.schema.error && (
+        <div className="px-4 py-1 bg-amber-900/20 border-b border-amber-800/30 flex items-center justify-between gap-3">
+          <span className="text-xs text-amber-300 flex-1 break-words">
+            <strong className="font-medium">Schema:</strong> {state.schema.error}
+          </span>
+        </div>
+      )}
+
       <div className="flex-1 min-h-0 flex">
         {showMapping ? (
           <>
@@ -254,6 +352,8 @@ export default function App() {
                   dispatch({ type: "SET_ONTOLOGY_TTL", ontologyTtl: ttl })
                 }
                 onClose={() => setShowMapping(false)}
+                sessionToken={state.connection.token}
+                dispatch={dispatch}
               />
             </div>
             <div

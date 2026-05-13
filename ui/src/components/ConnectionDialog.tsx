@@ -3,23 +3,79 @@ import {
   connect,
   disconnect,
   getConnectDefaults,
+  schemaIntrospect,
   type ConnectDefaults,
+  type SchemaIntrospectResponse,
 } from "../api/client";
-import type { Action, ConnectionState } from "../api/store";
+import type { Action, ConnectionState, SchemaWarning } from "../api/store";
 
-// Streamlined `ConnectionDialog` for the SPARQL UI. The Cypher version
-// also kicks off a `/schema/introspect` round-trip on connect; the
-// SPARQL service exposes its schema via OWL/Turtle (the OntologyPanel
-// owns that input), so we keep the dialog focused on the connection
-// step only. When `/schema/owl` lands, App.tsx will fetch it and feed
-// it into the OntologyPanel — not here.
+// `ConnectionDialog` for the SPARQL UI. After a successful
+// `/connect` it kicks off a `/schema/introspect` round-trip so the
+// MappingPanel and AQL editor can render the analyzer-acquired
+// MappingBundle without the user having to author / upload a
+// Turtle ontology by hand. Mirrors the Cypher project's
+// "auto-introspect after connect" flow (see PRD §6.4 and §10.2).
+//
+// The introspect call is best-effort: a 503 (analyzer not
+// installed and heuristic disabled, per the §6.3.4 four-cell
+// table) is reported via the schema warnings banner rather than
+// failing the connection itself — a user with a SPARQL workload
+// against a DB they cannot introspect can still author their
+// own ontology in the MappingPanel and run queries.
 
 interface Props {
   connection: ConnectionState;
   dispatch: (action: Action) => void;
+  /** Optional callback so App.tsx can prefill the MappingPanel
+   * editor with the OWL/Turtle that auto-introspect returns. We
+   * accept it as a prop rather than dispatching SET_ONTOLOGY_TTL
+   * directly so the dialog keeps its single-responsibility shape
+   * — App.tsx owns the editor / Turtle coupling. */
+  onSchemaLoaded?: (turtle: string | null) => void;
 }
 
-export default function ConnectionDialog({ connection, dispatch }: Props) {
+/**
+ * Project the introspect response into the SchemaWarning shape the
+ * store + banner expect. Tolerates partial / typed-but-loose
+ * payloads so an analyzer-version mismatch doesn't crash the UI.
+ */
+function _normaliseWarnings(
+  resp: SchemaIntrospectResponse | null,
+): SchemaWarning[] {
+  if (!resp || !Array.isArray(resp.warnings)) return [];
+  return resp.warnings
+    .filter((w): w is SchemaWarning =>
+      typeof w === "object" && w !== null && typeof w.code === "string"
+        ? typeof w.message === "string"
+        : false,
+    )
+    .map((w) => ({
+      code: w.code,
+      message: w.message,
+      install_hint: w.install_hint,
+    }));
+}
+
+/**
+ * Pull the inline OWL/Turtle out of an introspect response. The
+ * mapping wire dict accepts both `owlTurtle` (canonical camelCase)
+ * and `owl_turtle` (Python-side snake_case) so we check both.
+ * Returns null when the analyzer didn't emit OWL.
+ */
+function _extractTurtle(resp: SchemaIntrospectResponse | null): string | null {
+  if (!resp || !resp.mapping || typeof resp.mapping !== "object") return null;
+  const mapping = resp.mapping as Record<string, unknown>;
+  const owl =
+    (mapping.owlTurtle as string | undefined) ??
+    (mapping.owl_turtle as string | undefined);
+  return typeof owl === "string" && owl.trim().length > 0 ? owl : null;
+}
+
+export default function ConnectionDialog({
+  connection,
+  dispatch,
+  onSchemaLoaded,
+}: Props) {
   const [form, setForm] = useState({
     url: connection.url,
     database: connection.database,
@@ -97,11 +153,44 @@ export default function ConnectionDialog({ connection, dispatch }: Props) {
         password: f.password,
       });
       setOpen(false);
+      // Fire-and-forget auto-introspect (PRD §6.4 + §10.2). Awaited
+      // so a fast backend completes the dispatch before React commits
+      // the post-connect render; error path logs and degrades to
+      // "no schema loaded" rather than rolling back the connection.
+      void doAutoIntrospect(resp.token, f.database);
     } catch (err) {
       dispatch({
         type: "CONNECT_ERROR",
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  async function doAutoIntrospect(token: string, database: string) {
+    dispatch({ type: "SCHEMA_REFRESH_START" });
+    try {
+      const resp = await schemaIntrospect(token, {
+        database,
+        include_owl: true,
+        include_statistics: true,
+      });
+      dispatch({
+        type: "SCHEMA_LOADED",
+        mapping: resp.mapping ?? null,
+        summary: resp.summary ?? null,
+        warnings: _normaliseWarnings(resp),
+        cacheHit: !!resp.cache_hit,
+      });
+      const turtle = _extractTurtle(resp);
+      if (turtle && onSchemaLoaded) onSchemaLoaded(turtle);
+    } catch (err) {
+      // Non-fatal — the user can still author an ontology by hand.
+      // We surface the error in the schema slice so the warning
+      // banner can render it; the connection itself remains active.
+      const message =
+        err instanceof Error ? err.message : String(err);
+      dispatch({ type: "SCHEMA_REFRESH_ERROR", error: message });
+      console.warn("auto-introspect failed:", err);
     }
   }
 

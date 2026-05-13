@@ -32,6 +32,56 @@ export interface HistoryEntry {
   aqlPreview: string;
 }
 
+// Schema-acquisition surface (PRD §6.4 — backed by
+// `arango_sparql.schema.acquire`). Populated by ConnectionDialog
+// after a successful /connect call (auto-introspect) and by the
+// MappingPanel's Import / refresh affordances.
+export interface SchemaWarning {
+  code: string;
+  message: string;
+  install_hint?: string;
+}
+
+export type SchemaCacheStatus =
+  | "idle"
+  | "no_cache"
+  | "unchanged"
+  | "stats_only"
+  | "shape_changed";
+
+export interface SchemaState {
+  /** Canonical mapping wire dict from /schema/introspect. */
+  mapping: Record<string, unknown> | null;
+  /** Server-side summary block (entity count, RPT collections, …). */
+  summary: Record<string, unknown> | null;
+  /** Schema warnings (e.g. ANALYZER_NOT_INSTALLED, W_SCHEMA_*). */
+  warnings: SchemaWarning[];
+  /** Drift status from the most recent /schema/status call. */
+  cacheStatus: SchemaCacheStatus;
+  /** True when the latest introspect was served from L1 cache. */
+  cacheHit: boolean;
+  /** Last successful introspect timestamp (Date.now()). */
+  lastFetchedAt: number | null;
+  /** True while a /schema/{introspect,force-reacquire} call is in flight. */
+  refreshing: boolean;
+  /** Last error from a schema-API call, if any. Cleared on success. */
+  error: string | null;
+  /** Triple count reported by the most recent OWL import (UI badge). */
+  lastImportTripleCount: number | null;
+}
+
+export const initialSchemaState: SchemaState = {
+  mapping: null,
+  summary: null,
+  warnings: [],
+  cacheStatus: "idle",
+  cacheHit: false,
+  lastFetchedAt: null,
+  refreshing: false,
+  error: null,
+  lastImportTripleCount: null,
+};
+
 export interface AppState {
   connection: ConnectionState;
   sparql: string;
@@ -53,6 +103,8 @@ export interface AppState {
   history: HistoryEntry[];
   translateMs: number | null;
   execMs: number | null;
+  /** Schema-acquisition slice (PRD §6.4 wire shapes). */
+  schema: SchemaState;
 }
 
 const STORAGE_KEY = "sparql-workbench";
@@ -128,6 +180,7 @@ export const initialState: AppState = {
   history: [],
   translateMs: null,
   execMs: null,
+  schema: initialSchemaState,
   ...loadSavedState(),
 };
 
@@ -167,7 +220,19 @@ export type Action =
   | { type: "CLEAR_ERROR" }
   | { type: "SET_PARAMS"; params: Record<string, unknown> }
   | { type: "ADD_HISTORY"; entry: HistoryEntry }
-  | { type: "CLEAR_HISTORY" };
+  | { type: "CLEAR_HISTORY" }
+  | { type: "SCHEMA_REFRESH_START" }
+  | {
+      type: "SCHEMA_LOADED";
+      mapping: Record<string, unknown> | null;
+      summary: Record<string, unknown> | null;
+      warnings: SchemaWarning[];
+      cacheHit: boolean;
+    }
+  | { type: "SCHEMA_REFRESH_ERROR"; error: string }
+  | { type: "SCHEMA_STATUS_UPDATED"; status: SchemaCacheStatus }
+  | { type: "SCHEMA_CACHE_INVALIDATED" }
+  | { type: "SCHEMA_IMPORT_SUCCESS"; tripleCount: number };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -221,6 +286,10 @@ function reducer(state: AppState, action: Action): AppState {
           error: null,
         },
         results: null,
+        // Clear the schema slice so a reconnect to a different DB
+        // doesn't render the previous DB's mapping for one frame
+        // before the new /schema/introspect lands.
+        schema: initialSchemaState,
       };
     case "TRANSLATE_START":
       return { ...state, translating: true, error: null, translateMs: null };
@@ -266,6 +335,60 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case "CLEAR_HISTORY":
       return { ...state, history: [] };
+    case "SCHEMA_REFRESH_START":
+      return {
+        ...state,
+        schema: { ...state.schema, refreshing: true, error: null },
+      };
+    case "SCHEMA_LOADED":
+      return {
+        ...state,
+        schema: {
+          ...state.schema,
+          mapping: action.mapping,
+          summary: action.summary,
+          warnings: action.warnings,
+          cacheHit: action.cacheHit,
+          // Drift status moves to "unchanged" on a fresh load — the
+          // server-side cache and the just-loaded mapping share a
+          // fingerprint by definition.
+          cacheStatus: "unchanged",
+          lastFetchedAt: Date.now(),
+          refreshing: false,
+          error: null,
+        },
+      };
+    case "SCHEMA_REFRESH_ERROR":
+      return {
+        ...state,
+        schema: {
+          ...state.schema,
+          refreshing: false,
+          error: action.error,
+        },
+      };
+    case "SCHEMA_STATUS_UPDATED":
+      return {
+        ...state,
+        schema: { ...state.schema, cacheStatus: action.status },
+      };
+    case "SCHEMA_CACHE_INVALIDATED":
+      return {
+        ...state,
+        schema: {
+          ...state.schema,
+          cacheStatus: "no_cache",
+          cacheHit: false,
+        },
+      };
+    case "SCHEMA_IMPORT_SUCCESS":
+      return {
+        ...state,
+        schema: {
+          ...state.schema,
+          lastImportTripleCount: action.tripleCount,
+        },
+      };
     default:
       return state;
   }

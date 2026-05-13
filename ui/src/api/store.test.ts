@@ -8,9 +8,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  initialSchemaState,
   type Action,
   type AppState,
   initialState,
+  type SchemaWarning,
 } from "./store";
 import { __reducerForTest as reducer } from "./store";
 
@@ -156,5 +158,115 @@ describe("reducer: history dedup", () => {
     });
     expect(second.history).toHaveLength(1);
     expect(second.history[0].timestamp).toBe(2);
+  });
+});
+
+describe("reducer: schema slice", () => {
+  it("SCHEMA_REFRESH_START sets refreshing and clears the error", () => {
+    const seed: AppState = {
+      ...initialState,
+      schema: { ...initialSchemaState, error: "stale" },
+    };
+    const next = apply(seed, { type: "SCHEMA_REFRESH_START" });
+    expect(next.schema.refreshing).toBe(true);
+    expect(next.schema.error).toBeNull();
+  });
+
+  it("SCHEMA_LOADED records mapping, warnings, and clears refreshing", () => {
+    const warnings: SchemaWarning[] = [
+      {
+        code: "ANALYZER_NOT_INSTALLED",
+        message: "Heuristic detector used.",
+        install_hint: "pip install arangodb-schema-analyzer>=0.6.1,<0.7",
+      },
+    ];
+    const next = apply(
+      initialState,
+      { type: "SCHEMA_REFRESH_START" },
+      {
+        type: "SCHEMA_LOADED",
+        mapping: {
+          owlTurtle: "@prefix x: <http://x/> .",
+          physicalMapping: { entities: {} },
+        },
+        summary: { entityCount: 0 },
+        warnings,
+        cacheHit: false,
+      },
+    );
+    expect(next.schema.refreshing).toBe(false);
+    expect(next.schema.cacheHit).toBe(false);
+    expect(next.schema.cacheStatus).toBe("unchanged");
+    expect(next.schema.warnings).toEqual(warnings);
+    expect(next.schema.lastFetchedAt).toBeGreaterThan(0);
+    expect(
+      (next.schema.mapping as { owlTurtle: string }).owlTurtle,
+    ).toContain("@prefix");
+  });
+
+  it("SCHEMA_REFRESH_ERROR records the error and clears refreshing", () => {
+    const next = apply(
+      initialState,
+      { type: "SCHEMA_REFRESH_START" },
+      {
+        type: "SCHEMA_REFRESH_ERROR",
+        error: "503 analyzer required and heuristic disabled",
+      },
+    );
+    expect(next.schema.refreshing).toBe(false);
+    expect(next.schema.error).toContain("503");
+  });
+
+  it("SCHEMA_STATUS_UPDATED records the drift status without touching mapping", () => {
+    const seed: AppState = {
+      ...initialState,
+      schema: { ...initialSchemaState, mapping: { x: 1 } as Record<string, unknown> },
+    };
+    const next = apply(seed, {
+      type: "SCHEMA_STATUS_UPDATED",
+      status: "shape_changed",
+    });
+    expect(next.schema.cacheStatus).toBe("shape_changed");
+    expect(next.schema.mapping).toEqual({ x: 1 });
+  });
+
+  it("SCHEMA_CACHE_INVALIDATED resets cacheStatus to no_cache", () => {
+    const seed: AppState = {
+      ...initialState,
+      schema: {
+        ...initialSchemaState,
+        cacheStatus: "unchanged",
+        cacheHit: true,
+      },
+    };
+    const next = apply(seed, { type: "SCHEMA_CACHE_INVALIDATED" });
+    expect(next.schema.cacheStatus).toBe("no_cache");
+    expect(next.schema.cacheHit).toBe(false);
+  });
+
+  it("SCHEMA_IMPORT_SUCCESS records the triple count for the UI badge", () => {
+    const next = apply(initialState, {
+      type: "SCHEMA_IMPORT_SUCCESS",
+      tripleCount: 12345,
+    });
+    expect(next.schema.lastImportTripleCount).toBe(12345);
+  });
+
+  it("DISCONNECT clears the schema slice so the next connect starts clean", () => {
+    const seed: AppState = {
+      ...initialState,
+      connection: { ...initialState.connection, status: "connected", token: "t" },
+      schema: {
+        ...initialSchemaState,
+        mapping: { previous: "db" } as Record<string, unknown>,
+        cacheHit: true,
+        cacheStatus: "unchanged",
+        warnings: [{ code: "X", message: "y" }],
+        lastFetchedAt: 1,
+        lastImportTripleCount: 99,
+      },
+    };
+    const next = apply(seed, { type: "DISCONNECT" });
+    expect(next.schema).toEqual(initialSchemaState);
   });
 });

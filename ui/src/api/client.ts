@@ -294,6 +294,200 @@ export async function getOwlSchema(
 }
 
 // ---------------------------------------------------------------------------
+// Schema acquisition (PRD §6.4 — backed by `arango_sparql.schema.acquire`)
+// ---------------------------------------------------------------------------
+//
+// These wrappers are a 1:1 mapping of the FastAPI routes added in
+// service slice 6 (`arango_sparql/service/routes/schema.py`). The
+// shapes intentionally mirror the Pydantic response models; we
+// keep them as `Record<string, unknown>` rather than full typed
+// interfaces because the analyzer's wire-dict shape evolves
+// version-to-version and a permissive type lets the UI render any
+// future fields without a frontend rebuild.
+
+export type SchemaStrategy = "auto" | "analyzer" | "heuristic";
+
+export interface SchemaIntrospectQuery {
+  database?: string;
+  strategy?: SchemaStrategy;
+  force?: boolean;
+  /** Include the OWL/Turtle ontology in the response. Default true. */
+  include_owl?: boolean;
+  /** Include statistics. Default true. */
+  include_statistics?: boolean;
+}
+
+export interface SchemaIntrospectResponse {
+  mapping: Record<string, unknown>;
+  summary: Record<string, unknown>;
+  warnings: Array<{ code: string; message: string; install_hint?: string }>;
+  source: Record<string, unknown> | null;
+  cache_hit: boolean;
+  elapsed_ms: number;
+}
+
+function qs(params: Record<string, string | number | boolean | undefined>): string {
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(params)) {
+    if (v === undefined || v === null) continue;
+    parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+  }
+  return parts.length ? `?${parts.join("&")}` : "";
+}
+
+export async function schemaIntrospect(
+  token: string,
+  query: SchemaIntrospectQuery = {},
+): Promise<SchemaIntrospectResponse> {
+  return request(`/schema/introspect${qs(query as Record<string, string | number | boolean | undefined>)}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export type SchemaDriftStatus =
+  | "no_cache"
+  | "unchanged"
+  | "stats_only"
+  | "shape_changed";
+
+export interface SchemaStatusResponse {
+  status: SchemaDriftStatus;
+  cached_at?: string | null;
+  cached_fingerprints?: { shape?: string; statistics?: string };
+  live_fingerprints?: { shape?: string; statistics?: string };
+  warnings: Array<{ code: string; message: string; install_hint?: string }>;
+}
+
+export async function schemaStatus(
+  token: string,
+  database?: string,
+): Promise<SchemaStatusResponse> {
+  return request(`/schema/status${qs({ database })}`, {
+    headers: authHeaders(token),
+  });
+}
+
+export interface SchemaInvalidateResponse {
+  invalidated: boolean;
+  database?: string;
+}
+
+export async function schemaInvalidateCache(
+  token: string,
+  database?: string,
+): Promise<SchemaInvalidateResponse> {
+  return request("/schema/invalidate-cache", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ database }),
+  });
+}
+
+export async function schemaForceReacquire(
+  token: string,
+  query: SchemaIntrospectQuery = {},
+): Promise<SchemaIntrospectResponse> {
+  return request("/schema/force-reacquire", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify(query),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// OWL Import / Export (PRD §6.4 rows 8 & 9)
+// ---------------------------------------------------------------------------
+//
+// Two shapes per route to match the backend's content-negotiated
+// behaviour:
+//
+// * Import — JSON envelope `{turtle, source_notes?}` is the default
+//   path because the UI's File API hands us a string. Raw text/turtle
+//   is supported for symmetry but not used by the panel today.
+// * Export — JSON envelope returns `{turtle, mime_type, triple_count}`;
+//   the `Accept: text/turtle` path is used by the "Download" button
+//   so the browser saves the raw bytes verbatim.
+
+export interface OwlImportResponse {
+  accepted: boolean;
+  mapping: Record<string, unknown>;
+  triple_count: number;
+  warnings: Array<{ code: string; message: string }>;
+  source: Record<string, unknown> | null;
+  elapsed_ms: number;
+}
+
+export async function importOwl(
+  turtle: string,
+  token: string,
+  sourceNotes?: string,
+): Promise<OwlImportResponse> {
+  return request("/mapping/import-owl", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      turtle,
+      ...(sourceNotes ? { source_notes: sourceNotes } : {}),
+    }),
+  });
+}
+
+export interface OwlExportJsonResponse {
+  turtle: string;
+  mime_type: string;
+  triple_count: number;
+  elapsed_ms: number;
+}
+
+export async function exportOwlJson(
+  mapping: Record<string, unknown> | null,
+  ontologyTtl: string | undefined,
+  token: string,
+): Promise<OwlExportJsonResponse> {
+  return request("/mapping/export-owl", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({
+      ...(mapping ? { mapping } : {}),
+      ...(ontologyTtl ? { ontology_ttl: ontologyTtl } : {}),
+    }),
+  });
+}
+
+/**
+ * Fetch the export as raw `text/turtle` bytes, suitable for handing
+ * to a Blob download. Bypasses `request()` because the response is
+ * not JSON.
+ */
+export async function exportOwlAsTurtle(
+  mapping: Record<string, unknown> | null,
+  ontologyTtl: string | undefined,
+  token: string,
+): Promise<{ turtle: string; tripleCount: number }> {
+  const res = await fetch(apiBase() + "/mapping/export-owl", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/turtle",
+      ...authHeaders(token),
+    },
+    body: JSON.stringify({
+      ...(mapping ? { mapping } : {}),
+      ...(ontologyTtl ? { ontology_ttl: ontologyTtl } : {}),
+    }),
+  });
+  if (!res.ok) {
+    if (res.status === 401) throw new ApiError(401, AUTH_EXPIRED_MESSAGE);
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new ApiError(res.status, body.detail ?? body);
+  }
+  const turtle = await res.text();
+  const tripleCount = Number(res.headers.get("x-triple-count") ?? "0") || 0;
+  return { turtle, tripleCount };
+}
+
+// ---------------------------------------------------------------------------
 // Sample queries
 // ---------------------------------------------------------------------------
 
