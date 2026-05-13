@@ -27,6 +27,15 @@ _MAX_NL_QUESTION_LENGTH = 4_000  # bounds LLM context-window cost
 _MAX_TURTLE_LENGTH = 1_000_000  # OWL ontologies can be sizeable; 1 MB cap
 _MAX_FIELD_LENGTH = 256  # urls, usernames, db names, tenant fields
 
+# OWL-bomb defence — request-body byte ceiling on ``/mapping/import-owl``
+# (PRD §8.6 T7 + Appendix A.2 ``MAPPING_IMPORT_MAX_BYTES``). Overridable
+# per request via :func:`arango_sparql.service.routes.mapping._resolve_max_bytes`
+# which reads ``MAPPING_IMPORT_MAX_BYTES`` lazily; this constant is the
+# default the route handler falls back to. Two megabytes matches the
+# PRD default and is well above any hand-authored mapping ontology
+# (Microsoft Ontology Playground exports for FIBO sit at ~400 KB).
+_DEFAULT_MAPPING_IMPORT_MAX_BYTES: int = 2_000_000
+
 # Hard cap on materialised /execute and /execute-aql cursor rows. Mirrors
 # the Cypher project's policy of bounding an interactive run before it
 # pages a multi-GB cursor through the FastAPI worker. Operators who need
@@ -456,4 +465,94 @@ class SchemaForceReacquireResponse(BaseModel):
     warnings: list[dict[str, Any]] = Field(default_factory=list)
     source: dict[str, Any] | None = None
     cache_hit: bool = False
+    elapsed_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# OWL Import / Export (PRD §6.4 rows 8 & 9, security §8.6 T7).
+# ---------------------------------------------------------------------------
+#
+# Two endpoints, mirror-symmetric so an "Import OWL → tweak →
+# Export OWL" UI cycle is round-trip safe:
+#
+# * ``POST /mapping/import-owl`` accepts ``text/turtle`` (or a JSON
+#   ``{turtle, source_notes?}`` envelope for clients whose HTTP stack
+#   refuses raw text bodies). Returns ``{accepted, mapping, ...}`` so
+#   the caller can immediately push the parsed bundle into the schema
+#   cache without a second round-trip.
+# * ``POST /mapping/export-owl`` accepts ``{mapping}`` and returns
+#   ``{turtle, mime_type, triple_count}``. Operates on the request
+#   body rather than session state because (a) the schema cache is
+#   per-DB, not per-session, and (b) the UI's "Export current"
+#   affordance already holds the mapping it wants to export.
+#
+# Both responses surface ``triple_count`` so the UI can render a
+# "1.2k triples" badge for operator situational awareness, and so
+# the OWL-bomb cap (PRD §8.6 T7) emits a numeric data point in the
+# 422 detail rather than a bare error message.
+
+
+class OwlImportRequest(BaseModel):
+    """Request body for ``POST /mapping/import-owl`` (JSON envelope form).
+
+    The route also accepts a raw ``text/turtle`` body — the JSON
+    envelope exists for clients whose HTTP stack chokes on raw text
+    (some ``fetch`` polyfills set ``Content-Type: application/json``
+    even when given a string body). When both forms are present the
+    raw body wins; the JSON path is the fallback.
+    """
+
+    turtle: str = Field(..., min_length=1, max_length=_MAX_TURTLE_LENGTH)
+    source_notes: str | None = Field(
+        default=None, max_length=_MAX_FIELD_LENGTH
+    )
+
+
+class OwlImportResponse(BaseModel):
+    """Response body for ``POST /mapping/import-owl``.
+
+    ``mapping`` is the canonical wire-dict form of the parsed
+    :class:`MappingBundle` (same shape as ``/schema/introspect``'s
+    ``mapping`` field) so a UI client can drop the response straight
+    into its existing introspect-handling code path.
+    """
+
+    accepted: bool
+    mapping: dict[str, Any]
+    triple_count: int
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    source: dict[str, Any] | None = None
+    elapsed_ms: float = 0.0
+
+
+class OwlExportRequest(BaseModel):
+    """Request body for ``POST /mapping/export-owl``.
+
+    Either ``mapping`` (preferred — a full wire-dict
+    :class:`MappingBundle`) or ``ontology_ttl`` (fallback — a Turtle
+    blob the client wants to round-trip through the synthesizer)
+    must be supplied. The route validates this at request time so a
+    422 with a clear message lands instead of a 500 from the
+    serializer.
+    """
+
+    mapping: dict[str, Any] | None = None
+    ontology_ttl: str | None = Field(
+        default=None, max_length=_MAX_TURTLE_LENGTH
+    )
+
+
+class OwlExportResponse(BaseModel):
+    """Response body for ``POST /mapping/export-owl`` (JSON form).
+
+    For ``Accept: text/turtle`` the route returns a
+    :class:`fastapi.responses.PlainTextResponse` with the raw Turtle
+    bytes — the JSON envelope here is the default for clients that
+    just want to round-trip the bundle programmatically (e.g. for
+    a UI download button that prepares a Blob from the body).
+    """
+
+    turtle: str
+    mime_type: str = "text/turtle"
+    triple_count: int = 0
     elapsed_ms: float = 0.0
