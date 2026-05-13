@@ -91,3 +91,113 @@ from .observability import CorrelationIdMiddleware, configure_observability  # n
 
 configure_observability()
 app.add_middleware(CorrelationIdMiddleware)
+
+
+# ---------------------------------------------------------------------------
+# Startup guard — PRD §6.3.4 ``_require_analyzer_unless_opted_out``
+# ---------------------------------------------------------------------------
+#
+# This guard runs at app-import time so a misconfigured deployment
+# fails *before* the first request lands rather than mid-flight on
+# the first ``/schema/introspect`` call. Two env vars govern the
+# four reachable cells (PRD §6.3.4):
+#
+# 1. ``SCHEMA_ANALYZER_REQUIRED=true`` (default) + analyzer importable
+#    → boot.
+# 2. ``SCHEMA_ANALYZER_REQUIRED=true`` + analyzer **not** importable
+#    → boot refused with a clear install hint.
+# 3. ``SCHEMA_ANALYZER_REQUIRED=false`` (operator opt-out) → boot
+#    regardless. The route layer's per-request fallback gate
+#    (``ARANGO_SPARQL_ALLOW_HEURISTIC``) takes over from here.
+# 4. ``ARANGO_SPARQL_PUBLIC_MODE=true`` forces both opt-outs off
+#    so a public deployment cannot accidentally degrade to the
+#    heuristic path. The boot guard already runs *after* the
+#    ``_PUBLIC_MODE`` readout above so that constraint is honoured.
+
+# Pinned analyzer version range — single source of truth for the
+# install hint. Must match the pin in :mod:`arango_sparql.schema.acquire`
+# (``ANALYZER_VERSION_RANGE``). When the range bumps, the test in
+# ``tests/test_service_startup_guard.py::test_install_hint_matches_acquire``
+# will fail and force the operator to update both sites in lockstep.
+ANALYZER_VERSION_RANGE: str = ">=0.6.1,<0.7"
+ANALYZER_INSTALL_HINT: str = (
+    f"pip install 'arangodb-schema-analyzer{ANALYZER_VERSION_RANGE}' "
+    "(or set SCHEMA_ANALYZER_REQUIRED=false for a heuristic-only deployment)"
+)
+
+
+class AnalyzerStartupGuardError(RuntimeError):
+    """Raised by :func:`_require_analyzer_unless_opted_out` when the
+    analyzer extra is missing and the operator has not opted into a
+    heuristic-only deployment.
+
+    Carries the install hint so the surrounding process supervisor
+    (systemd, Docker, Kubernetes pod log) surfaces an actionable
+    error message rather than a bare ``ImportError`` traceback.
+    """
+
+    def __init__(self, *, install_hint: str = ANALYZER_INSTALL_HINT) -> None:
+        super().__init__(
+            "SCHEMA_ANALYZER_REQUIRED=true but arangodb-schema-analyzer "
+            f"is not installed. {install_hint}"
+        )
+        self.install_hint = install_hint
+
+
+def _require_analyzer_unless_opted_out() -> None:
+    """PRD §6.3.4 startup guard.
+
+    Reads :envvar:`SCHEMA_ANALYZER_REQUIRED` (default ``true``) and
+    refuses to start when the analyzer extra cannot be imported.
+    The opt-out gate is deliberately verbose so a heuristic-only or
+    schema-less deployment is a conscious operator decision, not a
+    silent default (PRD §6.3.4 last paragraph).
+
+    Idempotent: safe to call from tests that need to re-run the
+    guard under different env-var states. The function never
+    mutates module-level state — every input it reads is from
+    ``os.environ`` or from the (immutable) installed-package set.
+    """
+
+    # Opt-out is deliberately verbose (PRD §6.3.4 last paragraph): only
+    # an explicit known-false value disables the requirement. An unset,
+    # empty, or unrecognised value falls through to "required=True" so
+    # a typo in deployment YAML cannot silently degrade the service.
+    raw = (os.getenv("SCHEMA_ANALYZER_REQUIRED") or "").strip().lower()
+    explicit_opt_out = raw in ("false", "0", "no")
+    if explicit_opt_out:
+        _svc_logger.info(
+            "Startup guard: SCHEMA_ANALYZER_REQUIRED=%r — analyzer extra "
+            "is optional for this deployment.",
+            raw,
+        )
+        return
+
+    try:
+        import schema_analyzer  # noqa: F401
+    except ImportError as exc:
+        _svc_logger.error(
+            "Startup guard: arangodb-schema-analyzer is not importable "
+            "and SCHEMA_ANALYZER_REQUIRED=%r. %s",
+            raw,
+            ANALYZER_INSTALL_HINT,
+        )
+        raise AnalyzerStartupGuardError() from exc
+
+    _svc_logger.info(
+        "Startup guard: arangodb-schema-analyzer importable; analyzer "
+        "path is the canonical mapping source for this deployment."
+    )
+
+
+# Run the guard at import time. Tests can opt-out via
+# ``ARANGO_SPARQL_SKIP_STARTUP_GUARD=1`` so they can exercise
+# different env-var combinations without crashing pytest's own
+# import phase. The default (env var unset) runs the guard
+# unconditionally, matching production semantics.
+if os.getenv("ARANGO_SPARQL_SKIP_STARTUP_GUARD", "").lower() not in (
+    "1",
+    "true",
+    "yes",
+):
+    _require_analyzer_unless_opted_out()

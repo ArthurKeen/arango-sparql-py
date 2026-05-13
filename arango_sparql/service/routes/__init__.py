@@ -20,5 +20,6 @@ from . import (
     connect,  # noqa: F401
     health,  # noqa: F401
     nl,  # noqa: F401
+    schema,  # noqa: F401
     sparql,  # noqa: F401
 )

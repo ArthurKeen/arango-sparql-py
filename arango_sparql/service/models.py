@@ -296,3 +296,164 @@ class NlExecuteResponse(NlTranslateResponse):
     bindings: list[dict[str, Any]] = Field(default_factory=list)
     truncated: bool = False
     exec_ms: int = 0
+
+
+# ---------------------------------------------------------------------------
+# Schema HTTP surface (PRD §6.4) request / response models.
+# ---------------------------------------------------------------------------
+#
+# Mirrors the sister project's schema-route shapes so a developer who
+# knows ``arango_cypher.service.routes.schema`` can read this surface
+# without a translation step. Differences from the sister:
+#
+# * Adds the ``mapping`` block to every introspect / force-reacquire
+#   response (sister only returns the conceptual summary; we surface
+#   the full :class:`MappingBundle` wire dict because the SPARQL
+#   planner consumes it directly via ``SchemaResolver.from_mapping_bundle``).
+# * Adds ``rpt_collections`` to the summary because RPT is a SPARQL-
+#   side concern (the sister project's planner is Cypher-only and
+#   does not need the breakout).
+# * Splits the ``/schema/status`` payload into ``current`` /
+#   ``cached`` fingerprint blocks rather than four flat fields, so
+#   the UI's drift banner can iterate one structure.
+
+
+class SchemaIntrospectResponse(BaseModel):
+    """Response body for ``GET /schema/introspect`` (PRD §6.4 row 1).
+
+    ``mapping`` is the canonical wire-dict form of the live
+    :class:`~arango_sparql.translate.mapping.MappingBundle`. ``summary``
+    is a UI-friendly digest derived from the same bundle. Both are
+    emitted so a single call satisfies both the planner-side
+    ("give me the bundle") and the UI-side ("just show the user what
+    the schema looks like") consumers.
+    """
+
+    mapping: dict[str, Any]
+    summary: dict[str, Any]
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    source: dict[str, Any] | None = None
+    cache_hit: bool = False
+    elapsed_ms: float = 0.0
+
+
+class SchemaPropertiesResponse(BaseModel):
+    """Response body for ``GET /schema/properties`` (PRD §6.4 row 2).
+
+    ``properties`` is keyed by attribute name; each value is
+    ``{field, type, sample, required}`` per the inferred shape.
+    ``collection`` is echoed so a multi-call UI can correlate the
+    response to the originating request when calls fan out.
+    """
+
+    collection: str
+    sample_size: int
+    properties: dict[str, dict[str, Any]] = Field(default_factory=dict)
+
+
+class SchemaSummaryRequest(BaseModel):
+    """Request body for ``GET /schema/summary`` (PRD §6.4 row 3).
+
+    Either ``mapping`` (preferred) or ``ontology_ttl`` (fallback)
+    must be supplied. The route validates this at request time so a
+    422 lands with a clear message rather than a 500 from the
+    summary builder.
+    """
+
+    mapping: dict[str, Any] | None = None
+    ontology_ttl: str | None = Field(default=None, max_length=_MAX_TURTLE_LENGTH)
+
+
+class SchemaSummaryResponse(BaseModel):
+    """Response body for ``GET /schema/summary``.
+
+    The ``entities`` and ``relationships`` arrays are the UI-facing
+    digest: each entry is small enough to render in a list view
+    without further drilldown.
+    """
+
+    entities: list[dict[str, Any]] = Field(default_factory=list)
+    relationships: list[dict[str, Any]] = Field(default_factory=list)
+    rpt_collections: list[dict[str, Any]] = Field(default_factory=list)
+    entity_count: int = 0
+    relationship_count: int = 0
+
+
+class SchemaStatisticsResponse(BaseModel):
+    """Response body for ``GET /schema/statistics`` (PRD §6.4 row 4).
+
+    Surfaces ``bundle.metadata.statistics`` as-is when the analyzer
+    populated it. When statistics are missing (e.g. heuristic-only
+    bundle), an empty block is returned with ``available=false`` so
+    the UI can render a "compute statistics" CTA rather than a stack
+    trace.
+    """
+
+    statistics: dict[str, Any] = Field(default_factory=dict)
+    available: bool = False
+    last_acquired_at: str | None = None
+
+
+class SchemaFingerprintBlock(BaseModel):
+    """One side of the ``/schema/status`` fingerprint comparison.
+
+    Both sub-fingerprints (``shape`` and ``counts``) are emitted
+    even when one of them is unknown (None) so the UI can render a
+    consistent two-row diff without a special case for the
+    "haven't acquired yet" path.
+    """
+
+    shape: str | None = None
+    counts: str | None = None
+
+
+class SchemaStatusResponse(BaseModel):
+    """Response body for ``GET /schema/status`` (PRD §6.4 row 5).
+
+    The ``status`` enum mirrors :class:`FingerprintDrift` plus the
+    extra ``no_cache`` slot for "we have nothing to compare against
+    yet". ``unchanged`` and ``needs_full_rebuild`` are convenience
+    booleans so the UI doesn't have to enum-match.
+    """
+
+    status: str
+    unchanged: bool
+    needs_full_rebuild: bool
+    current: SchemaFingerprintBlock = Field(
+        default_factory=SchemaFingerprintBlock
+    )
+    cached: SchemaFingerprintBlock = Field(
+        default_factory=SchemaFingerprintBlock
+    )
+    last_acquired_at: str | None = None
+    db_name: str | None = None
+
+
+class SchemaInvalidateCacheResponse(BaseModel):
+    """Response body for ``POST /schema/invalidate-cache`` (PRD §6.4 row 6).
+
+    ``invalidated`` is ``True`` iff a cache entry was actually
+    evicted (matches :meth:`SchemaCache.invalidate`'s return value).
+    The ``db_name`` echo lets a caller confirm they invalidated the
+    expected database when one process is talking to multiple DBs.
+    """
+
+    invalidated: bool
+    db_name: str
+    persistent_dropped: bool = False
+
+
+class SchemaForceReacquireResponse(BaseModel):
+    """Response body for ``POST /schema/force-reacquire`` (PRD §6.4 row 7).
+
+    Same shape as :class:`SchemaIntrospectResponse` so a UI's
+    "refresh schema" affordance can render either response without
+    a branch. ``cache_hit`` is always ``False`` here by definition.
+    """
+
+    mapping: dict[str, Any]
+    summary: dict[str, Any]
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
+    source: dict[str, Any] | None = None
+    cache_hit: bool = False
+    elapsed_ms: float = 0.0
