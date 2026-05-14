@@ -632,7 +632,7 @@ class AlgebraVisitor:
             if resolved.style == "RPT":
                 self._emit_rpt_type_pattern(s, o, resolved)
                 return
-            alias = self._open_collection(resolved.collection)
+            alias = self._open_collection(resolved.collection, resolved=resolved)
             if resolved.type_field and resolved.type_value:
                 # Hybrid (multi-class) collection: the mapper emits a
                 # discriminator field; gate the FOR with it so we don't
@@ -705,16 +705,47 @@ class AlgebraVisitor:
     # ------------------------------------------------------------------
     # Internal: alias / FOR-clause management
     # ------------------------------------------------------------------
-    def _open_collection(self, collection: str) -> str:
-        """Mint a fresh alias and emit ``FOR <alias> IN <collection>``.
+    def _open_collection(
+        self,
+        collection: str,
+        *,
+        resolved: ResolvedClass | None = None,
+    ) -> str:
+        """Mint a fresh alias and emit a FOR clause over *collection*.
 
-        The legacy code dedupes by ``fromClauses`` set; we mint a fresh
-        alias per call for now (the optimizer in ArangoDB collapses
-        identical FORs in the common case). Deduplication can land
-        alongside multi-triple BGP join optimization.
+        Plain case: emits ``FOR <alias> IN <collection>``. The legacy
+        code dedupes by ``fromClauses`` set; we mint a fresh alias per
+        call for now (the optimizer in ArangoDB collapses identical
+        FORs in the common case). Deduplication can land alongside
+        multi-triple BGP join optimization.
+
+        Sharded case (PRD §6.5.3): when *resolved* is supplied and its
+        :attr:`ResolvedClass.shard_family` is non-``None``, the FOR is
+        replaced by a ``FOR <alias> IN UNION_DISTINCT((FOR a IN
+        @@shard1 RETURN a), …)`` fan-out spanning every family member.
+        Downstream FILTERs / RETURNs reference ``alias`` exactly the
+        way they would for a plain FOR — the union row exposes the
+        same columns as a row from any single shard. The builder also
+        prepends ``WITH @@shard1, @@shard2, …`` to the rendered query
+        so the cluster optimiser locks the family at parse time.
+
+        ``resolved`` is optional because some FOR sites (notably the
+        default-collection fallback in :meth:`_ensure_subject_alias`)
+        have no ``ResolvedClass`` in hand — the default collection
+        cannot, by definition, belong to a customer-declared shard
+        family, so plain FOR is the only correct emission there.
         """
         alias = self.builder.fresh_alias()
-        self.builder.for_(alias, collection)
+        if resolved is not None and resolved.shard_family is not None:
+            # Sharded class: fan out over every member of the family.
+            # The visitor still tracks the alias under the *base*
+            # collection (the one the resolver selected) so subsequent
+            # joins / tenant scoping match exactly the same way they
+            # would for a single-shard deployment — downstream code
+            # never has to special-case shard fan-out.
+            self.builder.for_sharded(alias, resolved.shard_family)
+        else:
+            self.builder.for_(alias, collection)
         self.state.doc_to_collection[alias] = collection
         return alias
 
@@ -791,7 +822,9 @@ class AlgebraVisitor:
         Mirrors the legacy ``rpt-translator.js`` ``translateSelectRPT``
         loop's first branch.
         """
-        triples_alias = self._open_collection(resolved.collection)
+        triples_alias = self._open_collection(
+            resolved.collection, resolved=resolved
+        )
         if resolved.tenant_field is not None:
             # RPT rows live in a denormalised triples table whose
             # columns are fixed (subject_uri / predicate / object_uri
@@ -883,7 +916,9 @@ class AlgebraVisitor:
           since RDF literals never live in the URI column.
         """
         rpt_class = self.state.var_to_rpt_class[str(subject)]
-        triples_alias = self._open_collection(rpt_class.collection)
+        triples_alias = self._open_collection(
+            rpt_class.collection, resolved=rpt_class
+        )
         # Record the per-class metadata so the OBJECT variable, if
         # bound here, joins through the same column overrides the
         # subject's class declared.

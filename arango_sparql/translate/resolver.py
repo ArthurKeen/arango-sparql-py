@@ -112,6 +112,26 @@ class ResolvedClass:
     ``E_TRANSLATE_CROSS_TENANT_JOIN`` (PRD §6.5.1) rather than
     emit AQL that could broadcast across tenants."""
 
+    shard_family: tuple[str, ...] | None = None
+    """Sorted tuple of physical collections this class's
+    ``collection`` belongs to (per PRD §6.5.3 ``shardFamilies``), or
+    ``None`` when the class is not part of any sharded family.
+
+    When set, the visitor swaps the plain ``FOR doc IN @@coll`` into a
+    ``FOR row IN UNION_DISTINCT((FOR a IN @@shard1 RETURN a), ...)``
+    fan-out so every shard contributes rows, and the builder emits a
+    leading ``WITH @@shard1, @@shard2, …`` so the cluster optimiser
+    locks the family at parse time. Sourced from
+    ``MappingBundle.physical_mapping.shardFamilies`` — there's no
+    OWL ``phys:`` representation today because the analyzer attaches
+    the family list to the mapping wire shape, not the per-class
+    annotations.
+
+    Stored sorted so two classes that resolve into the same family
+    compare ``==`` regardless of declaration order — important for
+    the resolver's cache and for the builder's de-duplication of the
+    ``WITH`` clause."""
+
 
 @dataclass
 class ResolvedProperty:
@@ -153,8 +173,28 @@ class SchemaResolver:
 
     ontology: Graph
     default_collection: str = "Document"
+    shard_families: tuple[tuple[str, ...], ...] = ()
+    """Sorted, immutable view of the ``physicalMapping.shardFamilies``
+    list from the source :class:`MappingBundle` (PRD §6.5.3).
+
+    Each inner tuple is the sorted member-collection names of one
+    shard family. Empty (default) when the deployment is single-shard
+    — visitor emits the plain ``FOR doc IN @@coll`` form. When non-
+    empty the resolver computes :attr:`_shard_family_by_collection`
+    once and uses it on every ``resolve_class`` to attach
+    :attr:`ResolvedClass.shard_family`.
+
+    Tuples (rather than lists) so a freshly-constructed resolver is
+    cheap to hash / compare in the schema cache layer."""
+
     _class_cache: dict[str, ResolvedClass] = field(default_factory=dict)
     _property_cache: dict[str, ResolvedProperty] = field(default_factory=dict)
+    _shard_family_by_collection: dict[str, tuple[str, ...]] = field(
+        default_factory=dict
+    )
+    """Reverse index: physical collection name → the shard family
+    tuple it belongs to. Built once in :meth:`__post_init__` so
+    every ``resolve_class`` lookup is O(1)."""
     warnings: list[dict[str, Any]] = field(default_factory=list)
     """Schema-mapping advisories accumulated during resolution.
 
@@ -168,6 +208,27 @@ class SchemaResolver:
     unmapped predicate ten times emits one advisory rather than ten.
     """
     _warned_keys: set[tuple[str, str]] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        # Build the collection → family reverse index once. A
+        # collection that appears in two families would be ambiguous
+        # (which fan-out applies?), so we reject the duplicate at
+        # construction time with a typed error rather than at
+        # translate time when the message would be far less actionable.
+        if not self.shard_families:
+            return
+        index: dict[str, tuple[str, ...]] = {}
+        for family in self.shard_families:
+            for coll in family:
+                if coll in index and index[coll] != family:
+                    raise SchemaResolutionError(
+                        f"collection {coll!r} appears in two distinct "
+                        f"shardFamilies ({index[coll]!r} and {family!r}); "
+                        f"a physical collection must belong to at most one "
+                        f"family (PRD §6.5.3)"
+                    )
+                index[coll] = family
+        self._shard_family_by_collection = index
 
     @classmethod
     def from_turtle(cls, ttl: str, *, default_collection: str = "Document") -> SchemaResolver:
@@ -211,12 +272,21 @@ class SchemaResolver:
         the synthetic ``urn:`` namespace.
         """
 
+        shard_families = _project_shard_families(bundle.physical_mapping)
         if bundle.owl_turtle:
-            return cls.from_turtle(
-                bundle.owl_turtle, default_collection=default_collection
+            graph = Graph()
+            graph.parse(data=bundle.owl_turtle, format="turtle")
+            return cls(
+                ontology=graph,
+                default_collection=default_collection,
+                shard_families=shard_families,
             )
         graph = _synthesize_graph_from_bundle(bundle)
-        return cls(ontology=graph, default_collection=default_collection)
+        return cls(
+            ontology=graph,
+            default_collection=default_collection,
+            shard_families=shard_families,
+        )
 
     # ------------------------------------------------------------------
     # Class resolution
@@ -278,6 +348,7 @@ class SchemaResolver:
                 kwargs[attr_name] = value
         tenant_field = self._physical_string(ref, "tenantField")
         tenant_entity = self._physical_string(ref, "tenantEntity")
+        shard_family = self._shard_family_by_collection.get(collection)
         resolved = ResolvedClass(
             iri=key,
             collection=collection,
@@ -286,6 +357,7 @@ class SchemaResolver:
             style=style,
             tenant_field=tenant_field,
             tenant_entity=tenant_entity,
+            shard_family=shard_family,
             **kwargs,
         )
         self._class_cache[key] = resolved
@@ -429,6 +501,39 @@ _BUNDLE_RELATIONSHIP_ANNOTATIONS: tuple[tuple[str, str], ...] = (
     ("typeValue", "typeValue"),
     ("triplesCollection", "triplesCollection"),
 )
+
+
+def _project_shard_families(
+    physical_mapping: dict[str, Any],
+) -> tuple[tuple[str, ...], ...]:
+    """Project ``physicalMapping.shardFamilies`` onto a deterministic
+    immutable view (PRD §6.5.3).
+
+    Each inner tuple is the sorted member-collection names of one
+    family; the outer tuple is sorted by the first member of each
+    family so two semantically-equal bundles produce two
+    ``==``-equal resolver shard-family lists.
+
+    A non-list / non-string entry is dropped silently — the
+    :mod:`arango_sparql.translate.mapping` wire-shape validator is
+    responsible for refusing malformed bundles; this projector
+    operates defensively on already-normalised data so a
+    forward-compat analyzer that adds a future field type cannot
+    crash the translate path.
+    """
+
+    raw = physical_mapping.get("shardFamilies") if physical_mapping else None
+    if not raw or not isinstance(raw, list):
+        return ()
+    families: list[tuple[str, ...]] = []
+    for family in raw:
+        if not isinstance(family, list):
+            continue
+        members = tuple(sorted(str(m) for m in family if isinstance(m, str)))
+        if members:
+            families.append(members)
+    families.sort(key=lambda f: (f[0], f))
+    return tuple(families)
 
 
 def _synthetic_iri(label: str) -> URIRef:

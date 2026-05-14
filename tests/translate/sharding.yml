@@ -1,0 +1,234 @@
+# Golden corpus for cross-shard broadcast (PRD §6.5.3).
+#
+# When ``physicalMapping.shardFamilies`` declares a group of related
+# collections, every FOR over any member emits as
+#
+#   FOR <alias> IN UNION_DISTINCT(
+#     (FOR <inner1> IN @@<shard1> RETURN <inner1>),
+#     (FOR <inner2> IN @@<shard2> RETURN <inner2>),
+#     ...
+#   )
+#
+# and the rendered query is prefixed with ``WITH @@<shard1>,
+# @@<shard2>, …`` so the ArangoDB cluster optimiser locks every
+# family member at parse time. Downstream FILTER / RETURN clauses
+# reference the union alias — no further bookkeeping is needed.
+#
+# These goldens are driven through ``SchemaResolver.from_mapping_bundle``
+# rather than ``from_turtle`` because ``shardFamilies`` lives on the
+# MappingBundle wire shape (not on the OWL annotations). The OWL
+# ontology still declares ``phys:collectionName`` / ``phys:mappingStyle``
+# / tenant annotations — that's the half of the configuration the
+# analyzer surfaces as Turtle. The shard list itself is the analyzer's
+# JSON-only output.
+
+# Three baseline cases exercise the three shapes the PRD describes:
+#
+#   1. ``rpt_two_shards_one_triple`` — pure RPT, 2-member family,
+#      single triple. Smallest possible WITH + UNION_DISTINCT pair.
+#   2. ``rpt_three_shards_multi_triple`` — pure RPT, 3-member family
+#      (the PRD §6.5.3 us/eu/apac example), two triples on the same
+#      subject. Asserts that two FOR clauses sharing the family bind
+#      to the SAME ``@@c<n>_<shard>`` placeholders (de-dup) and that
+#      ``WITH`` lists each member exactly once.
+#   3. ``hybrid_sharded_rpt_unsharded_pg`` — a sharded RPT class
+#      joined to an un-sharded PG class. The PG FOR stays plain and
+#      ``WITH`` covers only the sharded shards.
+#   4. ``pg_two_shards_with_attribute`` — sharded PG entity reading
+#      a datatype property. Asserts the union alias is what feeds the
+#      ``RETURN`` projection, exactly as a plain FOR would.
+#   5. ``sharded_with_tenant_filter`` — sharded + tenant-scoped
+#      entity. Tenant FILTER lands once on the union alias, not per
+#      sub-scan, so the tenant predicate runs against the merged row
+#      stream (correctness-equivalent and cheaper than per-shard
+#      tenant filters; PRD §6.5.3 doesn't prescribe one or the other
+#      but per-shard would multiply the bind churn).
+
+cases:
+  - name: rpt_two_shards_one_triple
+    mapping_bundle:
+      owl_turtle: |
+        @prefix : <http://ex.org/> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix phys: <https://arango.solutions/phys#> .
+        :Triples a owl:Class ;
+            phys:mappingStyle "RPT" ;
+            phys:triplesCollection "_triples_us" .
+      physical_mapping:
+        entities: {}
+        relationships: {}
+        shardFamilies:
+          - ["_triples_us", "_triples_eu"]
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Triples }
+    expected_aql: |-
+      WITH @@c1__triples_eu, @@c2__triples_us
+      FOR doc1 IN UNION_DISTINCT(
+        (FOR doc2 IN @@c1__triples_eu RETURN doc2),
+        (FOR doc3 IN @@c2__triples_us RETURN doc3)
+      )
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      RETURN { s: doc1.subject_uri }
+    expected_bind_vars:
+      "@c1__triples_eu": "_triples_eu"
+      "@c2__triples_us": "_triples_us"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Triples"
+
+  - name: rpt_three_shards_multi_triple
+    # The PRD §6.5.3 worked example: three-region RPT deployment.
+    # Two triples on the same subject share the family — the WITH
+    # clause lists each shard exactly once, and the second triple's
+    # UNION_DISTINCT reuses the same ``@@c<n>__triples_<region>``
+    # bind names the first one declared. Mirrors the legacy Foxx
+    # cross-shard RPT behaviour described under §6.5.3.
+    mapping_bundle:
+      owl_turtle: |
+        @prefix : <http://ex.org/> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix phys: <https://arango.solutions/phys#> .
+        :Triples a owl:Class ;
+            phys:mappingStyle "RPT" ;
+            phys:triplesCollection "_triples_us" .
+      physical_mapping:
+        entities: {}
+        relationships: {}
+        shardFamilies:
+          - ["_triples_us", "_triples_eu", "_triples_apac"]
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Triples ; :name ?n }
+    expected_aql: |-
+      WITH @@c1__triples_apac, @@c2__triples_eu, @@c3__triples_us
+      FOR doc1 IN UNION_DISTINCT(
+        (FOR doc2 IN @@c1__triples_apac RETURN doc2),
+        (FOR doc3 IN @@c2__triples_eu RETURN doc3),
+        (FOR doc4 IN @@c3__triples_us RETURN doc4)
+      )
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc5 IN UNION_DISTINCT(
+        (FOR doc6 IN @@c1__triples_apac RETURN doc6),
+        (FOR doc7 IN @@c2__triples_eu RETURN doc7),
+        (FOR doc8 IN @@c3__triples_us RETURN doc8)
+      )
+      FILTER doc5.predicate == @_p3_pred
+      FILTER doc5.subject_uri == doc1.subject_uri
+      RETURN { s: doc1.subject_uri, n: COALESCE(doc5.object_uri, doc5.object_value) }
+    expected_bind_vars:
+      "@c1__triples_apac": "_triples_apac"
+      "@c2__triples_eu": "_triples_eu"
+      "@c3__triples_us": "_triples_us"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Triples"
+      "_p3_pred": "http://ex.org/name"
+
+  - name: hybrid_sharded_rpt_unsharded_pg
+    # An un-sharded PG entity joined to a sharded RPT class. The PG
+    # FOR stays plain (no UNION_DISTINCT, no WITH entry); only the
+    # sharded shards appear in ``WITH``. rdflib's algebra orders the
+    # type patterns by class IRI alphabetically (``:Doc`` before
+    # ``:Triples``), and the visitor preserves that.
+    mapping_bundle:
+      owl_turtle: |
+        @prefix : <http://ex.org/> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix phys: <https://arango.solutions/phys#> .
+        :Triples a owl:Class ;
+            phys:mappingStyle "RPT" ;
+            phys:triplesCollection "_triples_us" .
+        :Doc a owl:Class ;
+            phys:collectionName "Doc" .
+      physical_mapping:
+        entities: {}
+        relationships: {}
+        shardFamilies:
+          - ["_triples_us", "_triples_eu"]
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?d WHERE { ?s a :Triples . ?d a :Doc }
+    expected_aql: |-
+      WITH @@c2__triples_eu, @@c3__triples_us
+      FOR doc1 IN @@c1_Doc
+      FOR doc2 IN UNION_DISTINCT(
+        (FOR doc3 IN @@c2__triples_eu RETURN doc3),
+        (FOR doc4 IN @@c3__triples_us RETURN doc4)
+      )
+      FILTER doc2.predicate == @_p1_rdftype
+      FILTER doc2.object_uri == @_p2_cls
+      RETURN { s: doc2.subject_uri, d: doc1._uri }
+    expected_bind_vars:
+      "@c1_Doc": "Doc"
+      "@c2__triples_eu": "_triples_eu"
+      "@c3__triples_us": "_triples_us"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Triples"
+
+  - name: pg_two_shards_with_attribute
+    # Sharded PG entity (not RPT). Confirms the union alias is what
+    # downstream attribute lookups (``doc1.name``) and projections
+    # (``doc1._uri``) reference — exactly the same shape a plain
+    # FOR would have.
+    mapping_bundle:
+      owl_turtle: |
+        @prefix : <http://ex.org/> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix phys: <https://arango.solutions/phys#> .
+        :Person a owl:Class ;
+            phys:collectionName "Person_us" .
+      physical_mapping:
+        entities: {}
+        relationships: {}
+        shardFamilies:
+          - ["Person_us", "Person_eu"]
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n }
+    expected_aql: |-
+      WITH @@c1_Person_eu, @@c2_Person_us
+      FOR doc1 IN UNION_DISTINCT(
+        (FOR doc2 IN @@c1_Person_eu RETURN doc2),
+        (FOR doc3 IN @@c2_Person_us RETURN doc3)
+      )
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person_eu": "Person_eu"
+      "@c2_Person_us": "Person_us"
+
+  - name: sharded_with_tenant_filter
+    # Sharded + tenant-scoped: the tenant FILTER lands once on the
+    # union alias rather than per sub-scan. Both PRD §6.5.1 (tenant
+    # FILTER) and §6.5.3 (cross-shard broadcast) end up correctly
+    # composed.
+    mapping_bundle:
+      owl_turtle: |
+        @prefix : <http://ex.org/> .
+        @prefix owl: <http://www.w3.org/2002/07/owl#> .
+        @prefix phys: <https://arango.solutions/phys#> .
+        :Person a owl:Class ;
+            phys:collectionName "Person_us" ;
+            phys:tenantField "tenant_id" ;
+            phys:tenantEntity "Org" .
+      physical_mapping:
+        entities: {}
+        relationships: {}
+        shardFamilies:
+          - ["Person_us", "Person_eu"]
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person }
+    tenant_id: "tenant-alpha"
+    expected_aql: |-
+      WITH @@c1_Person_eu, @@c2_Person_us
+      FOR doc1 IN UNION_DISTINCT(
+        (FOR doc2 IN @@c1_Person_eu RETURN doc2),
+        (FOR doc3 IN @@c2_Person_us RETURN doc3)
+      )
+      FILTER doc1.tenant_id == @_p1_tenant
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person_eu": "Person_eu"
+      "@c2_Person_us": "Person_us"
+      "_p1_tenant": "tenant-alpha"

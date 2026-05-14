@@ -60,6 +60,12 @@ class AqlQueryBuilder:
     _bind_vars: dict[str, Any] = field(default_factory=dict)
     _body_clauses: list[_Clause] = field(default_factory=list)
     """FOR / FILTER / LET / RAW clauses, in the order the visitor adds them."""
+    _with_collections: list[str] = field(default_factory=list)
+    """Sharded-family member collection names whose ``@@coll`` bind
+    references must appear in the leading ``WITH`` clause that
+    :meth:`finalize` prepends (PRD §6.5.3). Order-preserving and
+    de-duplicated by string equality — two triples that both
+    reference the ``[us, eu, apac]`` family produce one ``WITH`` line."""
     _sort_keys: list[str] = field(default_factory=list)
     """Pending ``SORT`` keys, joined into a single comma-separated clause
     by :meth:`finalize`. Each entry is a ``"<expr> <ASC|DESC>"`` string
@@ -184,6 +190,75 @@ class AqlQueryBuilder:
                 f"FOR {vertex_alias}, {edge_alias} IN {direction} {start_alias} {coll_ref}",
             )
         )
+        return self
+
+    def for_sharded(
+        self,
+        alias: str,
+        shard_collections: tuple[str, ...] | list[str],
+    ) -> AqlQueryBuilder:
+        """Emit a sharded FOR — a UNION_DISTINCT over per-shard scans.
+
+        Renders as::
+
+            FOR <alias> IN UNION_DISTINCT(
+              (FOR <inner1> IN @@<shard1> RETURN <inner1>),
+              (FOR <inner2> IN @@<shard2> RETURN <inner2>),
+              ...
+            )
+
+        Downstream ``FILTER`` / ``RETURN`` clauses reference ``alias``
+        (the union row) the same way they would a plain FOR — every
+        per-shard ``inner_k`` is a private alias confined to its
+        sub-scan. This is the PRD §6.5.3 cross-shard broadcast: the
+        cluster optimiser sees one row stream over the union of all
+        family members.
+
+        The ``@@coll`` bind names are minted via
+        :meth:`bind_collection` so two triples that target the same
+        family share the same bind variables (one ``@@c<n>_<name>``
+        per shard, regardless of how many triples touch it). Each
+        member collection is also recorded for the leading ``WITH``
+        clause :meth:`finalize` prepends — ArangoDB cluster mode
+        requires the optimiser to know about every collection the
+        query reads at parse time, not at execution.
+
+        ``shard_collections`` must be non-empty and contain unique
+        members; the resolver guarantees both of these invariants in
+        :meth:`SchemaResolver.__post_init__`, but we re-assert here
+        so a hand-rolled call site can't slip through.
+        """
+
+        if not _AQL_IDENT_RE.match(alias):
+            raise ValueError(f"invalid FOR alias: {alias!r}")
+        if not shard_collections:
+            raise AqlEmitError(
+                "for_sharded requires at least one member collection"
+            )
+        members = list(shard_collections)
+        if len(set(members)) != len(members):
+            raise AqlEmitError(
+                f"for_sharded members must be unique, got {members!r}"
+            )
+        sub_scans: list[str] = []
+        for member in members:
+            inner = self.fresh_alias()
+            coll_ref = self.bind_collection(member)
+            sub_scans.append(
+                f"(FOR {inner} IN {coll_ref} RETURN {inner})"
+            )
+            if member not in self._with_collections:
+                self._with_collections.append(member)
+        # Indent the inner scans for readability — the AQL planner is
+        # whitespace-agnostic, but a multi-shard family is one of the
+        # rare clauses that genuinely benefits from line breaks in
+        # the rendered query (the operator reading EXPLAIN output
+        # should be able to spot each shard at a glance).
+        body = ",\n  ".join(sub_scans)
+        clause = (
+            f"FOR {alias} IN UNION_DISTINCT(\n  {body}\n)"
+        )
+        self._body_clauses.append(_Clause(_ClauseKind.FOR, clause))
         return self
 
     def filter_eq(self, lhs: str, rhs_bind_placeholder: str) -> AqlQueryBuilder:
@@ -422,7 +497,19 @@ class AqlQueryBuilder:
             raise AqlEmitError("finalize() called without a RETURN; every query must terminate in RETURN")
         if not any(c.kind == _ClauseKind.FOR for c in self._body_clauses):
             raise AqlEmitError("query has no FOR clause; every BGP/SELECT translation needs at least one")
-        ordered: list[_Clause] = list(self._body_clauses)
+        ordered: list[_Clause] = []
+        if self._with_collections:
+            # ArangoDB cluster mode: ``WITH`` must be the FIRST clause
+            # so the planner knows which collections to lock at parse
+            # time (PRD §6.5.3). Bind every member as a ``@@coll``
+            # placeholder — :meth:`bind_collection` is idempotent so
+            # we always end up referencing the SAME bind name that
+            # the per-shard FOR sub-scans use, never a new one.
+            refs = ", ".join(
+                self.bind_collection(name) for name in self._with_collections
+            )
+            ordered.append(_Clause(_ClauseKind.RAW, f"WITH {refs}"))
+        ordered.extend(self._body_clauses)
         if self._sort_keys:
             ordered.append(_Clause(_ClauseKind.SORT, "SORT " + ", ".join(self._sort_keys)))
         if self._limit_clause is not None:
