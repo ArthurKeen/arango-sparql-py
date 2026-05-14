@@ -1,0 +1,220 @@
+# Golden corpus for object-property (edge-collection) traversal.
+#
+# Covers PRD §6.1's two edge-relationship styles:
+#
+#   * DEDICATED_COLLECTION (PG-typed edge): one edge collection per
+#     relationship type → ``FOR v, e IN OUTBOUND <s> @@edgeColl``.
+#   * GENERIC_WITH_TYPE (LPG-typed edge): shared edge collection with
+#     a discriminator field → the same traversal plus
+#     ``FILTER e.<typeField> == @<typeValue>``.
+#
+# Both shapes are exercised in BGP and OPTIONAL contexts so the same
+# emitter is verified through visit_BGP and visit_LeftJoin.
+#
+# Cross-product pruning: when the SPARQL object variable is already
+# bound by a prior BGP triple (e.g. ``?b a :Person . ?a :knows ?b``),
+# the visitor emits ``FILTER v._uri == <prior_alias>._uri`` so the
+# engine joins on the URI instead of returning the cross-product.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+  :Company a owl:Class ; phys:collectionName "Company" .
+
+  # DEDICATED_COLLECTION: one edge collection per relationship type.
+  :knows a owl:ObjectProperty ;
+      phys:edgeCollectionName "knows" .
+
+  # GENERIC_WITH_TYPE: shared "rel" collection discriminated by ``type``.
+  # Two relationship types ride the same physical collection so the
+  # visitor MUST emit the discriminator FILTER to keep them apart.
+  :worksAt a owl:ObjectProperty ;
+      phys:edgeCollectionName "rel" ;
+      phys:typeField "type" ;
+      phys:typeValue "worksAt" .
+  :livesIn a owl:ObjectProperty ;
+      phys:edgeCollectionName "rel" ;
+      phys:typeField "type" ;
+      phys:typeValue "livesIn" .
+
+cases:
+  # --------------------------------------------------------------- BGP
+  - name: dedicated_edge_one_traversal
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?b WHERE {
+        ?a a :Person .
+        ?a :knows ?b .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+      RETURN { a: doc1._uri, b: v2._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+
+  - name: typed_edge_one_traversal
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?b WHERE {
+        ?a a :Person .
+        ?a :worksAt ?b .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_rel
+      FILTER e3.type == @_p1_type
+      RETURN { a: doc1._uri, b: v2._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_rel": "rel"
+      "_p1_type": "worksAt"
+
+  - name: edge_then_object_typed_pattern
+    # ``?a :knows ?b . ?b a :Person`` — the object var ?b is bound
+    # twice (once by the type pattern, once by the traversal). The
+    # type pattern is visited first per ``_triple_priority`` so the
+    # traversal emits a FILTER joining on ``v._uri``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?b ?n WHERE {
+        ?a a :Person .
+        ?a :knows ?b .
+        ?b a :Person .
+        ?b :name ?n .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR doc2 IN @@c1_Person
+      FOR v3, e4 IN OUTBOUND doc2 @@c2_knows
+      FILTER v3._uri == doc1._uri
+      RETURN { a: doc2._uri, b: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+
+  - name: uri_subject_edge
+    # ``<:alice> :knows ?b`` — URI subjects open a default-collection
+    # FOR with an _uri equality filter, then the traversal starts from
+    # that alias.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?b WHERE { :alice :knows ?b . }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._uri == @_p1_uri
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+      RETURN { b: v2._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://ex.org/alice"
+      "@c2_knows": "knows"
+
+  - name: uri_object_edge
+    # ``?a :knows :alice`` — IRI object becomes an equality FILTER on
+    # the traversal vertex's _uri.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a WHERE {
+        ?a a :Person .
+        ?a :knows :alice .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+      FILTER v2._uri == @_p1_uri
+      RETURN { a: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+      "_p1_uri": "http://ex.org/alice"
+
+  - name: typed_edge_same_collection_two_relationships
+    # Two relationship types over the SHARED ``rel`` collection: each
+    # triple gets its own discriminator FILTER so the result set
+    # doesn't bleed worksAt edges into the livesIn slot. rdflib's
+    # algebra translation reorders BGP triples alphabetically by
+    # predicate IRI (here: ``livesIn`` before ``worksAt``), and the
+    # visitor preserves that order so the emission is deterministic
+    # across rdflib releases.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?c ?p WHERE {
+        ?a a :Person .
+        ?a :worksAt ?c .
+        ?a :livesIn ?p .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_rel
+      FILTER e3.type == @_p1_type
+      FOR v4, e5 IN OUTBOUND doc1 @@c2_rel
+      FILTER e5.type == @_p2_type
+      RETURN { a: doc1._uri, c: v4._uri, p: v2._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_rel": "rel"
+      "_p1_type": "livesIn"
+      "_p2_type": "worksAt"
+
+  # ----------------------------------------------------------- OPTIONAL
+  - name: optional_dedicated_edge
+    # OPTIONAL { ?s :knows ?b } collapses to a LIMIT 1 traversal
+    # subquery that returns null when no edge matches — exactly
+    # SPARQL's OPTIONAL "unbound" semantics.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?b WHERE {
+        ?s a :Person .
+        OPTIONAL { ?s :knows ?b }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN v3._uri)[0]
+      RETURN { s: doc1._uri, b: opt2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+
+  - name: optional_typed_edge
+    # GENERIC_WITH_TYPE in an OPTIONAL: the discriminator FILTER lands
+    # *inside* the LET subquery so the LIMIT 1 reads the typed edge
+    # only.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?c WHERE {
+        ?s a :Person .
+        OPTIONAL { ?s :worksAt ?c }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_rel FILTER e4.type == @_p1_type LIMIT 1 RETURN v3._uri)[0]
+      RETURN { s: doc1._uri, c: opt2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_rel": "rel"
+      "_p1_type": "worksAt"
+
+  - name: optional_edge_alongside_attribute
+    # Mixed-binding OPTIONAL with one attribute lookup AND one edge:
+    # both go through the multi-binding null-check gate so the row is
+    # all-or-nothing per OPTIONAL semantics.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?email ?b WHERE {
+        ?s a :Person .
+        OPTIONAL { ?s :email ?email ; :knows ?b }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN v3._uri)[0]
+      LET opt5 = ((doc1.email != null && opt2 != null) ? doc1.email : null)
+      LET opt6 = ((doc1.email != null && opt2 != null) ? opt2 : null)
+      RETURN { s: doc1._uri, email: opt5, b: opt6 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"

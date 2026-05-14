@@ -18,7 +18,7 @@ from typing import Any
 
 from rdflib import RDF, Literal, URIRef, Variable
 
-from ..errors import AqlEmitError, UnsupportedSparqlError
+from ..errors import AqlEmitError, SchemaResolutionError, UnsupportedSparqlError
 from .builder import AqlQueryBuilder
 from .resolver import SchemaResolver
 
@@ -181,24 +181,30 @@ class AlgebraVisitor:
                 f"OPTIONAL whose body is {p2.name!r} (not a plain BGP) is not yet supported"
             )
 
-        # Walk the optional triples once to collect (var, attr_path)
+        # Walk the optional triples once to collect (var, source_expr)
         # pairs, *without* mutating ``var_to_expr`` yet — the inner
         # FILTER (if any) needs the optional vars in scope to translate
         # but we want to install the final (possibly conditional)
         # bindings after we've decided whether the OPTIONAL block needs
         # an all-or-nothing gate.
-        new_bindings: list[tuple[str, str]] = []  # (sparql_var, attr_path)
+        #
+        # ``new_bindings`` carries one entry per optional binding; the
+        # source expression is either an attribute path
+        # (``doc1.email``) for datatype properties or a LET alias
+        # (``opt2``) for object properties. The downstream emitter does
+        # not need to distinguish the two.
+        new_bindings: list[tuple[str, str]] = []  # (sparql_var, source_expr)
         seen_vars: set[str] = set()
         for triple in getattr(p2, "triples", []) or []:
             s, p, o = triple
             # OPTIONAL semantics in AQL only stay simple when the
             # OPTIONAL block doesn't open a new FOR — the AQL "join" is
-            # then just an attribute lookup on a doc we've already
-            # opened, and missing attributes naturally return ``null``
-            # which is exactly SPARQL OPTIONAL's "unbound" behavior.
-            # Cross-subject OPTIONAL (which would need a real subquery
-            # of the form ``LET o = (FOR x IN coll FILTER … RETURN x)[0]``)
-            # is the legacy ``aql-translator.js#processOptionalPatterns``
+            # then either an attribute lookup on a doc we've already
+            # opened (datatype property) or a single-step OUTBOUND
+            # subquery from that doc (object property). Cross-subject
+            # OPTIONAL (which would need a real subquery of the form
+            # ``LET o = (FOR x IN coll FILTER … RETURN x)[0]``) is the
+            # legacy ``aql-translator.js#processOptionalPatterns``
             # branch we'll port when there's a corpus need.
             if not isinstance(s, Variable) or str(s) not in self.state.var_to_doc_alias:
                 raise UnsupportedSparqlError(
@@ -222,13 +228,39 @@ class AlgebraVisitor:
                     f"OPTIONAL re-binds variable ?{o_name} that's already bound by the required side"
                 )
             prop = self.resolver.resolve_property(p)
+            subject_alias = self.state.var_to_doc_alias[str(s)]
             if prop.is_object_property:
-                raise UnsupportedSparqlError(
-                    f"Object property {p!s} in OPTIONAL requires edge traversal; not yet supported"
-                )
-            alias = self.state.var_to_doc_alias[str(s)]
-            attr_path = f"{alias}.{prop.attribute}"
-            new_bindings.append((o_name, attr_path))
+                # Object-property OPTIONAL: emit a LET subquery that
+                # follows the edge once and returns the target's
+                # ``_uri``, or ``null`` if no edge matches. The LET
+                # alias becomes the binding's source expression — same
+                # downstream treatment as an attribute path.
+                if prop.edge_collection is None:
+                    raise SchemaResolutionError(
+                        f"object property {prop.iri!r} in OPTIONAL has no "
+                        f"phys:edgeCollectionName annotation; the OWL ontology "
+                        f"must declare which ArangoDB edge collection backs "
+                        f"this relationship (PRD §6.2)"
+                    )
+                let_alias = self.builder.fresh_alias(prefix="opt")
+                if prop.mapping_style == "GENERIC_WITH_TYPE":
+                    self.builder.let_outbound_first_uri(
+                        let_alias,
+                        start_alias=subject_alias,
+                        edge_collection=prop.edge_collection,
+                        type_field=prop.type_field,
+                        type_value=prop.type_value,
+                    )
+                else:
+                    self.builder.let_outbound_first_uri(
+                        let_alias,
+                        start_alias=subject_alias,
+                        edge_collection=prop.edge_collection,
+                    )
+                new_bindings.append((o_name, let_alias))
+            else:
+                attr_path = f"{subject_alias}.{prop.attribute}"
+                new_bindings.append((o_name, attr_path))
             seen_vars.add(o_name)
 
         if not new_bindings:
@@ -240,13 +272,15 @@ class AlgebraVisitor:
         expr = getattr(node, "expr", None)
         has_filter = expr is not None and getattr(expr, "name", "") != "TrueFilter"
 
-        # Fast path: a single new binding, no inner FILTER. AQL's
-        # ``doc.attr`` already returns null when ``attr`` is absent,
-        # which is exactly SPARQL's "unbound" semantics for the
-        # optional variable — so we can skip the LET entirely.
+        # Fast path: a single new binding, no inner FILTER. For both
+        # attribute-path bindings (``doc.attr`` returns null when the
+        # attribute is missing — SPARQL's "unbound" already) and edge
+        # LETs (the LET evaluates to null when the subquery returned no
+        # rows), the source expression is itself the right semantics —
+        # no extra null-coalescing needed.
         if not has_filter and len(new_bindings) == 1:
-            var, attr_path = new_bindings[0]
-            self.state.var_to_expr[var] = attr_path
+            var, source_expr = new_bindings[0]
+            self.state.var_to_expr[var] = source_expr
             return
 
         # Multi-binding or filtered OPTIONAL needs the all-or-nothing
@@ -254,14 +288,19 @@ class AlgebraVisitor:
         # as a unit, so if *any* triple in the group fails (or the
         # inner FILTER rejects the candidate), *every* var the block
         # would have bound becomes unbound.
-        null_checks = [f"{attr_path} != null" for _, attr_path in new_bindings]
+        #
+        # The null-check predicate works for both attribute paths and
+        # edge LET aliases — both evaluate to ``null`` when the
+        # underlying datum is missing, so ``<expr> != null`` is the
+        # uniform "this binding matched" probe.
+        null_checks = [f"{source_expr} != null" for _, source_expr in new_bindings]
         if has_filter:
             # Translate the FILTER with the optional vars resolving to
-            # their underlying attribute paths (the FILTER references
-            # them by SPARQL name); we'll rebind to the LET aliases
+            # their source expressions (the FILTER references them by
+            # SPARQL name); we'll rebind to the per-binding LET aliases
             # immediately after.
-            for var, attr_path in new_bindings:
-                self.state.var_to_expr[var] = attr_path
+            for var, source_expr in new_bindings:
+                self.state.var_to_expr[var] = source_expr
             aql_filter = self._translate_expr(expr)
             match_terms = [*null_checks, aql_filter]
         else:
@@ -269,9 +308,9 @@ class AlgebraVisitor:
         match_expr = " && ".join(match_terms)
         if len(match_terms) > 1:
             match_expr = f"({match_expr})"
-        for var, attr_path in new_bindings:
+        for var, source_expr in new_bindings:
             alias = self.builder.fresh_alias(prefix="opt")
-            self.builder.let(alias, f"({match_expr} ? {attr_path} : null)")
+            self.builder.let(alias, f"({match_expr} ? {source_expr} : null)")
             self.state.var_to_expr[var] = alias
 
     # ------------------------------------------------------------------
@@ -552,12 +591,8 @@ class AlgebraVisitor:
         if isinstance(p, URIRef):
             prop = self.resolver.resolve_property(p)
             if prop.is_object_property:
-                # Object properties become edge traversals once edge
-                # support lands; refuse loudly until then so we don't
-                # silently emit semantically wrong AQL for graph queries.
-                raise UnsupportedSparqlError(
-                    f"Object property {p!s} requires edge traversal; not yet supported"
-                )
+                self._emit_edge_triple(s, prop, o, triple)
+                return
             alias = self._ensure_subject_alias(s)
             attr_path = f"{alias}.{prop.attribute}"
             if isinstance(o, Variable):
@@ -613,6 +648,103 @@ class AlgebraVisitor:
         self.builder.for_(alias, collection)
         self.state.doc_to_collection[alias] = collection
         return alias
+
+    def _emit_edge_triple(
+        self,
+        subject: Any,
+        prop: Any,
+        obj: Any,
+        triple: tuple[Any, Any, Any],
+    ) -> None:
+        """Emit an AQL traversal for an object-property triple.
+
+        Implements the PRD §6.1 relationship styles:
+
+        * ``DEDICATED_COLLECTION`` (PG-typed edge) — one edge collection
+          per relationship type → ``FOR v, e IN OUTBOUND <s> @@edgeColl``.
+        * ``GENERIC_WITH_TYPE`` (LPG-typed edge) — shared edge collection
+          discriminated by ``phys:typeField`` / ``phys:typeValue`` →
+          the same traversal plus ``FILTER e.<typeField> == @<typeValue>``.
+
+        ``RPT_EDGE`` (RDF triple-store object property) is NOT routed
+        here — it goes through the ``_triples`` reader once the RPT
+        emitter lands (PRD §6.6 RPT row, tracked separately).
+
+        The traversal target vertex's ``_uri`` is bound to the SPARQL
+        object the same way the BGP entity reader binds subject ``_uri``,
+        so a chain like ``?a :knows ?b . ?b a :Person ; :name ?n``
+        joins on ``?b._uri`` automatically via the existing
+        :meth:`_bind_subject` machinery — no new join logic needed.
+        """
+        if prop.edge_collection is None:
+            raise SchemaResolutionError(
+                f"object property {prop.iri!r} has no phys:edgeCollectionName "
+                f"annotation; the OWL ontology must declare which ArangoDB "
+                f"edge collection backs this relationship (PRD §6.2)"
+            )
+
+        subject_alias = self._ensure_subject_alias(subject)
+        v_alias = self.builder.fresh_alias(prefix="v")
+        e_alias = self.builder.fresh_alias(prefix="e")
+        self.builder.for_traversal(
+            v_alias, e_alias, subject_alias, prop.edge_collection
+        )
+        # ``GENERIC_WITH_TYPE`` shares one edge collection across many
+        # relationship types; the discriminator FILTER is what keeps an
+        # ``?a :knows ?b`` traversal from also returning ``:worksAt``
+        # / ``:livesIn`` rows that happen to ride the same collection.
+        if (
+            prop.mapping_style == "GENERIC_WITH_TYPE"
+            and prop.type_field
+            and prop.type_value
+        ):
+            bind = self.builder.bind(prop.type_value, hint=prop.type_field)
+            self.builder.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+        # We track the edge alias on the builder for the rare query that
+        # references the edge document itself; ``v_alias`` is the
+        # traversal vertex and is what binds to the SPARQL object.
+        self.state.doc_to_collection[v_alias] = prop.edge_collection
+        target_uri_expr = f"{v_alias}._uri"
+
+        if isinstance(obj, Variable):
+            o_name = str(obj)
+            existing_alias = self.state.var_to_doc_alias.get(o_name)
+            existing_expr = self.state.var_to_expr.get(o_name)
+            if existing_alias is None and existing_expr is None:
+                # First time we see ``?o`` — treat ``v_alias`` as ``?o``'s
+                # subject document so a follow-up ``?o a :Person`` /
+                # ``?o :name ?n`` reuses this alias instead of opening a
+                # new (unrelated) FOR over the default collection.
+                self._bind_subject(obj, v_alias)
+                return
+            # Object var already bound (typically by a prior type
+            # pattern like ``?b a :Person`` placed BEFORE the edge
+            # triple, or by another edge that landed on ``?b``). Emit
+            # an equality filter on ``_uri`` so the cross-product gets
+            # pruned to the SPARQL join semantics, mirroring the
+            # ``_bind_subject`` branch for repeat type patterns.
+            existing_uri_expr = (
+                f"{existing_alias}._uri" if existing_alias else existing_expr
+            )
+            if existing_uri_expr != target_uri_expr:
+                self.builder.filter_raw(
+                    f"{target_uri_expr} == {existing_uri_expr}"
+                )
+            return
+
+        if isinstance(obj, URIRef):
+            bind = self.builder.bind(str(obj), hint="uri")
+            self.builder.filter_eq(target_uri_expr, bind)
+            return
+
+        # SPARQL technically allows literal objects on object properties
+        # (``?s :rel "foo"``), but RDF semantics make the triple match
+        # iff the literal IS the IRI — vanishingly rare in practice and
+        # ill-defined for our document model. Refuse for now.
+        raise UnsupportedSparqlError(
+            f"object property {prop.iri!r} with non-IRI object is not supported "
+            f"(triple {triple!r})"
+        )
 
     def _ensure_subject_alias(self, subject: Any) -> str:
         """Return the AQL alias whose document is *subject*, opening a

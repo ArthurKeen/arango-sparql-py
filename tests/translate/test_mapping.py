@@ -471,6 +471,95 @@ def test_resolver_from_bundle_collection_style() -> None:
     assert rp.edge_collection == "follows"
     assert rp.domain_iri == _synthetic_iri("Person")
     assert rp.range_iri == _synthetic_iri("Person")
+    # PRD §6.1: an object property with a phys:edgeCollectionName but
+    # no discriminator defaults to ``DEDICATED_COLLECTION`` style so
+    # the visitor's edge-traversal emitter picks the bare ``FOR v, e
+    # IN OUTBOUND`` pattern (no FILTER on the edge type field).
+    assert rp.mapping_style == "DEDICATED_COLLECTION"
+    assert rp.type_field is None and rp.type_value is None
+
+
+def test_resolver_property_generic_with_type_carries_discriminator() -> None:
+    """An object property with ``phys:typeField`` / ``phys:typeValue`` —
+    the LPG-typed-edge style (PRD §6.1) — must surface those fields
+    on the :class:`ResolvedProperty` so the visitor can emit the
+    ``FILTER e.<typeField> == @<typeValue>`` discriminator alongside
+    the OUTBOUND traversal.
+    """
+    bundle = mapping_from_wire_dict(
+        {
+            "physicalMapping": {
+                "entities": {
+                    "Person": {"collectionName": "persons", "style": "COLLECTION"},
+                },
+                "relationships": {
+                    "WORKS_AT": {
+                        "edgeCollectionName": "rel",
+                        "style": "GENERIC_WITH_TYPE",
+                        "typeField": "type",
+                        "typeValue": "worksAt",
+                        "fromEntity": "Person",
+                        "toEntity": "Person",
+                    },
+                },
+            },
+        }
+    )
+    r = SchemaResolver.from_mapping_bundle(bundle)
+    rp = r.resolve_property(_synthetic_iri("WORKS_AT"))
+    assert rp.is_object_property is True
+    assert rp.edge_collection == "rel"
+    assert rp.mapping_style == "GENERIC_WITH_TYPE"
+    assert rp.type_field == "type"
+    assert rp.type_value == "worksAt"
+
+
+def test_resolver_property_typed_discriminator_without_explicit_style() -> None:
+    """An ontology that declares ``phys:typeField``/``phys:typeValue``
+    but omits ``phys:mappingStyle`` should still route to
+    ``GENERIC_WITH_TYPE`` — the resolver infers the style from the
+    presence of the discriminator pair so the visitor emits the
+    correct ``FILTER e.<typeField> == @<typeValue>`` clause.
+    """
+    ttl = """
+    @prefix : <http://ex.org/> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix phys: <https://arango.solutions/phys#> .
+
+    :Person a owl:Class ; phys:collectionName "Person" .
+    :worksAt a owl:ObjectProperty ;
+        phys:edgeCollectionName "rel" ;
+        phys:typeField "type" ;
+        phys:typeValue "worksAt" .
+    """
+    r = SchemaResolver.from_turtle(ttl)
+    rp = r.resolve_property("http://ex.org/worksAt")
+    assert rp.mapping_style == "GENERIC_WITH_TYPE"
+    assert rp.type_field == "type"
+    assert rp.type_value == "worksAt"
+
+
+def test_resolver_datatype_property_has_no_edge_metadata() -> None:
+    """Datatype properties must surface ``mapping_style``/``type_field``
+    /``type_value`` as ``None`` — those fields only make sense for
+    object-property edge traversal, and a stray non-None value would
+    leak the LPG discriminator into a plain attribute lookup.
+    """
+    ttl = """
+    @prefix : <http://ex.org/> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix phys: <https://arango.solutions/phys#> .
+
+    :Person a owl:Class ; phys:collectionName "Person" .
+    :name a owl:DatatypeProperty .
+    """
+    r = SchemaResolver.from_turtle(ttl)
+    rp = r.resolve_property("http://ex.org/name")
+    assert rp.is_object_property is False
+    assert rp.edge_collection is None
+    assert rp.mapping_style is None
+    assert rp.type_field is None
+    assert rp.type_value is None
 
 
 def test_resolver_from_bundle_label_style_carries_discriminator() -> None:

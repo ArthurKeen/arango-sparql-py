@@ -86,12 +86,27 @@ class ResolvedClass:
 class ResolvedProperty:
     """An OWL property resolved to its ArangoDB physical attribute or
     edge collection (depending on whether it is a datatype or object
-    property)."""
+    property).
+
+    For ``owl:ObjectProperty`` resolutions, the additional
+    ``mapping_style`` / ``type_field`` / ``type_value`` fields tell the
+    visitor which AQL traversal pattern to emit (PRD §6.1):
+
+    * ``DEDICATED_COLLECTION`` (the default when ``edge_collection`` is
+      set but no discriminator) → ``FOR v, e IN OUTBOUND <s>
+      @@edgeColl``.
+    * ``GENERIC_WITH_TYPE`` → the same traversal plus
+      ``FILTER e.<type_field> == @<type_value>`` so we don't bleed in
+      sibling edge types riding the same shared collection.
+    """
 
     iri: str
     attribute: str
     is_object_property: bool = False
     edge_collection: str | None = None
+    mapping_style: str | None = None
+    type_field: str | None = None
+    type_value: str | None = None
     domain_iri: str | None = None
     range_iri: str | None = None
 
@@ -243,6 +258,32 @@ class SchemaResolver:
             return resolved
 
         edge_collection = self._physical_string(ref, "edgeCollectionName") if is_object else None
+        # ``phys:mappingStyle`` and ``phys:typeField`` / ``phys:typeValue``
+        # only matter for object properties — they pick the traversal
+        # pattern (DEDICATED_COLLECTION vs GENERIC_WITH_TYPE per PRD §6.1)
+        # and the typed-edge discriminator. We surface them on
+        # datatype-property resolutions too so a future RPT/LABEL
+        # property can read them without a separate code path, but for
+        # now they're only consumed by the visitor's edge-traversal
+        # branch.
+        mapping_style = self._physical_string(ref, "mappingStyle") if is_object else None
+        type_field = self._physical_string(ref, "typeField") if is_object else None
+        type_value = self._physical_string(ref, "typeValue") if is_object else None
+        # If the ontology declares an object property without an
+        # explicit ``phys:mappingStyle`` but does provide a
+        # ``phys:typeField`` / ``phys:typeValue`` discriminator, treat
+        # it as ``GENERIC_WITH_TYPE``. Otherwise default to
+        # ``DEDICATED_COLLECTION`` (one edge collection per relationship
+        # type — the typical PG-style mapping). This mirrors the
+        # algorithmic detector's behaviour in
+        # :mod:`arango_sparql.schema.detect` so a hand-authored OWL that
+        # omits ``phys:mappingStyle`` still routes to the correct
+        # traversal pattern.
+        if is_object and mapping_style is None:
+            if type_field and type_value:
+                mapping_style = "GENERIC_WITH_TYPE"
+            elif edge_collection:
+                mapping_style = "DEDICATED_COLLECTION"
         domain_iri = self._first_object(ref, RDFS.domain)
         range_iri = self._first_object(ref, RDFS.range)
         attribute = local_name(ref)
@@ -251,6 +292,9 @@ class SchemaResolver:
             attribute=attribute,
             is_object_property=is_object,
             edge_collection=edge_collection,
+            mapping_style=mapping_style,
+            type_field=type_field,
+            type_value=type_value,
             domain_iri=domain_iri,
             range_iri=range_iri,
         )

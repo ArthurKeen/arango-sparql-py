@@ -143,6 +143,49 @@ class AqlQueryBuilder:
         self._body_clauses.append(_Clause(_ClauseKind.FOR, f"FOR {alias} IN {coll_ref}"))
         return self
 
+    def for_traversal(
+        self,
+        vertex_alias: str,
+        edge_alias: str,
+        start_alias: str,
+        edge_collection: str,
+        *,
+        direction: str = "OUTBOUND",
+    ) -> AqlQueryBuilder:
+        """Emit ``FOR <vertex>, <edge> IN <DIRECTION> <start> @@<edgeColl>``.
+
+        The 1..1 single-step traversal pattern AQL prefers for
+        SPARQL-style "follow one edge per triple" walks. ``start_alias``
+        is the AQL identifier of the FOR-loop alias whose document is
+        the traversal source — typically the subject of the SPARQL
+        triple. ``vertex_alias`` and ``edge_alias`` are minted by the
+        caller via :meth:`fresh_alias` so they're guaranteed unique.
+
+        ``direction`` is one of ``OUTBOUND`` / ``INBOUND`` / ``ANY``;
+        the SPARQL→AQL visitor uses ``OUTBOUND`` for plain
+        ``?s :rel ?o`` triples and would route ``INBOUND`` for inverse
+        property paths once those land. We validate the literal here so
+        a typo can never silently degrade traversal semantics — an
+        invalid direction produces an empty result set in AQL with no
+        error.
+        """
+        if not _AQL_IDENT_RE.match(vertex_alias):
+            raise ValueError(f"invalid traversal vertex alias: {vertex_alias!r}")
+        if not _AQL_IDENT_RE.match(edge_alias):
+            raise ValueError(f"invalid traversal edge alias: {edge_alias!r}")
+        if not _AQL_IDENT_RE.match(start_alias):
+            raise ValueError(f"invalid traversal start alias: {start_alias!r}")
+        if direction not in ("OUTBOUND", "INBOUND", "ANY"):
+            raise ValueError(f"invalid traversal direction: {direction!r}")
+        coll_ref = self.bind_collection(edge_collection)
+        self._body_clauses.append(
+            _Clause(
+                _ClauseKind.FOR,
+                f"FOR {vertex_alias}, {edge_alias} IN {direction} {start_alias} {coll_ref}",
+            )
+        )
+        return self
+
     def filter_eq(self, lhs: str, rhs_bind_placeholder: str) -> AqlQueryBuilder:
         """Emit ``FILTER <lhs> == <bind>``.
 
@@ -209,6 +252,60 @@ class AqlQueryBuilder:
         elif aggregates:
             parts.append("AGGREGATE " + ", ".join(f"{a} = {expr}" for a, expr in aggregates))
         self._body_clauses.append(_Clause(_ClauseKind.COLLECT, " ".join(parts)))
+        return self
+
+    def let_outbound_first_uri(
+        self,
+        let_alias: str,
+        *,
+        start_alias: str,
+        edge_collection: str,
+        type_field: str | None = None,
+        type_value: Any = None,
+    ) -> AqlQueryBuilder:
+        """Emit a ``LET <alias> = (FOR v, e IN OUTBOUND <start> @@<coll>
+        [FILTER e.<type_field> == @bind] LIMIT 1 RETURN v._uri)[0]`` clause.
+
+        The OPTIONAL emitter for object-property triples — picks the
+        target vertex's ``_uri`` of the first matching edge, or ``null``
+        when no edge matches (which is exactly SPARQL's OPTIONAL
+        "unbound" semantics).
+
+        ``LIMIT 1`` is correct for SPARQL OPTIONAL: the SPARQL semantics
+        of ``OPTIONAL { ?s :p ?o }`` only need to know whether ``?o``
+        binds, and SPARQL does not specify which match to pick when
+        multiple exist (set semantics). Picking the first is what the
+        legacy Foxx ``aql-translator.js#processOptionalPatterns`` does
+        too, and matches the W3C "any-of" projection.
+
+        Vertex / edge aliases are minted internally so the caller does
+        not have to care about uniqueness — the let alias is the only
+        identifier the caller needs.
+        """
+        if not _AQL_IDENT_RE.match(let_alias):
+            raise ValueError(f"invalid LET alias: {let_alias!r}")
+        if not _AQL_IDENT_RE.match(start_alias):
+            raise ValueError(f"invalid traversal start alias: {start_alias!r}")
+        if (type_field is None) != (type_value is None):
+            raise ValueError(
+                "type_field and type_value must be provided together "
+                "(GENERIC_WITH_TYPE) or both omitted (DEDICATED_COLLECTION)"
+            )
+        v_alias = self.fresh_alias(prefix="v")
+        e_alias = self.fresh_alias(prefix="e")
+        coll_ref = self.bind_collection(edge_collection)
+        parts = [f"FOR {v_alias}, {e_alias} IN OUTBOUND {start_alias} {coll_ref}"]
+        if type_field is not None:
+            if not _AQL_IDENT_RE.match(type_field):
+                raise ValueError(f"invalid traversal type_field: {type_field!r}")
+            bind = self.bind(type_value, hint=type_field)
+            parts.append(f"FILTER {e_alias}.{type_field} == {bind}")
+        parts.append("LIMIT 1")
+        parts.append(f"RETURN {v_alias}._uri")
+        subquery = " ".join(parts)
+        self._body_clauses.append(
+            _Clause(_ClauseKind.LET, f"LET {let_alias} = ({subquery})[0]")
+        )
         return self
 
     def let(self, alias: str, expression: str) -> AqlQueryBuilder:
