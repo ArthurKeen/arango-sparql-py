@@ -98,6 +98,19 @@ class ResolvedClass:
     predicate_column: str = "predicate"
     object_uri_column: str = "object_uri"
     object_value_column: str = "object_value"
+    tenant_field: str | None = None
+    """Discriminator column the visitor uses to gate every read of
+    this entity with ``FILTER doc.<tenant_field> == @tenant_id``.
+    Sourced from ``phys:tenantField`` on the OWL class — see PRD
+    §6.5.1. ``None`` means single-tenant deployment for this entity
+    (no tenant FILTER emitted)."""
+    tenant_entity: str | None = None
+    """Name of the tenant root entity (e.g. ``"Org"``) this class
+    is scoped under, sourced from ``phys:tenantEntity``. Two
+    classes that resolve to *different* ``tenant_entity`` values
+    must never be joined in the same BGP — the visitor raises
+    ``E_TRANSLATE_CROSS_TENANT_JOIN`` (PRD §6.5.1) rather than
+    emit AQL that could broadcast across tenants."""
 
 
 @dataclass
@@ -250,7 +263,9 @@ class SchemaResolver:
             collection = triples_collection or "_triples"
         # Per-column overrides (RPT only). The default values match
         # the legacy Foxx fixture columns; a customer who renamed any
-        # of these supplies the override on the OWL class.
+        # of these supplies the override on the OWL class. Tenant
+        # annotations apply to every style — the visitor consumes
+        # them to gate each FOR with a tenant FILTER.
         kwargs: dict[str, Any] = {}
         for attr_name, phys_local in (
             ("subject_column", "subjectColumn"),
@@ -261,12 +276,16 @@ class SchemaResolver:
             value = self._physical_string(ref, phys_local)
             if value is not None:
                 kwargs[attr_name] = value
+        tenant_field = self._physical_string(ref, "tenantField")
+        tenant_entity = self._physical_string(ref, "tenantEntity")
         resolved = ResolvedClass(
             iri=key,
             collection=collection,
             type_field=type_field,
             type_value=type_value,
             style=style,
+            tenant_field=tenant_field,
+            tenant_entity=tenant_entity,
             **kwargs,
         )
         self._class_cache[key] = resolved

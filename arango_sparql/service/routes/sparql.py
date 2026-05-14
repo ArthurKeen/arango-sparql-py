@@ -14,10 +14,10 @@ import time
 from itertools import islice
 from typing import Any
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 
 from ...api import translate as _translate
-from ...errors import SparqlError
+from ...errors import CrossTenantJoinError, SparqlError
 from ...translate.parser import parse_sparql
 from ..app import app
 from ..mapping import _resolver_from_request
@@ -42,6 +42,7 @@ from ..security import (
     _Session,
     _translate_errors,
 )
+from ..tenant import resolve_tenant_id
 
 logger = _log.getLogger("arango_sparql.service.routes.sparql")
 
@@ -95,18 +96,43 @@ def _resolver_or_422(req: Any) -> Any:
 @app.post("/translate", response_model=TranslateResponse)
 def translate_endpoint(
     req: TranslateRequest,
+    request: Request,
     _: None = Depends(_check_compute_rate_limit),
 ) -> TranslateResponse:
-    """Translate SPARQL to AQL (parse + visit + emit, no DB access)."""
+    """Translate SPARQL to AQL (parse + visit + emit, no DB access).
+
+    Honours the per-request ``X-Tenant-Id`` header (PRD §6.5.1) so a
+    multi-tenant ontology emits the correct ``FILTER doc.<tenant_field>
+    == @tenant`` predicate even when the route does no DB access.
+    """
     logger.info(
         "translate request: sparql=%r, ontology_ttl_len=%s",
         req.sparql[:80] if req.sparql else "(empty)",
         len(req.ontology_ttl) if req.ontology_ttl else 0,
     )
     resolver = _resolver_or_422(req)
+    tenant_id = resolve_tenant_id(request)
     t0 = time.perf_counter()
     try:
-        result = _translate(req.sparql, resolver=resolver, params=req.params)
+        result = _translate(
+            req.sparql,
+            resolver=resolver,
+            params=req.params,
+            tenant_id=tenant_id,
+        )
+    except CrossTenantJoinError as exc:
+        logger.warning("translate %s: %s", exc.code, exc)
+        log_endpoint_timing(
+            "/translate",
+            round((time.perf_counter() - t0) * 1000, 1),
+            status="error",
+            code=exc.code,
+            sparql_len=len(req.sparql or ""),
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
     except SparqlError as exc:
         logger.warning("translate %s: %s", exc.code, exc)
         log_endpoint_timing(
@@ -141,15 +167,41 @@ def translate_endpoint(
 @app.post("/execute", response_model=SparqlExecuteResponse)
 def execute_endpoint(
     req: SparqlExecuteRequest,
+    request: Request,
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SparqlExecuteResponse:
-    """Translate SPARQL → AQL and execute against the connected ArangoDB."""
+    """Translate SPARQL → AQL and execute against the connected ArangoDB.
+
+    Honours the per-request ``X-Tenant-Id`` header (PRD §6.5.1) — every
+    PG/LPG ``FOR doc IN @@coll`` loop the visitor emits will carry a
+    ``FILTER doc.<tenant_field> == @tenant_id`` predicate when the
+    underlying ontology declares ``phys:tenantField``.
+    """
     resolver = _resolver_or_422(req)
+    tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
-        transpiled = _translate(req.sparql, resolver=resolver, params=req.params)
+        transpiled = _translate(
+            req.sparql,
+            resolver=resolver,
+            params=req.params,
+            tenant_id=tenant_id,
+        )
         translate_ms = round((time.perf_counter() - t_translate) * 1000, 1)
+    except CrossTenantJoinError as exc:
+        logger.warning("execute %s: %s", exc.code, exc)
+        log_endpoint_timing(
+            "/execute",
+            round((time.perf_counter() - t_translate) * 1000, 1),
+            status="error",
+            code=exc.code,
+            sparql_len=len(req.sparql or ""),
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
     except SparqlError as exc:
         logger.warning("execute translate %s: %s", exc.code, exc)
         log_endpoint_timing(
@@ -256,6 +308,7 @@ def execute_aql_endpoint(
 @app.post("/explain", response_model=SparqlExplainResponse)
 def explain_endpoint(
     req: SparqlExecuteRequest,
+    request: Request,
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SparqlExplainResponse:
@@ -267,12 +320,34 @@ def explain_endpoint(
     ``db.aql.explain(query, bind_vars=..., all_plans=False)`` and
     surfaces the planner output. Useful for the "why is my query slow?"
     affordance in the UI without paying the actual execution cost.
+    Honours the ``X-Tenant-Id`` header (PRD §6.5.1) so the explained
+    plan reflects the tenant-filtered AQL the operator would actually
+    run.
     """
     resolver = _resolver_or_422(req)
+    tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
-        transpiled = _translate(req.sparql, resolver=resolver, params=req.params)
+        transpiled = _translate(
+            req.sparql,
+            resolver=resolver,
+            params=req.params,
+            tenant_id=tenant_id,
+        )
         translate_ms = round((time.perf_counter() - t_translate) * 1000, 1)
+    except CrossTenantJoinError as exc:
+        logger.warning("explain %s: %s", exc.code, exc)
+        log_endpoint_timing(
+            "/explain",
+            round((time.perf_counter() - t_translate) * 1000, 1),
+            status="error",
+            code=exc.code,
+            sparql_len=len(req.sparql or ""),
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
     except SparqlError as exc:
         logger.warning("explain translate %s: %s", exc.code, exc)
         log_endpoint_timing(
@@ -319,6 +394,7 @@ def explain_endpoint(
 @app.post("/profile", response_model=SparqlProfileResponse)
 def profile_endpoint(
     req: SparqlExecuteRequest,
+    request: Request,
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SparqlProfileResponse:
@@ -328,13 +404,34 @@ def profile_endpoint(
     statistics to the cursor, which the route surfaces verbatim in the
     response under ``profile``. Result rows are still materialised (and
     capped at :data:`_MAX_RESULT_DOCS`) so the UI can show the slow
-    stage **and** the rows it actually produced side-by-side.
+    stage **and** the rows it actually produced side-by-side. Honours
+    the ``X-Tenant-Id`` header (PRD §6.5.1) so the profiled AQL is the
+    tenant-scoped query the operator would actually run.
     """
     resolver = _resolver_or_422(req)
+    tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
-        transpiled = _translate(req.sparql, resolver=resolver, params=req.params)
+        transpiled = _translate(
+            req.sparql,
+            resolver=resolver,
+            params=req.params,
+            tenant_id=tenant_id,
+        )
         translate_ms = round((time.perf_counter() - t_translate) * 1000, 1)
+    except CrossTenantJoinError as exc:
+        logger.warning("profile %s: %s", exc.code, exc)
+        log_endpoint_timing(
+            "/profile",
+            round((time.perf_counter() - t_translate) * 1000, 1),
+            status="error",
+            code=exc.code,
+            sparql_len=len(req.sparql or ""),
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
     except SparqlError as exc:
         logger.warning("profile translate %s: %s", exc.code, exc)
         log_endpoint_timing(

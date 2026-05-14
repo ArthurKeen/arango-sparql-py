@@ -18,7 +18,12 @@ from typing import Any
 
 from rdflib import RDF, Literal, URIRef, Variable
 
-from ..errors import AqlEmitError, SchemaResolutionError, UnsupportedSparqlError
+from ..errors import (
+    AqlEmitError,
+    CrossTenantJoinError,
+    SchemaResolutionError,
+    UnsupportedSparqlError,
+)
 from .builder import AqlQueryBuilder
 from .resolver import ResolvedClass, SchemaResolver
 
@@ -48,6 +53,22 @@ class _BindingState:
     doc_to_collection: dict[str, str] = field(default_factory=dict)
     """AQL alias → physical collection name. Used to detect duplicate
     FOR clauses and to drive future joins."""
+
+    tenant_entity: str | None = None
+    """The tenant root entity (e.g. ``"Org"``) the visitor has
+    committed to for this query. Captured the first time a class
+    with a ``tenant_field`` resolves; subsequent class resolutions
+    that report a *different* ``tenant_entity`` raise
+    :class:`~arango_sparql.errors.CrossTenantJoinError`. ``None``
+    until the first tenant-scoped class is seen — single-tenant
+    queries (no class declares ``phys:tenantEntity``) leave this
+    untouched."""
+
+    tenant_bind_placeholder: str | None = None
+    """Cached ``@_pN_tenant`` bind placeholder so every tenant
+    FILTER in the same query references the same bind variable.
+    Without the cache each FOR would mint its own bind, multiplying
+    the bind-vars dict and obscuring the AQL."""
 
     var_to_rpt_class: dict[str, ResolvedClass] = field(default_factory=dict)
     """SPARQL subject variable → :class:`ResolvedClass` for the RPT
@@ -86,6 +107,19 @@ class AlgebraVisitor:
     rdflib Algebra's ``Project.PV`` collapses into a non-deterministic
     set-iteration order. When ``None``, ``_emit_projection`` falls back
     to the visitor's own deterministic variable-binding order."""
+
+    tenant_id: str | None = None
+    """Per-request tenant identifier sourced from the session's
+    ``X-Tenant-Id`` header (or ``ARANGO_SPARQL_DEFAULT_TENANT`` env
+    fallback). Visited entities whose :class:`ResolvedClass` carries
+    a ``tenant_field`` get gated with
+    ``FILTER doc.<tenant_field> == @tenant``. ``None`` means the
+    caller has no tenant context — entities that *require* a tenant
+    (those with ``tenant_field`` set) raise
+    :class:`~arango_sparql.errors.CrossTenantJoinError` to refuse
+    silently leaking data across tenants. Single-tenant deployments
+    (no class declares ``tenant_field``) ignore this field entirely.
+    See PRD §6.5.1."""
 
     state: _BindingState = field(default_factory=_BindingState)
 
@@ -605,6 +639,7 @@ class AlgebraVisitor:
                 # bleed unrelated documents into the result set.
                 bind = self.builder.bind(resolved.type_value, hint=resolved.type_field)
                 self.builder.filter_eq(f"{alias}.{resolved.type_field}", bind)
+            self._enforce_tenant_scope(alias, resolved)
             self._bind_subject(s, alias)
             return
 
@@ -683,6 +718,57 @@ class AlgebraVisitor:
         self.state.doc_to_collection[alias] = collection
         return alias
 
+    def _enforce_tenant_scope(self, alias: str, resolved: ResolvedClass) -> None:
+        """Emit the per-entity tenant FILTER for an opened FOR alias.
+
+        PRD §6.5.1: every read of a tenant-scoped entity gets a
+        ``FILTER doc.<tenant_field> == @tenant_id`` predicate so the
+        result set never crosses tenant boundaries. The bind value
+        comes from the visitor's ``tenant_id`` (typically populated
+        from the session's ``X-Tenant-Id`` header) and is cached on
+        the binding state so every FOR in the same query references
+        the same bind variable.
+
+        Cross-tenant joins are rejected here too: when a second
+        class in the same BGP reports a ``tenant_entity`` that
+        differs from the one already committed to, the visitor
+        raises :class:`CrossTenantJoinError` rather than emit AQL
+        that joins across tenant roots. Two classes that share the
+        same ``tenant_entity`` value (e.g. ``Person`` and ``Doc``
+        both rooted at ``"Org"``) compose freely.
+        """
+        if resolved.tenant_field is None:
+            return
+        if resolved.tenant_entity is not None:
+            committed = self.state.tenant_entity
+            if committed is None:
+                self.state.tenant_entity = resolved.tenant_entity
+            elif committed != resolved.tenant_entity:
+                raise CrossTenantJoinError(
+                    f"SPARQL query joins entities across tenant roots "
+                    f"{committed!r} and {resolved.tenant_entity!r}; "
+                    f"cross-tenant joins are forbidden (PRD §6.5.1)"
+                )
+        if self.tenant_id is None:
+            # A tenant-scoped class with no tenant context would
+            # silently leak rows across tenants — refuse rather than
+            # emit unbound AQL.
+            raise CrossTenantJoinError(
+                f"class {resolved.iri!r} is tenant-scoped under "
+                f"{resolved.tenant_entity or '<unspecified>'!r} but no "
+                f"tenant context was supplied to the translator "
+                f"(missing X-Tenant-Id header or "
+                f"ARANGO_SPARQL_DEFAULT_TENANT env)"
+            )
+        if self.state.tenant_bind_placeholder is None:
+            self.state.tenant_bind_placeholder = self.builder.bind(
+                self.tenant_id, hint="tenant"
+            )
+        self.builder.filter_eq(
+            f"{alias}.{resolved.tenant_field}",
+            self.state.tenant_bind_placeholder,
+        )
+
     def _emit_rpt_type_pattern(
         self,
         subject: Any,
@@ -706,6 +792,20 @@ class AlgebraVisitor:
         loop's first branch.
         """
         triples_alias = self._open_collection(resolved.collection)
+        if resolved.tenant_field is not None:
+            # RPT rows live in a denormalised triples table whose
+            # columns are fixed (subject_uri / predicate / object_uri
+            # / object_value); a per-document ``tenant_field`` would
+            # not exist as a column. Refuse rather than silently
+            # skip — a misconfigured tenant-scoped RPT class would
+            # otherwise leak rows across tenants.
+            raise CrossTenantJoinError(
+                f"RPT-style class {resolved.iri!r} declares "
+                f"phys:tenantField {resolved.tenant_field!r} but RPT "
+                f"triples rows have fixed columns and no tenant "
+                f"discriminator; tenant scoping for RPT is not "
+                f"supported in v1.0 (PRD §6.5.1)"
+            )
         rdf_type_bind = self.builder.bind(str(RDF.type), hint="rdftype")
         class_bind = self.builder.bind(str(class_iri), hint="cls")
         self.builder.filter_eq(

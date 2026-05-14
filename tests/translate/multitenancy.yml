@@ -1,0 +1,125 @@
+# Golden corpus for multi-tenancy enforcement (PRD §6.5.1).
+#
+# An entity becomes "tenant-scoped" when its OWL class declares both
+# ``phys:tenantField`` (the discriminator column on every document)
+# and, optionally, ``phys:tenantEntity`` (the name of the tenant root
+# entity, used to detect cross-tenant joins).
+#
+# Two visitor behaviours are covered here:
+#
+#   1. Tenant-scoped FOR loops carry a ``FILTER doc.<tenantField>
+#      == @<tenant_bind>`` predicate keyed off the per-request
+#      ``tenant_id``. The bind variable is reused across every FOR
+#      in the same query so a single tenant value materialises in
+#      ``bind_vars`` exactly once.
+#   2. Two classes with *different* ``phys:tenantEntity`` roots can
+#      never co-occur in the same BGP — the visitor raises
+#      :class:`CrossTenantJoinError` (HTTP 422
+#      ``E_TRANSLATE_CROSS_TENANT_JOIN``) instead of emitting AQL
+#      that would broadcast across tenants.
+#
+# A single-tenant deployment (no ``phys:tenantField`` declared) is
+# unaffected — the visitor leaves the AQL untouched. That negative
+# case is asserted by the existing ``select_goldens`` corpus, not
+# duplicated here.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  # Two classes scoped under the same tenant root ("Org") — they may
+  # appear together in a BGP, and every read inherits the tenant
+  # FILTER.
+  :Person a owl:Class ;
+      phys:collectionName "Person" ;
+      phys:tenantField "tenant_id" ;
+      phys:tenantEntity "Org" .
+
+  :Doc a owl:Class ;
+      phys:collectionName "Doc" ;
+      phys:tenantField "tenant_id" ;
+      phys:tenantEntity "Org" .
+
+  # A class scoped under a *different* tenant root — joining it to
+  # ``:Person`` in the same query is the cross-tenant violation.
+  :ExternalAudit a owl:Class ;
+      phys:collectionName "ExternalAudit" ;
+      phys:tenantField "audit_tenant" ;
+      phys:tenantEntity "ExternalOrg" .
+
+  # Public class — no tenant scope. Joining it to ``:Person`` is
+  # allowed, and only ``:Person``'s FOR carries the tenant FILTER.
+  :PublicRef a owl:Class ;
+      phys:collectionName "PublicRef" .
+
+cases:
+  # --------------------------------------------------------------- BGP
+  - name: single_class_tenant_filter
+    # Most basic shape: one tenant-scoped class in a SELECT. The
+    # tenant FILTER lands on the FOR alias and the bind variable is
+    # named with the resolver's ``tenant`` hint.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE {
+        ?s a :Person ;
+           :name ?n .
+      }
+    tenant_id: "tenant-alpha"
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER doc1.tenant_id == @_p1_tenant
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_tenant": "tenant-alpha"
+
+  - name: same_tenant_root_join_shares_bind
+    # Two tenant-scoped classes under the SAME ``phys:tenantEntity``
+    # may join freely. Every FOR receives a tenant FILTER and they
+    # all share the same bind placeholder so the tenant value is
+    # materialised in ``bind_vars`` exactly once — the cache on
+    # ``_BindingState.tenant_bind_placeholder`` is what guarantees
+    # this.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?d WHERE {
+        ?s a :Person .
+        ?d a :Doc .
+      }
+    tenant_id: "tenant-alpha"
+    expected_aql: |-
+      FOR doc1 IN @@c1_Doc
+      FILTER doc1.tenant_id == @_p1_tenant
+      FOR doc2 IN @@c2_Person
+      FILTER doc2.tenant_id == @_p1_tenant
+      RETURN { s: doc2._uri, d: doc1._uri }
+    expected_bind_vars:
+      "@c1_Doc": "Doc"
+      "@c2_Person": "Person"
+      "_p1_tenant": "tenant-alpha"
+
+  - name: tenant_scoped_with_public_class
+    # A public class (no ``phys:tenantField``) joined to a tenant-
+    # scoped class: only the tenant-scoped FOR carries the FILTER.
+    # The public FOR remains tenant-agnostic, exactly the PRD §6.5.1
+    # "single-tenant entity" carve-out. rdflib's algebra reorders the
+    # type patterns by class IRI (``:PublicRef`` lands before
+    # ``:Person`` here), and the visitor preserves that order so the
+    # emission stays deterministic across rdflib releases.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?p WHERE {
+        ?s a :Person .
+        ?p a :PublicRef .
+      }
+    tenant_id: "tenant-alpha"
+    expected_aql: |-
+      FOR doc1 IN @@c1_PublicRef
+      FOR doc2 IN @@c2_Person
+      FILTER doc2.tenant_id == @_p1_tenant
+      RETURN { s: doc2._uri, p: doc1._uri }
+    expected_bind_vars:
+      "@c1_PublicRef": "PublicRef"
+      "@c2_Person": "Person"
+      "_p1_tenant": "tenant-alpha"

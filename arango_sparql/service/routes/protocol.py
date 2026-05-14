@@ -70,6 +70,7 @@ from ..._env import (
 )
 from ...api import translate as _translate
 from ...errors import (
+    CrossTenantJoinError,
     SchemaResolutionError,
     SparqlError,
     SparqlParseError,
@@ -96,6 +97,7 @@ from ..security import (
     _sessions,
     _translate_errors,
 )
+from ..tenant import resolve_tenant_id
 from .schema import _get_or_acquire
 
 logger = _log.getLogger("arango_sparql.service.routes.protocol")
@@ -795,8 +797,30 @@ def _execute_protocol_query(
         return _http_exception_to_flat_response(exc)
 
     # 5) Translate — typed errors map to specific status codes.
+    # Tenant context: prefer the request's ``X-Tenant-Id`` header, then
+    # fall back to the env-default ``ARANGO_SPARQL_DEFAULT_TENANT`` for
+    # dev / single-tenant deployments. Single-tenant ontologies (no
+    # class declares ``phys:tenantField``) ignore this entirely; tenant-
+    # scoped ontologies whose request lacks a tenant context surface
+    # ``CrossTenantJoinError`` from the visitor — caught below.
+    tenant_id = resolve_tenant_id(request)
     try:
-        transpiled = _translate(query, resolver=resolver)
+        transpiled = _translate(query, resolver=resolver, tenant_id=tenant_id)
+    except CrossTenantJoinError as exc:
+        log_endpoint_timing(
+            "/sparql",
+            round((time.perf_counter() - t0) * 1000, 1),
+            status="error",
+            code=exc.code,
+            form=form.value,
+            method=request.method,
+        )
+        return _error_response(
+            status_code=422,
+            code=exc.code,
+            message=str(exc),
+            extra={"query_form": form.value},
+        )
     except UnsupportedSparqlError as exc:
         log_endpoint_timing(
             "/sparql",

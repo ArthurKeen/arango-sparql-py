@@ -674,6 +674,223 @@ def test_translate_no_schema_warnings_for_clean_ontology(client: TestClient) -> 
 
 
 # ---------------------------------------------------------------------------
+# Multi-tenancy header forwarding (PRD §6.5.1)
+# ---------------------------------------------------------------------------
+
+# Ontology with one tenant-scoped class and one cross-tenant class.
+# Re-declared locally so the routes are tested through the public
+# request shape rather than the in-process visitor — the route layer
+# is what consumes the ``X-Tenant-Id`` header and the
+# ``ARANGO_SPARQL_DEFAULT_TENANT`` env fallback.
+TENANT_ONTOLOGY_TTL = """
+@prefix : <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phys: <https://arango.solutions/phys#> .
+
+:Person a owl:Class ;
+    phys:collectionName "Person" ;
+    phys:tenantField "tenant_id" ;
+    phys:tenantEntity "Org" .
+
+:ExternalAudit a owl:Class ;
+    phys:collectionName "ExternalAudit" ;
+    phys:tenantField "audit_tenant" ;
+    phys:tenantEntity "ExternalOrg" .
+"""
+
+TENANT_SELECT_QUERY = """
+PREFIX : <http://ex.org/>
+SELECT ?s WHERE { ?s a :Person . }
+"""
+
+CROSS_TENANT_SELECT_QUERY = """
+PREFIX : <http://ex.org/>
+SELECT ?s ?a WHERE {
+  ?s a :Person .
+  ?a a :ExternalAudit .
+}
+"""
+
+
+def test_translate_forwards_tenant_header_into_aql(client: TestClient) -> None:
+    """``/translate`` must thread ``X-Tenant-Id`` through to the visitor
+    so the emitted AQL carries ``FILTER doc.tenant_id == @<bind>`` and
+    the bind value is the header's tenant id verbatim."""
+    resp = client.post(
+        "/translate",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+        headers={"X-Tenant-Id": "tenant-bravo"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "FILTER doc1.tenant_id == @" in body["aql"], body["aql"]
+    tenant_binds = [k for k, v in body["bind_vars"].items() if v == "tenant-bravo"]
+    assert tenant_binds, body["bind_vars"]
+
+
+def test_translate_without_tenant_header_for_scoped_class_is_422(
+    client: TestClient,
+) -> None:
+    """Tenant-scoped class + no ``X-Tenant-Id`` and no env fallback ⇒
+    ``E_TRANSLATE_CROSS_TENANT_JOIN`` (the route mapping for the
+    visitor's ``CrossTenantJoinError``)."""
+    # Defensive — clear env so the test isn't dependent on ambient
+    # ``ARANGO_SPARQL_DEFAULT_TENANT`` from the operator's shell.
+    os.environ.pop("ARANGO_SPARQL_DEFAULT_TENANT", None)
+    resp = client.post(
+        "/translate",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+    )
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "E_TRANSLATE_CROSS_TENANT_JOIN"
+
+
+def test_translate_falls_back_to_env_default_tenant(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When no header is set, the route consults
+    ``ARANGO_SPARQL_DEFAULT_TENANT`` so single-tenant deployments
+    don't need to inject the header on every request."""
+    monkeypatch.setenv("ARANGO_SPARQL_DEFAULT_TENANT", "env-tenant")
+    resp = client.post(
+        "/translate",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert "env-tenant" in body["bind_vars"].values(), body["bind_vars"]
+
+
+def test_translate_header_wins_over_env_default(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Header beats env — so a multi-tenant deployment can still
+    target a specific tenant per request even with the env-default
+    set as a safety net."""
+    monkeypatch.setenv("ARANGO_SPARQL_DEFAULT_TENANT", "env-tenant")
+    resp = client.post(
+        "/translate",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+        headers={"X-Tenant-Id": "header-tenant"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    bind_values = list(body["bind_vars"].values())
+    assert "header-tenant" in bind_values
+    assert "env-tenant" not in bind_values
+
+
+def test_translate_cross_tenant_join_returns_422(client: TestClient) -> None:
+    """Two classes under different ``phys:tenantEntity`` roots must
+    surface ``E_TRANSLATE_CROSS_TENANT_JOIN`` even when the request
+    supplies a tenant id — the violation is structural, not a missing
+    context."""
+    resp = client.post(
+        "/translate",
+        json={
+            "sparql": CROSS_TENANT_SELECT_QUERY,
+            "ontology_ttl": TENANT_ONTOLOGY_TTL,
+        },
+        headers={"X-Tenant-Id": "tenant-alpha"},
+    )
+    assert resp.status_code == 422, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "E_TRANSLATE_CROSS_TENANT_JOIN"
+
+
+def test_execute_forwards_tenant_header_into_aql(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+) -> None:
+    """``/execute`` must forward ``X-Tenant-Id`` the same way
+    ``/translate`` does — verified by inspecting the AQL the fake
+    driver receives, since the route's response surfaces the AQL
+    verbatim only when the planner hands it back."""
+    token = _connect_session(client)
+    resp = client.post(
+        "/execute",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+        headers={"X-Arango-Session": token, "X-Tenant-Id": "tenant-charlie"},
+    )
+    assert resp.status_code == 200, resp.text
+    fake = fake_client_factory.instances[-1]
+    fake_db = fake._dbs["_system"]
+    assert fake_db.aql.last_aql is not None
+    assert "FILTER doc1.tenant_id == @" in fake_db.aql.last_aql
+    assert "tenant-charlie" in fake_db.aql.last_bind_vars.values()
+
+
+def test_execute_cross_tenant_join_returns_422_before_db(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+) -> None:
+    """Cross-tenant violation must be caught at translate time so the
+    DB never sees the query — same posture as
+    ``test_execute_translation_error_returns_422_before_db``."""
+    token = _connect_session(client)
+    resp = client.post(
+        "/execute",
+        json={
+            "sparql": CROSS_TENANT_SELECT_QUERY,
+            "ontology_ttl": TENANT_ONTOLOGY_TTL,
+        },
+        headers={"X-Arango-Session": token, "X-Tenant-Id": "tenant-alpha"},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "E_TRANSLATE_CROSS_TENANT_JOIN"
+    fake = fake_client_factory.instances[-1]
+    fake_db = fake._dbs["_system"]
+    assert fake_db.aql.last_aql is None
+
+
+def test_explain_forwards_tenant_header_into_aql(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+) -> None:
+    """``/explain`` must thread the tenant header so the planner
+    output reflects the tenant-scoped AQL the operator would
+    actually run — assert via the fake driver's
+    ``last_explain_aql`` capture."""
+    token = _connect_session(client)
+    resp = client.post(
+        "/explain",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+        headers={"X-Arango-Session": token, "X-Tenant-Id": "tenant-explain"},
+    )
+    assert resp.status_code == 200, resp.text
+    fake = fake_client_factory.instances[-1]
+    fake_db = fake._dbs["_system"]
+    assert fake_db.aql.last_explain_aql is not None
+    assert "FILTER doc1.tenant_id == @" in fake_db.aql.last_explain_aql
+    assert "tenant-explain" in fake_db.aql.last_explain_bind_vars.values()
+
+
+def test_profile_forwards_tenant_header_into_aql(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+) -> None:
+    """``/profile`` must thread the tenant header — the profiled AQL
+    is the executed AQL, so the fake driver's ``last_aql`` capture
+    is the contract surface."""
+    token = _connect_session(client)
+    resp = client.post(
+        "/profile",
+        json={"sparql": TENANT_SELECT_QUERY, "ontology_ttl": TENANT_ONTOLOGY_TTL},
+        headers={"X-Arango-Session": token, "X-Tenant-Id": "tenant-profile"},
+    )
+    assert resp.status_code == 200, resp.text
+    fake = fake_client_factory.instances[-1]
+    fake_db = fake._dbs["_system"]
+    assert fake_db.aql.last_aql is not None
+    assert "FILTER doc1.tenant_id == @" in fake_db.aql.last_aql
+    assert "tenant-profile" in fake_db.aql.last_bind_vars.values()
+    assert fake_db.aql.last_profile == 2  # /profile sends profile=2
+
+
+# ---------------------------------------------------------------------------
 # /explain — translate + AQL EXPLAIN
 # ---------------------------------------------------------------------------
 

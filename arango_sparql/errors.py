@@ -44,3 +44,16 @@ class AqlEmitError(SparqlError):
     (e.g. dangling alias, unbound projection variable)."""
 
     code = "E_AQL_EMIT"
+
+
+class CrossTenantJoinError(SparqlError):
+    """Raised when a single SPARQL query joins two entities scoped
+    under different ``tenantEntity`` roots.
+
+    A cross-tenant join would broadcast across customer boundaries —
+    a privacy / compliance violation that PRD §6.5.1 (and the
+    §8.6 T12 mitigation) explicitly forbids. The HTTP layer maps
+    this to ``422 E_TRANSLATE_CROSS_TENANT_JOIN``.
+    """
+
+    code = "E_TRANSLATE_CROSS_TENANT_JOIN"
