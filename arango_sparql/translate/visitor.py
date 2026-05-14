@@ -20,7 +20,7 @@ from rdflib import RDF, Literal, URIRef, Variable
 
 from ..errors import AqlEmitError, SchemaResolutionError, UnsupportedSparqlError
 from .builder import AqlQueryBuilder
-from .resolver import SchemaResolver
+from .resolver import ResolvedClass, SchemaResolver
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,23 @@ class _BindingState:
     doc_to_collection: dict[str, str] = field(default_factory=dict)
     """AQL alias → physical collection name. Used to detect duplicate
     FOR clauses and to drive future joins."""
+
+    var_to_rpt_class: dict[str, ResolvedClass] = field(default_factory=dict)
+    """SPARQL subject variable → :class:`ResolvedClass` for the RPT
+    triples table that backs this subject's class.
+
+    Populated by :meth:`AlgebraVisitor._emit_triple` when a type
+    pattern resolves to ``style == "RPT"``. Subsequent property
+    triples on the same variable use this entry to (a) know they
+    must dispatch through the RPT triple-store reader (PRD §6.6 RPT
+    row) and (b) read the per-class column overrides — different
+    customer schemas rename the four ``subject_uri`` / ``predicate``
+    / ``object_uri`` / ``object_value`` columns and the override
+    must travel with the SUBJECT's class, not be re-derived per
+    property triple. Variables bound by PG / LPG patterns are absent
+    from this dict — that's how :meth:`_emit_triple` distinguishes a
+    PG ``?s :p ?o`` from an RPT ``?s :p ?o``.
+    """
 
     projection_vars: list[Variable] = field(default_factory=list)
     """The Project node's PV list, captured by ``visit_SelectQuery`` /
@@ -575,8 +592,12 @@ class AlgebraVisitor:
         # Case 1 — type pattern: ``?s a :Person`` (or ``<uri> a :Person``).
         # Mirrors PGTTranslator.isTypePattern in pgt-translator.js: open a
         # FOR over the class's physical collection and bind ?s to <alias>._uri.
+        # RPT-style classes branch into the triple-store reader (PRD §6.6).
         if isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef):
             resolved = self.resolver.resolve_class(o)
+            if resolved.style == "RPT":
+                self._emit_rpt_type_pattern(s, o, resolved)
+                return
             alias = self._open_collection(resolved.collection)
             if resolved.type_field and resolved.type_value:
                 # Hybrid (multi-class) collection: the mapper emits a
@@ -589,6 +610,19 @@ class AlgebraVisitor:
 
         # Case 2 — predicate is a fixed IRI (the common ``?s :name ?n`` shape).
         if isinstance(p, URIRef):
+            # RPT subjects route through the triple-store reader. We
+            # check ``var_to_rpt_class`` BEFORE resolving the property
+            # because RPT property triples don't open a per-property
+            # FOR — every read is from the same triples table — and
+            # we don't want to materialise an UNMAPPED-IRI warning
+            # for predicates that exist only as triple-store
+            # ``predicate`` column values.
+            if (
+                isinstance(s, Variable)
+                and str(s) in self.state.var_to_rpt_class
+            ):
+                self._emit_rpt_property_triple(s, p, o, triple)
+                return
             prop = self.resolver.resolve_property(p)
             if prop.is_object_property:
                 self._emit_edge_triple(s, prop, o, triple)
@@ -648,6 +682,165 @@ class AlgebraVisitor:
         self.builder.for_(alias, collection)
         self.state.doc_to_collection[alias] = collection
         return alias
+
+    def _emit_rpt_type_pattern(
+        self,
+        subject: Any,
+        class_iri: URIRef,
+        resolved: ResolvedClass,
+    ) -> None:
+        """Emit the AQL for ``?s a :C`` against an RPT-style class.
+
+        RPT (RDF Property Triples, PRD §6.1 / §6.6) stores every
+        triple as a row in a denormalised ``_triples``-style
+        collection with ``subject_uri`` / ``predicate`` /
+        ``object_uri`` / ``object_value`` columns (overridable per
+        class via ``phys:*Column``). A type pattern ``?s a :C``
+        becomes a row scan with two equality FILTERs — one on the
+        ``rdf:type`` predicate IRI and one on the class IRI in the
+        ``object_uri`` column — and binds ``?s`` to the row's
+        ``subject_uri`` value so subsequent property triples on the
+        same variable can read the same triples table.
+
+        Mirrors the legacy ``rpt-translator.js`` ``translateSelectRPT``
+        loop's first branch.
+        """
+        triples_alias = self._open_collection(resolved.collection)
+        rdf_type_bind = self.builder.bind(str(RDF.type), hint="rdftype")
+        class_bind = self.builder.bind(str(class_iri), hint="cls")
+        self.builder.filter_eq(
+            f"{triples_alias}.{resolved.predicate_column}", rdf_type_bind
+        )
+        self.builder.filter_eq(
+            f"{triples_alias}.{resolved.object_uri_column}", class_bind
+        )
+        if isinstance(subject, Variable):
+            name = str(subject)
+            subj_expr = f"{triples_alias}.{resolved.subject_column}"
+            existing_alias = self.state.var_to_doc_alias.get(name)
+            existing_expr = self.state.var_to_expr.get(name)
+            if existing_alias is None and existing_expr is None:
+                # First binding — record the RPT context AND the
+                # subject-URI expression so a follow-up property
+                # triple knows it's RPT-bound.
+                self.state.var_to_doc_alias[name] = triples_alias
+                self.state.var_to_expr[name] = subj_expr
+                self.state.var_to_rpt_class[name] = resolved
+                return
+            # ``?s`` was already bound by an earlier triple — could
+            # be a sibling type pattern (multi-class subject) or a
+            # PG/RPT mixed binding. Emit an equality FILTER so the
+            # cross-product collapses to the SPARQL join.
+            existing_uri_expr = (
+                f"{existing_alias}._uri"
+                if existing_alias and name not in self.state.var_to_rpt_class
+                else existing_expr
+            )
+            if existing_uri_expr != subj_expr:
+                self.builder.filter_raw(f"{subj_expr} == {existing_uri_expr}")
+            # If the prior binding was PG (no rpt_class entry) and
+            # this one is RPT, record the RPT class too so subsequent
+            # property triples on this var dispatch through the RPT
+            # reader. The PG side already has its own FOR open and
+            # the equality FILTER joins them — exactly the §3.4
+            # mixed-model BGP join.
+            self.state.var_to_rpt_class.setdefault(name, resolved)
+            return
+        if isinstance(subject, URIRef):
+            uri_bind = self.builder.bind(str(subject), hint="uri")
+            self.builder.filter_eq(
+                f"{triples_alias}.{resolved.subject_column}", uri_bind
+            )
+            return
+        raise UnsupportedSparqlError(
+            f"RPT type pattern subject term type {type(subject).__name__!r} "
+            f"is not supported"
+        )
+
+    def _emit_rpt_property_triple(
+        self,
+        subject: Variable,
+        predicate: URIRef,
+        obj: Any,
+        triple: tuple[Any, Any, Any],
+    ) -> None:
+        """Emit the AQL for ``?s :p ?o`` where ``?s`` is RPT-bound.
+
+        Opens a fresh FOR over the same triples table, FILTERs by the
+        predicate IRI and joins on the subject URI captured in
+        :attr:`_BindingState.var_to_expr`. Object binding follows the
+        legacy ``rpt-translator.js`` shape:
+
+        * Variable object → bind to
+          ``COALESCE(t.object_uri, t.object_value)`` so the same var
+          can later be joined against either a URI or a literal
+          column from another triple.
+        * IRI object → equality FILTER on either ``object_uri`` or
+          ``object_value`` (legacy permissively matched both columns
+          to handle datasets where the loader stored URIs in the
+          value column).
+        * Literal object → equality FILTER on ``object_value`` only,
+          since RDF literals never live in the URI column.
+        """
+        rpt_class = self.state.var_to_rpt_class[str(subject)]
+        triples_alias = self._open_collection(rpt_class.collection)
+        # Record the per-class metadata so the OBJECT variable, if
+        # bound here, joins through the same column overrides the
+        # subject's class declared.
+        pred_bind = self.builder.bind(str(predicate), hint="pred")
+        self.builder.filter_eq(
+            f"{triples_alias}.{rpt_class.predicate_column}", pred_bind
+        )
+        # Join on subject URI: the subject's value lives in
+        # ``var_to_expr`` already (set by the type pattern emitter).
+        subj_expr = self.state.var_to_expr.get(str(subject))
+        if subj_expr is None:
+            raise AqlEmitError(
+                f"RPT property triple references unbound subject ?{subject}"
+            )
+        new_subj_expr = f"{triples_alias}.{rpt_class.subject_column}"
+        if subj_expr != new_subj_expr:
+            self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
+        # OBJECT — variable / IRI / literal each take a different shape.
+        coalesce_expr = (
+            f"COALESCE({triples_alias}.{rpt_class.object_uri_column}, "
+            f"{triples_alias}.{rpt_class.object_value_column})"
+        )
+        if isinstance(obj, Variable):
+            o_name = str(obj)
+            existing = self.state.var_to_expr.get(o_name)
+            if existing is None:
+                self.state.var_to_expr[o_name] = coalesce_expr
+            elif existing != coalesce_expr:
+                # Object var was bound by a prior triple to a
+                # different expression (PG ``doc._uri``, another RPT
+                # COALESCE on a different alias, or an attribute
+                # lookup); emit equality FILTER so the cross-product
+                # gets pruned to the SPARQL join — same recipe as
+                # the PG path.
+                self.builder.filter_raw(f"{coalesce_expr} == {existing}")
+            return
+        if isinstance(obj, URIRef):
+            uri_bind = self.builder.bind(str(obj), hint="obj")
+            # Match either column — datasets that loaded URIs into
+            # ``object_value`` (rare but observed in legacy fixtures)
+            # still bind correctly. Mirrors the legacy
+            # ``rpt-translator.js`` OR-filter.
+            self.builder.filter_raw(
+                f"({triples_alias}.{rpt_class.object_uri_column} == {uri_bind} "
+                f"|| {triples_alias}.{rpt_class.object_value_column} == {uri_bind})"
+            )
+            return
+        if isinstance(obj, Literal):
+            val_bind = self.builder.bind(_term_to_python(obj), hint="obj")
+            self.builder.filter_eq(
+                f"{triples_alias}.{rpt_class.object_value_column}", val_bind
+            )
+            return
+        raise UnsupportedSparqlError(
+            f"RPT property triple object term type {type(obj).__name__!r} "
+            f"is not supported (triple {triple!r})"
+        )
 
     def _emit_edge_triple(
         self,

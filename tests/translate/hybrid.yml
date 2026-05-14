@@ -1,0 +1,135 @@
+# Golden corpus for hybrid (mixed-physical-model) BGP translation —
+# PRD §3.4 acceptance criterion + §6.6 mixed-model row.
+#
+# A hybrid BGP has triples that touch ≥ 2 of {COLLECTION, LABEL, RPT}
+# joined on a shared subject URI. The translator MUST emit a single
+# AQL query that opens the right FOR per triple and joins them via
+# equality FILTERs on the URI column — never split the BGP into
+# separate queries (legacy ``aql-translator.js`` did that for early
+# Foxx releases; this project's contract is one BGP → one AQL query).
+#
+# Each entry below covers one of the four interesting permutations:
+#   * COLLECTION (PG) + RPT
+#   * LABEL (LPG)     + RPT
+#   * COLLECTION + LABEL (already exercised by bgp_select.yml; cross-
+#     reference here for completeness)
+#   * three-way: COLLECTION + LABEL + RPT
+#
+# rdflib's algebra reorders BGP triples alphabetically by predicate
+# IRI. Our visitor's ``_triple_priority`` keeps type patterns first
+# but otherwise preserves rdflib's order — every expected_aql here
+# reflects the actual emission so renaming a class will break the
+# test (which is the desired regression behaviour).
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  # PG — one collection per class.
+  :Person a owl:Class ; phys:collectionName "Person" .
+
+  # LPG — shared collection with a discriminator field.
+  :Order a owl:Class ;
+      phys:collectionName "Records" ;
+      phys:typeField "kind" ;
+      phys:typeValue "order" .
+
+  # RPT — read from the legacy ``_triples`` denormalised table.
+  :Company a owl:Class ;
+      phys:mappingStyle "RPT" ;
+      phys:triplesCollection "_triples" .
+
+  :Audit a owl:Class ;
+      phys:mappingStyle "RPT" ;
+      phys:triplesCollection "_triples" .
+
+cases:
+  - name: hybrid_pg_plus_rpt
+    # PG ?p a :Person + RPT ?c a :Company joined by a PG attribute
+    # ``?p :worksAt ?c`` whose value is the company URI. The cross-
+    # product gets pruned via ``doc.worksAt == doc1.subject_uri``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?p ?c ?n WHERE {
+        ?p a :Person ; :worksAt ?c .
+        ?c a :Company ; :name ?n .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c2_Person
+      FILTER doc2.worksAt == doc1.subject_uri
+      FOR doc3 IN @@c1__triples
+      FILTER doc3.predicate == @_p3_pred
+      FILTER doc3.subject_uri == doc1.subject_uri
+      RETURN { p: doc2._uri, c: doc1.subject_uri, n: COALESCE(doc3.object_uri, doc3.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Company"
+      "@c2_Person": "Person"
+      "_p3_pred": "http://ex.org/name"
+
+  - name: hybrid_lpg_plus_rpt
+    # LPG ?o a :Order (shared ``Records`` collection with the
+    # discriminator FILTER) + RPT ?a a :Audit joined by an LPG
+    # attribute ``?o :auditedBy ?a``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?o ?a ?msg WHERE {
+        ?o a :Order ; :auditedBy ?a .
+        ?a a :Audit ; :message ?msg .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c2_Records
+      FILTER doc2.kind == @_p3_kind
+      FILTER doc2.auditedBy == doc1.subject_uri
+      FOR doc3 IN @@c1__triples
+      FILTER doc3.predicate == @_p4_pred
+      FILTER doc3.subject_uri == doc1.subject_uri
+      RETURN { o: doc2._uri, a: doc1.subject_uri, msg: COALESCE(doc3.object_uri, doc3.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Audit"
+      "@c2_Records": "Records"
+      "_p3_kind": "order"
+      "_p4_pred": "http://ex.org/message"
+
+  - name: hybrid_three_way_pg_lpg_rpt
+    # All three styles in one BGP. ?p (PG Person) :placed ?o (LPG
+    # Order) :auditedBy ?a (RPT Audit). The single query opens FORs
+    # in the rdflib-algebra-determined order — type patterns visit
+    # before property triples per ``_triple_priority``, then within
+    # each priority bucket rdflib's own ordering wins. The
+    # cross-product is pruned by equality FILTERs that bridge
+    # ``doc.attr`` (PG/LPG) to ``triples.subject_uri`` (RPT).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?p ?o ?a WHERE {
+        ?p a :Person ; :placed ?o .
+        ?o a :Order ; :auditedBy ?a .
+        ?a a :Audit .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Records
+      FILTER doc1.kind == @_p1_kind
+      FOR doc2 IN @@c2__triples
+      FILTER doc2.predicate == @_p2_rdftype
+      FILTER doc2.object_uri == @_p3_cls
+      FOR doc3 IN @@c3_Person
+      FILTER doc1.auditedBy == doc2.subject_uri
+      FILTER doc3.placed == doc1._uri
+      RETURN { p: doc3._uri, o: doc1._uri, a: doc2.subject_uri }
+    expected_bind_vars:
+      "@c1_Records": "Records"
+      "_p1_kind": "order"
+      "@c2__triples": "_triples"
+      "_p2_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p3_cls": "http://ex.org/Audit"
+      "@c3_Person": "Person"

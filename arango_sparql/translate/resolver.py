@@ -74,12 +74,30 @@ def local_name(iri: URIRef | str) -> str:
 
 @dataclass
 class ResolvedClass:
-    """An OWL class resolved to its ArangoDB physical collection."""
+    """An OWL class resolved to its ArangoDB physical collection.
+
+    The four ``*_column`` defaults match the legacy Foxx RPT layout
+    (``references/arango-sparql/src/lib/rpt-translator.js`` with
+    ``constants.COLLECTIONS.TRIPLES`` columns ``subject_uri`` /
+    ``predicate`` / ``object_uri`` / ``object_value``). Customers who
+    renamed these columns can override via the corresponding
+    ``phys:*Column`` annotations on the OWL class — see PRD §6.2.
+    """
 
     iri: str
     collection: str
     type_field: str | None = None
     type_value: str | None = None
+    style: str | None = None
+    """One of ``COLLECTION`` / ``LABEL`` / ``RPT`` / ``DOCUMENT``
+    (PRD §6.1) when the OWL ontology declared ``phys:mappingStyle``;
+    ``None`` for legacy mappings that omit the explicit style. The
+    visitor treats ``None`` as ``COLLECTION`` (default PG) — keeps
+    pre-existing ontologies working without mass-annotation."""
+    subject_column: str = "subject_uri"
+    predicate_column: str = "predicate"
+    object_uri_column: str = "object_uri"
+    object_value_column: str = "object_value"
 
 
 @dataclass
@@ -220,7 +238,37 @@ class SchemaResolver:
             collection = physical
         type_field = self._physical_string(ref, "typeField")
         type_value = self._physical_string(ref, "typeValue")
-        resolved = ResolvedClass(iri=key, collection=collection, type_field=type_field, type_value=type_value)
+        style = self._physical_string(ref, "mappingStyle")
+        # RPT classes default the resolver-visible "collection" to the
+        # triples table — that's where the engine reads rows. Inline
+        # OWL ontologies that explicitly declare ``phys:mappingStyle
+        # "RPT"`` but omit ``phys:collectionName`` get the same
+        # treatment so a hand-authored ontology composes the same way
+        # as the synthesised one.
+        if style == "RPT" and physical is None:
+            triples_collection = self._physical_string(ref, "triplesCollection")
+            collection = triples_collection or "_triples"
+        # Per-column overrides (RPT only). The default values match
+        # the legacy Foxx fixture columns; a customer who renamed any
+        # of these supplies the override on the OWL class.
+        kwargs: dict[str, Any] = {}
+        for attr_name, phys_local in (
+            ("subject_column", "subjectColumn"),
+            ("predicate_column", "predicateColumn"),
+            ("object_uri_column", "objectUriColumn"),
+            ("object_value_column", "objectValueColumn"),
+        ):
+            value = self._physical_string(ref, phys_local)
+            if value is not None:
+                kwargs[attr_name] = value
+        resolved = ResolvedClass(
+            iri=key,
+            collection=collection,
+            type_field=type_field,
+            type_value=type_value,
+            style=style,
+            **kwargs,
+        )
         self._class_cache[key] = resolved
         return resolved
 

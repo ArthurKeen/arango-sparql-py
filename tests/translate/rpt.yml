@@ -1,0 +1,143 @@
+# Golden corpus for RPT (RDF Property Triples) entity translation.
+#
+# RPT is the legacy Foxx-compatible model where every triple is a row
+# in a denormalised collection (``_triples`` by default) with the
+# columns ``subject_uri`` / ``predicate`` / ``object_uri`` /
+# ``object_value``. The visitor:
+#
+#   * type pattern ``?s a :C`` → FOR over the triples table,
+#     FILTER ``predicate == 'rdf:type'``, FILTER ``object_uri ==
+#     <classIRI>``, bind ``?s`` to the row's ``subject_uri``.
+#   * property triple ``?s :p ?o`` (?s already RPT-bound) → fresh
+#     FOR over the same triples table, FILTER ``predicate ==
+#     <predIRI>`` and ``subject_uri == <prior expr>``, bind ``?o``
+#     to ``COALESCE(object_uri, object_value)`` (variable) /
+#     ``object_value`` (literal) / OR-match across both URI &
+#     value columns (IRI).
+#   * column overrides via ``phys:subjectColumn`` /
+#     ``predicateColumn`` / ``objectUriColumn`` / ``objectValueColumn``
+#     on the OWL class. Default columns match the legacy Foxx layout.
+#
+# Mirrors ``references/arango-sparql/src/lib/rpt-translator.js``
+# ``translateSelectRPT``. PRD §6.1 (style row), §6.6 (RPT row), §3.7
+# (Foxx parity).
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ;
+      phys:mappingStyle "RPT" ;
+      phys:triplesCollection "_triples" .
+
+cases:
+  - name: pure_rpt_type_only
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      RETURN { s: doc1.subject_uri }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+
+  - name: pure_rpt_type_and_attribute
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == doc1.subject_uri
+      RETURN { s: doc1.subject_uri, n: COALESCE(doc2.object_uri, doc2.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+      "_p3_pred": "http://ex.org/name"
+
+  - name: pure_rpt_literal_filter
+    # Object literal binds to ``object_value`` only — RDF literals
+    # never live in the URI column.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name "Alice" }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == doc1.subject_uri
+      FILTER doc2.object_value == @_p4_obj
+      RETURN { s: doc1.subject_uri }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+      "_p3_pred": "http://ex.org/name"
+      "_p4_obj": "Alice"
+
+  - name: pure_rpt_iri_object_or_match
+    # IRI objects match either column — datasets that loaded URIs
+    # into ``object_value`` (rare but observed in legacy fixtures)
+    # still bind correctly. Matches the legacy
+    # ``rpt-translator.js`` OR-filter.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :friend <http://ex.org/alice> }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == doc1.subject_uri
+      FILTER (doc2.object_uri == @_p4_obj || doc2.object_value == @_p4_obj)
+      RETURN { s: doc1.subject_uri }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+      "_p3_pred": "http://ex.org/friend"
+      "_p4_obj": "http://ex.org/alice"
+
+  - name: pure_rpt_with_column_overrides
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Doc ; :title ?n }
+    # Custom-column ontology declared inline so the test can mix it
+    # without polluting the file-level ontology.
+    ontology: |
+      @prefix : <http://ex.org/> .
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      @prefix phys: <https://arango.solutions/phys#> .
+
+      :Doc a owl:Class ;
+          phys:mappingStyle "RPT" ;
+          phys:triplesCollection "rdf_triples" ;
+          phys:subjectColumn "s" ;
+          phys:predicateColumn "p" ;
+          phys:objectUriColumn "o_uri" ;
+          phys:objectValueColumn "o_val" .
+    expected_aql: |-
+      FOR doc1 IN @@c1_rdf_triples
+      FILTER doc1.p == @_p1_rdftype
+      FILTER doc1.o_uri == @_p2_cls
+      FOR doc2 IN @@c1_rdf_triples
+      FILTER doc2.p == @_p3_pred
+      FILTER doc2.s == doc1.s
+      RETURN { s: doc1.s, n: COALESCE(doc2.o_uri, doc2.o_val) }
+    expected_bind_vars:
+      "@c1_rdf_triples": "rdf_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Doc"
+      "_p3_pred": "http://ex.org/title"

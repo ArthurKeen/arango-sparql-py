@@ -588,7 +588,9 @@ def test_resolver_from_bundle_label_style_carries_discriminator() -> None:
 def test_resolver_from_bundle_rpt_style_uses_triples_collection() -> None:
     """For RPT entities the resolver-visible ``collection`` should fall
     back to ``triplesCollection`` when no explicit ``collectionName``
-    is set — that is where the engine reads rows from.
+    is set — that is where the engine reads rows from. The RPT-only
+    ``*_column`` overrides must round-trip onto the resolved class so
+    the visitor's RPT emitter reads from the renamed columns.
     """
 
     bundle = mapping_from_wire_dict(
@@ -611,6 +613,58 @@ def test_resolver_from_bundle_rpt_style_uses_triples_collection() -> None:
     r = SchemaResolver.from_mapping_bundle(bundle)
     rc = r.resolve_class(_synthetic_iri("Person"))
     assert rc.collection == "rdf_triples"
+    assert rc.style == "RPT"
+    assert rc.subject_column == "s"
+    assert rc.predicate_column == "p"
+    assert rc.object_uri_column == "o_uri"
+    assert rc.object_value_column == "o_val"
+
+
+def test_resolver_rpt_class_defaults_columns_when_overrides_omitted() -> None:
+    """An RPT class without explicit ``phys:*Column`` overrides must
+    surface the legacy Foxx default columns. The visitor's emitter
+    relies on these defaults — a resolver bug that silently dropped
+    them would emit AQL referencing nonexistent attributes.
+    """
+    ttl = """
+    @prefix : <http://ex.org/> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix phys: <https://arango.solutions/phys#> .
+
+    :Person a owl:Class ;
+        phys:mappingStyle "RPT" ;
+        phys:triplesCollection "_triples" .
+    """
+    r = SchemaResolver.from_turtle(ttl)
+    rc = r.resolve_class("http://ex.org/Person")
+    assert rc.style == "RPT"
+    assert rc.collection == "_triples"
+    assert rc.subject_column == "subject_uri"
+    assert rc.predicate_column == "predicate"
+    assert rc.object_uri_column == "object_uri"
+    assert rc.object_value_column == "object_value"
+
+
+def test_resolver_pg_class_has_no_rpt_metadata_leakage() -> None:
+    """A plain PG (``COLLECTION``) class must not carry a non-default
+    ``style`` value when the ontology omits ``phys:mappingStyle`` —
+    the visitor treats ``style is None`` as PG and any leaked ``RPT``
+    here would silently route the wrong emission path.
+    """
+    ttl = """
+    @prefix : <http://ex.org/> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix phys: <https://arango.solutions/phys#> .
+
+    :Person a owl:Class ; phys:collectionName "Person" .
+    """
+    r = SchemaResolver.from_turtle(ttl)
+    rc = r.resolve_class("http://ex.org/Person")
+    assert rc.style is None
+    assert rc.collection == "Person"
+    # Defaults are still present, but the visitor only consults them
+    # when style == "RPT".
+    assert rc.subject_column == "subject_uri"
 
 
 def test_resolver_from_bundle_label_with_special_chars_in_label() -> None:
