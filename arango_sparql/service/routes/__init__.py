@@ -21,6 +21,7 @@ from . import (
     health,  # noqa: F401
     mapping,  # noqa: F401
     nl,  # noqa: F401
+    protocol,  # noqa: F401
     schema,  # noqa: F401
     sparql,  # noqa: F401
 )
