@@ -1,0 +1,101 @@
+# Golden corpus for CONSTRUCT translation.
+#
+# Per legacy ``rpt-translator.js#translateConstructRPT`` /
+# ``pgt-translator.js#translateConstructPGT``: CONSTRUCT runs the inner
+# WHERE pattern through the SELECT path and replaces the projection
+# RETURN with a per-template-triple ``RETURN [{subject, predicate,
+# object}, ...]``. The protocol layer's RDF renderer flattens those
+# rows into an rdflib Graph and serialises to text/turtle /
+# application/n-triples / application/rdf+xml / application/ld+json.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ;
+      phys:collectionName "Person" .
+
+  :Org a owl:Class ;
+      phys:collectionName "Org" .
+
+  :name a owl:DatatypeProperty ;
+      rdfs:domain :Person ;
+      phys:attributeName "name" .
+
+  :age a owl:DatatypeProperty ;
+      rdfs:domain :Person ;
+      phys:attributeName "age" .
+
+  :worksAt a owl:ObjectProperty ;
+      rdfs:domain :Person ;
+      rdfs:range :Org ;
+      phys:edgeCollectionName "worksAt" .
+
+cases:
+  - name: construct_single_template_triple
+    sparql: |
+      PREFIX : <http://ex.org/>
+      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+      CONSTRUCT { ?s foaf:name ?n }
+      WHERE { ?s a :Person ; :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.name}]
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_uri": "http://xmlns.com/foaf/0.1/name"
+
+  - name: construct_multi_template_triple
+    # rdflib's algebra reorders the template triples alphabetically by
+    # predicate IRI, so ``foaf:age`` precedes ``foaf:name`` in the
+    # generated AQL even though the SPARQL source declared them the
+    # other way. The renderer dedupes via :class:`rdflib.Graph` set
+    # semantics so the output graph is identical either way — the
+    # ordering only affects the AQL string we assert against here.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+      CONSTRUCT {
+        ?s foaf:name ?n .
+        ?s foaf:age ?a .
+      }
+      WHERE { ?s a :Person ; :name ?n ; :age ?a }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.age}, {subject: doc1._uri, predicate: @_p2_uri, object: doc1.name}]
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_uri": "http://xmlns.com/foaf/0.1/age"
+      "_p2_uri": "http://xmlns.com/foaf/0.1/name"
+
+  - name: construct_with_constant_predicate_and_iri_object
+    sparql: |
+      PREFIX : <http://ex.org/>
+      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+      CONSTRUCT { ?s foaf:knows <http://ex.org/alice> }
+      WHERE { ?s a :Person }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: @_p2_uri}]
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_uri": "http://xmlns.com/foaf/0.1/knows"
+      "_p2_uri": "http://ex.org/alice"
+
+  - name: construct_with_literal_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+      CONSTRUCT { ?s foaf:age ?a }
+      WHERE { ?s a :Person ; :age ?a . FILTER (?a > 18) }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER (doc1.age > @_p1)
+      RETURN [{subject: doc1._uri, predicate: @_p2_uri, object: doc1.age}]
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 18
+      "_p2_uri": "http://xmlns.com/foaf/0.1/age"

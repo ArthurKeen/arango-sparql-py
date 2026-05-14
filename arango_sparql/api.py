@@ -86,6 +86,7 @@ def translate(
         builder=builder,
         resolver=resolver,
         explicit_projection=parsed.explicit_projection,
+        describe_resources=parsed.describe_resources,
         tenant_id=tenant_id,
     )
     visitor.visit(parsed.algebra)

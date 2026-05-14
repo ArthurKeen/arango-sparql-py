@@ -22,7 +22,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from rdflib import Variable
+from rdflib import URIRef, Variable
 from rdflib.plugins.sparql.algebra import translateQuery
 from rdflib.plugins.sparql.parser import parseQuery
 
@@ -38,10 +38,22 @@ class ParsedSparql:
     *iff* the query used an explicit ``SELECT ?a ?b`` form; ``None``
     when the query used ``SELECT *`` (in which case the visitor falls
     back to its own deterministic variable-binding order).
+
+    ``describe_resources`` is the declared resource list for a
+    ``DESCRIBE`` query — either the explicit IRI list (``DESCRIBE
+    <a> <b>``) or the variable list (``DESCRIBE ?s ?o WHERE …``).
+    The visitor reads this in preference to the algebra's ``PV``
+    field because ``translateQuery`` collapses ``PV`` through a set
+    iteration (non-deterministic across Python runs courtesy of
+    ``PYTHONHASHSEED``). ``None`` for non-DESCRIBE queries and for
+    ``DESCRIBE *`` (which rdflib stores as the literal string
+    ``"var"`` — an unsupported shape that the visitor will refuse
+    cleanly).
     """
 
     algebra: Any
     explicit_projection: list[Variable] | None = None
+    describe_resources: list[Variable | URIRef] | None = None
 
 
 def parse_sparql(query: str) -> ParsedSparql:
@@ -60,7 +72,12 @@ def parse_sparql(query: str) -> ParsedSparql:
     except Exception as exc:
         raise SparqlParseError(f"failed to parse SPARQL: {exc}") from exc
     explicit = _extract_explicit_projection(parsed)
-    return ParsedSparql(algebra=translated.algebra, explicit_projection=explicit)
+    describe = _extract_describe_resources(parsed)
+    return ParsedSparql(
+        algebra=translated.algebra,
+        explicit_projection=explicit,
+        describe_resources=describe,
+    )
 
 
 def _extract_explicit_projection(parsed: Any) -> list[Variable] | None:
@@ -100,4 +117,39 @@ def _extract_explicit_projection(parsed: Any) -> list[Variable] | None:
             var = entry.get("evar")
         if isinstance(var, Variable):
             out.append(var)
+    return out or None
+
+
+def _extract_describe_resources(parsed: Any) -> list[Variable | URIRef] | None:
+    """Return the declared DESCRIBE resource list in source order.
+
+    Mirrors :func:`_extract_explicit_projection` but for DESCRIBE: the
+    pre-translation parsed query carries a ``"var"`` slot on the
+    DescribeQuery node that holds either a list of explicit terms
+    (``DESCRIBE <a> <b>`` → ``[<a>, <b>]``, ``DESCRIBE ?s ?o`` →
+    ``[?s, ?o]``) or the literal string ``"var"`` for the wildcard
+    ``DESCRIBE *`` shape (an inert sentinel from rdflib's
+    ``CompValue.get`` default-key behaviour).
+
+    Returns ``None`` for non-DESCRIBE queries and for the wildcard
+    sentinel; the visitor turns ``None`` for a DESCRIBE into a
+    typed error so a wildcard never silently degrades to "describe
+    nothing".
+    """
+
+    try:
+        _, query = parsed
+    except (ValueError, TypeError):
+        return None
+    if getattr(query, "name", None) != "DescribeQuery":
+        return None
+    raw = query.get("var")
+    if not isinstance(raw, list):
+        # ``CompValue.get`` returns the key name when the slot is
+        # missing — the wildcard ``DESCRIBE *`` case lands here.
+        return None
+    out: list[Variable | URIRef] = []
+    for term in raw:
+        if isinstance(term, (Variable, URIRef)):
+            out.append(term)
     return out or None

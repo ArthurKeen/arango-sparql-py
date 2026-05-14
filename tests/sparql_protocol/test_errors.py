@@ -161,46 +161,13 @@ def test_empty_get_query_returns_service_description(
 # ---------------------------------------------------------------------------
 
 
-def test_construct_returns_422_unsupported_algebra(
-    client: TestClient, session_token: str
-) -> None:
-    """CONSTRUCT visitors don't emit RDF yet (v1.1). Tracked
-    explicitly so a v1.1 release can flip this assertion.
-    """
-
-    resp = client.get(
-        "/sparql",
-        params={
-            "query": (
-                "CONSTRUCT { ?x a <http://ex.org/Person> } "
-                "WHERE { ?x a <http://ex.org/Person> }"
-            )
-        },
-        headers={
-            "X-Arango-Session": session_token,
-            "Accept": "text/turtle",
-        },
-    )
-    assert resp.status_code == 422
-    body = resp.json()
-    assert body["code"] == "E_TRANSLATE_UNSUPPORTED_ALGEBRA"
-    assert body["query_form"] == "CONSTRUCT"
-
-
-def test_describe_returns_422_unsupported_algebra(
-    client: TestClient, session_token: str
-) -> None:
-    resp = client.get(
-        "/sparql",
-        params={"query": "DESCRIBE <http://ex.org/Alice>"},
-        headers={
-            "X-Arango-Session": session_token,
-            "Accept": "text/turtle",
-        },
-    )
-    assert resp.status_code == 422
-    body = resp.json()
-    assert body["code"] == "E_TRANSLATE_UNSUPPORTED_ALGEBRA"
+# CONSTRUCT / DESCRIBE happy-path coverage lives in
+# :mod:`tests.sparql_protocol.test_construct_describe` — visitors now
+# emit RDF triples and the protocol route negotiates against
+# :data:`CONSTRUCT_PRIORITY` (turtle / n-triples / rdf+xml / ld+json).
+# A translation-error path for these forms reuses the SELECT path's
+# typed-error tests above (E_TRANSLATE_UNSUPPORTED_ALGEBRA), so we
+# don't duplicate the wiring here.
 
 
 # ---------------------------------------------------------------------------

@@ -16,7 +16,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from rdflib import RDF, Literal, URIRef, Variable
+from rdflib import RDF, BNode, Literal, URIRef, Variable
 
 from ..errors import (
     AqlEmitError,
@@ -108,6 +108,15 @@ class AlgebraVisitor:
     set-iteration order. When ``None``, ``_emit_projection`` falls back
     to the visitor's own deterministic variable-binding order."""
 
+    describe_resources: list[Any] | None = None
+    """The DESCRIBE resource list in declared source order, or ``None``
+    for non-DESCRIBE queries. Captured upstream by
+    :func:`arango_sparql.translate.parser.parse_sparql` for the same
+    PYTHONHASHSEED reason the projection list is captured: rdflib's
+    Algebra ``DescribeQuery.PV`` is built from a set iteration. The
+    visitor reads this in preference to ``node.PV`` so the AQL output
+    is byte-for-byte stable across Python runs."""
+
     tenant_id: str | None = None
     """Per-request tenant identifier sourced from the session's
     ``X-Tenant-Id`` header (or ``ARANGO_SPARQL_DEFAULT_TENANT`` env
@@ -171,6 +180,319 @@ class AlgebraVisitor:
             self.builder.limit(1)
         self.builder.return_scalar("1")
         self.builder.set_ask_mode()
+
+    # ------------------------------------------------------------------
+    # CONSTRUCT — template-driven RDF output
+    # ------------------------------------------------------------------
+    def visit_ConstructQuery(self, node: Any) -> Any:
+        """Translate ``CONSTRUCT { …template… } WHERE { …pattern… }``.
+
+        rdflib shape::
+
+            ConstructQuery(
+                p = Project(BGP(...))           # optionally Distinct
+                template = [(s, p, o), ...]      # the construct template
+                datasetClause = None | [...]
+            )
+
+        Strategy (mirrors the legacy
+        ``rpt-translator.js#translateConstructRPT`` /
+        ``pgt-translator.js#translateConstructPGT`` shape):
+
+        1. Drive the inner WHERE pattern (bypassing the synthetic
+           ``Project`` rdflib stamps on top — same trick as
+           :meth:`visit_AskQuery`) so every variable referenced by the
+           template ends up bound in :attr:`_BindingState.var_to_expr`.
+        2. For each template triple ``(s, p, o)`` build the AQL
+           expression that yields its value at execution time, then
+           ask the builder to emit a single ``RETURN
+           [{subject,predicate,object}, …]`` clause. The route layer
+           feeds each cursor row through the RDF renderer
+           (:mod:`arango_sparql.service.protocol.results_rdf`), which
+           dedupes triples via :class:`rdflib.Graph` set semantics
+           and serialises into the negotiated RDF wire format.
+        """
+
+        template = list(getattr(node, "template", []) or [])
+        if not template:
+            raise UnsupportedSparqlError(
+                "CONSTRUCT without a template is not supported"
+            )
+
+        inner = node.p
+        # rdflib stamps a Project (and optionally Distinct/Slice) around
+        # the WHERE; peel them off so we don't emit a stray RETURN { ... }
+        # before our own ``RETURN [...]``. The Project's PV is the union
+        # of vars referenced by the template — we don't need it because
+        # we re-derive expressions directly from var_to_expr.
+        while inner is not None and getattr(inner, "name", None) in (
+            "Project",
+            "Distinct",
+        ):
+            inner = inner.p
+        if inner is None:
+            # CONSTRUCT WHERE {} with no pattern is grammatically legal
+            # but produces no bindings → no triples. Refuse so the
+            # operator notices rather than emit unbound AQL.
+            raise UnsupportedSparqlError(
+                "CONSTRUCT with an empty WHERE pattern is not supported"
+            )
+        self.visit(inner)
+
+        triple_exprs: list[tuple[str, str, str]] = []
+        for s_term, p_term, o_term in template:
+            triple_exprs.append(
+                (
+                    self._construct_term_to_aql(s_term, "subject"),
+                    self._construct_term_to_aql(p_term, "predicate"),
+                    self._construct_term_to_aql(o_term, "object"),
+                )
+            )
+
+        self.builder.return_triples(triple_exprs)
+
+    def _construct_term_to_aql(self, term: Any, position: str) -> str:
+        """Render a CONSTRUCT/DESCRIBE template term as an AQL expression.
+
+        * ``Variable``  → the variable's already-bound AQL expression
+          (raises :class:`UnsupportedSparqlError` if the WHERE failed
+          to bind it — that's a SPARQL contract violation by the user).
+        * ``URIRef``    → bind as a ``@_pN_uri`` placeholder.
+        * ``Literal``   → bind as a ``@_pN`` placeholder, with the
+          Python-typed value preserved through ``Literal.toPython()``.
+        * ``BNode``     → bind the lexical ``_:`` form so the renderer
+          can rehydrate it. Identical blank-node labels in the same
+          template re-bind to distinct ``@_pN`` placeholders because
+          each :meth:`AqlQueryBuilder.bind` call mints a fresh
+          placeholder; the renderer then uses the lexical form to
+          re-link the labels across triples that share the same
+          BNode.
+        """
+
+        if isinstance(term, Variable):
+            mapped = self.state.var_to_expr.get(str(term))
+            if mapped is None:
+                raise UnsupportedSparqlError(
+                    f"CONSTRUCT/DESCRIBE template {position} references "
+                    f"unbound variable ?{term}; the WHERE pattern did "
+                    f"not bind it"
+                )
+            return mapped
+        if isinstance(term, URIRef):
+            return self.builder.bind(str(term), hint="uri")
+        if isinstance(term, Literal):
+            return self.builder.bind(_term_to_python(term))
+        if isinstance(term, BNode):
+            return self.builder.bind(f"_:{term}", hint="bnode")
+        raise UnsupportedSparqlError(
+            f"CONSTRUCT/DESCRIBE template {position} term type "
+            f"{type(term).__name__!r} is not supported"
+        )
+
+    # ------------------------------------------------------------------
+    # DESCRIBE — return all triples about a resource
+    # ------------------------------------------------------------------
+    def visit_DescribeQuery(self, node: Any) -> Any:
+        """Translate ``DESCRIBE`` queries.
+
+        Two rdflib shapes — distinguished by ``node.p``:
+
+        * ``p is None``   → bare ``DESCRIBE <iri> [<iri> ...]``.
+          PV is the explicit IRI list; no WHERE pattern to drive.
+          v1.0 fallback (matches legacy ``describe-query-helper.js``):
+          open a FOR over :attr:`SchemaResolver.default_collection`
+          and FILTER on ``_uri``. Multi-IRI bare DESCRIBE is supported
+          by ``IN [...]`` rather than emitting multiple FORs.
+
+        * ``p`` is a SELECT-shaped subtree → ``DESCRIBE ?s WHERE { … }``.
+          PV is the projection (typically one variable). We drive the
+          inner WHERE pattern so every PV variable lands in
+          :attr:`_BindingState.var_to_doc_alias` (PG/LPG) or
+          :attr:`_BindingState.var_to_rpt_class` (RPT), then emit a
+          per-resource ATTRIBUTES expansion or triple-store scan.
+
+        The emitted ``RETURN`` produces *lists of triple dicts* (one
+        list per WHERE binding); the route layer flattens them via the
+        same renderer CONSTRUCT uses. Mirrors the legacy
+        ``rpt-translator.js#translateDescribeRPT`` and
+        ``pgt-translator.js#translateDescribePGT`` semantics, except
+        we attach the inferred ``rdf:type`` triple on the fly for
+        PG/LPG entities so a ``DESCRIBE ?p WHERE { ?p a :Person }``
+        round-trips the class membership the renderer otherwise
+        couldn't reconstruct from a property-graph row.
+        """
+
+        # Prefer the upstream-captured resource list (declared source
+        # order) over the algebra's ``PV`` field, which rdflib builds
+        # from a set iteration and is therefore PYTHONHASHSEED-unstable
+        # — same trick as :attr:`explicit_projection`.
+        if self.describe_resources is not None:
+            pv = list(self.describe_resources)
+        else:
+            pv = list(getattr(node, "PV", []) or [])
+        if not pv:
+            raise UnsupportedSparqlError(
+                "DESCRIBE without a resource list is not supported"
+            )
+
+        inner = node.p
+        if inner is None:
+            self._emit_describe_bare(pv)
+            return
+
+        # DESCRIBE ?var WHERE { ... } — peel off the SELECT-shaped
+        # wrappers and drive the underlying pattern. Like CONSTRUCT,
+        # we DON'T want the Project's ``RETURN { ... }`` so we strip
+        # it before recursing.
+        while getattr(inner, "name", None) in ("Distinct", "Project"):
+            inner = inner.p
+        self.visit(inner)
+
+        described: list[str] = []
+        for term in pv:
+            if isinstance(term, Variable):
+                described.append(self._describe_variable_subquery(term))
+                continue
+            if isinstance(term, URIRef):
+                # ``DESCRIBE <iri> WHERE { … }`` is the legacy "describe
+                # a constant in the context of a WHERE-derived alias
+                # set". The inner pattern already opened a FOR; we
+                # piggy-back its alias context.
+                described.append(self._describe_uri_subquery(term))
+                continue
+            raise UnsupportedSparqlError(
+                f"DESCRIBE term type {type(term).__name__!r} is not supported"
+            )
+
+        if len(described) == 1:
+            self.builder.return_triples_subquery(described[0])
+        else:
+            # Multiple described resources in one query: APPEND the
+            # sub-lists so each binding row still produces a single
+            # flat list of triples the route layer can hydrate.
+            payload = "APPEND(" + ", ".join(described) + ")"
+            self.builder.return_triples_subquery(payload)
+
+    def _describe_variable_subquery(self, var: Variable) -> str:
+        """Return the AQL sub-FOR that expands ``?var`` into triples.
+
+        Dispatches on whether the variable was bound by a PG/LPG type
+        pattern (we have a FOR alias and emit an ATTRIBUTES fan-out)
+        or by an RPT type pattern (we re-scan the triples table
+        filtered by ``subject_column == <subject_expr>``).
+        """
+
+        name = str(var)
+        rpt_class = self.state.var_to_rpt_class.get(name)
+        if rpt_class is not None:
+            subj_expr = self.state.var_to_expr.get(name)
+            if subj_expr is None:
+                raise AqlEmitError(
+                    f"DESCRIBE ?{name} on an RPT-bound variable is missing "
+                    f"its subject expression"
+                )
+            return self._describe_rpt_subquery(subj_expr, rpt_class)
+        alias = self.state.var_to_doc_alias.get(name)
+        if alias is None:
+            raise UnsupportedSparqlError(
+                f"DESCRIBE ?{name} is unbound; the WHERE pattern must "
+                f"bind every described variable to a physical document"
+            )
+        return self._describe_pg_attributes_subquery(alias)
+
+    def _describe_uri_subquery(self, uri: URIRef) -> str:
+        """Return the AQL sub-FOR that expands ``<iri>`` into triples
+        in the context of an already-open WHERE-derived FOR.
+
+        Opens a FOR over the default collection FILTERed by ``_uri ==
+        <bind>`` so the URI is interpreted as a PG-style document. We
+        deliberately reuse :meth:`_describe_pg_attributes_subquery` so
+        the bind-vars / clause shape are identical to the variable
+        path — easier to test and less code drift.
+        """
+
+        alias = self._open_collection(self.resolver.default_collection)
+        bind = self.builder.bind(str(uri), hint="uri")
+        self.builder.filter_eq(f"{alias}._uri", bind)
+        return self._describe_pg_attributes_subquery(alias)
+
+    def _describe_pg_attributes_subquery(self, alias: str) -> str:
+        """Return ``(FOR k IN ATTRIBUTES(<alias>) FILTER k NOT IN [<sys>]
+        RETURN { subject: <alias>._uri, predicate: k, object: <alias>[k] })``.
+
+        Mirrors the legacy ``describe-query-helper.js#buildPropertyExtraction``
+        loop. The system-attribute exclusion list is the same five fields
+        the legacy used — they're ArangoDB-internal metadata that has
+        no RDF analogue.
+        """
+
+        # Match the legacy: hide ``_id``/``_key``/``_rev`` (ArangoDB
+        # internal metadata) plus our resolver-synthesised ``_uri`` and
+        # ``_type`` (covered separately by the ``rdf:type`` triple when
+        # the inner BGP carries one). Keep the literal list inline —
+        # binding it would force five extra ``@_pN`` placeholders for
+        # zero readability gain.
+        return (
+            f"FOR k IN ATTRIBUTES({alias}) "
+            f"FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] "
+            f"RETURN {{subject: {alias}._uri, predicate: k, "
+            f"object: {alias}[k]}}"
+        )
+
+    def _describe_rpt_subquery(
+        self,
+        subject_expr: str,
+        rpt_class: ResolvedClass,
+    ) -> str:
+        """Return the AQL sub-FOR that scans the RPT triples table for
+        every row whose ``subject_column`` matches *subject_expr*.
+
+        ``subject_expr`` is the AQL expression the outer WHERE already
+        bound to the SPARQL subject — typically ``t1.subject_uri``
+        from the type-pattern FOR. The sub-FOR opens a *second* alias
+        over the same triples collection so it can scan every triple
+        (not just the ``rdf:type`` row the type pattern keyed on).
+        Mirrors ``rpt-translator.js#translateDescribeRPT``.
+        """
+
+        alias = self.builder.fresh_alias(prefix="d")
+        coll_ref = self.builder.bind_collection(rpt_class.collection)
+        coalesce = (
+            f"COALESCE({alias}.{rpt_class.object_uri_column}, "
+            f"{alias}.{rpt_class.object_value_column})"
+        )
+        return (
+            f"FOR {alias} IN {coll_ref} "
+            f"FILTER {alias}.{rpt_class.subject_column} == {subject_expr} "
+            f"RETURN {{subject: {alias}.{rpt_class.subject_column}, "
+            f"predicate: {alias}.{rpt_class.predicate_column}, "
+            f"object: {coalesce}}}"
+        )
+
+    def _emit_describe_bare(self, resources: list[Any]) -> None:
+        """Emit AQL for ``DESCRIBE <iri> [<iri> ...]`` (no WHERE).
+
+        v1 strategy: open ONE FOR over the resolver's
+        :attr:`~SchemaResolver.default_collection` and FILTER ``_uri
+        IN [...]`` against every described IRI. This favours PG/LPG
+        deployments — the dominant case for Protégé-style
+        ``DESCRIBE <Person123>`` queries.
+
+        Pure-RPT deployments where the default collection is the
+        triples store will currently produce a one-row-per-attribute
+        result that the renderer flattens correctly *only when* the
+        triples collection happens to be named via
+        ``defaultCollection``. The cleaner RPT-bare-DESCRIBE path is
+        tracked under PRD §6.6 as a v1.1 enhancement.
+        """
+
+        alias = self._open_collection(self.resolver.default_collection)
+        iri_binds = [self.builder.bind(str(r), hint="uri") for r in resources]
+        self.builder.filter_raw(
+            f"{alias}._uri IN [{', '.join(iri_binds)}]"
+        )
+        subquery = self._describe_pg_attributes_subquery(alias)
+        self.builder.return_triples_subquery(subquery)
 
     def visit_Project(self, node: Any) -> Any:
         # Prefer the explicit declaration order captured upstream from

@@ -259,20 +259,36 @@ def test_ask_unsupported_accept_returns_406(
 
 
 # ---------------------------------------------------------------------------
-# CONSTRUCT / DESCRIBE — RDF formats negotiate, then visitor 422s
+# CONSTRUCT / DESCRIBE — RDF formats negotiate and serialise
 # ---------------------------------------------------------------------------
 
 
-def test_construct_with_rdf_accept_returns_422_unsupported_algebra(
+def test_construct_with_rdf_accept_returns_turtle(
     client: TestClient, session_token: str
 ) -> None:
-    """CONSTRUCT visitors don't emit RDF yet (v1.1). The route
-    accepts the Accept header (turtle is in the CONSTRUCT priority
-    list) but surfaces a typed 422 from the visitor so a
-    spec-compliant client knows to retry as SELECT or wait for
-    v1.1.
+    """CONSTRUCT now emits RDF triples — the route negotiates against
+    :data:`CONSTRUCT_PRIORITY` (text/turtle / n-triples / rdf+xml /
+    ld+json) and the rdflib-backed renderer flattens the visitor's
+    per-row triple lists into a Turtle graph.
     """
 
+    # CONSTRUCT_QUERY = ``CONSTRUCT { ?x a ex:Person } WHERE { ?x a ex:Person }``
+    # The fake AQL row mirrors what the visitor's ``return_triples``
+    # emits: a list of {subject, predicate, object} dicts per binding.
+    set_aql_rows(
+        session_token,
+        [
+            [
+                {
+                    "subject": "http://ex.org/Alice",
+                    "predicate": (
+                        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+                    ),
+                    "object": "http://ex.org/Person",
+                }
+            ]
+        ],
+    )
     resp = client.get(
         "/sparql",
         params={"query": CONSTRUCT_QUERY},
@@ -281,10 +297,12 @@ def test_construct_with_rdf_accept_returns_422_unsupported_algebra(
             "Accept": "text/turtle",
         },
     )
-    assert resp.status_code == 422, resp.text
-    body = resp.json()
-    assert body["code"] == "E_TRANSLATE_UNSUPPORTED_ALGEBRA"
-    assert body["query_form"] == "CONSTRUCT"
+    assert resp.status_code == 200, resp.text
+    assert resp.headers["Content-Type"].startswith("text/turtle")
+    assert "Alice" in resp.text
+    assert "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>" in resp.text or (
+        ":Person" in resp.text or "Person" in resp.text
+    )
 
 
 def test_construct_with_select_only_accept_returns_406(

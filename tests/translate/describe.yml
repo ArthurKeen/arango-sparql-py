@@ -1,0 +1,103 @@
+# Golden corpus for DESCRIBE translation.
+#
+# Per legacy ``rpt-translator.js#translateDescribeRPT`` /
+# ``pgt-translator.js#translateDescribePGT`` and
+# ``describe-query-helper.js``: DESCRIBE returns RDF that "describes" a
+# resource. For PG/LPG entities this means fanning out the document's
+# attributes (excluding ArangoDB internals: ``_id`` / ``_key`` /
+# ``_rev`` / ``_uri`` / ``_type``) into ``{subject: doc._uri,
+# predicate: <field>, object: doc[<field>]}`` triples. For RPT
+# entities this means re-scanning the triples collection filtered by
+# ``subject_column == <subject_expr>``.
+#
+# Three SPARQL shapes are covered:
+#
+#   * ``DESCRIBE ?s WHERE { ... }`` — the dominant Protégé / YASGUI
+#     shape; the WHERE binds the focal variable.
+#   * ``DESCRIBE <iri> [<iri> ...]`` — bare describe of explicit URIs;
+#     v1 fallback opens a FOR over the resolver's default collection
+#     and filters by ``_uri IN [...]``.
+#   * RPT-bound DESCRIBE — when the focal class declares
+#     ``phys:mappingStyle "RPT"``, the expander scans the triples
+#     table directly.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ;
+      phys:collectionName "Person" .
+
+  :PersonRpt a owl:Class ;
+      phys:mappingStyle "RPT" ;
+      phys:collectionName "rdf_triples" .
+
+  :name a owl:DatatypeProperty ;
+      rdfs:domain :Person ;
+      phys:attributeName "name" .
+
+cases:
+  - name: describe_var_where_pg
+    sparql: |
+      PREFIX : <http://ex.org/>
+      DESCRIBE ?s WHERE { ?s a :Person ; :name "Alice" }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER doc1.name == @_p1_name
+      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: doc1._uri, predicate: k, object: doc1[k]})
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_name": "Alice"
+
+  - name: describe_bare_single_iri
+    # Bare DESCRIBE falls back to the resolver's default collection
+    # (here ``Document``). The legacy Foxx service had the same
+    # behaviour — see ``describe-query-helper.js#buildDescribeQuery``.
+    sparql: |
+      DESCRIBE <http://ex.org/alice>
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._uri IN [@_p1_uri]
+      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: doc1._uri, predicate: k, object: doc1[k]})
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://ex.org/alice"
+
+  - name: describe_bare_multi_iri
+    # rdflib's algebra ``PV`` collapses the resource list through a
+    # set iteration (non-deterministic across Python runs courtesy of
+    # PYTHONHASHSEED). :func:`parse_sparql.parse_sparql` captures the
+    # declared source order upstream from the parsed query so the
+    # AQL is byte-for-byte stable — same trick as
+    # ``explicit_projection`` for SELECT.
+    sparql: |
+      DESCRIBE <http://ex.org/a> <http://ex.org/b>
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._uri IN [@_p1_uri, @_p2_uri]
+      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: doc1._uri, predicate: k, object: doc1[k]})
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://ex.org/a"
+      "_p2_uri": "http://ex.org/b"
+
+  - name: describe_var_where_rpt
+    # When ?s is bound by an RPT type pattern, the visitor knows the
+    # subject lives in a triples collection and re-scans it filtered
+    # by ``subject_uri``. Mirrors
+    # ``rpt-translator.js#translateDescribeRPT``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      DESCRIBE ?s WHERE { ?s a :PersonRpt }
+    expected_aql: |-
+      FOR doc1 IN @@c1_rdf_triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      RETURN (FOR d2 IN @@c1_rdf_triples FILTER d2.subject_uri == doc1.subject_uri RETURN {subject: d2.subject_uri, predicate: d2.predicate, object: COALESCE(d2.object_uri, d2.object_value)})
+    expected_bind_vars:
+      "@c1_rdf_triples": "rdf_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/PersonRpt"

@@ -338,9 +338,12 @@ omits `Accept` or sends `*/*`) is, in this priority order:
 `application/sparql-results+json`, `application/sparql-results+xml`,
 `text/csv`, `text/tab-separated-values`. For `ASK` queries, the same media
 types apply but the body shape is the W3C SPARQL Results "boolean" form. For
-`CONSTRUCT` / `DESCRIBE` queries (when those visitors land), the response is
-RDF and negotiated against `text/turtle`, `application/n-triples`,
-`application/rdf+xml`, `application/ld+json`.
+`CONSTRUCT` / `DESCRIBE` queries the response is RDF and negotiated against
+`text/turtle`, `application/n-triples`, `application/rdf+xml`,
+`application/ld+json`; the visitor emits a per-row list of
+`{subject, predicate, object}` dicts and the route hydrates them into
+an `rdflib.Graph` (set semantics dedupe duplicate triples) before
+serialising in the negotiated format.
 
 Tie-breaking rules (asserted by `tests/test_sparql_protocol_accept.py`):
 

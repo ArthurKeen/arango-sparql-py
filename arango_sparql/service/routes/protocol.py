@@ -87,6 +87,7 @@ from ..protocol.negotiate import (
     supported_types_for_form,
 )
 from ..protocol.results import render_ask, render_select
+from ..protocol.results_rdf import render_construct
 from ..protocol.service_description import render_service_description
 from ..protocol.update_detect import is_sparql_update
 from ..security import (
@@ -863,28 +864,6 @@ def _execute_protocol_query(
             message=str(exc),
         )
 
-    # CONSTRUCT / DESCRIBE — visitors don't emit RDF yet (v1.1).
-    # Surface as a typed 422 so a spec-compliant client knows to
-    # retry as SELECT or wait for the v1.1 release.
-    if form in (QueryForm.CONSTRUCT, QueryForm.DESCRIBE):
-        log_endpoint_timing(
-            "/sparql",
-            round((time.perf_counter() - t0) * 1000, 1),
-            status="error",
-            code="E_TRANSLATE_UNSUPPORTED_ALGEBRA",
-            form=form.value,
-            method=request.method,
-        )
-        return _error_response(
-            status_code=422,
-            code="E_TRANSLATE_UNSUPPORTED_ALGEBRA",
-            message=(
-                f"{form.value} queries are not yet supported by this endpoint. "
-                "Tracked under PRD §13.5; SELECT/ASK forms work today."
-            ),
-            extra={"query_form": form.value},
-        )
-
     # 6) Execute. ``max_runtime`` is a python-arango feature —
     # older drivers ignore the kwarg, which is fine: the cap is
     # advisory, not strictly required for correctness.
@@ -921,6 +900,12 @@ def _execute_protocol_query(
         raise
 
     # 7) Render the response body in the negotiated media type.
+    # SELECT/ASK go through the tabular renderer; CONSTRUCT/DESCRIBE
+    # produce RDF (a set of triples) and dispatch to the rdflib-backed
+    # graph serialiser. The visitor produces the same wire shape for
+    # both RDF forms (a list of ``{subject, predicate, object}`` dicts
+    # per cursor row); the renderer flattens and dedupes via
+    # :class:`rdflib.Graph`'s set semantics.
     explicit_vars = (
         [str(v) for v in parsed.explicit_projection]
         if parsed.explicit_projection is not None
@@ -929,6 +914,8 @@ def _execute_protocol_query(
     if form is QueryForm.ASK:
         ask_value = _coerce_ask_value(bindings)
         body_text = render_ask(media_type, ask_value)
+    elif form in (QueryForm.CONSTRUCT, QueryForm.DESCRIBE):
+        body_text = render_construct(media_type, bindings)
     else:
         body_text = render_select(
             media_type,

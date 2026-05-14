@@ -466,6 +466,71 @@ class AqlQueryBuilder:
         self._return_clause = _Clause(_ClauseKind.RETURN, f"RETURN {expression}")
         return self
 
+    def return_triples(
+        self,
+        triple_exprs: list[tuple[str, str, str]],
+    ) -> AqlQueryBuilder:
+        """Emit ``RETURN [ {subject: …, predicate: …, object: …}, … ]``.
+
+        Used by :meth:`AlgebraVisitor.visit_ConstructQuery` and
+        :meth:`AlgebraVisitor.visit_DescribeQuery`. The route layer
+        flattens the per-row list of triple dicts into an RDF graph
+        before serialising into Turtle / N-Triples / RDF/XML / JSON-LD.
+
+        ``triple_exprs`` is a list of ``(s_expr, p_expr, o_expr)`` AQL
+        expressions; one inner dict is emitted per template triple.
+        Repeated subjects across template entries are perfectly fine —
+        each row of the WHERE-binding result expands into the full set
+        of template triples. The RDF renderer dedupes via rdflib's
+        ``Graph.add`` set semantics so duplicate triples collapse the
+        way RDF set semantics require.
+        """
+
+        if self._return_clause is not None:
+            raise AqlEmitError(
+                "RETURN already emitted; only one RETURN per query"
+            )
+        if not triple_exprs:
+            raise AqlEmitError(
+                "return_triples requires at least one triple template entry"
+            )
+        items = ", ".join(
+            f"{{subject: {s}, predicate: {p}, object: {o}}}"
+            for s, p, o in triple_exprs
+        )
+        self._return_clause = _Clause(
+            _ClauseKind.RETURN, f"RETURN [{items}]"
+        )
+        return self
+
+    def return_triples_subquery(self, subquery: str) -> AqlQueryBuilder:
+        """Emit ``RETURN ( <subquery> )`` for DESCRIBE attribute fan-out.
+
+        ``subquery`` must be a complete AQL expression that produces a
+        list of ``{subject, predicate, object}`` dicts (typically the
+        ``FOR k IN ATTRIBUTES(doc) FILTER k NOT IN [...] RETURN
+        {subject: doc._uri, predicate: k, object: doc[k]}`` shape that
+        :meth:`AlgebraVisitor.visit_DescribeQuery` builds). The
+        outer FOR-loop's binding row therefore expands into the full
+        set of attribute triples for the described resource.
+
+        Reserved for DESCRIBE; CONSTRUCT uses the simpler
+        :meth:`return_triples` because its template is a static list.
+        """
+
+        if self._return_clause is not None:
+            raise AqlEmitError(
+                "RETURN already emitted; only one RETURN per query"
+            )
+        if not subquery or not subquery.strip():
+            raise AqlEmitError(
+                "return_triples_subquery requires a non-empty subquery"
+            )
+        self._return_clause = _Clause(
+            _ClauseKind.RETURN, f"RETURN ({subquery})"
+        )
+        return self
+
     def set_ask_mode(self) -> AqlQueryBuilder:
         """Flip the builder into ASK-output mode.
 
