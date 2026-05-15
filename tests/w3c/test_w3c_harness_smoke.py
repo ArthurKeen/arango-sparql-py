@@ -73,3 +73,57 @@ def test_skip_reasons_parses() -> None:
         assert iri.startswith(("http://", "https://", "file://")), (
             f"non-IRI escaped the skip-list parser: {iri!r}"
         )
+
+
+@pytest.mark.w3c
+def test_bucket_classifier_categorises_every_known_prefix() -> None:
+    """Every XFAIL-reason prefix the analyzer emits must map to a
+    non-``other`` bucket.
+
+    The bucket rollup feeds the PRD §13.5 tracker; an XFAIL that
+    silently lands in ``other`` would distort that tracker into
+    over-counting harness artefacts as roadmap items (or vice versa).
+    This test pins the classifier against every reason prefix
+    ``_classify_query_eval`` and ``_classify_negative_syntax`` can
+    produce."""
+    from tests.w3c.analyze_coverage import BUCKET_OTHER, _bucket
+
+    cases = {
+        # UnsupportedSparql-family — all algebra-bucket.
+        "UnsupportedSparql: SPARQL Algebra node 'ToMultiSet' is not implemented yet": "algebra",
+        "UnsupportedSparql: variable predicates (?p) require multi-collection UNION": "algebra",
+        "UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=MulPath, object=Variable": "algebra",
+        "UnsupportedSparql: CONSTRUCT without a template is not supported": "algebra",
+        # AqlEmit-family — algebra (emit-stage gap).
+        "AqlEmit: query has no FOR clause; every BGP/SELECT translation needs at least one": "algebra",
+        # SparqlParse-family — algebra (we asked rdflib to parse and it
+        # raised; that's a real gap on our side once we wrap the input).
+        "SparqlParse: unexpected end of input": "algebra",
+        # SchemaResolution-family — schema (empty-resolver harness artefact).
+        "SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#Restriction' is not declared": "schema",
+        "SchemaResolution: class IRI 'http://example.org/x/c' is not declared owl:Class": "schema",
+        # rdflib-family — the negative-syntax XFAIL phrase plus the
+        # positive-syntax parse-failure phrase.
+        "rdflib accepted invalid query": "rdflib",
+        "rdflib parse failure: unexpected character": "rdflib",
+    }
+    for reason, expected_bucket in cases.items():
+        actual = _bucket(reason)
+        assert actual == expected_bucket, (
+            f"reason {reason!r} expected bucket {expected_bucket!r}, got {actual!r}"
+        )
+        assert actual != BUCKET_OTHER, (
+            f"reason {reason!r} fell through to 'other'; add a rule"
+        )
+
+
+@pytest.mark.w3c
+def test_bucket_classifier_falls_back_to_other_for_unknown() -> None:
+    """Truly unknown reasons fall through to ``other`` so the analyzer
+    surfaces them for manual triage rather than silently mis-binning
+    them. Keeps the ``other`` row visible in the report when it has
+    members."""
+    from tests.w3c.analyze_coverage import BUCKET_OTHER, _bucket
+
+    assert _bucket("some brand-new error class we haven't seen") == BUCKET_OTHER
+    assert _bucket("") == BUCKET_OTHER

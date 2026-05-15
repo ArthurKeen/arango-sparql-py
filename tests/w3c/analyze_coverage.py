@@ -139,6 +139,91 @@ def _short(exc: Exception) -> str:
     return s[:80] + ("..." if len(s) > 80 else "")
 
 
+# ---------------------------------------------------------------------------
+# XFAIL-reason → "implication bucket" classifier
+# ---------------------------------------------------------------------------
+#
+# The same Markdown report has historically used a single "port the
+# corresponding visitor method" implication line for *every* XFAIL
+# bucket. That is misleading: roughly half of the W3C DAWG XFAILs the
+# harness reports are not algebra gaps but artefacts of the fact that
+# ``analyze_coverage`` runs every query against an EMPTY resolver
+# (``SchemaResolver.from_turtle("", default_collection="Document")``).
+# Queries that name owl:Restriction / owl:DatatypeProperty / arbitrary
+# ad-hoc test classes therefore fail at schema-resolution time even
+# though the visitor is perfectly capable of translating them when
+# given the matching ontology.
+#
+# Categorising each reason as one of four buckets lets the PRD §13.5
+# tracker — and the next person picking a slice — distinguish:
+#
+#   * ``algebra``  — real roadmap gap; porting a visitor method moves
+#                    the W3C pass-count directly.
+#   * ``schema``   — harness artefact; would pass against a populated
+#                    resolver. Roadmap fix is either to enhance the
+#                    harness (per-fixture mini-ontologies) or to
+#                    accept these as a permanent measurement floor.
+#   * ``rdflib``   — rdflib parser disagrees with the W3C grammar
+#                    (negative-syntax tests). Out of our hands short
+#                    of forking rdflib.
+#   * ``other``    — uncategorised; surface for manual triage.
+#
+# Mapping is by substring match on the truncated reason string the
+# Counter already keys on. The substrings are deliberately short and
+# stable (they live in ``arango_sparql/errors.py`` and the visitor's
+# ``UnsupportedSparqlError`` messages).
+
+
+BUCKET_ALGEBRA = "algebra"
+BUCKET_SCHEMA = "schema"
+BUCKET_RDFLIB = "rdflib"
+BUCKET_OTHER = "other"
+
+_BUCKET_RULES: tuple[tuple[str, str], ...] = (
+    # rdflib disagreements (negative-syntax XFAILs) come first because
+    # the substring ``rdflib`` could otherwise be matched by a future
+    # algebra error that mentions rdflib in its message.
+    ("rdflib accepted invalid query", BUCKET_RDFLIB),
+    ("rdflib parse failure", BUCKET_RDFLIB),
+    # Schema-resolution failures are the empty-resolver artefacts —
+    # the visitor never got to the algebra step.
+    ("SchemaResolution:", BUCKET_SCHEMA),
+    # Everything else under ``UnsupportedSparql:`` / ``AqlEmit:`` /
+    # ``SparqlParse:`` is, by construction, a real algebra-or-emit
+    # gap the roadmap can close.
+    ("UnsupportedSparql:", BUCKET_ALGEBRA),
+    ("AqlEmit:", BUCKET_ALGEBRA),
+    ("SparqlParse:", BUCKET_ALGEBRA),
+)
+
+
+def _bucket(reason: str) -> str:
+    """Classify an XFAIL reason string into one of four buckets.
+
+    The mapping is intentionally substring-based and stable: every
+    reason the harness emits is prefixed with the error class
+    (``UnsupportedSparql:`` / ``SchemaResolution:`` / etc.) or — for
+    negative-syntax tests — the fixed phrase ``rdflib accepted invalid
+    query``. Adding a new error class downstream requires a one-line
+    update here, surfaced by ``test_bucket_classifier``.
+    """
+    for needle, bucket in _BUCKET_RULES:
+        if needle in reason:
+            return bucket
+    return BUCKET_OTHER
+
+
+_BUCKET_IMPLICATION: dict[str, str] = {
+    BUCKET_ALGEBRA: "port the corresponding visitor method",
+    BUCKET_SCHEMA: (
+        "harness artefact (empty resolver); will pass against a "
+        "populated ontology"
+    ),
+    BUCKET_RDFLIB: "rdflib parser disagreement; out of scope here",
+    BUCKET_OTHER: "uncategorised — triage manually",
+}
+
+
 def _classify(case: W3CTestCase) -> tuple[str, str]:
     if case.test_type == QUERY_EVAL:
         return _classify_query_eval(case)
@@ -241,17 +326,54 @@ def _format_markdown(
             lines.append(f"| `mf:{key}` | {stats.total} | {oos_reason} |")
         lines.append("")
 
-    lines.append("## Top XFAIL reasons")
-    lines.append("")
-    lines.append("| Count | Reason | Implication |")
-    lines.append("| -----:| ------ | ----------- |")
     aggregate: Counter = Counter()
     for stats in by_category.values():
         aggregate.update(stats.xfail_reasons)
+
+    # Per-bucket roll-up tells the reader at a glance how many of the
+    # XFAILs are actionable roadmap items vs. harness artefacts. This
+    # is the table the PRD §13.5 tracker reads from when planning the
+    # next slice.
+    bucket_totals: Counter = Counter()
+    for reason, count in aggregate.items():
+        bucket_totals[_bucket(reason)] += count
+
+    lines.append("## XFAIL implication summary")
+    lines.append("")
+    lines.append(
+        "Each XFAIL is bucketed by what fixing it would require — "
+        "this distinguishes real roadmap gaps from artefacts of the "
+        "translation-only harness, which runs every query against an "
+        "empty resolver (`SchemaResolver.from_turtle('', "
+        "default_collection='Document')`)."
+    )
+    lines.append("")
+    lines.append("| Bucket | Count | Implication |")
+    lines.append("| ------ | -----:| ----------- |")
+    for bucket in (BUCKET_ALGEBRA, BUCKET_SCHEMA, BUCKET_RDFLIB, BUCKET_OTHER):
+        count = bucket_totals.get(bucket, 0)
+        if count == 0 and bucket == BUCKET_OTHER:
+            # Don't print an empty ``other`` row — it adds noise. The
+            # other three buckets are always shown even at zero so the
+            # column structure is stable across runs.
+            continue
+        lines.append(
+            f"| `{bucket}` | {count} | {_BUCKET_IMPLICATION[bucket]} |"
+        )
+    lines.append("")
+
+    lines.append("## Top XFAIL reasons")
+    lines.append("")
+    lines.append("| Count | Bucket | Reason | Implication |")
+    lines.append("| -----:| ------ | ------ | ----------- |")
     for reason, count in aggregate.most_common(15):
-        lines.append(f"| {count} | `{reason}` | port the corresponding visitor method |")
+        bucket = _bucket(reason)
+        implication = _BUCKET_IMPLICATION[bucket]
+        lines.append(
+            f"| {count} | `{bucket}` | `{reason}` | {implication} |"
+        )
     if not aggregate:
-        lines.append("| _(none)_ |  |  |")
+        lines.append("| _(none)_ |  |  |  |")
     lines.append("")
 
     if live_stats is not None and live_stats.xfail_reasons:

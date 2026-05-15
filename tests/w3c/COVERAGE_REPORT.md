@@ -27,25 +27,35 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | `mf:ServiceDescriptionTest` | 3 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
 | `mf:UpdateEvaluationTest` | 93 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
 
+## XFAIL implication summary
+
+Each XFAIL is bucketed by what fixing it would require — this distinguishes real roadmap gaps from artefacts of the translation-only harness, which runs every query against an empty resolver (`SchemaResolver.from_turtle('', default_collection='Document')`).
+
+| Bucket | Count | Implication |
+| ------ | -----:| ----------- |
+| `algebra` | 172 | port the corresponding visitor method |
+| `schema` | 43 | harness artefact (empty resolver); will pass against a populated ontology |
+| `rdflib` | 14 | rdflib parser disagreement; out of scope here |
+
 ## Top XFAIL reasons
 
-| Count | Reason | Implication |
-| -----:| ------ | ----------- |
-| 47 | `UnsupportedSparql: variable predicates (?p) require multi-collection UNION; not yet supported` | port the corresponding visitor method |
-| 14 | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#Restriction' is not declared owl:Class ...` | port the corresponding visitor method |
-| 14 | `rdflib accepted invalid query` | port the corresponding visitor method |
-| 13 | `UnsupportedSparql: SPARQL Algebra node 'ToMultiSet' is not implemented yet (see .cursor/skills/spar...` | port the corresponding visitor method |
-| 10 | `UnsupportedSparql: SPARQL Algebra node 'Graph' is not implemented yet (see .cursor/skills/sparql-to...` | port the corresponding visitor method |
-| 8 | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#DatatypeProperty' is not declared owl:C...` | port the corresponding visitor method |
-| 7 | `UnsupportedSparql: SPARQL Algebra node 'Minus' is not implemented yet (see .cursor/skills/sparql-to...` | port the corresponding visitor method |
-| 7 | `UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=MulPath, object=Variable` | port the corresponding visitor method |
-| 6 | `UnsupportedSparql: SPARQL Algebra node 'ConstructQuery' is not implemented yet (see .cursor/skills/...` | port the corresponding visitor method |
-| 5 | `UnsupportedSparql: object term type 'BNode' is not supported in triple (rdflib.term.Variable('x'), ...` | port the corresponding visitor method |
-| 4 | `UnsupportedSparql: FILTER expression node 'Builtin_LANGMATCHES' is not yet supported (see reference...` | port the corresponding visitor method |
-| 4 | `UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=SequencePath, object=Variabl...` | port the corresponding visitor method |
-| 3 | `SchemaResolution: class IRI 'http://example.org/x/c' is not declared owl:Class in the ontology` | port the corresponding visitor method |
-| 3 | `AqlEmit: query has no FOR clause; every BGP/SELECT translation needs at least one` | port the corresponding visitor method |
-| 3 | `UnsupportedSparql: FILTER expression node 'Builtin_REPLACE' is not yet supported (see references/ar...` | port the corresponding visitor method |
+| Count | Bucket | Reason | Implication |
+| -----:| ------ | ------ | ----------- |
+| 47 | `algebra` | `UnsupportedSparql: variable predicates (?p) require multi-collection UNION; not yet supported` | port the corresponding visitor method |
+| 15 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'ToMultiSet' is not implemented yet (see .cursor/skills/spar...` | port the corresponding visitor method |
+| 14 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#Restriction' is not declared owl:Class ...` | harness artefact (empty resolver); will pass against a populated ontology |
+| 14 | `rdflib` | `rdflib accepted invalid query` | rdflib parser disagreement; out of scope here |
+| 10 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'Graph' is not implemented yet (see .cursor/skills/sparql-to...` | port the corresponding visitor method |
+| 8 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#DatatypeProperty' is not declared owl:C...` | harness artefact (empty resolver); will pass against a populated ontology |
+| 7 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'Minus' is not implemented yet (see .cursor/skills/sparql-to...` | port the corresponding visitor method |
+| 7 | `algebra` | `UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=MulPath, object=Variable` | port the corresponding visitor method |
+| 5 | `algebra` | `UnsupportedSparql: object term type 'BNode' is not supported in triple (rdflib.term.Variable('x'), ...` | port the corresponding visitor method |
+| 4 | `algebra` | `UnsupportedSparql: CONSTRUCT without a template is not supported` | port the corresponding visitor method |
+| 4 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_LANGMATCHES' is not yet supported (see reference...` | port the corresponding visitor method |
+| 4 | `algebra` | `UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=SequencePath, object=Variabl...` | port the corresponding visitor method |
+| 3 | `schema` | `SchemaResolution: class IRI 'http://example.org/x/c' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
+| 3 | `algebra` | `AqlEmit: query has no FOR clause; every BGP/SELECT translation needs at least one` | port the corresponding visitor method |
+| 3 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_REPLACE' is not yet supported (see references/ar...` | port the corresponding visitor method |
 
 ## How to reproduce
 

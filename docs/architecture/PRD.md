@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (today: 15.0 %); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (today: 15.0 %; 172 algebra / 43 schema / 14 rdflib XFAILs — largest algebra bucket `variable predicates ?p` at 27.3 %); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -1873,6 +1873,46 @@ fix before tagging v1.0.
 | v0.5 | 20 % | 60 | 80 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
 | **v1.0 (acceptance)** | **≥ 25 %** | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` / `SequencePath`) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
+
+**Reading the v0.1 W3C number.** `tests/w3c/analyze_coverage.py` runs every
+query against an *empty* resolver (`SchemaResolver.from_turtle("",
+default_collection="Document")`) — the W3C DAWG corpus uses ad-hoc test
+data per case, so a global resolver would not match anything. As a
+result, the 15.0 % headline counts only queries the **visitor accepts
+without any schema knowledge** (BGP/PROJECT/FILTER/etc. over the
+fall-back default collection). Slices that depend on a populated
+resolver (RPT visitor, tenant scoping, `shardFamilies` fan-out) are
+correct and golden-tested, but do not bump this number directly.
+
+**XFAIL bucket breakdown (as of latest report).** The report's
+**XFAIL implication summary** table categorises every translation-only
+XFAIL into one of three buckets:
+
+| Bucket | Count | What it means for the roadmap |
+| ------ | -----:| --- |
+| `algebra` | 172 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
+| `schema` | 43 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
+| `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
+
+**Slice priority to reach the v1.0 ≥ 25 % target** (need +25 W3C passes
+from 38 → 63):
+
+| Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
+| --- | ---: | ---: | --- |
+| `variable predicates ?p` (multi-collection UNION) | 47 | +18.6 pp | Largest single bucket; requires schema-aware predicate-collection enumeration. Architecturally significant. |
+| Property paths (`MulPath`, `SequencePath`, `AlternativePath`, `InvPath`) | 11+ | +4.3 pp | PRD §6.6 v1.1 row; legacy Foxx has a clean recipe. Well-scoped; touches the BGP path only. |
+| `ToMultiSet` (sub-SELECT / nested query) | 15 | +5.9 pp | Needs LET-subquery emission with binding-set semantics. |
+| `Graph` (named graphs / `GRAPH <iri> { … }`) | 10 | +4.0 pp | Needs default-vs-named-graph routing through the resolver. |
+| `Minus` (`MINUS { … }` operator) | 7 | +2.8 pp | Self-contained; emits an anti-join LET-subquery. |
+| `CONSTRUCT WHERE` (template-less) | 4 | +1.6 pp | Quick win — synthesise the template from the BGP. |
+
+The §3.1 acceptance criterion also requires that no single XFAIL
+bucket consumes > 30 % of remaining failures. The largest algebra
+bucket today (`variable predicates ?p` at 47/172 ≈ 27.3 %) is just
+under that threshold; a single roadmap slice that didn't close that
+bucket would *not* violate §3.1, but the constraint will tighten as
+the smaller buckets are closed and `variable predicates` becomes a
+larger share of what remains.
 
 ---
 
