@@ -14,7 +14,7 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | -------- | -----:| ----:| ----:| -----:| ----:| --------:|
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
-| Query evaluation | 253 | 38 | 0 | 215 | 0 | 15.0% |
+| Query evaluation | 253 | 43 | 0 | 210 | 0 | 17.0% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -33,7 +33,7 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 
 | Bucket | Count | Implication |
 | ------ | -----:| ----------- |
-| `algebra` | 172 | port the corresponding visitor method |
+| `algebra` | 167 | port the corresponding visitor method |
 | `schema` | 43 | harness artefact (empty resolver); will pass against a populated ontology |
 | `rdflib` | 14 | rdflib parser disagreement; out of scope here |
 
@@ -48,14 +48,14 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | 10 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'Graph' is not implemented yet (see .cursor/skills/sparql-to...` | port the corresponding visitor method |
 | 8 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#DatatypeProperty' is not declared owl:C...` | harness artefact (empty resolver); will pass against a populated ontology |
 | 7 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'Minus' is not implemented yet (see .cursor/skills/sparql-to...` | port the corresponding visitor method |
-| 7 | `algebra` | `UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=MulPath, object=Variable` | port the corresponding visitor method |
 | 5 | `algebra` | `UnsupportedSparql: object term type 'BNode' is not supported in triple (rdflib.term.Variable('x'), ...` | port the corresponding visitor method |
+| 5 | `algebra` | `UnsupportedSparql: transitive property paths (':p*') are not yet supported` | port the corresponding visitor method |
 | 4 | `algebra` | `UnsupportedSparql: CONSTRUCT without a template is not supported` | port the corresponding visitor method |
 | 4 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_LANGMATCHES' is not yet supported (see reference...` | port the corresponding visitor method |
-| 4 | `algebra` | `UnsupportedSparql: unsupported triple shape: subject=URIRef, predicate=SequencePath, object=Variabl...` | port the corresponding visitor method |
+| 4 | `algebra` | `UnsupportedSparql: transitive property paths (':p+') are not yet supported` | port the corresponding visitor method |
+| 4 | `algebra` | `UnsupportedSparql: alternative property paths (':p|:q') are not yet supported` | port the corresponding visitor method |
 | 3 | `schema` | `SchemaResolution: class IRI 'http://example.org/x/c' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
 | 3 | `algebra` | `AqlEmit: query has no FOR clause; every BGP/SELECT translation needs at least one` | port the corresponding visitor method |
-| 3 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_REPLACE' is not yet supported (see references/ar...` | port the corresponding visitor method |
 
 ## How to reproduce
 

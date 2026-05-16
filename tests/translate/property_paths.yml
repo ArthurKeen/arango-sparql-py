@@ -1,0 +1,229 @@
+# Golden corpus for SPARQL 1.1 property paths (§9 / §18.4).
+#
+# The visitor's main triple dispatcher recognises ``rdflib.paths.Path``
+# instances in the predicate slot (Case 0 in ``_emit_triple``) and
+# delegates to ``arango_sparql.translate.paths.emit_path_triple``,
+# which recursively desugars the path until the leaves are URIRef
+# predicates that the existing PG / LPG / default-collection cases
+# can handle.
+#
+# This slice covers SequencePath (``:p/:q/...``) and InvPath
+# (``^path``) — both pure desugarings. AlternativePath, MulPath, and
+# NegatedPath raise ``UnsupportedSparqlError`` with stable messages
+# (covered by their own goldens below). Property-paths on RPT-mapped
+# subjects are explicitly rejected with a typed error because the
+# intermediate variables would need to inherit the RPT class binding;
+# that wiring is deferred to a follow-up slice.
+#
+# Unlike most translation goldens this corpus drives an empty
+# resolver (``SchemaResolver.from_turtle("", default_collection="Document")``)
+# for the sequence/inverse cases. That matches the W3C analyzer's
+# convention and exercises the default-collection fallback path —
+# the configuration that the largest XFAIL buckets in the coverage
+# report sit on. A single typed-class case is included to confirm
+# that path expansion composes correctly with a type pattern.
+
+ontology: ""
+
+cases:
+  # ---- SequencePath -------------------------------------------------
+
+  - name: sequence_two_steps_default_collection
+    # The smallest possible sequence: ``?s :p/:q ?o`` rewrites to
+    # ``?s :p ?_path_1 . ?_path_1 :q ?o``. The intermediate variable
+    # is materialised as a fresh FOR over the default collection,
+    # with the join FILTER ``doc2._uri == doc1.p`` enforcing the
+    # semantic link the SPARQL spec requires (without it the AQL
+    # would emit the Cartesian product). This shape pre-dates the
+    # path implementation in the sense that ``_ensure_subject_alias``
+    # now lifts a Variable's prior ``var_to_expr`` binding into a
+    # join FILTER on the new FOR — the same defence as the
+    # object-side Variable case in ``_emit_triple`` Case 2.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p/:q ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._uri == doc1.p
+      RETURN { s: doc1._uri, o: doc2.q }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: sequence_three_steps_chained_joins
+    # Three steps → two intermediate variables → two join FILTERs.
+    # Confirms the loop in ``_emit_sequence_path`` is correct beyond
+    # the degenerate two-step case (a regression where the loop body
+    # only ran once would have manifested as a missing third FOR or
+    # a missing second join FILTER).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p/:q/:r ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._uri == doc1.p
+      FOR doc3 IN @@c1_Document
+      FILTER doc3._uri == doc2.q
+      RETURN { s: doc1._uri, o: doc3.r }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: sequence_terminating_in_literal_object
+    # Object-side literal at the END of the path becomes an attribute
+    # equality FILTER on the final intermediate — same shape the
+    # visitor produces for a non-path ``?s :name "Alice"`` triple
+    # (Case 2's literal-object branch). Confirms that
+    # ``_emit_sequence_path`` correctly threads the user-supplied
+    # ``obj`` (the literal ``"Alice"``) into the last expanded
+    # triple rather than minting yet another intermediate.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :p/:q "Alice" }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._uri == doc1.p
+      FILTER doc2.q == @_p1_q
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_q": "Alice"
+
+  - name: sequence_terminating_in_uri_object
+    # Same end-of-path shape but with a URI object — both ``Literal``
+    # and ``URIRef`` rdflib terms thread through ``_emit_triple``
+    # Case 2's identical branch, so the AQL is shape-identical and
+    # only the bind value differs.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :p/:q <http://ex.org/alice> }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._uri == doc1.p
+      FILTER doc2.q == @_p1_q
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_q": "http://ex.org/alice"
+
+  # ---- InvPath ------------------------------------------------------
+
+  - name: inverse_single_step
+    # ``?s ^:p ?o`` rewrites to ``?o :p ?s`` — one swap, no
+    # intermediates. The fresh FOR opens on ?o's namespace (now the
+    # SPARQL "subject" after the swap), and ?s ends up as
+    # ``doc1.p`` in the projection. This is the smallest possible
+    # inverse path and makes the swap visible: ``s`` projects from
+    # ``doc1.p`` while ``o`` projects from ``doc1._uri``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s ^:p ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      RETURN { s: doc1.p, o: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: inverse_with_uri_subject
+    # ``<alice> ^:p ?o`` rewrites to ``?o :p <alice>``. The URI ends
+    # up as a literal-equality FILTER on the property, the variable
+    # opens the FOR. Confirms the inverse-path rewrite correctly
+    # routes URI subjects through the URIRef-object branch of
+    # ``_emit_triple`` Case 2 after the swap.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?o WHERE { <http://ex.org/alice> ^:p ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1.p == @_p1_p
+      RETURN { o: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_p": "http://ex.org/alice"
+
+  - name: inverse_of_sequence_combined
+    # The most common compound form in the W3C corpus:
+    # ``?s ^(:p/:q) ?o`` — an InvPath whose ``.arg`` is a
+    # SequencePath. The outer InvPath rewrites to
+    # ``?o :p/:q ?s``, which then desugars to ``?o :p ?_path_1 .
+    # ?_path_1 :q ?s``. Recursion through ``_emit_triple`` handles
+    # both layers without the path module knowing anything about
+    # the inner type.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s ^(:p/:q) ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._uri == doc1.p
+      RETURN { s: doc2.q, o: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- Composition with the rest of the visitor --------------------
+
+  - name: sequence_with_sibling_attribute_triple
+    # A path triple and a plain attribute triple sharing a subject.
+    # Confirms ``_ensure_subject_alias`` returns the already-bound
+    # alias for the second triple's ``?s`` (so we don't open a third
+    # FOR) and that the projection picks up the attribute (?n) from
+    # the same alias the path's first step opened (doc1.name).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o ?n WHERE { ?s :p/:q ?o . ?s :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._uri == doc1.p
+      RETURN { s: doc1._uri, o: doc2.q, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+# ---------------------------------------------------------------------
+# Unsupported-path goldens.
+#
+# These cases are EXPECTED to raise ``UnsupportedSparqlError`` with a
+# stable message — the test runner verifies the message substring so
+# the W3C XFAIL bucket stays uniquely identifiable for the next
+# coverage-report regen. Once a slice implements one of these, the
+# expected_error key is removed and replaced with expected_aql.
+# ---------------------------------------------------------------------
+
+unsupported:
+  - name: mul_path_one_or_more_rejected
+    # ``?s :p+ ?o`` — transitive one-or-more. Requires ArangoDB
+    # graph traversal (``FOR v IN 1..N OUTBOUND``), deferred to the
+    # MulPath slice.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p+ ?o }
+    expected_error_substring: "transitive property paths (':p+') are not yet supported"
+
+  - name: mul_path_zero_or_more_rejected
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p* ?o }
+    expected_error_substring: "transitive property paths (':p*') are not yet supported"
+
+  - name: mul_path_zero_or_one_rejected
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p? ?o }
+    expected_error_substring: "transitive property paths (':p?') are not yet supported"
+
+  - name: alternative_path_rejected
+    # ``?s :p|:q ?o`` — needs a Union-shaped rewrite or
+    # predicate-set FILTER. Defer.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p|:q ?o }
+    expected_error_substring: "alternative property paths (':p|:q') are not yet supported"
+
+  - name: negated_path_rejected
+    # ``?s !:p ?o`` — predicate negation. Defer.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !:p ?o }
+    expected_error_substring: "negated property paths ('!:p') are not yet supported"

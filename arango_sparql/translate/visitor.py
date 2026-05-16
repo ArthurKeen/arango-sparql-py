@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from rdflib import RDF, BNode, Literal, URIRef, Variable
+from rdflib.paths import Path
 
 from ..errors import (
     AqlEmitError,
@@ -25,6 +26,7 @@ from ..errors import (
     UnsupportedSparqlError,
 )
 from .builder import AqlQueryBuilder
+from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
 
 logger = logging.getLogger(__name__)
@@ -92,6 +94,16 @@ class _BindingState:
     ``visit_Project`` and consumed by ``_emit_projection``."""
 
     distinct: bool = False
+
+    path_var_counter: int = 0
+    """Monotone counter for intermediate variables minted during
+    property-path expansion (see :mod:`arango_sparql.translate.paths`).
+    Lives on the binding state — not on the builder — because the
+    expanded variable names (``?_path_<n>``) participate in the
+    SPARQL variable namespace (they can be referenced from sibling
+    triples in the same BGP after they're bound), even though the
+    user can never refer to one explicitly. Reset implicitly on
+    every new visitor instance, so per-query state is isolated."""
 
 
 @dataclass
@@ -940,10 +952,42 @@ class AlgebraVisitor:
             self._emit_triple(triple)
 
     # ------------------------------------------------------------------
+    # Internal: property-path intermediate-variable minting
+    # ------------------------------------------------------------------
+    def _fresh_path_var(self) -> Variable:
+        """Mint a fresh ``Variable`` for property-path intermediate joins.
+
+        Called from :func:`arango_sparql.translate.paths._emit_sequence_path`
+        when desugaring ``?s :p1/:p2/.../:pN ?o`` — every inner join
+        point gets one of these (N-1 per sequence). The sigil prefix
+        ``_path_`` is private by construction: the existing visitor
+        never minted underscore-prefixed variables before property
+        paths landed, and user SPARQL variables in the projection are
+        captured from the pre-translation parsed query (so an
+        ``?_path_3`` typed by a user would still be visible there and
+        never collide with what we generate here).
+        """
+
+        self.state.path_var_counter += 1
+        return Variable(f"_path_{self.state.path_var_counter}")
+
+    # ------------------------------------------------------------------
     # Internal: triple-pattern emission
     # ------------------------------------------------------------------
     def _emit_triple(self, triple: tuple[Any, Any, Any]) -> None:
         s, p, o = triple
+
+        # Case 0 — property paths (SequencePath / InvPath / ...). Dispatch
+        # to the dedicated path expander module, which recursively desugars
+        # the path and re-enters this method for each sub-fragment. Done
+        # BEFORE Case 1 (rdf:type) because rdflib's ``Path`` instances are
+        # NOT URIRef subclasses (verified at module-import time), so a
+        # path predicate cleanly skips Case 1 — but doing the check first
+        # makes the dispatch order explicit and immune to a future rdflib
+        # refactor that might change the type relationship.
+        if isinstance(p, Path):
+            emit_path_triple(self, s, p, o)
+            return
 
         # Case 1 — type pattern: ``?s a :Person`` (or ``<uri> a :Person``).
         # Mirrors PGTTranslator.isTypePattern in pgt-translator.js: open a
@@ -1404,12 +1448,35 @@ class AlgebraVisitor:
         For a URI subject (``<http://...>``) we open a default-collection
         FOR and add an ``_uri`` filter — same shape as the legacy
         ``pattern.subject.termType === 'NamedNode'`` branch.
+
+        Path-aware join enforcement: a Variable that has a prior
+        ``var_to_expr`` binding but no ``var_to_doc_alias`` binding
+        arises when an earlier triple bound the variable to an
+        attribute expression (``doc1.p``) without ever materialising
+        it as a document. Property-path sequence expansion produces
+        exactly this shape: ``?s :p/:q ?o`` desugars to
+        ``?s :p ?_path_1 . ?_path_1 :q ?o``, and the second triple's
+        ``_ensure_subject_alias(?_path_1)`` call needs to join the
+        fresh FOR's ``_uri`` to the prior expression so the
+        intermediate is not a free Cartesian-product variable. Object
+        triples already handle this on the right-hand side
+        (``_emit_triple`` Case 2's Variable branch); we mirror that
+        on the subject side here.
         """
         if isinstance(subject, Variable):
             existing = self.state.var_to_doc_alias.get(str(subject))
             if existing is not None:
                 return existing
             alias = self._open_collection(self.resolver.default_collection)
+            # Enforce the implicit join the SPARQL spec demands: if the
+            # variable was already bound to an AQL expression by an
+            # earlier triple, the new FOR's ``_uri`` must equal that
+            # expression. Without this FILTER, the AQL plan would
+            # cross-product the two FORs and silently over-count.
+            prior_expr = self.state.var_to_expr.get(str(subject))
+            new_expr = f"{alias}._uri"
+            if prior_expr is not None and prior_expr != new_expr:
+                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
             self._bind_subject(subject, alias)
             return alias
         if isinstance(subject, URIRef):
@@ -1637,6 +1704,11 @@ def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
          collections first.
       1. Triples whose subject is a Variable — these can reuse a prior
          alias when sorted after a type pattern bound the same subject.
+         Property-path predicates (``Path`` instances) also land here:
+         a ``?s :p/:q ?o`` against an already-bound ``?s`` is the
+         common shape (e.g. type pattern + path-on-the-subject), and
+         we want the path desugaring to see the same binding state a
+         plain ``?s :name ?n`` would.
       2. Triples whose subject is a URI — they always open a fresh FOR.
     """
     s, p, o = triple
