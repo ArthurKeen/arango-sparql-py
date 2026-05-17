@@ -281,14 +281,17 @@ def test_translate_parse_error_returns_422(client: TestClient) -> None:
 
 
 def test_translate_unsupported_feature_returns_422(client: TestClient) -> None:
-    # CONSTRUCT isn't ported yet — make sure the visitor's typed
-    # UnsupportedSparqlError reaches the client as a 422 with the
-    # documented stable code, not an opaque 500. (Update this case as
-    # the visitor learns more constructs; the assertion that matters
-    # is the error envelope, not the specific feature.)
+    # SERVICE (federated query) is explicitly out-of-scope for v1 per
+    # PRD §2, so the visitor's typed UnsupportedSparqlError for the
+    # ServiceGraphPattern algebra node is the most durable
+    # "guaranteed unsupported" fixture. We assert the envelope (HTTP
+    # 422, stable error code) — the specific feature in the fixture
+    # is incidental and should track the PRD's permanently-deferred
+    # set. (Earlier we used CONSTRUCT + ``?s ?p ?o``; both have since
+    # landed, so the fixture moved.)
     sparql = """
     PREFIX : <http://ex.org/>
-    CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }
+    SELECT ?s WHERE { SERVICE <http://other.example/sparql> { ?s a :Person } }
     """
     resp = client.post(
         "/translate",

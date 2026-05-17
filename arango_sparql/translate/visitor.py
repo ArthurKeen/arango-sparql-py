@@ -28,6 +28,7 @@ from ..errors import (
 from .builder import AqlQueryBuilder
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
+from .variable_predicates import emit_variable_predicate_triple
 
 logger = logging.getLogger(__name__)
 
@@ -1054,14 +1055,20 @@ class AlgebraVisitor:
                 )
             return
 
-        # Case 3 — variable predicate (``?s ?p ?o``). The legacy translator
-        # emits an expensive UNION across every collection; we refuse for
-        # now so we don't ship a footgun, and surface a clear error code
-        # until a deliberate implementation lands.
+        # Case 3 — variable predicate (``?s ?p ?o``). Delegated to
+        # ``arango_sparql.translate.variable_predicates`` so this
+        # file stays under the 1500-line cap from
+        # ``.cursor/rules/modularity-and-structure.mdc``. The emitter
+        # dispatches on the SUBJECT's binding state (RPT vs PG / LPG
+        # / default-collection); see :func:`emit_variable_predicate_triple`
+        # for the per-branch AQL shape + the W3C-spec carve-out.
+        # Legacy reference: ``references/arango-sparql/src/lib/
+        # pgt-translator.js`` lines 244-261, which hard-coded a
+        # four-collection UNION rather than driving the fan-out off
+        # the resolver. See PRD §6.6 Variable-predicates row.
         if isinstance(p, Variable):
-            raise UnsupportedSparqlError(
-                "variable predicates (?p) require multi-collection UNION; not yet supported"
-            )
+            emit_variable_predicate_triple(self, s, p, o, triple)
+            return
 
         raise UnsupportedSparqlError(
             f"unsupported triple shape: subject={type(s).__name__}, "

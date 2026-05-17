@@ -62,7 +62,7 @@ BAD_SPARQL = "SELECT WHERE { broken syntax"
 
 UNSUPPORTED_SPARQL = """
 PREFIX : <http://ex.org/>
-CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }
+SELECT ?s WHERE { SERVICE <http://other.example/sparql> { ?s a :Person } }
 """.strip()
 
 

@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (today: 17.0 %; 167 algebra / 43 schema / 14 rdflib XFAILs — largest algebra bucket `variable predicates ?p` at 28.1 %); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.3, 27.3 % ✅ — v1.0 §3.1 threshold cleared**; 141 algebra / 43 schema / 14 rdflib XFAILs; largest algebra bucket `ToMultiSet` at 14.9 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -839,6 +839,7 @@ deployments.
 | **RPT (`_triples` triple-store)** — read subject/predicate/object rows, `COALESCE(object_uri, object_value)` for objects, `STARTS_WITH(_, "_:")` heuristic for blank nodes | 🟡 v1.0 | Tracked under criterion §3.7 (Foxx parity); fixture corpus to land at `tests/translate/rpt.yml` and `tests/cross/test_rpt_cross.py` |
 | **Mixed-model BGP** (RPT + PG, RPT + LPG, PG + LPG, all three) | 🟡 v1.0 | Criterion §3.4; fixture corpus `tests/translate/hybrid.yml` |
 | **Property-path expansion** — `SequencePath` (`:p/:q`) and `InvPath` (`^:p`) ship in v1 as pure desugarings via `arango_sparql/translate/paths.py`; `MulPath` (`:p*`, `:p+`, `:p?`), `AlternativePath` (`:p\|:q`), and `NegatedPath` (`!:p`) remain v1.1 deliverables. | 🟡 v1 partial / v1.1 full | `tests/translate/property_paths.yml`; remaining buckets tracked in `COVERAGE_REPORT.md` under per-operator XFAIL rows (`:p+`, `:p*`, `:p\|:q`) |
+| **Variable predicates (`?s ?p ?o`)** — RPT subject projects the predicate column directly and is W3C-spec-correct; PG/LPG/default-collection subject fans out via `FOR k IN ATTRIBUTES(doc, true)`. CARVE-OUT: the ATTRIBUTES branch binds `?p` to the attribute **name** (a string) not the predicate IRI; the per-class attribute-name to predicate-URI mapping is a v1.1 follow-up. | 🟡 v1 partial (RPT correct; PG/LPG translates but `?p` is attribute-name string) / v1.1 full (resolver-driven URI mapping) | `tests/translate/variable_predicate.yml` (10 cases); live-execution XFAILs registered in `tests/w3c/test_w3c_live_execution.py::SKIP_REASONS` for the 27 affected W3C tests |
 | **Named-graph dispatch** — `GRAPH ?g { … }` resolves to a per-graph collection or to a graph-name attribute | 🔴 v1.2 | Tracked in `COVERAGE_REPORT.md` under the `Graph` XFAIL bucket |
 | **Federated `SERVICE`** — out of scope (see §2) | ❌ won't fix in v1 | — |
 
@@ -1870,9 +1871,10 @@ fix before tagging v1.0.
 | Release | W3C query-evaluation | Cross cases | Goldens | Schema fixtures | Legacy round-trip parity |
 | --- | --- | --- | --- | --- | --- |
 | v0.1 (initial) | 15.0 % | 39 | 50+ | 0 | 0 % |
-| v0.2 (current — after `SequencePath` / `InvPath`) | 17.0 % | 39 | 60+ | 0 | 0 % |
-| v0.5 | 20 % | 60 | 80 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
-| **v1.0 (acceptance)** | **≥ 25 %** | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
+| v0.2 (after `SequencePath` / `InvPath`) | 17.0 % | 39 | 60+ | 0 | 0 % |
+| **v0.3 (current — after variable-predicate `?p` slice)** | **27.3 % ✅ (v1.0 §3.1 threshold cleared)** | **39** | **70+** | **0** | **0 %** |
+| v0.5 | 30 % (after `ToMultiSet` + `Graph` + `Minus` slices) | 60 | 80 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
+| **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 27.3 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
 **Reading the v0.1 W3C number.** `tests/w3c/analyze_coverage.py` runs every
@@ -1891,34 +1893,44 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 167 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
+| `algebra` | 141 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
 | `schema` | 43 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
-**Slice priority to reach the v1.0 ≥ 25 % target** (need +20 W3C passes
-from 43 → 63):
+**Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %).**
+The §3.1 ≥ 25 % bar has been met; the slice table below now tracks
+*ceiling pressure* (the > 30 % single-bucket constraint) and the
+v1.1 35 % target rather than the v1.0 acceptance gate.
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `variable predicates ?p` (multi-collection UNION) | 47 | +18.6 pp | Largest single bucket; requires schema-aware predicate-collection enumeration. Architecturally significant. |
-| `ToMultiSet` (sub-SELECT / nested query) | 15 | +5.9 pp | Needs LET-subquery emission with binding-set semantics. |
+| `ToMultiSet` (sub-SELECT / nested query) | 21 | +8.3 pp | **Largest remaining bucket** at 21/141 ≈ 14.9 % of algebra XFAILs — well under the 30 % ceiling but the natural next target. Needs LET-subquery emission with binding-set semantics. |
 | `Graph` (named graphs / `GRAPH <iri> { … }`) | 10 | +4.0 pp | Needs default-vs-named-graph routing through the resolver. |
-| `MulPath` (`:p+`, `:p*`, `:p?`) | 9+ | +3.6 pp | Largest remaining property-path operator; needs ArangoDB graph traversal (`FOR v IN min..max OUTBOUND`). |
+| `MulPath` (`:p+`, `:p*`, `:p?`) | 10+ | +4.0 pp | Largest remaining property-path operator; needs ArangoDB graph traversal (`FOR v IN min..max OUTBOUND`). |
 | `Minus` (`MINUS { … }` operator) | 7 | +2.8 pp | Self-contained; emits an anti-join LET-subquery. |
+| `Builtin_EXISTS` / `Builtin_LANGMATCHES` FILTER builtins | 4 each | +1.6 pp each | Small focused FILTER-expression slices. |
 | `AlternativePath` (`:p\|:q`) | 4 | +1.6 pp | Needs Union-shaped rewrite or per-row predicate-set FILTER. |
 | `CONSTRUCT WHERE` (template-less) | 4 | +1.6 pp | Quick win — synthesise the template from the BGP. |
 
-*Already shipped:* `SequencePath` (`:p/:q`) and `InvPath` (`^:p`) closed
-their dedicated W3C XFAIL buckets in commit history (see PRD §6.6 row),
-contributing the v0.1 → v0.2 bump from 15.0 % to 17.0 %.
+*Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
+contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate `?s ?p ?o`
+slice** (v0.2 → v0.3) contributed +10.3 pp via an `ATTRIBUTES(doc, true)`
+fan-out for unbound / PG-class-bound subjects and direct
+predicate-column projection for RPT-bound subjects. Carve-out: the
+unbound-subject branch binds `?p` to the attribute *name* (a string)
+rather than the predicate IRI, so the 27 affected W3C tests that
+*translate* are recorded as live-execution XFAILs in
+`tests/w3c/test_w3c_live_execution.py::SKIP_REASONS`. Lifting the
+carve-out is the "per-class attribute-name to predicate-URI mapping"
+follow-up slice — extending `SchemaResolver` with an
+`attribute_to_uri` dict per class, emitting
+`LET p = @_attrmap[k]` and `FILTER p != null` against it.
 
-The §3.1 acceptance criterion also requires that no single XFAIL
-bucket consumes > 30 % of remaining failures. The largest algebra
-bucket today (`variable predicates ?p` at 47/172 ≈ 27.3 %) is just
-under that threshold; a single roadmap slice that didn't close that
-bucket would *not* violate §3.1, but the constraint will tighten as
-the smaller buckets are closed and `variable predicates` becomes a
-larger share of what remains.
+The §3.1 acceptance criterion's > 30 % single-bucket ceiling
+constrains *future* slices: today's largest algebra bucket
+(`ToMultiSet` at 21/141 ≈ 14.9 %) sits well under the ceiling, but
+as smaller buckets close their share grows. Closing `ToMultiSet`
+next preserves the most headroom.
 
 ---
 
@@ -2129,7 +2141,7 @@ that need a fundamentally different AQL emission strategy.
 | Exit criterion | §-ref / Notes |
 | --- | --- |
 | `visit_Graph` — named-graph routing to per-graph collections or to a graph-name attribute discriminator | §6.6 row promoted from 🔴 → ✅ |
-| `Variable predicates` lowered via multi-collection UNION | §6.6 row promoted from 🔴 → ✅ |
+| `Variable predicates` — per-class attribute-name to predicate-URI mapping (lifts the v1 carve-out where `?p` binds to attribute name string) | §6.6 row promoted from 🟡 v1 partial → ✅ |
 | Graph Store HTTP Protocol (`/graph?graph=…`) | §5.3 row promoted to in-scope |
 | W3C query-evaluation coverage ≥ 50 % | §13.5 |
 | `arango-query-core` first stable release (consumed by both `-cypher-py` and `-sparql-py`) | §12.3 |

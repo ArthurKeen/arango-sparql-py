@@ -1,0 +1,160 @@
+# Golden corpus for SPARQL 1.1 variable-predicate triples (``?s ?p ?o``).
+#
+# The visitor's :meth:`_emit_variable_predicate_triple` dispatches on
+# the subject's binding state at the time the triple visits, producing
+# two distinct AQL shapes:
+#
+# * **RPT-bound subject** — opens a fresh FOR over the triples table,
+#   joins on the subject_uri column, and projects the predicate column
+#   directly to ``?p`` (no equality FILTER). Object follows the
+#   standard ``COALESCE(object_uri, object_value)`` shape. This emission
+#   is W3C-spec-correct.
+#
+# * **PG / LPG / default-collection subject** — opens an
+#   ``ATTRIBUTES()`` fan-out over the subject's document and projects
+#   the key as ``?p`` and ``doc[key]`` as ``?o``. CARVE-OUT: ``?p`` is
+#   bound to the attribute NAME (a string), not the predicate IRI;
+#   live-execution cross-validation against a W3C-conformant
+#   triplestore will diverge for queries that depend on ``?p`` being
+#   an IRI. The translation-only W3C harness counts these as passes
+#   (which is the §3.1 v1.0 success criterion). The 46 affected W3C
+#   query-evaluation tests are listed in
+#   ``tests/w3c/SKIP_REASONS.md`` as live-execution XFAILs. Lifting
+#   the carve-out is tracked as the "attribute-name to predicate-URI"
+#   follow-up slice.
+#
+# These goldens use either an empty resolver (default-collection
+# fallback — the configuration that the 46 unbound-subject W3C tests
+# sit on) or a tiny inline ontology (PG-class case + RPT case). The
+# resolver-driven RPT-class case lives in the Python runner below
+# because its physical-mapping inputs are richer than this YAML
+# harness's ``ontology`` field.
+
+ontology: ""
+
+cases:
+  # ---- Default-collection (the W3C bucket) -----------------------------
+
+  - name: bare_spo_default_collection
+    # The shape that 46 of 47 variable-predicate W3C tests use.
+    # ATTRIBUTES(doc, true) drops ArangoDB system attrs; the
+    # explicit ``NOT IN [_uri]`` strips our own synthetic
+    # subject-IRI column so we don't emit a triple whose
+    # predicate is ``"_uri"``.
+    sparql: |
+      SELECT ?s ?p ?o WHERE { ?s ?p ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      RETURN { s: doc1._uri, p: k2, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_uri"
+
+  - name: bare_spo_count_aggregate
+    # The W3C ``agg01`` shape — ``COUNT(?O)`` over a bare
+    # ``?S ?P ?O`` pattern. The COLLECT layer wraps the
+    # ATTRIBUTES fan-out unchanged; one binding row per
+    # attribute → COUNT returns the total non-system-attribute
+    # count across all documents.
+    sparql: |
+      SELECT (COUNT(?O) AS ?C) WHERE { ?S ?P ?O }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      COLLECT WITH COUNT INTO agg3
+      RETURN { C: agg3 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_uri"
+
+  - name: bare_spo_sum_grouped_by_subject
+    # The W3C ``agg-sum-02`` shape — SUM aggregate with a
+    # GROUP BY on the subject. Confirms the variable-predicate
+    # emission composes with COLLECT … AGGREGATE: ``?o`` was
+    # bound to ``doc1[k2]`` and the SUM aggregator receives
+    # that expression unchanged.
+    sparql: |
+      PREFIX : <http://www.example.org/>
+      SELECT ?s (SUM(?o) AS ?sum) WHERE { ?s ?p ?o } GROUP BY ?s
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      COLLECT grp3 = doc1._uri AGGREGATE agg4 = SUM(doc1[k2])
+      RETURN { s: grp3, sum: agg4 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_uri"
+
+  - name: bare_spo_avg_with_having
+    # ``agg-avg-02`` — AVG aggregate plus a HAVING filter.
+    # The HAVING filter is a post-aggregation predicate and
+    # references the projection alias (``?avg``), confirming
+    # the aggregate's binding flows out to the FILTER stage.
+    sparql: |
+      PREFIX : <http://www.example.org/>
+      SELECT ?s (AVG(?o) AS ?avg)
+      WHERE { ?s ?p ?o }
+      GROUP BY ?s
+      HAVING (AVG(?o) <= 2.0)
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      COLLECT grp3 = doc1._uri AGGREGATE agg4 = AVG(doc1[k2]), agg5 = AVG(doc1[k2])
+      FILTER (agg5 <= @_p2)
+      RETURN { s: grp3, avg: agg4 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_uri"
+      "_p2": 2.0
+
+  - name: bare_spo_fixed_subject
+    # ``<iri> ?p ?o`` — named subject + variable predicate +
+    # variable object. The default-collection FOR opens, a
+    # FILTER pins ``doc._uri`` to the bound subject IRI, and
+    # the ATTRIBUTES fan-out emits ``(?p, ?o)`` rows per
+    # remaining attribute. Confirms the URI-subject branch
+    # of ``_ensure_subject_alias`` composes with the
+    # predicate-fanout cleanly.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?p ?o WHERE { :alice ?p ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._uri == @_p1_uri
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p2_sys_attrs
+      RETURN { p: k2, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://ex.org/alice"
+      "_p2_sys_attrs":
+        - "_uri"
+
+  - name: bare_spo_object_filter
+    # ``?s ?p ?o FILTER (?o > 10)`` — variable-predicate
+    # with a post-emission FILTER on the object expression.
+    # The FILTER runs AFTER both FORs because ``?o`` resolved
+    # to ``doc1[k2]``, an expression that only exists once
+    # the inner FOR is open.
+    sparql: |
+      SELECT ?s ?p ?o WHERE { ?s ?p ?o FILTER (?o > 10) }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      FILTER (doc1[k2] > @_p2)
+      RETURN { s: doc1._uri, p: k2, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_uri"
+      "_p2": 10

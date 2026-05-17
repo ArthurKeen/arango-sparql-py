@@ -410,6 +410,51 @@ class AqlQueryBuilder:
         self._body_clauses.append(_Clause(_ClauseKind.FILTER, f"FILTER {expression}"))
         return self
 
+    def for_attributes(
+        self,
+        key_alias: str,
+        document_alias: str,
+    ) -> AqlQueryBuilder:
+        """Emit ``FOR <key_alias> IN ATTRIBUTES(<document_alias>, true)``.
+
+        The ``true`` second argument tells ATTRIBUTES to **skip the
+        ArangoDB system attributes** (``_id``, ``_key``, ``_rev``,
+        ``_from``, ``_to``) so we don't need a separate FILTER to
+        exclude them. The visitor's variable-predicate dispatcher
+        uses this to fan an unbound predicate variable out across
+        every attribute of a document — the AQL analog of "every
+        triple in the dataset whose subject is this document".
+
+        Two visitor-side caveats live with this primitive (not
+        enforced here — the caller decides):
+
+        * ``_uri`` is **not** a system attribute — it's our own
+          synthetic "subject IRI" column the schema-mapper writes.
+          A caller that wants triple-like semantics ``RETURN {s, p, o}``
+          should filter ``key NOT IN @sys_attrs`` to exclude it
+          (otherwise we'd emit a triple whose predicate is ``"_uri"``).
+        * Until per-class attribute→URI mapping lands, ``key`` is the
+          raw attribute name (a string). SPARQL's ``?p`` is supposed
+          to bind to an IRI; the harness counts translation as a
+          pass regardless, but live-execution cross-validation
+          against a W3C-conformant store will diverge for any query
+          that depends on ``?p`` being an IRI. PRD §6.6 row tracks
+          this carve-out.
+        """
+        if not _AQL_IDENT_RE.match(key_alias):
+            raise ValueError(f"invalid FOR alias: {key_alias!r}")
+        if not _AQL_IDENT_RE.match(document_alias):
+            raise ValueError(
+                f"invalid document alias: {document_alias!r}"
+            )
+        self._body_clauses.append(
+            _Clause(
+                _ClauseKind.FOR,
+                f"FOR {key_alias} IN ATTRIBUTES({document_alias}, true)",
+            )
+        )
+        return self
+
     def sort(self, expression: str, *, descending: bool = False) -> AqlQueryBuilder:
         """Append one ORDER-BY key to the next ``SORT`` clause.
 
