@@ -26,6 +26,7 @@ from ..errors import (
     UnsupportedSparqlError,
 )
 from .builder import AqlQueryBuilder
+from .minus_exists import emit_exists_filter, emit_minus
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
 from .subselect import emit_to_multiset
@@ -228,10 +229,6 @@ class AlgebraVisitor:
         """
 
         template = list(getattr(node, "template", []) or [])
-        if not template:
-            raise UnsupportedSparqlError(
-                "CONSTRUCT without a template is not supported"
-            )
 
         inner = node.p
         # rdflib stamps a Project (and optionally Distinct/Slice) around
@@ -251,6 +248,26 @@ class AlgebraVisitor:
             raise UnsupportedSparqlError(
                 "CONSTRUCT with an empty WHERE pattern is not supported"
             )
+
+        if not template:
+            # ``CONSTRUCT WHERE { … }`` (template-less, SPARQL 1.1
+            # §16.2.1 short-form) — synthesise the template from the
+            # WHERE BGP's triples. Per the spec, the BGP itself
+            # serves as both the matching pattern AND the output
+            # template, so every matched binding row produces one
+            # output triple per BGP triple. The inner BGP shape is
+            # exactly the template shape; if WHERE is wrapped in
+            # something more complex (Join, Filter, etc.) we collect
+            # triples from every BGP descendant so a query like
+            # ``CONSTRUCT WHERE { ?s :a ?o . FILTER (?o > 0) }``
+            # still produces the right template.
+            template = _collect_bgp_triples(inner)
+            if not template:
+                raise UnsupportedSparqlError(
+                    "CONSTRUCT WHERE pattern has no BGP triples to "
+                    "synthesise a template from"
+                )
+
         self.visit(inner)
 
         triple_exprs: list[tuple[str, str, str]] = []
@@ -937,6 +954,16 @@ class AlgebraVisitor:
     def visit_Join(self, node: Any) -> Any:
         self.visit(node.p1)
         self.visit(node.p2)
+
+    # ------------------------------------------------------------------
+    # MINUS — Minus(p1, p2). Outer rows whose shared variables are
+    # incompatible with every inner row are kept; matched ones drop.
+    # Delegated to ``arango_sparql.translate.minus_exists`` for the
+    # shared probe-and-FILTER recipe with EXISTS / NOT EXISTS.
+    # PRD §6.6 Minus row.
+    # ------------------------------------------------------------------
+    def visit_Minus(self, node: Any) -> Any:
+        emit_minus(self, node)
 
     # ------------------------------------------------------------------
     # ToMultiSet — SPARQL sub-SELECT and VALUES. Delegated to
@@ -1667,6 +1694,20 @@ class AlgebraVisitor:
             # as literals. This is approximate; a real implementation
             # needs RDF-style typing.
             return f"(IS_STRING({self._translate_expr(expr.arg)}) || IS_NUMBER({self._translate_expr(expr.arg)}) || IS_BOOL({self._translate_expr(expr.arg)}))"
+        if name == "Builtin_EXISTS":
+            # ``FILTER EXISTS { … }`` — spawn a child-builder probe
+            # over the inner pattern with the outer scope's bindings
+            # pre-seeded, emit ``LET <p> = LENGTH((<inner>))`` as a
+            # side-effect clause, return ``<p> > 0`` for splicing
+            # into the upstream FILTER. See
+            # :func:`arango_sparql.translate.minus_exists.emit_exists_filter`.
+            return emit_exists_filter(self, expr, negated=False)
+        if name == "Builtin_NOTEXISTS":
+            # ``FILTER NOT EXISTS { … }`` — same probe shape as
+            # EXISTS but with the ``== 0`` comparator. Unlike
+            # MINUS, NOT EXISTS does NOT short-circuit when the
+            # shared-variable set is empty (SPARQL 1.1 §17.4.1.10).
+            return emit_exists_filter(self, expr, negated=True)
 
         raise UnsupportedSparqlError(
             f"FILTER expression node {name!r} is not yet supported (see "
@@ -1740,6 +1781,46 @@ def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
     # Stable secondary so two triples with the same primary preserve
     # rdflib's order — keeps golden output deterministic.
     return (primary, 0)
+
+
+def _collect_bgp_triples(node: Any) -> list[tuple[Any, Any, Any]]:
+    """Walk *node*'s subtree collecting every triple from every BGP
+    descendant, in walk order.
+
+    Used by :meth:`AlgebraVisitor.visit_ConstructQuery` to synthesise
+    the implicit template that ``CONSTRUCT WHERE { … }`` (SPARQL 1.1
+    §16.2.1 short-form) leaves blank. The spec mandates "the
+    template is the BGP", but a real WHERE may wrap the BGP in
+    ``Join``, ``Filter``, etc.; we walk past those wrappers and
+    pick up every BGP we find so the template stays faithful even
+    when the user adds a FILTER constraint that isn't itself a
+    template triple.
+
+    Triples from ``OPTIONAL`` (`LeftJoin`) are intentionally
+    included — the spec treats the BGP under OPTIONAL as part of
+    the matching pattern, and any binding that survives the
+    OPTIONAL also surfaces in the output template. Unbound
+    variables (no row matched the OPTIONAL) would raise in
+    :meth:`_construct_term_to_aql`, which the spec accepts as a
+    legitimate failure mode for malformed templates.
+    """
+    out: list[tuple[Any, Any, Any]] = []
+    _walk_for_bgp_triples(node, out)
+    return out
+
+
+def _walk_for_bgp_triples(node: Any, out: list[tuple[Any, Any, Any]]) -> None:
+    """Recursive helper for :func:`_collect_bgp_triples`."""
+    if node is None:
+        return
+    if getattr(node, "name", None) == "BGP":
+        for triple in getattr(node, "triples", []) or []:
+            out.append(triple)
+        return
+    for attr in ("p", "p1", "p2"):
+        child = getattr(node, attr, None)
+        if child is not None and hasattr(child, "name"):
+            _walk_for_bgp_triples(child, out)
 
 
 def _term_to_python(term: Any) -> Any:

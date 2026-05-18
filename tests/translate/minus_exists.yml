@@ -1,0 +1,196 @@
+# Golden corpus for SPARQL 1.1 `MINUS`, `FILTER EXISTS`, and
+# `FILTER NOT EXISTS` (`arango_sparql.translate.minus_exists`),
+# plus the template-less `CONSTRUCT WHERE { … }` short-form
+# (synthesised template).
+#
+# All three first constructs share one AQL recipe: spawn a child
+# builder over the inner pattern with the outer's bindings
+# pre-seeded so shared variables turn into equality FILTERs, then
+# probe with ``LET <p> = LENGTH((<inner LIMIT 1 RETURN 1>))`` and
+# FILTER on ``<p> == 0`` (MINUS / NOT EXISTS) or ``<p> > 0``
+# (EXISTS). The probe primitives are the same
+# :meth:`AqlQueryBuilder.create_child` / :meth:`absorb_child` /
+# :meth:`for_subquery`-family that the ``ToMultiSet`` slice
+# introduced.
+#
+# The empty-shared-vars divergence between MINUS and NOT EXISTS
+# is exercised explicitly (``minus_disjoint_vars_is_noop`` vs
+# ``not_exists_disjoint_vars``) — SPARQL 1.1 §8.3.4 mandates
+# MINUS short-circuits when the patterns share no variables,
+# while NOT EXISTS does not. Pinning both shapes catches a future
+# regression that conflates them.
+#
+# CONSTRUCT WHERE goldens land here too because they ship in the
+# same slice — synthesising the implicit template from the BGP is
+# small but covers four W3C ``mf:CONSTRUCT`` tests that previously
+# XFAIL'd with ``UnsupportedSparql: CONSTRUCT without a template
+# is not supported``.
+
+ontology: ""
+
+cases:
+  # ---- MINUS --------------------------------------------------------
+
+  - name: minus_shared_subject
+    # The classic shape: outer binds ``?s`` via the BGP, the MINUS
+    # right side filters out any ``?s`` that also has
+    # ``:hidden true``. Translation: child-builder probe over the
+    # right side, pre-seeded with the outer's ``var_to_expr``, so
+    # the inner emits ``FILTER doc2._uri == doc1._uri`` as the
+    # shared-variable join. ``FILTER minus_probe3 == 0`` enforces
+    # the MINUS semantic (remove outer rows that matched).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :name ?n MINUS { ?s :hidden true } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET minus_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Document
+        FILTER doc2._uri == doc1._uri
+        FILTER doc2.hidden == @_p1_hidden
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER minus_probe3 == 0
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_hidden": true
+
+  - name: minus_disjoint_vars_is_noop
+    # SPARQL 1.1 §8.3.4 specifies MINUS as a no-op when the two
+    # sides share no variables: compatibility is vacuous, so no
+    # outer row is removed. Translation: no LET probe, no FILTER —
+    # the outer query passes through unchanged. Critical regression
+    # coverage; a sloppy implementation that always emitted the
+    # probe would silently prune ALL outer rows in this case
+    # (since the inner pattern matches anything ⇒ probe > 0 ⇒
+    # FILTER probe == 0 fails everywhere).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :name ?n MINUS { ?x :hidden true } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- FILTER EXISTS / NOT EXISTS -----------------------------------
+
+  - name: exists_shared_subject
+    # ``FILTER EXISTS { … }`` is structurally a sibling of MINUS —
+    # same child-builder probe, same pre-seeded ``var_to_expr``,
+    # same ``LIMIT 1 RETURN 1`` short-circuit. The only difference
+    # is the outer comparator: ``probe > 0`` (keep outer rows
+    # whose substitution does match) vs MINUS's ``probe == 0``
+    # (drop outer rows whose substitution does match).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE {
+        ?s :name ?n . FILTER EXISTS { ?s :hidden true }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Document
+        FILTER doc2._uri == doc1._uri
+        FILTER doc2.hidden == @_p1_hidden
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER exists_probe3 > 0
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_hidden": true
+
+  - name: not_exists_shared_subject
+    # ``FILTER NOT EXISTS { … }`` — the EXISTS recipe with the
+    # comparator flipped to ``== 0``. Same shape as MINUS here,
+    # but the divergence shows up in the disjoint-vars case
+    # immediately below.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE {
+        ?s :name ?n . FILTER NOT EXISTS { ?s :hidden true }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET not_exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Document
+        FILTER doc2._uri == doc1._uri
+        FILTER doc2.hidden == @_p1_hidden
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER not_exists_probe3 == 0
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_hidden": true
+
+  - name: not_exists_disjoint_vars
+    # NOT EXISTS does NOT inherit MINUS's disjoint-vars short-cut
+    # (SPARQL 1.1 §17.4.1.10): it asks "does the inner pattern
+    # match ANY row of the dataset?", not "any row compatible
+    # with the current outer binding?" — so the probe still fires
+    # even without shared variables. Inner block has no FILTER
+    # joining inner alias to outer expression (no shared var to
+    # join on), but it still LIMITs / RETURNs / probes correctly.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE {
+        ?s :name ?n . FILTER NOT EXISTS { ?z :foo ?bar }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET not_exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Document
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER not_exists_probe3 == 0
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  # ---- CONSTRUCT WHERE (template-less) ------------------------------
+
+  - name: construct_where_single_triple
+    # ``CONSTRUCT WHERE { ?s :name ?n }`` — SPARQL 1.1 §16.2.1
+    # short-form where the WHERE BGP doubles as the output
+    # template. The visitor walks the BGP, synthesises the
+    # template as a list-of-triples, then drives the existing
+    # ``return_triples`` path the explicit-template form already
+    # uses. No new AQL shape — just template discovery.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      CONSTRUCT WHERE { ?s :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.name}]
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://ex.org/name"
+
+  - name: construct_where_multi_triple
+    # Multi-triple BGP — the synthesised template has one entry
+    # per BGP triple, in BGP iteration order (which the visitor's
+    # ``_triple_priority`` sort stabilises). Output is a single
+    # ``RETURN [ {…}, {…} ]`` per binding row; the route layer's
+    # RDF renderer dedupes triples via ``rdflib.Graph`` set
+    # semantics.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      CONSTRUCT WHERE { ?s :name ?n . ?s :age ?a }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.age}, {subject: doc1._uri, predicate: @_p2_uri, object: doc1.name}]
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://ex.org/age"
+      "_p2_uri": "http://ex.org/name"

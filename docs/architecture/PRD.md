@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.4, 32.8 % ✅ — v1.0 §3.1 threshold cleared**; 126 algebra / 36 schema / 14 rdflib XFAILs; largest algebra bucket `Graph` at 11/126 ≈ 8.7 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.5, 36.4 % ✅ — v1.0 §3.1 threshold cleared**; 110 algebra / 51 schema / 14 rdflib XFAILs; largest algebra bucket `Graph` at 11/110 = 10.0 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -841,6 +841,8 @@ deployments.
 | **Property-path expansion** — `SequencePath` (`:p/:q`) and `InvPath` (`^:p`) ship in v1 as pure desugarings via `arango_sparql/translate/paths.py`; `MulPath` (`:p*`, `:p+`, `:p?`), `AlternativePath` (`:p\|:q`), and `NegatedPath` (`!:p`) remain v1.1 deliverables. | 🟡 v1 partial / v1.1 full | `tests/translate/property_paths.yml`; remaining buckets tracked in `COVERAGE_REPORT.md` under per-operator XFAIL rows (`:p+`, `:p*`, `:p\|:q`) |
 | **Variable predicates (`?s ?p ?o`)** — RPT subject projects the predicate column directly and is W3C-spec-correct; PG/LPG/default-collection subject fans out via `FOR k IN ATTRIBUTES(doc, true)`. CARVE-OUT: the ATTRIBUTES branch binds `?p` to the attribute **name** (a string) not the predicate IRI; the per-class attribute-name to predicate-URI mapping is a v1.1 follow-up. | 🟡 v1 partial (RPT correct; PG/LPG translates but `?p` is attribute-name string) / v1.1 full (resolver-driven URI mapping) | `tests/translate/variable_predicate.yml` (10 cases); live-execution XFAILs registered in `tests/w3c/test_w3c_live_execution.py::SKIP_REASONS` for the 27 affected W3C tests |
 | **Sub-SELECT (`{ SELECT … WHERE { … } }`) + `VALUES`** — both wrap in rdflib's `ToMultiSet` algebra node. Sub-SELECTs spawn a child `AqlQueryBuilder` whose counters are seeded from the parent's (`create_child` / `absorb_child` enforce disjoint alias/bind-name pools across nested scopes), translate the inner Project into a self-contained AQL block, then emit `FOR <row> IN (<inner AQL>)` at the outer level. `Slice` / `OrderBy` / `Distinct` wrappers around the inner Project are honoured. `VALUES` binds the inline rows as a single AQL list-of-objects (`@_pN_values`) and emits `FOR <row> IN @_pN_values`; UNDEF becomes JSON `null` per W3C semantics. Shared variables between outer and inner scope produce equality FILTERs to enforce the SPARQL join. | ✅ shipped | `tests/translate/subselect.yml` (10 cases) + `tests/translate/test_translate_subselect_goldens.py` (4 Python interaction cases — class-bound subject, sibling sub-SELECTs alias disjointness, two-level nesting, `absorb_child` bind-collision guard). Live-executable without carve-out. |
+| **`MINUS` / `FILTER EXISTS` / `FILTER NOT EXISTS`** — all three share one AQL recipe: spawn a child `AqlQueryBuilder` over the inner pattern with the outer scope's `var_to_expr` pre-seeded so shared variables turn into equality FILTERs against the outer's expressions, short-circuit the child with `LIMIT 1 RETURN 1`, then probe with `LET <p> = LENGTH((<inner>))` and FILTER `<p> == 0` (MINUS / NOT EXISTS) or `<p> > 0` (EXISTS). MINUS honours the SPARQL 1.1 §8.3.4 disjoint-vars no-op (skips emission entirely when the patterns share no variables); NOT EXISTS does NOT (per §17.4.1.10) — the divergence is golden-tested explicitly. | ✅ shipped | `tests/translate/minus_exists.yml` (7 cases) + `tests/translate/test_translate_minus_exists_goldens.py` (3 Python interaction cases — multi-shared-var MINUS, NOT EXISTS in a compound `&&` FILTER, empty-BGP CONSTRUCT WHERE refusal). Live-executable without carve-out. |
+| **`CONSTRUCT WHERE { … }`** — template-less short-form (SPARQL 1.1 §16.2.1). The visitor walks every BGP descendant in the WHERE, collects its triples, and synthesises the implicit template before driving the existing `return_triples` path. | ✅ shipped | Bundled with the MINUS slice's golden tests above. |
 | **Named-graph dispatch** — `GRAPH ?g { … }` resolves to a per-graph collection or to a graph-name attribute | 🔴 v1.2 | Tracked in `COVERAGE_REPORT.md` under the `Graph` XFAIL bucket |
 | **Federated `SERVICE`** — out of scope (see §2) | ❌ won't fix in v1 | — |
 
@@ -1874,9 +1876,10 @@ fix before tagging v1.0.
 | v0.1 (initial) | 15.0 % | 39 | 50+ | 0 | 0 % |
 | v0.2 (after `SequencePath` / `InvPath`) | 17.0 % | 39 | 60+ | 0 | 0 % |
 | v0.3 (after variable-predicate `?p` slice) | 27.3 % | 39 | 70+ | 0 | 0 % |
-| **v0.4 (current — after `ToMultiSet` + `VALUES` slice)** | **32.8 % ✅ (v1.0 §3.1 threshold cleared)** | **39** | **84** | **0** | **0 %** |
-| v0.5 | 36 % (after `Graph` + `Minus` + `MulPath` slices) | 60 | 90 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
-| **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 32.8 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
+| v0.4 (after `ToMultiSet` + `VALUES` slice) | 32.8 % | 39 | 84 | 0 | 0 % |
+| **v0.5 (current — after `Minus` + `EXISTS` / `NOT EXISTS` + `CONSTRUCT WHERE` slice)** | **36.4 % ✅ (v1.0 §3.1 threshold cleared)** | **39** | **94** | **0** | **0 %** |
+| v0.6 | 40 % (after `Graph` + `Union` + `MulPath` slices) | 60 | 105 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
+| **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 36.4 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
 **Reading the v0.1 W3C number.** `tests/w3c/analyze_coverage.py` runs every
@@ -1895,27 +1898,27 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 126 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
-| `schema` | 36 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
+| `algebra` | 110 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
+| `schema` | 51 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`, `http://example/Set`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.4 (32.8 %).** The §3.1 ≥ 25 % bar has been met; the slice table
+v0.5 (36.4 %).** The §3.1 ≥ 25 % bar has been met; the slice table
 below now tracks *ceiling pressure* (the > 30 % single-bucket
 constraint) and the v1.1 35 % target rather than the v1.0
-acceptance gate. With `ToMultiSet` and `values` closed, the new
-largest algebra bucket is `Graph` at 11/126 ≈ 8.7 % — no slice on
-this list approaches the ceiling.
+acceptance gate. With `Minus`, `Builtin_EXISTS` / `NOTEXISTS`, and
+`CONSTRUCT WHERE` closed, the largest algebra bucket is `Graph`
+at 11/110 = 10.0 % — still well under the 30 % ceiling.
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
 | `Graph` (named graphs / `GRAPH <iri> { … }`) | 11 | +4.4 pp | **Largest remaining bucket.** Needs default-vs-named-graph routing through the resolver. |
 | `MulPath` (`:p+`, `:p*`, `:p?`) | 9 | +3.6 pp | Largest remaining property-path operator; needs ArangoDB graph traversal (`FOR v IN min..max OUTBOUND`). |
-| `Minus` (`MINUS { … }` operator) | 7 | +2.8 pp | Self-contained; emits an anti-join LET-subquery now that `create_child`/`absorb_child` are available from the `ToMultiSet` slice. |
-| `Builtin_EXISTS` / `Builtin_LANGMATCHES` FILTER builtins | 5 / 4 | +2.0 pp / +1.6 pp | Small focused FILTER-expression slices. `Builtin_EXISTS` reuses the new sub-query builder primitives. |
 | `BNode` subject / object | 4 / 5 | +1.6 pp / +2.0 pp | Bnode skolemisation pass; PRD §6.6 hybrid-model row already documents the RPT `STARTS_WITH(_, "_:")` recipe. |
-| `AlternativePath` (`:p\|:q`) | 4 | +1.6 pp | Needs Union-shaped rewrite or per-row predicate-set FILTER. |
-| `CONSTRUCT WHERE` (template-less) | 4 | +1.6 pp | Quick win — synthesise the template from the BGP. |
+| `Builtin_LANGMATCHES` FILTER builtin | 4 | +1.6 pp | Small focused FILTER-expression slice. Needs storage decisions for where language tags live (PG/LPG schemas don't carry them today). |
+| `AlternativePath` (`:p\|:q`) | 4 | +1.6 pp | Needs `Union`-shaped rewrite (which is itself a new visitor method). |
+| `Union` (`{ … } UNION { … }`) | hidden | TBD | Currently not surfaced as a top XFAIL bucket because most W3C tests using UNION also reference another unsupported feature. Adding `Union` likely cascades through `AlternativePath` and several hidden tests. |
+| `Builtin_IF` / `Builtin_CONCAT` | 3 / 3 | +1.2 pp each | Small FILTER builtins; straight ports. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
 contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate
@@ -1929,9 +1932,15 @@ a child `AqlQueryBuilder` with seeded counters
 pools across nested scopes), translating the inner Project into a
 self-contained `FOR <row> IN (<inner AQL>)` block, and binding
 `VALUES` rows as a list-of-objects (`@_pN_values`) for inline
-data. Both branches are live-executable without carve-out, so no
-new entries land in `tests/w3c/test_w3c_live_execution.py::
-SKIP_REASONS`.
+data. **The `Minus` + `EXISTS` / `NOT EXISTS` + `CONSTRUCT WHERE`
+slice** (v0.4 → v0.5) contributed +3.6 pp (+9 W3C tests;
+32.8 % → 36.4 %) by reusing the same child-builder primitives to
+emit `LET <p> = LENGTH((<inner LIMIT 1 RETURN 1>))` probes with
+the outer scope's `var_to_expr` pre-seeded for shared-variable
+joins, plus a one-line BGP-walk for the template-less
+`CONSTRUCT WHERE` short-form. All three branches are
+live-executable without carve-out, so no new entries land in
+`tests/w3c/test_w3c_live_execution.py::SKIP_REASONS`.
 
 Carve-out (still in force from v0.3): the variable-predicate
 unbound-subject branch binds `?p` to the attribute *name* (a
@@ -1945,9 +1954,11 @@ mapping" follow-up slice — extending `SchemaResolver` with an
 
 The §3.1 acceptance criterion's > 30 % single-bucket ceiling
 constrains *future* slices: today's largest algebra bucket
-(`Graph` at 11/126 ≈ 8.7 %) sits well under the ceiling, but
+(`Graph` at 11/110 = 10.0 %) sits well under the ceiling, but
 as smaller buckets close their share grows. Closing `Graph`
-next preserves the most headroom.
+next preserves the most headroom; `Union` likely cascades through
+several hidden tests because the analyzer attributes each XFAIL
+to its first unsupported node.
 
 ---
 
@@ -2124,7 +2135,6 @@ the workbench polish that v1.0 deferred.
 
 | Exit criterion | §-ref / Notes |
 | --- | --- |
-| `visit_Minus` (anti-join) | §6.6 / new `tests/translate/minus.yml` |
 | Property-path expansion — close remaining `MulPath` (`:p+`, `:p*`, `:p?`), `AlternativePath` (`:p\|:q`), and `NegatedPath` (`!:p`) buckets | §6.6 row promoted from 🟡 (v1 partial — Sequence/Inverse shipped) → ✅ |
 | `visit_ConstructQuery` (RDF output: `text/turtle` / `application/n-triples` / `application/rdf+xml` / `application/ld+json`) | §5.2 RDF formats |
 | W3C query-evaluation coverage ≥ 35 % | §13.5 v1.1 row |
