@@ -28,6 +28,7 @@ from ..errors import (
 from .builder import AqlQueryBuilder
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
+from .subselect import emit_to_multiset
 from .variable_predicates import emit_variable_predicate_triple
 
 logger = logging.getLogger(__name__)
@@ -936,6 +937,17 @@ class AlgebraVisitor:
     def visit_Join(self, node: Any) -> Any:
         self.visit(node.p1)
         self.visit(node.p2)
+
+    # ------------------------------------------------------------------
+    # ToMultiSet — SPARQL sub-SELECT and VALUES. Delegated to
+    # ``arango_sparql.translate.subselect`` so this file stays under
+    # the 1500-line cap from
+    # ``.cursor/rules/modularity-and-structure.mdc``. See
+    # :func:`emit_to_multiset` for the per-branch AQL shape.
+    # PRD §6.6 ToMultiSet row.
+    # ------------------------------------------------------------------
+    def visit_ToMultiSet(self, node: Any) -> Any:
+        emit_to_multiset(self, node)
 
     # ------------------------------------------------------------------
     # BGP — the heart of every SELECT

@@ -22,6 +22,12 @@ from ..errors import AqlEmitError
 
 _AQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# Sentinel for distinguishing "bind name absent" from "bind value is None"
+# in :meth:`AqlQueryBuilder.absorb_child`'s collision check. A bare
+# ``in`` test would conflate the two; a sentinel object makes the
+# branch unambiguous and the error message precise.
+_MISSING = object()
+
 
 class _ClauseKind(Enum):
     FOR = 1
@@ -408,6 +414,138 @@ class AqlQueryBuilder:
         in *expression* via :meth:`bind` first.
         """
         self._body_clauses.append(_Clause(_ClauseKind.FILTER, f"FILTER {expression}"))
+        return self
+
+    def create_child(self) -> AqlQueryBuilder:
+        """Spawn a child builder seeded with this builder's counter state.
+
+        Used for sub-SELECT emission (PRD §6.6 ToMultiSet row): the
+        child accumulates the inner query's clauses + binds + return
+        independently, then :meth:`absorb_child` merges the binds back
+        and advances this builder's counters past the child's.
+
+        Why counter seeding matters: bind-variable names
+        (``_p<N>``), document aliases (``doc<N>``), and collection
+        binds (``c<N>_<coll>``) all use a per-builder counter. If
+        the child started at 1, its first bind would be ``_p1`` —
+        but the parent's ``_p1`` is already taken. Seeding the
+        child's counters with the parent's CURRENT values
+        guarantees disjoint names, so the merge is safe and the
+        AQL bind-vars dict never has a collision.
+
+        Per-builder state that's *not* shared:
+
+        * ``_coll_bind_by_name`` — the parent's cache of "this
+          collection is already bound under this name". Sharing
+          would let the child reuse parent's name and elide its
+          own ``@@c<N>_<coll>``, which is a minor efficiency
+          improvement but introduces a subtle invariant
+          (parent's coll cache leaks into child's bind dict
+          when the child wins a race). Easier to leave each
+          builder with its own cache; ArangoDB collapses two
+          binds to the same collection name into a single
+          collection lock at execution time, so the only cost
+          is one extra entry in the bind-vars dict.
+        * ``_body_clauses`` / ``_sort_keys`` / ``_limit_clause`` /
+          ``_return_clause`` — the child's clauses live in the
+          child's own ``finalize()`` output, not in the parent's
+          assembled body. That's the whole point of spawning a
+          child.
+        """
+        child = AqlQueryBuilder()
+        child._bind_counter = self._bind_counter
+        child._alias_counter = self._alias_counter
+        child._coll_counter = self._coll_counter
+        return child
+
+    def absorb_child(self, child: AqlQueryBuilder) -> str:
+        """Merge *child*'s bind-vars into this builder and return the
+        child's finalized AQL string.
+
+        Counters are advanced to the child's final state so any
+        further parent-side mints don't repeat names the child used.
+        Bind-name collisions are treated as a hard error — they can
+        only happen if the caller didn't use :meth:`create_child`
+        to seed the child, or if some downstream code reset a
+        counter behind the builder's back. The defensive check is
+        cheap (a dict ``in`` per child bind) and the bug it catches
+        is silent corruption of the bind-vars dict (last-write-wins
+        with no warning), which is worth catching loudly.
+        """
+        inner_aql, child_binds = child.finalize()
+        for name, value in child_binds.items():
+            existing = self._bind_vars.get(name, _MISSING)
+            if existing is _MISSING:
+                self._bind_vars[name] = value
+                continue
+            if existing != value:
+                raise AqlEmitError(
+                    f"bind-var name collision while absorbing child "
+                    f"sub-query builder: {name!r} = {existing!r} "
+                    f"(parent) vs {value!r} (child). Counter seeding "
+                    f"broke — make sure create_child() was used to "
+                    f"spawn the child builder."
+                )
+        self._bind_counter = child._bind_counter
+        self._alias_counter = child._alias_counter
+        self._coll_counter = child._coll_counter
+        return inner_aql
+
+    def for_values(self, row_alias: str, values_bind: str) -> AqlQueryBuilder:
+        """Emit ``FOR <row_alias> IN <values_bind>`` for SPARQL VALUES.
+
+        ``values_bind`` is the ``@<name>`` placeholder returned by
+        :meth:`bind` when the visitor binds a Python list-of-dicts
+        representing the VALUES rows. Mirrors :meth:`for_` but the
+        source is a bind variable holding a list, not a collection.
+
+        Used by :meth:`AlgebraVisitor.visit_ToMultiSet` when the
+        inner pattern is rdflib's ``values`` algebra node (inline
+        binding data — SPARQL 1.1 §10.2). The list rows already
+        carry per-variable values as Python primitives (via
+        :func:`_term_to_python`), so the FOR-loop alias's dotted
+        access (``row.<var>``) yields a value with the correct
+        Python type without any AQL-side coercion.
+        """
+        if not _AQL_IDENT_RE.match(row_alias):
+            raise ValueError(f"invalid FOR alias: {row_alias!r}")
+        if not values_bind.startswith("@") or values_bind.startswith("@@"):
+            raise ValueError(
+                f"expected a value bind placeholder (@name), got: "
+                f"{values_bind!r}"
+            )
+        self._body_clauses.append(
+            _Clause(_ClauseKind.FOR, f"FOR {row_alias} IN {values_bind}")
+        )
+        return self
+
+    def for_subquery(self, row_alias: str, inner_aql: str) -> AqlQueryBuilder:
+        """Emit ``FOR <row_alias> IN (<indented inner AQL>)``.
+
+        Used by :meth:`AlgebraVisitor.visit_ToMultiSet` for SPARQL
+        sub-SELECTs. The inner AQL block is rendered exactly as the
+        child builder finalized it (its own FOR / FILTER / SORT /
+        LIMIT / RETURN), wrapped in parentheses so ArangoDB treats
+        the result as a list expression the outer FOR can iterate.
+
+        Indentation is two spaces per line — purely cosmetic, but
+        it makes the AQL readable when emitted into EXPLAIN output
+        or written to a log. The bind-vars dict is unaffected
+        (binds were merged in :meth:`absorb_child`).
+        """
+        if not _AQL_IDENT_RE.match(row_alias):
+            raise ValueError(f"invalid FOR alias: {row_alias!r}")
+        if not inner_aql or not inner_aql.strip():
+            raise AqlEmitError(
+                "for_subquery requires a non-empty inner AQL block"
+            )
+        indented = "\n".join("  " + line for line in inner_aql.splitlines())
+        self._body_clauses.append(
+            _Clause(
+                _ClauseKind.FOR,
+                f"FOR {row_alias} IN (\n{indented}\n)",
+            )
+        )
         return self
 
     def for_attributes(

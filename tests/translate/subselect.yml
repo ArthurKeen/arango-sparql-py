@@ -1,0 +1,261 @@
+# Golden corpus for SPARQL 1.1 sub-SELECT and VALUES (``ToMultiSet``).
+#
+# Both shapes route through :func:`arango_sparql.translate.subselect.
+# emit_to_multiset`. Sub-SELECTs become ``FOR <row> IN (<inner AQL>)``
+# via a child builder; VALUES become ``FOR <row> IN @<values_bind>``
+# with the rows bound as a list of objects. In both cases the
+# inner-scope variables become ``<row>.<var>`` in the outer
+# ``var_to_expr`` map, and any shared variable that's already bound
+# by an outer pattern receives an equality FILTER to enforce the
+# SPARQL join.
+#
+# All cases run against an empty resolver
+# (``SchemaResolver.from_turtle("", default_collection="Document")``)
+# because the W3C corpus's sub-SELECT / VALUES tests overwhelmingly
+# use ad-hoc data with no schema declarations — the same configuration
+# the analyzer drives, so these goldens are a 1:1 readable analog of
+# the W3C bucket.
+
+ontology: ""
+
+cases:
+  # ---- Sub-SELECT ---------------------------------------------------
+
+  - name: subselect_simple_shared_subject
+    # Outer triple binds ``?s`` first; inner sub-SELECT projects
+    # ``?s`` too. The visitor opens the inner sub-query, binds
+    # ``row3.s`` for ``?s``, and emits an equality FILTER joining
+    # ``row3.s == doc1._uri`` — the canonical SPARQL "shared
+    # variable forces join" semantics, lowered into AQL without
+    # the BGP emitter needing to know about sub-queries.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE {
+        ?s :name ?n .
+        { SELECT ?s WHERE { ?s :age ?a } }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR row3 IN (
+        FOR doc2 IN @@c2_Document
+        RETURN { s: doc2._uri }
+      )
+      FILTER row3.s == doc1._uri
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: subselect_aggregate
+    # Inner sub-SELECT with COUNT aggregate + GROUP BY. The inner
+    # query is fully self-contained (its own FOR / FOR / FILTER /
+    # COLLECT / RETURN) and the outer query consumes the aggregate
+    # via ``row.c``. Confirms child-builder finalization correctly
+    # renders the aggregate as part of the inner block (no clauses
+    # leak into the outer).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?c WHERE {
+        ?s :name ?n .
+        { SELECT ?s (COUNT(?p) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?s }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR row6 IN (
+        FOR doc2 IN @@c2_Document
+        FOR k3 IN ATTRIBUTES(doc2, true)
+        FILTER k3 NOT IN @_p1_sys_attrs
+        COLLECT grp4 = doc2._uri WITH COUNT INTO agg5
+        RETURN { s: grp4, c: agg5 }
+      )
+      FILTER row6.s == doc1._uri
+      RETURN { s: doc1._uri, c: row6.c }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_sys_attrs":
+        - "_uri"
+
+  - name: subselect_with_limit
+    # ``ToMultiSet → Slice → Project → BGP``. The visitor unwraps
+    # the Slice to find the Project's PV, but the child visitor
+    # still walks the FULL inner subtree so LIMIT lands in the
+    # inner block (not the outer). Regression coverage for the
+    # Slice-unwrap loop in ``_emit_subselect``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE {
+        { SELECT ?s WHERE { ?s :name ?n } LIMIT 5 }
+      }
+    expected_aql: |-
+      FOR row2 IN (
+        FOR doc1 IN @@c1_Document
+        LIMIT 5
+        RETURN { s: doc1._uri }
+      )
+      RETURN { s: row2.s }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: subselect_with_order_by_limit
+    # ``ToMultiSet → Slice → OrderBy → Project → BGP``. The
+    # unwrap loop strips both Slice and OrderBy to find Project;
+    # the child visitor walks the full subtree so the inner block
+    # carries SORT + LIMIT in the correct order (SORT before
+    # LIMIT, mirroring SPARQL's evaluation semantics).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE {
+        { SELECT ?s ?n WHERE { ?s :name ?n } ORDER BY ?n LIMIT 10 }
+      }
+    expected_aql: |-
+      FOR row2 IN (
+        FOR doc1 IN @@c1_Document
+        SORT doc1.name ASC
+        LIMIT 10
+        RETURN { s: doc1._uri, n: doc1.name }
+      )
+      RETURN { s: row2.s, n: row2.n }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: subselect_with_distinct
+    # ``ToMultiSet → Distinct → Project → BGP``. Distinct sets
+    # ``state.distinct = True`` on the inner visitor, which
+    # propagates into ``_emit_projection``'s ``RETURN DISTINCT``
+    # clause. Confirms Distinct unwrap + inner DISTINCT rendering.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE {
+        { SELECT DISTINCT ?n WHERE { ?s :name ?n } }
+      }
+    expected_aql: |-
+      FOR row2 IN (
+        FOR doc1 IN @@c1_Document
+        RETURN DISTINCT { n: doc1.name }
+      )
+      RETURN { n: row2.n }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: subselect_no_shared_vars
+    # Outer projects ``?x``; inner projects ``?max``. No shared
+    # variables ⇒ no join FILTER between outer and inner; SPARQL
+    # cross-product semantics apply (every outer row paired with
+    # every inner row). The inner's ``?y`` is invisible to the
+    # outer (variable scoping is honoured).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?x ?max WHERE {
+        ?x :p ?v .
+        { SELECT (MAX(?y) AS ?max) WHERE { ?z :p ?y } }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR row4 IN (
+        FOR doc2 IN @@c2_Document
+        COLLECT AGGREGATE agg3 = MAX(doc2.p)
+        RETURN { max: agg3 }
+      )
+      RETURN { x: doc1._uri, max: row4.max }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  # ---- VALUES (inline binding data) ---------------------------------
+
+  - name: values_single_var
+    # ``VALUES ?s { :alice :bob }`` — one variable, two rows.
+    # The visitor binds the rows as a Python list-of-dicts, FORs
+    # over the bind, and joins ``row2.s == doc1._uri`` to enforce
+    # the shared-variable semantics with the outer triple.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE {
+        ?s :name ?n .
+        VALUES ?s { :alice :bob }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR row2 IN @_p1_values
+      FILTER row2.s == doc1._uri
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_values":
+        - s: "http://ex.org/alice"
+        - s: "http://ex.org/bob"
+
+  - name: values_multi_var
+    # ``VALUES (?s ?n) { (:alice "Alice") (:bob "Bob") }`` —
+    # two variables × two rows. Both ?s and ?n appear in the
+    # outer triple, so two FILTERs fire to enforce the SPARQL
+    # join. Variable iteration order is sorted by name (n
+    # before s) for PYTHONHASHSEED stability.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE {
+        ?s :name ?n .
+        VALUES (?s ?n) { (:alice "Alice") (:bob "Bob") }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR row2 IN @_p1_values
+      FILTER row2.n == doc1.name
+      FILTER row2.s == doc1._uri
+      RETURN { s: doc1._uri, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_values":
+        - n: "Alice"
+          s: "http://ex.org/alice"
+        - n: "Bob"
+          s: "http://ex.org/bob"
+
+  - name: values_with_undef
+    # ``VALUES (?s ?n) { (:alice "Alice") (:bob UNDEF) }`` —
+    # rdflib represents UNDEF as the literal Python string
+    # ``'UNDEF'``; the visitor converts that to JSON ``null`` so
+    # AQL equality joins behave per the W3C spec ("UNDEF binds
+    # to no value"). Standalone (no outer triple) so no join
+    # FILTER is needed; the inner-row vars just become available
+    # as ``row1.s`` and ``row1.n``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { VALUES (?s ?n) { (:alice "Alice") (:bob UNDEF) } }
+    expected_aql: |-
+      FOR row1 IN @_p1_values
+      RETURN { s: row1.s, n: row1.n }
+    expected_bind_vars:
+      "_p1_values":
+        - n: "Alice"
+          s: "http://ex.org/alice"
+        - n: null
+          s: "http://ex.org/bob"
+
+  - name: values_standalone_integers
+    # Integer literals (``VALUES ?x { 1 2 3 }``) round-trip as
+    # ``int`` (via ``Literal.toPython()`` ⇒ Python's ``int``,
+    # not the lexical ``"1"^^xsd:integer`` form). AQL bindings
+    # honour the type — ``row1.x`` ends up as an int, not a
+    # string, so numeric comparisons / aggregates work
+    # downstream without coercion.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?x WHERE { VALUES ?x { 1 2 3 } }
+    expected_aql: |-
+      FOR row1 IN @_p1_values
+      RETURN { x: row1.x }
+    expected_bind_vars:
+      "_p1_values":
+        - x: 1
+        - x: 2
+        - x: 3
+
+# No ``unsupported`` cases for this slice — the only refusal path
+# (empty PV in the inner Project) is unreachable from real SPARQL:
+# rdflib always populates ``Project.PV`` either from the explicit
+# ``SELECT <vars>`` list or, for ``SELECT *``, from the inner BGP's
+# discovered variables. The defensive check in ``_emit_subselect``
+# stays because rdflib could regress; it's untested-by-design.
+unsupported: []
