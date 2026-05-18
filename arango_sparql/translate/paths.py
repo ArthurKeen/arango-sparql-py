@@ -112,9 +112,16 @@ def emit_path_triple(
         _emit_inverse_path(visitor, subject, predicate, obj)
         return
     if isinstance(predicate, AlternativePath):
-        raise UnsupportedSparqlError(
-            "alternative property paths (':p|:q') are not yet supported"
-        )
+        # Desugar to a UNION of single-triple BGPs — semantics are
+        # identical (SPARQL 1.1 §18.4) and we share the two-phase
+        # union emitter so the AQL shape matches an explicit
+        # ``{ ?s :p ?o } UNION { ?s :q ?o }``. The union helper
+        # re-dispatches each arm through ``_emit_triple`` so PG /
+        # LPG / default-collection / RPT branches all compose.
+        from .union_paths import emit_alternative_path
+
+        emit_alternative_path(visitor, subject, predicate, obj)
+        return
     if isinstance(predicate, MulPath):
         raise UnsupportedSparqlError(
             f"transitive property paths (':p{predicate.mod}') are not yet supported"

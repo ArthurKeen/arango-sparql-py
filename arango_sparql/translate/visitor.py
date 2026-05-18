@@ -30,6 +30,7 @@ from .minus_exists import emit_exists_filter, emit_minus
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
 from .subselect import emit_to_multiset
+from .union_paths import emit_union
 from .variable_predicates import emit_variable_predicate_triple
 
 logger = logging.getLogger(__name__)
@@ -964,6 +965,14 @@ class AlgebraVisitor:
     # ------------------------------------------------------------------
     def visit_Minus(self, node: Any) -> Any:
         emit_minus(self, node)
+
+    # ------------------------------------------------------------------
+    # UNION — Union(p1, p2). Bag-union of two pattern's binding sets.
+    # Delegated to ``arango_sparql.translate.union_paths`` which
+    # shares its two-phase emitter with AlternativePath. PRD §6.6.
+    # ------------------------------------------------------------------
+    def visit_Union(self, node: Any) -> Any:
+        emit_union(self, node)
 
     # ------------------------------------------------------------------
     # ToMultiSet — SPARQL sub-SELECT and VALUES. Delegated to

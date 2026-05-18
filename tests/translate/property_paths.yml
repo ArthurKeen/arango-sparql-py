@@ -213,13 +213,12 @@ unsupported:
       SELECT ?s ?o WHERE { ?s :p? ?o }
     expected_error_substring: "transitive property paths (':p?') are not yet supported"
 
-  - name: alternative_path_rejected
-    # ``?s :p|:q ?o`` — needs a Union-shaped rewrite or
-    # predicate-set FILTER. Defer.
-    sparql: |
-      PREFIX : <http://ex.org/>
-      SELECT ?s ?o WHERE { ?s :p|:q ?o }
-    expected_error_substring: "alternative property paths (':p|:q') are not yet supported"
+  # NOTE: ``alternative_path_rejected`` was removed once
+  # AlternativePath (``:p|:q``) shipped via
+  # ``arango_sparql.translate.union_paths.emit_alternative_path``;
+  # see tests/translate/union_paths.yml + the byte-for-byte
+  # equivalence golden in test_translate_union_paths_goldens.py
+  # for active coverage.
 
   - name: negated_path_rejected
     # ``?s !:p ?o`` — predicate negation. Defer.

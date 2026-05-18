@@ -491,6 +491,59 @@ class AqlQueryBuilder:
         self._coll_counter = child._coll_counter
         return inner_aql
 
+    def for_union(
+        self,
+        row_alias: str,
+        arm_aqls: list[str],
+    ) -> AqlQueryBuilder:
+        """Emit ``FOR <row_alias> IN UNION((<arm1>), (<arm2>), …)``.
+
+        Used by :mod:`arango_sparql.translate.union_paths` for SPARQL
+        ``UNION`` and for property-path ``AlternativePath`` (``:p|:q``).
+        Each arm is a complete AQL block (its own FOR / FILTER / SORT /
+        LIMIT / RETURN) that the union helper produced via a child
+        builder; wrapping each in ``(...)`` makes it an expression
+        that evaluates to a list, which is what AQL's ``UNION`` /
+        ``UNION_DISTINCT`` consume.
+
+        Why ``UNION`` (not ``UNION_DISTINCT``):
+
+        * SPARQL 1.1 §18.5 defines ``UNION`` over multisets — duplicate
+          solutions are preserved. ``UNION_DISTINCT`` would collapse
+          them, violating bag semantics. Callers that want distinct
+          rows wrap the surrounding SELECT in ``DISTINCT`` (which the
+          visitor lowers to ``RETURN DISTINCT``), keeping the AQL
+          plan aligned with the SPARQL spec one level up.
+
+        Indentation is two spaces per arm line for EXPLAIN-output
+        readability, matching :meth:`for_subquery`.
+        """
+        if not _AQL_IDENT_RE.match(row_alias):
+            raise ValueError(f"invalid FOR alias: {row_alias!r}")
+        if len(arm_aqls) < 2:
+            raise AqlEmitError(
+                f"for_union requires at least 2 arms, got {len(arm_aqls)}"
+            )
+        for i, arm in enumerate(arm_aqls):
+            if not arm or not arm.strip():
+                raise AqlEmitError(
+                    f"for_union arm {i} is empty; every UNION arm must "
+                    f"be a non-empty AQL block"
+                )
+        arm_blocks = ",\n".join(
+            "(\n"
+            + "\n".join("  " + line for line in arm.splitlines())
+            + "\n)"
+            for arm in arm_aqls
+        )
+        self._body_clauses.append(
+            _Clause(
+                _ClauseKind.FOR,
+                f"FOR {row_alias} IN UNION(\n{arm_blocks}\n)",
+            )
+        )
+        return self
+
     def for_values(self, row_alias: str, values_bind: str) -> AqlQueryBuilder:
         """Emit ``FOR <row_alias> IN <values_bind>`` for SPARQL VALUES.
 

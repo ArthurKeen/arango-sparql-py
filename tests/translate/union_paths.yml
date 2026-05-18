@@ -1,0 +1,168 @@
+# Golden corpus for SPARQL 1.1 `UNION` and `AlternativePath`
+# (`arango_sparql.translate.union_paths`).
+#
+# Both constructs lower to the same AQL recipe via the two-phase
+# emitter in :func:`_emit_union_of_arms`:
+#
+# 1. **Probe** each arm in a throwaway child to discover its bound
+#    variables. Probes never get absorbed so the parent's counters
+#    stay put for phase 2 to re-spawn with the same seeded counters.
+# 2. **Emit** each arm again with the full union-schema RETURN
+#    (vars not bound in this arm get JSON ``null``). Absorb each
+#    in order; the parent's counters advance per absorption so
+#    each arm's aliases are disjoint.
+# 3. Outer scope emits ``FOR <row> IN UNION((arm1), (arm2), …)``
+#    and binds each union variable to ``row.<var>`` — with
+#    equality FILTERs for shared variables, matching the
+#    ``ToMultiSet`` and ``MINUS`` recipes.
+#
+# AlternativePath (``:p|:q``) is desugared to a UNION of single-
+# triple BGPs via :func:`emit_alternative_path`, sharing the
+# helper above so its AQL output is byte-for-byte identical to
+# the equivalent explicit ``{ ?s :p ?o } UNION { ?s :q ?o }``.
+
+ontology: ""
+
+cases:
+  # ---- UNION --------------------------------------------------------
+
+  - name: union_basic_shared_vars
+    # Both arms bind ``?s`` and ``?o``. The union schema is
+    # ``{o, s}`` (sorted by name for PYTHONHASHSEED stability);
+    # each arm RETURNs the same shape with no nulls. Outer scope
+    # iterates the union and binds both vars from ``row3``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { { ?s :p ?o } UNION { ?s :q ?o } }
+    expected_aql: |-
+      FOR row3 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1.p, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        RETURN { o: doc2.q, s: doc2._uri }
+      )
+      )
+      RETURN { s: row3.s, o: row3.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: union_disjoint_vars_per_arm
+    # ``?s`` is only in arm1, ``?z`` is only in arm2, ``?o`` is in
+    # both. SPARQL semantics: ``?s`` is UNDEF in arm2 rows, ``?z``
+    # is UNDEF in arm1 rows. The visitor emits explicit ``null``
+    # for the missing slot in each arm's RETURN so every UNION row
+    # carries the full ``{o, s, z}`` schema — AQL accesses to a
+    # null attribute behave correctly downstream.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o ?z WHERE { { ?s :p ?o } UNION { ?z :q ?o } }
+    expected_aql: |-
+      FOR row3 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1.p, s: doc1._uri, z: null }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        RETURN { o: doc2.q, s: null, z: doc2._uri }
+      )
+      )
+      RETURN { s: row3.s, o: row3.o, z: row3.z }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: union_inside_outer_bgp
+    # The outer BGP binds ``?s``; the UNION then references the
+    # same ``?s`` in both arms. The outer's ``var_to_expr`` is
+    # pre-seeded into each child, so each arm's BGP emitter sees
+    # ``?s`` is already bound and emits ``FILTER doc.<n>._uri ==
+    # doc1._uri`` instead of opening a free FOR. AQL's lexical
+    # scoping makes the outer ``doc1`` alias visible inside each
+    # arm's ``(...)`` block, so the FILTER is valid.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?o WHERE {
+        ?s :name ?n .
+        { ?s :p ?o } UNION { ?s :q ?o }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR row4 IN UNION(
+      (
+        FOR doc2 IN @@c2_Document
+        FILTER doc2._uri == doc1._uri
+        RETURN { o: doc2.p }
+      ),
+      (
+        FOR doc3 IN @@c3_Document
+        FILTER doc3._uri == doc1._uri
+        RETURN { o: doc3.q }
+      )
+      )
+      RETURN { s: doc1._uri, n: doc1.name, o: row4.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "@c3_Document": "Document"
+
+  # ---- AlternativePath ----------------------------------------------
+
+  - name: altpath_two_arms
+    # ``?s :p|:q ?o`` — desugars to UNION of two single-triple BGPs
+    # via :func:`emit_alternative_path`. AQL output must be byte-
+    # for-byte identical to the explicit
+    # ``{ ?s :p ?o } UNION { ?s :q ?o }`` (case
+    # ``union_basic_shared_vars`` above) — regression coverage for
+    # the desugaring path.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p|:q ?o }
+    expected_aql: |-
+      FOR row3 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1.p, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        RETURN { o: doc2.q, s: doc2._uri }
+      )
+      )
+      RETURN { s: row3.s, o: row3.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: altpath_three_arms
+    # ``?s :p|:q|:r ?o`` — 3-way alternative. The two-phase
+    # emitter generalises to N arms (``len(arm_drivers) >= 2``),
+    # so the AQL grows one ``(arm)`` per alternative; no per-arm-
+    # count special casing needed.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p|:q|:r ?o }
+    expected_aql: |-
+      FOR row4 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1.p, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        RETURN { o: doc2.q, s: doc2._uri }
+      ),
+      (
+        FOR doc3 IN @@c3_Document
+        RETURN { o: doc3.r, s: doc3._uri }
+      )
+      )
+      RETURN { s: row4.s, o: row4.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "@c3_Document": "Document"
