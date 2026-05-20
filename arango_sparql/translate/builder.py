@@ -544,6 +544,58 @@ class AqlQueryBuilder:
         )
         return self
 
+    def has_for_clause(self) -> bool:
+        """``True`` iff at least one FOR clause has been emitted into
+        the current body.
+
+        Used by :meth:`AlgebraVisitor.visit_BGP` to decide whether
+        an empty BGP needs to open a degenerate one-row FOR
+        (SPARQL §18.5 says the empty BGP is join's identity, so
+        if a sibling pattern already opened a FOR the empty BGP
+        is a no-op; only when the empty BGP is the WHOLE pattern
+        do we need to manufacture a scope opener).
+        """
+        return any(c.kind == _ClauseKind.FOR for c in self._body_clauses)
+
+    def for_inline(
+        self,
+        row_alias: str,
+        inline_expr: str,
+    ) -> AqlQueryBuilder:
+        """Emit ``FOR <row_alias> IN <inline_expr>``.
+
+        Used by :meth:`AlgebraVisitor.visit_BGP` to honour SPARQL's
+        empty-BGP semantic (a single empty solution mapping) by
+        opening a degenerate one-row FOR over a constant list
+        like ``[1]``. The row alias is never referenced
+        downstream — it's purely a scope opener so subsequent
+        Extend / Filter / Project clauses have a FOR to attach
+        to, satisfying AQL's "every body clause needs an
+        enclosing FOR" invariant.
+
+        Unlike :meth:`for_values` (which binds a list-of-objects
+        via ``@<name>`` parameter), this method splices the AQL
+        expression directly — so the caller is responsible for
+        constructing a literal AQL value that's safe to inline.
+        The single intended use is empty-BGP opening with the
+        literal ``[1]``; do not use this for user-controlled
+        data (the bind-vars path via :meth:`for_values` or
+        :meth:`bind` is the safe one).
+        """
+        if not _AQL_IDENT_RE.match(row_alias):
+            raise ValueError(f"invalid FOR alias: {row_alias!r}")
+        if not inline_expr or not inline_expr.strip():
+            raise AqlEmitError(
+                "for_inline requires a non-empty AQL expression"
+            )
+        self._body_clauses.append(
+            _Clause(
+                _ClauseKind.FOR,
+                f"FOR {row_alias} IN {inline_expr}",
+            )
+        )
+        return self
+
     def for_values(self, row_alias: str, values_bind: str) -> AqlQueryBuilder:
         """Emit ``FOR <row_alias> IN <values_bind>`` for SPARQL VALUES.
 

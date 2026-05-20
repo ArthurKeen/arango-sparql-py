@@ -953,8 +953,23 @@ class AlgebraVisitor:
     # pattern and the cross-product gets pruned to the SPARQL join.
     # ------------------------------------------------------------------
     def visit_Join(self, node: Any) -> Any:
-        self.visit(node.p1)
-        self.visit(node.p2)
+        # rdflib's algebra often pairs a Builtin_EXISTS / probe
+        # subquery's inner pattern as ``Join(BGP[], BGP[triples])``
+        # where the empty-BGP appears as p1. Per SPARQL 1.1 §18.5
+        # the empty BGP is join's identity, but our ``visit_BGP``
+        # has to manufacture a degenerate ``FOR _ IN [1]`` opener
+        # when no other FOR has been emitted yet (otherwise an
+        # empty WHERE / BIND-only query has nowhere to attach its
+        # LETs and projection). Walking p2 first when p1 is the
+        # empty BGP lets the non-empty side open its FOR first;
+        # the empty BGP's visit then becomes a true no-op
+        # (``has_for_clause()`` is true) and we keep the same
+        # AQL shape as if the Join hadn't been there.
+        p1, p2 = node.p1, node.p2
+        if _is_empty_bgp(p1) and not _is_empty_bgp(p2):
+            p1, p2 = p2, p1
+        self.visit(p1)
+        self.visit(p2)
 
     # ------------------------------------------------------------------
     # MINUS — Minus(p1, p2). Outer rows whose shared variables are
@@ -990,6 +1005,41 @@ class AlgebraVisitor:
     # ------------------------------------------------------------------
     def visit_BGP(self, node: Any) -> Any:
         triples = list(getattr(node, "triples", []) or [])
+        if not triples:
+            # SPARQL 1.1 §18.5: the empty BGP is the *identity* for
+            # join — it produces a single solution mapping with no
+            # bindings. AQL has no native concept of an "empty
+            # iteration"; every FILTER / LET / RETURN must attach to
+            # at least one FOR.
+            #
+            # Two cases to honour the empty-BGP semantic correctly:
+            #
+            # * If no FOR has been emitted yet, this empty BGP is
+            #   the *whole pattern* (or at least the only
+            #   binding-producing side seen so far). Open a
+            #   degenerate FOR over ``[1]`` so downstream Extend /
+            #   Filter / Project clauses have somewhere to attach.
+            # * Otherwise a sibling pattern (Join's other arm,
+            #   the outer pattern when this BGP is under MINUS /
+            #   EXISTS, etc.) has already opened a FOR. The empty
+            #   BGP is join's identity in that case — emit
+            #   nothing, since adding a degenerate ``FOR x IN [1]``
+            #   would Cartesian-product against the existing FORs
+            #   and inflate the AQL plan (correct results, but
+            #   wasted work and visible regressions in the pinned
+            #   AQL of MINUS / EXISTS / Union goldens).
+            #
+            # Concretely, this unblocks ``BIND(<expr> AS ?x)``-only
+            # and ``SELECT (<expr> AS ?x) WHERE { }`` shapes where
+            # the projection consists entirely of constant or
+            # BIND-derived expressions with no triple matching, while
+            # staying a no-op when an empty BGP appears under a Join,
+            # MINUS, EXISTS, or Union arm with a non-empty sibling.
+            if not self.builder.has_for_clause():
+                empty_alias = self.builder.fresh_alias(prefix="empty")
+                self.builder.for_inline(empty_alias, "[1]")
+            return
+
         # Order matters here: a type pattern (``?s a :Person``) carries
         # the strongest hint about which physical collection ``?s`` lives
         # in, so we want to visit those first and bind ``?s`` to the
@@ -1717,6 +1767,75 @@ class AlgebraVisitor:
             # MINUS, NOT EXISTS does NOT short-circuit when the
             # shared-variable set is empty (SPARQL 1.1 §17.4.1.10).
             return emit_exists_filter(self, expr, negated=True)
+        if name == "Builtin_IF":
+            # ``IF(cond, then, else)`` — SPARQL 1.1 §17.4.1.5.
+            # AQL has a ternary expression that maps 1:1.
+            # rdflib stores the three args as ``arg1`` / ``arg2`` /
+            # ``arg3``; we wrap each operand in parens so a future
+            # precedence change in the surrounding expression
+            # doesn't reach inside and bind the wrong operands
+            # together. Wrapping the whole ternary is mandatory
+            # because AQL's ``?:`` binds looser than ``&&`` /
+            # ``||``.
+            cond = self._translate_expr(expr.arg1)
+            then_expr = self._translate_expr(expr.arg2)
+            else_expr = self._translate_expr(expr.arg3)
+            return f"(({cond}) ? ({then_expr}) : ({else_expr}))"
+        if name == "Builtin_CONCAT":
+            # ``CONCAT(a, b, c, …)`` — SPARQL 1.1 §17.4.2.4.
+            # rdflib stores the variadic args as a Python list on
+            # ``.arg`` (NOT ``.arg1`` / ``.arg2`` like binary
+            # builtins). AQL's ``CONCAT`` is also variadic and
+            # coerces non-strings via TO_STRING semantics, so the
+            # mapping is direct.
+            args = [self._translate_expr(a) for a in expr.arg]
+            return f"CONCAT({', '.join(args)})"
+        if name == "Builtin_LANG":
+            # ``LANG(literal)`` — SPARQL 1.1 §17.4.2.3 returns the
+            # language tag of an RDF literal (empty string for
+            # untagged literals, error for non-literals).
+            #
+            # In our PG / LPG storage model, literals are bare
+            # primitives (strings / numbers / booleans) with no
+            # carrier for language metadata. There is no place to
+            # store the language tag, so every translated query
+            # gets the same answer: the empty string. This is
+            # spec-conformant for plain literals (which is what
+            # PG / LPG storage produces) but means W3C tests that
+            # rely on lang-tagged data in storage will pass
+            # translation while returning the conservative
+            # "no language" result at runtime — that's a known
+            # storage-model limitation tracked in the PRD §6.6
+            # row, not a translation bug.
+            return '""'
+        if name == "Builtin_LANGMATCHES":
+            # ``LANGMATCHES(langTag, range)`` — SPARQL 1.1
+            # §17.4.2.3 / RFC 4647. Returns true iff the lang tag
+            # matches the language range; range ``"*"`` matches
+            # any non-empty tag, otherwise the match is
+            # case-insensitive on either the full tag or the tag
+            # followed by ``"-"`` (so ``en-GB`` matches range
+            # ``en`` but ``english`` does not match ``en``).
+            #
+            # In our storage model ``Builtin_LANG`` always yields
+            # ``""`` so ``LANGMATCHES`` will always be ``false``
+            # at runtime — but the translation must still produce
+            # spec-compliant AQL so a future storage model that
+            # CAN carry lang tags will get correct semantics for
+            # free.
+            lang_tag = self._translate_expr(expr.arg1)
+            range_expr = self._translate_expr(expr.arg2)
+            # ``LIKE`` would be cleaner than the prefix dance, but
+            # RFC 4647's "extended language range" semantics
+            # require case-insensitive comparison + special-case
+            # ``"*"``, which LIKE can't model without coercion.
+            return (
+                f"({lang_tag} != '' && "
+                f"({range_expr} == '*' || "
+                f"LOWER({lang_tag}) == LOWER({range_expr}) || "
+                f"STARTS_WITH(LOWER({lang_tag}), "
+                f"CONCAT(LOWER({range_expr}), '-'))))"
+            )
 
         raise UnsupportedSparqlError(
             f"FILTER expression node {name!r} is not yet supported (see "
@@ -1790,6 +1909,23 @@ def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
     # Stable secondary so two triples with the same primary preserve
     # rdflib's order — keeps golden output deterministic.
     return (primary, 0)
+
+
+def _is_empty_bgp(node: Any) -> bool:
+    """``True`` iff *node* is a ``BGP`` algebra node with zero
+    triples.
+
+    Used by :meth:`AlgebraVisitor.visit_Join` to detect the
+    common ``Join(BGP[], BGP[triples])`` shape rdflib produces
+    for ``Builtin_EXISTS`` / probe inner patterns, so the
+    non-empty arm walks first and the empty arm becomes a true
+    no-op (``visit_BGP``'s degenerate-FOR opener only fires when
+    no other FOR has been emitted yet).
+    """
+    return (
+        getattr(node, "name", None) == "BGP"
+        and not getattr(node, "triples", None)
+    )
 
 
 def _collect_bgp_triples(node: Any) -> list[tuple[Any, Any, Any]]:

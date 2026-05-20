@@ -1,0 +1,152 @@
+# Golden corpus for the SPARQL 1.1 FILTER / projection builtins
+# added in the v0.7 slice:
+#
+# * ``Builtin_IF(cond, then, else)``     — SPARQL §17.4.1.5
+# * ``Builtin_CONCAT(a, b, c, …)``       — SPARQL §17.4.2.4
+# * ``Builtin_LANG(literal)``            — SPARQL §17.4.2.3
+# * ``Builtin_LANGMATCHES(tag, range)``  — SPARQL §17.4.2.3 / RFC 4647
+#
+# Plus the empty-BGP path that empty ``WHERE { }`` /
+# ``BIND``-only queries trigger: ``visit_BGP`` opens a degenerate
+# ``FOR <empty_alias> IN [1]`` so Extend / Filter / Project have
+# somewhere to attach.
+#
+# ``LANG`` always emits the AQL literal ``""`` — in our PG / LPG
+# storage model literals are bare primitives with no carrier for
+# language metadata, so ``LANG(?v) = ""`` is the spec-conformant
+# result for the literals our storage can produce. ``LANGMATCHES``
+# then folds through the empty-string case and always evaluates
+# false at runtime — the AQL is still correct (a future
+# lang-tag-aware storage will get correct semantics for free).
+
+ontology: ""
+
+cases:
+  # ---- Builtin_IF ----------------------------------------------------
+
+  - name: if_basic_ternary
+    # ``IF(?n > 0, "pos", "neg")`` — direct map to AQL's ``?:``.
+    # Every operand is wrapped in parens so the precedence of the
+    # surrounding expression can never bind into the wrong arm,
+    # and the whole ternary is wrapped because AQL's ``?:`` binds
+    # looser than ``&&`` / ``||``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s (IF(?n > 0, "pos", "neg") AS ?sign) WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = (((doc1.n > @_p1)) ? (@_p2) : (@_p3))
+      RETURN { s: doc1._uri, sign: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": 0
+      "_p2": "pos"
+      "_p3": "neg"
+
+  - name: if_inside_filter
+    # ``FILTER (IF(?n > 0, true, false))`` — the ternary is itself
+    # the FILTER expression. The visitor wraps the result in the
+    # standard ``FILTER (…)`` shape; no extra parens needed beyond
+    # the ones the ternary already contributes.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :n ?n . FILTER (IF(?n > 0, true, false)) }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER (((doc1.n > @_p1)) ? (@_p2) : (@_p3))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": 0
+      "_p2": true
+      "_p3": false
+
+  # ---- Builtin_CONCAT ------------------------------------------------
+
+  - name: concat_three_args
+    # Variadic CONCAT — rdflib stores the args as a Python list on
+    # ``.arg`` (NOT ``.arg1`` / ``.arg2`` like binary builtins).
+    # AQL's CONCAT is variadic too, so the mapping is a direct
+    # comma-join of translated operands.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (CONCAT(?a, "-", ?b) AS ?c) WHERE { ?s :a ?a ; :b ?b }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = CONCAT(doc1.a, @_p1, doc1.b)
+      RETURN { c: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "-"
+
+  # ---- Builtin_LANG / LANGMATCHES ------------------------------------
+
+  - name: langmatches_specific_tag
+    # ``LANGMATCHES(LANG(?n), "en")`` — LANG always emits ``""`` in
+    # our storage model (no lang tag carrier). The LANGMATCHES
+    # expansion implements RFC 4647: ``range == "*"`` matches any
+    # non-empty tag; otherwise case-insensitive equality OR prefix
+    # match on ``tag-...``. With ``""`` in the tag slot the whole
+    # filter always evaluates false at runtime, which is the
+    # spec-conformant answer for tag-less literals.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :n ?n . FILTER LANGMATCHES(LANG(?n), "en") }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER ("" != '' && (@_p1 == '*' || LOWER("") == LOWER(@_p1) || STARTS_WITH(LOWER(""), CONCAT(LOWER(@_p1), '-'))))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "en"
+
+  - name: langmatches_wildcard
+    # ``LANGMATCHES(LANG(?n), "*")`` — the "any non-empty tag"
+    # form. Still evaluates false in our storage model because the
+    # ``LANG()`` slot is ``""``, but the AQL must encode the
+    # wildcard branch (``range == '*'``) faithfully.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :n ?n . FILTER LANGMATCHES(LANG(?n), "*") }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER ("" != '' && (@_p1 == '*' || LOWER("") == LOWER(@_p1) || STARTS_WITH(LOWER(""), CONCAT(LOWER(@_p1), '-'))))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "*"
+
+  # ---- Empty-BGP path ------------------------------------------------
+
+  - name: empty_bgp_bind_only
+    # ``BIND(<constant-expr> AS ?x)`` with no surrounding triples
+    # — SPARQL §18.5 says the empty BGP produces a single empty
+    # solution mapping (join's identity). AQL has no native empty
+    # iteration; we open ``FOR empty1 IN [1]`` so the Extend's LET
+    # and the projection's RETURN have somewhere to attach. The
+    # empty-alias value is never referenced.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?x WHERE { BIND(LANGMATCHES('en', 'en') AS ?x) }
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = (@_p1 != '' && (@_p2 == '*' || LOWER(@_p1) == LOWER(@_p2) || STARTS_WITH(LOWER(@_p1), CONCAT(LOWER(@_p2), '-'))))
+      RETURN { x: bv2 }
+    expected_bind_vars:
+      "_p1": "en"
+      "_p2": "en"
+
+  - name: empty_where_constant_projection
+    # ``SELECT (1+2 AS ?x) WHERE { }`` — projection-only query
+    # over an empty pattern. Same empty-BGP recipe; here the
+    # projection expression is a pure constant.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (1+2 AS ?x) WHERE { }
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = (@_p1 + @_p2)
+      RETURN { x: bv2 }
+    expected_bind_vars:
+      "_p1": 1
+      "_p2": 2
