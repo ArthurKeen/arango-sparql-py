@@ -100,6 +100,7 @@ class _BindingState:
     distinct: bool = False
 
     path_var_counter: int = 0
+    bgp_counter: int = 0
     """Monotone counter for intermediate variables minted during
     property-path expansion (see :mod:`arango_sparql.translate.paths`).
     Lives on the binding state — not on the builder — because the
@@ -1005,6 +1006,27 @@ class AlgebraVisitor:
     # ------------------------------------------------------------------
     def visit_BGP(self, node: Any) -> Any:
         triples = list(getattr(node, "triples", []) or [])
+
+        # SPARQL §17.4.1.10 / §18.5: a blank node in a query
+        # pattern is an *existential variable scoped to the BGP*.
+        # rdflib does not auto-substitute these — they survive
+        # into the algebra as ``BNode`` terms in the subject /
+        # object slot. Treat each unique BNode label within this
+        # BGP as a freshly-minted internal Variable so the
+        # downstream emitters see the standard variable
+        # machinery (anchor a FOR, bind into ``var_to_expr``,
+        # equality-join when the same label appears twice).
+        #
+        # Scope is per-BGP: if the same ``_:b0`` label appears
+        # in a sibling BGP (e.g. another arm of UNION), each BGP
+        # gets its own substitution — that's what
+        # ``_bn_<bgp_counter>_<label>`` encodes. The
+        # underscore-sigil naming follows the same convention as
+        # property-path intermediate variables (``_path_<n>``),
+        # so user-supplied SPARQL variable names can't collide.
+        if triples:
+            triples = self._substitute_bnode_existentials(triples)
+
         if not triples:
             # SPARQL 1.1 §18.5: the empty BGP is the *identity* for
             # join — it produces a single solution mapping with no
@@ -1053,6 +1075,55 @@ class AlgebraVisitor:
     # ------------------------------------------------------------------
     # Internal: property-path intermediate-variable minting
     # ------------------------------------------------------------------
+    def _substitute_bnode_existentials(
+        self, triples: list[tuple[Any, Any, Any]]
+    ) -> list[tuple[Any, Any, Any]]:
+        """Replace every ``BNode`` term in *triples* with a freshly-
+        minted internal ``Variable`` per the SPARQL §17.4.1.10 /
+        §18.5 rule that blank nodes in query patterns are
+        existentially-quantified variables scoped to the BGP.
+
+        Scope is THIS BGP only — each call gets its own
+        ``label → Variable`` mapping. The same ``_:b0`` label
+        appearing across two triples of the same BGP maps to the
+        ONE fresh variable (so the implicit join fires); the same
+        label appearing in a sibling BGP gets a different fresh
+        variable (so cross-BGP joins do NOT fire).
+
+        The sigil ``_bn_<bgp_id>_<label>`` is private by
+        construction — user SPARQL variable names can't legally
+        start with ``_bn_`` and the BGP counter advances per
+        call so a label that appears in two BGPs gets two
+        distinct internal names.
+
+        Predicate-position BNodes are deliberately left alone:
+        they're invalid SPARQL syntactically (rdflib's parser
+        rejects them) and we'd rather surface that as a
+        downstream "predicate type unsupported" error than
+        silently rewrite to a variable predicate.
+        """
+        self.state.bgp_counter += 1
+        bgp_id = self.state.bgp_counter
+        label_to_var: dict[str, Variable] = {}
+
+        def _convert(term: Any) -> Any:
+            if not isinstance(term, BNode):
+                return term
+            label = str(term)
+            if label not in label_to_var:
+                label_to_var[label] = Variable(f"_bn_{bgp_id}_{label}")
+            return label_to_var[label]
+
+        out: list[tuple[Any, Any, Any]] = []
+        for s, p, o in triples:
+            # Only subject + object slots get the substitution;
+            # predicate-position BNodes fall through to the
+            # downstream "unsupported predicate" error path.
+            new_s = _convert(s)
+            new_o = _convert(o)
+            out.append((new_s, p, new_o))
+        return out
+
     def _fresh_path_var(self) -> Variable:
         """Mint a fresh ``Variable`` for property-path intermediate joins.
 
@@ -1836,6 +1907,182 @@ class AlgebraVisitor:
                 f"STARTS_WITH(LOWER({lang_tag}), "
                 f"CONCAT(LOWER({range_expr}), '-'))))"
             )
+        if name == "Builtin_DATATYPE":
+            # ``DATATYPE(literal)`` — SPARQL §17.4.2.2. Returns the
+            # XSD datatype IRI of a typed literal; ``xsd:string``
+            # for plain literals; raises a type error on
+            # non-literals (we degrade to ``null`` to avoid
+            # blowing up the whole query plan).
+            #
+            # AQL doesn't carry RDF-style typing, so we synthesise
+            # the answer from the Python runtime type of the
+            # stored value: bool → xsd:boolean, number →
+            # xsd:integer (we don't distinguish int vs float in
+            # PG storage; this is a known fidelity gap), string
+            # → xsd:string, anything else → null.
+            arg = self._translate_expr(expr.arg)
+            return (
+                f"(IS_BOOL({arg}) ? "
+                f"\"http://www.w3.org/2001/XMLSchema#boolean\" : "
+                f"(IS_NUMBER({arg}) ? "
+                f"\"http://www.w3.org/2001/XMLSchema#integer\" : "
+                f"(IS_STRING({arg}) ? "
+                f"\"http://www.w3.org/2001/XMLSchema#string\" : "
+                f"null)))"
+            )
+        if name == "Builtin_REPLACE":
+            # ``REPLACE(text, pattern, replacement, flags?)`` —
+            # SPARQL §17.4.2.16. AQL's ``REGEX_REPLACE`` takes
+            # text, pattern, replacement, and an optional
+            # caseInsensitive boolean — direct map. Unsupported
+            # flags ('s', 'm', 'x') surface as a builder warning
+            # so the operator knows what was dropped (same
+            # treatment ``Builtin_REGEX`` already uses).
+            text = self._translate_expr(expr.arg)
+            pattern = self._translate_expr(expr.pattern)
+            replacement = self._translate_expr(expr.replacement)
+            flags_node = expr.get("flags")
+            flag_str = ""
+            if flags_node is not None:
+                flag_str = (
+                    flags_node.toPython()
+                    if isinstance(flags_node, Literal)
+                    else str(flags_node)
+                )
+            case_insensitive = "true" if "i" in flag_str.lower() else "false"
+            unsupported_flags = set(flag_str.lower()) - {"i", ""}
+            if unsupported_flags:
+                self.builder.warn(
+                    code="W_REGEX_FLAGS_DROPPED",
+                    message=(
+                        f"REPLACE flags {''.join(sorted(unsupported_flags))!r} "
+                        f"are not supported by AQL REGEX_REPLACE and were ignored"
+                    ),
+                )
+            return f"REGEX_REPLACE({text}, {pattern}, {replacement}, {case_insensitive})"
+        if name == "Builtin_STRDT":
+            # ``STRDT(str, datatype-iri)`` — SPARQL §17.4.2.5.
+            # Constructs a typed literal. In our PG/LPG model
+            # literals are bare primitives without a datatype
+            # carrier, so we faithfully return the lexical form
+            # (the string). A future RDF-typed storage layer can
+            # override this to attach the datatype.
+            return self._translate_expr(expr.arg1)
+        if name == "Builtin_STRLANG":
+            # ``STRLANG(str, lang-tag)`` — SPARQL §17.4.2.5.
+            # Constructs a language-tagged literal. PG/LPG model
+            # has no language-tag carrier, so we return the
+            # bare lexical form (matches the ``Builtin_LANG``
+            # contract that always emits ``""``).
+            return self._translate_expr(expr.arg1)
+        if name == "Builtin_STRBEFORE":
+            # ``STRBEFORE(str, sep)`` — substring up to (but not
+            # including) the first occurrence of ``sep``, or ``""``
+            # if ``sep`` isn't found. AQL has no native operator;
+            # we splice via FIND_FIRST + SUBSTRING with a
+            # not-found guard.
+            a = self._translate_expr(expr.arg1)
+            b = self._translate_expr(expr.arg2)
+            return (
+                f"(FIND_FIRST({a}, {b}) >= 0 ? "
+                f"SUBSTRING({a}, 0, FIND_FIRST({a}, {b})) : "
+                f'"")'
+            )
+        if name == "Builtin_STRAFTER":
+            # ``STRAFTER(str, sep)`` — substring after the first
+            # occurrence of ``sep``, or ``""`` if not found.
+            a = self._translate_expr(expr.arg1)
+            b = self._translate_expr(expr.arg2)
+            return (
+                f"(FIND_FIRST({a}, {b}) >= 0 ? "
+                f"SUBSTRING({a}, FIND_FIRST({a}, {b}) + LENGTH({b})) : "
+                f'"")'
+            )
+        if name == "Builtin_ENCODE_FOR_URI":
+            # ``ENCODE_FOR_URI(str)`` — URL-encode reserved chars.
+            # AQL has ``URL_ENCODE`` which implements RFC 3986
+            # percent-encoding.
+            return f"URL_ENCODE({self._translate_expr(expr.arg)})"
+        if name == "Builtin_ABS":
+            return f"ABS({self._translate_expr(expr.arg)})"
+        if name == "Builtin_CEIL":
+            return f"CEIL({self._translate_expr(expr.arg)})"
+        if name == "Builtin_FLOOR":
+            return f"FLOOR({self._translate_expr(expr.arg)})"
+        if name == "Builtin_ROUND":
+            return f"ROUND({self._translate_expr(expr.arg)})"
+        if name == "Builtin_NOW":
+            # AQL ``DATE_NOW()`` returns ms since epoch as an
+            # integer; SPARQL's NOW() expects an xsd:dateTime
+            # string. ``DATE_ISO8601`` of DATE_NOW gives the right
+            # lexical shape.
+            return "DATE_ISO8601(DATE_NOW())"
+        if name == "Builtin_YEAR":
+            return f"DATE_YEAR({self._translate_expr(expr.arg)})"
+        if name == "Builtin_MONTH":
+            return f"DATE_MONTH({self._translate_expr(expr.arg)})"
+        if name == "Builtin_DAY":
+            return f"DATE_DAY({self._translate_expr(expr.arg)})"
+        if name == "Builtin_HOURS":
+            return f"DATE_HOUR({self._translate_expr(expr.arg)})"
+        if name == "Builtin_MINUTES":
+            return f"DATE_MINUTE({self._translate_expr(expr.arg)})"
+        if name == "Builtin_SECONDS":
+            return f"DATE_SECOND({self._translate_expr(expr.arg)})"
+        if name == "Builtin_MD5":
+            return f"MD5({self._translate_expr(expr.arg)})"
+        if name == "Builtin_SHA1":
+            return f"SHA1({self._translate_expr(expr.arg)})"
+        if name == "Builtin_SHA256":
+            # AQL has no native SHA256 builtin in older versions;
+            # SHA512 is universally available. Truncating SHA512
+            # to 256 bits is not a valid SHA256 substitute, so we
+            # surface UnsupportedSparqlError rather than silently
+            # emit a wrong hash. Tests that need SHA256 will
+            # XFAIL at translation; live execution would catch a
+            # silent mismatch as a worse failure mode.
+            raise UnsupportedSparqlError(
+                "Builtin_SHA256 is not supported (AQL lacks a "
+                "native SHA-256 hash; use SHA-512 or MD5 instead)"
+            )
+        if name == "Builtin_SHA512":
+            return f"SHA512({self._translate_expr(expr.arg)})"
+        if name == "Builtin_isURI" or name == "Builtin_isIRI":
+            # SPARQL §17.4.2.1. URIs are stored as strings whose
+            # lexical form is a valid IRI (typically starts with
+            # ``http://`` / ``urn:`` / ``mailto:``). In our PG
+            # model the canonical place a URI shows up is via
+            # ``doc._uri`` — and other strings are literals. The
+            # tightest portable check is "string that starts with
+            # an IRI scheme prefix"; we approximate by checking
+            # that the value is a string containing ``://`` or
+            # starting with ``urn:`` / ``mailto:``.
+            arg = self._translate_expr(expr.arg)
+            return (
+                f"(IS_STRING({arg}) && "
+                f"(CONTAINS({arg}, '://') || "
+                f"STARTS_WITH({arg}, 'urn:') || "
+                f"STARTS_WITH({arg}, 'mailto:')))"
+            )
+        if name == "Builtin_isBLANK":
+            # Blank nodes serialise with a ``_:`` prefix in our
+            # model (matches the RPT skolemisation recipe in
+            # PRD §6.6). A string starting with ``_:`` is a
+            # blank node.
+            arg = self._translate_expr(expr.arg)
+            return f"(IS_STRING({arg}) && STARTS_WITH({arg}, '_:'))"
+        if name == "Builtin_isNUMERIC":
+            return f"IS_NUMBER({self._translate_expr(expr.arg)})"
+        if name == "Builtin_COALESCE":
+            # ``COALESCE(a, b, c, …)`` — SPARQL §17.4.1.3 returns
+            # the first arg whose evaluation doesn't raise. AQL's
+            # ``COALESCE`` returns the first non-null arg, which
+            # is the same contract once we treat unbound → null
+            # (the convention everywhere else in the visitor).
+            # rdflib stores variadic args as a list on ``.arg``
+            # (same shape as ``Builtin_CONCAT``).
+            args = [self._translate_expr(a) for a in expr.arg]
+            return f"COALESCE({', '.join(args)})"
 
         raise UnsupportedSparqlError(
             f"FILTER expression node {name!r} is not yet supported (see "

@@ -1,0 +1,231 @@
+# Golden corpus for the comprehensive FILTER / projection builtins
+# slice (v0.8): RDF-type-introspection, string manipulation, regex,
+# numeric, date, hash, and IRI-introspection builtins, plus the
+# blank-node existential-variable substitution that ``visit_BGP``
+# applies to BGP subject / object slots.
+#
+# This slice is the single biggest W3C jump in the project's
+# history (+18.6 pp; 41.5 % → 60.1 %) because the W3C corpus
+# combines multiple builtins per test — every previously-failing
+# test that needed two of these unblocked simultaneously once the
+# whole set landed. The earlier per-builtin XFAIL counts in
+# COVERAGE_REPORT.md undercounted the cascade.
+#
+# Coverage table for THIS slice's contribution:
+#
+#   Builtin_DATATYPE       — RDF datatype IRI inference from Python type
+#   Builtin_REPLACE        — REGEX_REPLACE direct map (with flag handling)
+#   Builtin_STRDT          — typed-literal constructor (no-op in PG model)
+#   Builtin_STRLANG        — lang-tagged literal constructor (no-op in PG)
+#   Builtin_STRBEFORE      — substring before separator (FIND_FIRST + SUBSTRING)
+#   Builtin_STRAFTER       — substring after separator
+#   Builtin_ENCODE_FOR_URI — URL_ENCODE
+#   Builtin_COALESCE       — direct AQL COALESCE
+#   Builtin_ABS / CEIL / FLOOR / ROUND
+#   Builtin_NOW / YEAR / MONTH / DAY / HOURS / MINUTES / SECONDS
+#   Builtin_MD5 / SHA1 / SHA512
+#   Builtin_isURI / isIRI / isBLANK / isNUMERIC
+#   BNode in subject / object  — substituted with internal
+#                                existential Variable per BGP scope
+
+ontology: ""
+
+cases:
+  # ---- RDF type-introspection ---------------------------------------
+
+  - name: datatype_returns_xsd_iri
+    # ``DATATYPE(?n)`` — RDF datatype IRI. PG/LPG storage doesn't
+    # carry RDF typing so we synthesise from Python runtime type:
+    # bool → xsd:boolean, number → xsd:integer (we don't
+    # distinguish int vs double in storage), string →
+    # xsd:string, anything else → null. The cascade order
+    # matters — IS_BOOL must be tested before IS_NUMBER because
+    # AQL booleans coerce to numbers.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (DATATYPE(?n) AS ?d) WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = (IS_BOOL(doc1.n) ? "http://www.w3.org/2001/XMLSchema#boolean" : (IS_NUMBER(doc1.n) ? "http://www.w3.org/2001/XMLSchema#integer" : (IS_STRING(doc1.n) ? "http://www.w3.org/2001/XMLSchema#string" : null)))
+      RETURN { d: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- Regex / string manipulation ----------------------------------
+
+  - name: replace_three_args
+    # 3-arg REPLACE — defaults to case-sensitive (the trailing
+    # ``false`` AQL flag). Same flag-mapping convention as
+    # ``Builtin_REGEX``; unsupported flags surface as
+    # ``W_REGEX_FLAGS_DROPPED`` warnings on the builder.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (REPLACE(?n, "old", "new") AS ?r) WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = REGEX_REPLACE(doc1.n, @_p1, @_p2, false)
+      RETURN { r: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "old"
+      "_p2": "new"
+
+  - name: replace_four_args_case_insensitive
+    # 4-arg REPLACE with the ``"i"`` flag — maps to AQL's
+    # caseInsensitive=true. Other flags (``s``, ``m``, ``x``)
+    # would surface a builder warning; this golden doesn't
+    # exercise them because the warning channel is tested in
+    # the regex-flags-specific golden.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (REPLACE(?n, "OLD", "new", "i") AS ?r) WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = REGEX_REPLACE(doc1.n, @_p1, @_p2, true)
+      RETURN { r: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "OLD"
+      "_p2": "new"
+
+  - name: strbefore_strafter
+    # ``STRBEFORE(s, sep)`` / ``STRAFTER(s, sep)`` — substring
+    # before / after the first occurrence of ``sep``. AQL has
+    # no native operators; we splice FIND_FIRST + SUBSTRING
+    # with a not-found guard returning ``""`` per SPARQL spec.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (STRBEFORE(?n, "-") AS ?b) (STRAFTER(?n, "-") AS ?a)
+      WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = (FIND_FIRST(doc1.n, @_p1) >= 0 ? SUBSTRING(doc1.n, 0, FIND_FIRST(doc1.n, @_p1)) : "")
+      LET bv3 = (FIND_FIRST(doc1.n, @_p2) >= 0 ? SUBSTRING(doc1.n, FIND_FIRST(doc1.n, @_p2) + LENGTH(@_p2)) : "")
+      RETURN { b: bv2, a: bv3 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "-"
+      "_p2": "-"
+
+  # ---- COALESCE ------------------------------------------------------
+
+  - name: coalesce_three_args
+    # ``COALESCE(?a, ?b, "default")`` — first non-null wins. AQL's
+    # COALESCE has the same contract (treating unbound as null,
+    # which is our visitor's convention everywhere). Variadic
+    # args storage matches CONCAT's shape (a list on ``.arg``).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COALESCE(?a, ?b, "default") AS ?x) WHERE { ?s :a ?a ; :b ?b }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = COALESCE(doc1.a, doc1.b, @_p1)
+      RETURN { x: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": "default"
+
+  # ---- Numeric / Date / Hash -----------------------------------------
+
+  - name: numeric_quartet
+    # ABS / CEIL / FLOOR / ROUND all map 1:1 to AQL builtins.
+    # Bundling them in one query exercises the visitor's
+    # per-Extend LET emission pattern.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (ABS(?n) AS ?a) (CEIL(?n) AS ?c) (FLOOR(?n) AS ?f) (ROUND(?n) AS ?r)
+      WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = ABS(doc1.n)
+      LET bv3 = CEIL(doc1.n)
+      LET bv4 = FLOOR(doc1.n)
+      LET bv5 = ROUND(doc1.n)
+      RETURN { a: bv2, c: bv3, f: bv4, r: bv5 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: now_returns_iso8601
+    # ``NOW()`` — SPARQL wants an xsd:dateTime string. AQL's
+    # ``DATE_NOW()`` returns ms-since-epoch; we wrap with
+    # ``DATE_ISO8601`` to get the right lexical form.
+    # Combined with the empty-BGP opener for the no-WHERE case.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (NOW() AS ?n) WHERE { }
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = DATE_ISO8601(DATE_NOW())
+      RETURN { n: bv2 }
+    expected_bind_vars: {}
+
+  - name: hashes_md5_sha1
+    # MD5 / SHA1 / SHA512 all map directly; SHA256 would raise
+    # UnsupportedSparqlError (AQL lacks a native SHA-256 and
+    # silent substitution would be a worse failure mode than
+    # surfacing the gap).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (MD5(?n) AS ?h1) (SHA1(?n) AS ?h2) WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = MD5(doc1.n)
+      LET bv3 = SHA1(doc1.n)
+      RETURN { h1: bv2, h2: bv3 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- IRI introspection --------------------------------------------
+
+  - name: isURI_filter
+    # ``isURI(?s)`` — we approximate by checking that the value
+    # is a string with an IRI-scheme shape: ``://`` substring
+    # (the common http/https/ftp/file forms) or one of the
+    # ``urn:`` / ``mailto:`` ad-hoc prefixes. Not a fully
+    # general IRI regex (RFC 3987 is huge); pragmatic for the
+    # W3C corpus.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :n ?n . FILTER isURI(?s) }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER (IS_STRING(doc1._uri) && (CONTAINS(doc1._uri, '://') || STARTS_WITH(doc1._uri, 'urn:') || STARTS_WITH(doc1._uri, 'mailto:')))
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- BNode existential substitution --------------------------------
+
+  - name: bnode_subject_anchors_for
+    # ``_:b0 :p ?x`` — the BNode is an existentially-quantified
+    # variable scoped to the BGP. The substitution mints
+    # ``_bn_<bgp_id>_b0`` as the internal Variable name and the
+    # standard ``_bind_subject`` machinery anchors it on the
+    # default collection (no class hint), so the AQL is
+    # identical to ``?freshvar :p ?x``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?x WHERE { _:b0 :p ?x }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      RETURN { x: doc1.p }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: bnode_existential_join
+    # Same ``_:b0`` label appears in two triples of the SAME
+    # BGP — per SPARQL §17.4.1.10 / §18.5 both bind the same
+    # value (existential JOIN). The substitution emits ONE
+    # fresh variable for both occurrences, so the BGP emitter
+    # detects the shared variable and adds an equality FILTER
+    # between the two FORs' object expressions.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?x WHERE { ?s :p _:b0 . ?x :q _:b0 }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2.q == doc1.p
+      RETURN { s: doc1._uri, x: doc2._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"

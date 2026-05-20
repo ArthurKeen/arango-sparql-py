@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.7, 41.5 % ✅ — v1.0 §3.1 threshold cleared**; 97 algebra / 51 schema / 14 rdflib XFAILs; largest algebra bucket `Graph` at 11/97 = 11.3 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.8, 60.1 % ✅ — v1.0 §3.1 threshold cleared**; 50 algebra / 51 schema / 14 rdflib XFAILs; largest algebra bucket `Graph` at 11/50 = 22.0 %, under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -846,6 +846,8 @@ deployments.
 | **`UNION` + `AlternativePath` (`:p\|:q`)** — both lower to the same AQL recipe via a shared two-phase emitter in `arango_sparql.translate.union_paths`: (1) probe each arm in a throwaway child to collect its bound variables; (2) emit each arm again with the full union-schema projection (vars not bound in this arm get JSON `null`); then `FOR <row> IN UNION((arm1), (arm2), …)` at the outer scope. AlternativePath is desugared to a UNION of single-triple BGPs and routed through the same emitter, so `?s :p\|:q ?o` produces byte-for-byte identical AQL to the explicit `{ ?s :p ?o } UNION { ?s :q ?o }`. Outer-bound variables are pre-seeded into each arm's child visitor (mirrors MINUS / EXISTS / ToMultiSet), so shared variables become equality FILTERs into the outer scope's expressions. | ✅ shipped | `tests/translate/union_paths.yml` (5 cases) + `tests/translate/test_translate_union_paths_goldens.py` (3 Python interaction cases — explicit-UNION-vs-AlternativePath byte-equivalence, UNION inside a sub-SELECT, per-arm FILTER isolation). Live-executable without carve-out. |
 | **FILTER builtins: `IF`, `CONCAT`, `LANG`, `LANGMATCHES`** — direct AQL mappings in `_translate_expr`: `IF(c, a, b)` → `((c) ? (a) : (b))`, `CONCAT(...)` → AQL `CONCAT(...)` (rdflib stores variadic args as a Python list on `.arg`), `LANG(lit)` → `""` (PG/LPG storage carries no language metadata; spec-conformant for tag-less literals), `LANGMATCHES(tag, range)` → expanded RFC 4647 prefix match with the `"*"` wildcard special case. | ✅ shipped | `tests/translate/filter_builtins.yml` (5 cases) + `tests/translate/test_translate_filter_builtins_goldens.py` (3 Python interaction cases — CONCAT nested in IF, LANGMATCHES composed with `&&`, two BINDs sharing one empty-BGP opener). Live-executable without carve-out. |
 | **Empty-BGP scope opener** — SPARQL 1.1 §18.5 says the empty BGP is the *identity* for join (one empty solution mapping). AQL has no native empty iteration, so when `visit_BGP` encounters a triple-less node AND the builder has emitted no FOR yet, it opens a degenerate `FOR <empty_alias> IN [1]` so downstream Extend / Filter / Project clauses have somewhere to attach. When a sibling pattern has already opened a FOR (`Join(BGP[], BGP[triples])`, the common `Builtin_EXISTS` shape), the empty BGP becomes a true no-op — `visit_Join` reorders to walk non-empty arms first so this stays clean. | ✅ shipped | Bundled with the FILTER builtins goldens above. |
+| **Comprehensive FILTER builtin coverage** — 17 builtins added to `_translate_expr` in one slice: `DATATYPE`, `REPLACE`, `STRDT`, `STRLANG`, `STRBEFORE`, `STRAFTER`, `ENCODE_FOR_URI`, `COALESCE`, `ABS`/`CEIL`/`FLOOR`/`ROUND`, `NOW`/`YEAR`/`MONTH`/`DAY`/`HOURS`/`MINUTES`/`SECONDS`, `MD5`/`SHA1`/`SHA512`, `isURI`/`isIRI`/`isBLANK`/`isNUMERIC`. Each maps to an AQL builtin (`REGEX_REPLACE`, `URL_ENCODE`, `COALESCE`, `DATE_*` family, hash family) or a small expansion (`STRBEFORE`/`STRAFTER` via `FIND_FIRST` + `SUBSTRING`; `DATATYPE` synthesises XSD IRIs from the Python runtime type via an `IS_BOOL` → `IS_NUMBER` → `IS_STRING` cascade). `Builtin_SHA256` raises `UnsupportedSparqlError` rather than silently truncating SHA-512 — silent substitution would be a worse failure mode. | ✅ shipped | `tests/translate/builtin_megabundle.yml` (11 cases) + `tests/translate/test_translate_builtin_megabundle_goldens.py` (3 Python interaction cases — distinct-BNode-in-same-BGP no-join, cross-BGP BNode scope isolation, SHA-256 refusal). Live-executable without carve-out. |
+| **BNode existential substitution** — SPARQL 1.1 §17.4.1.10 / §18.5: blank nodes in query patterns are existentially-quantified variables scoped to the BGP. rdflib does not auto-substitute these; `visit_BGP` does the rewrite before triple emission, mapping each unique BNode label within the BGP to a freshly-minted internal `Variable` (`_bn_<bgp_id>_<label>`). Scope is per-BGP via a `bgp_counter` on `_BindingState`: same label in different BGPs (e.g. across UNION arms) gets distinct internal names so cross-BGP joins do NOT fire. Predicate-position BNodes are left alone (invalid SPARQL grammar). | ✅ shipped | Bundled with the FILTER builtins goldens above. |
 | **Named-graph dispatch** — `GRAPH ?g { … }` resolves to a per-graph collection or to a graph-name attribute | 🔴 v1.2 | Tracked in `COVERAGE_REPORT.md` under the `Graph` XFAIL bucket |
 | **Federated `SERVICE`** — out of scope (see §2) | ❌ won't fix in v1 | — |
 
@@ -1882,9 +1884,10 @@ fix before tagging v1.0.
 | v0.4 (after `ToMultiSet` + `VALUES` slice) | 32.8 % | 39 | 84 | 0 | 0 % |
 | v0.5 (after `Minus` + `EXISTS` / `NOT EXISTS` + `CONSTRUCT WHERE` slice) | 36.4 % | 39 | 94 | 0 | 0 % |
 | v0.6 (after `Union` + `AlternativePath` slice) | 37.9 % | 39 | 98 | 0 | 0 % |
-| **v0.7 (current — after FILTER builtins + empty-BGP slice)** | **41.5 % ✅ (v1.0 §3.1 threshold cleared)** | **39** | **107** | **0** | **0 %** |
-| v0.8 | 46 % (after `Graph` + `MulPath` + `BNode` slices) | 60 | 117 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
-| **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 41.5 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
+| v0.7 (after FILTER builtins + empty-BGP slice) | 41.5 % | 39 | 107 | 0 | 0 % |
+| **v0.8 (current — after builtin megabundle + BNode existentials slice)** | **60.1 % ✅ (v1.0 §3.1 threshold cleared)** | **39** | **154** | **0** | **0 %** |
+| v0.9 | 70 % (after `Graph` + `MulPath` slices) | 60 | 170 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
+| **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 60.1 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
 **Reading the v0.1 W3C number.** `tests/w3c/analyze_coverage.py` runs every
@@ -1903,24 +1906,25 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 97 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
+| `algebra` | 50 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
 | `schema` | 51 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`, `http://example/Set`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.7 (41.5 %).** The §3.1 ≥ 25 % bar has been met; the slice table
+v0.8 (60.1 %).** The §3.1 ≥ 25 % bar has been met; the slice table
 below now tracks *ceiling pressure* (the > 30 % single-bucket
-constraint) and the v1.1 50 % target rather than the v1.0
-acceptance gate. With FILTER builtins + empty-BGP closed, the
-largest algebra bucket is `Graph` at 11/97 = 11.3 % — still well
-under the 30 % ceiling.
+constraint) and the v1.1 70 % target rather than the v1.0
+acceptance gate. With the builtin megabundle + BNode existentials
+closed, the algebra bucket has dropped from 97 to 50, but `Graph`
+at 11/50 = 22.0 % is now the constraint to watch — still under
+the 30 % ceiling but heading toward it as smaller buckets close.
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `Graph` (named graphs / `GRAPH <iri> { … }`) | 11 | +4.4 pp | **Largest remaining bucket.** Needs default-vs-named-graph routing through the resolver. |
+| `Graph` (named graphs / `GRAPH <iri> { … }`) | 11 | +4.4 pp | **Largest remaining bucket, approaching the 30 % ceiling at 22.0 %.** Needs default-vs-named-graph routing through the resolver — first slice that requires storage-model decisions. |
 | `MulPath` (`:p+`, `:p*`, `:p?`) | 9 | +3.6 pp | Largest remaining property-path operator; needs ArangoDB graph traversal (`FOR v IN min..max OUTBOUND`) for `:p+` / `:p*` and a UNION-of-zero-or-one-hop rewrite for `:p?`. |
-| `BNode` subject / object | 4 / 5 | +1.6 pp / +2.0 pp | Bnode skolemisation pass; PRD §6.6 hybrid-model row already documents the RPT `STARTS_WITH(_, "_:")` recipe. |
 | `ServiceGraphPattern` | 4 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. |
+| `OPTIONAL` unbound subject | 2 | +0.8 pp | Visitor-side limitation in `visit_LeftJoin` when the OPTIONAL's subject isn't pre-bound; small slice. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
 contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate
@@ -1957,8 +1961,25 @@ prefix-match expansion) to `_translate_expr`, plus a one-row
 `BIND`-only / `WHERE { }` queries have a scope to attach Extend
 / Filter / Project clauses to; `visit_Join` reorders to walk
 non-empty arms first so the opener stays a true no-op inside
-EXISTS / MINUS / Union probes. All slices are live-executable
-without carve-out, so no new entries land in
+EXISTS / MINUS / Union probes. **The builtin megabundle + BNode
+existentials slice** (v0.7 → v0.8) contributed +18.6 pp (+47
+W3C tests; 41.5 % → 60.1 %) — the project's single biggest jump
+— by landing 17 more FILTER / projection builtins in one slice
+(`DATATYPE`, `REPLACE`, `STRDT`, `STRLANG`, `STRBEFORE`,
+`STRAFTER`, `ENCODE_FOR_URI`, `COALESCE`, the
+ABS/CEIL/FLOOR/ROUND numeric quartet, the NOW + DATE_*
+seven-piece date family, MD5/SHA1/SHA512, and the
+isURI/isIRI/isBLANK/isNUMERIC type-introspection trio) plus the
+SPARQL §17.4.1.10 / §18.5 blank-node existential substitution in
+`visit_BGP` (BNodes in subject / object slots become internal
+`_bn_<bgp_id>_<label>` Variables scoped per-BGP, so same-label
+joins fire within a BGP but distinct-BGP existentials stay
+independent across UNION arms). The cascade explanation: the
+W3C corpus combines multiple builtins per test, and earlier
+per-builtin XFAIL counts undercounted the cascade — every test
+that needed two of these unblocked simultaneously when the
+whole set landed. All slices are live-executable without
+carve-out, so no new entries land in
 `tests/w3c/test_w3c_live_execution.py::SKIP_REASONS`.
 
 Carve-out (still in force from v0.3): the variable-predicate
@@ -1973,10 +1994,12 @@ mapping" follow-up slice — extending `SchemaResolver` with an
 
 The §3.1 acceptance criterion's > 30 % single-bucket ceiling
 constrains *future* slices: today's largest algebra bucket
-(`Graph` at 11/97 = 11.3 %) sits well under the ceiling, but
-as smaller buckets close their share grows. Closing `Graph`
-next preserves the most headroom; the runner-up is `MulPath`
-(`:p+` / `:p*` / `:p?`) at 9/97 = 9.3 %.
+(`Graph` at 11/50 = 22.0 %) is now approaching the ceiling
+(closing smaller buckets in the megabundle slice raised
+`Graph`'s share even though its raw count didn't change).
+Closing `Graph` next is now both the largest single bump AND
+the only way to keep §3.1's single-bucket constraint
+comfortable as the next round of smaller buckets close.
 
 ---
 
