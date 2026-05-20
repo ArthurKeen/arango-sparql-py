@@ -51,6 +51,7 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":
+        - "_graph"
         - "_uri"
 
   - name: bare_spo_count_aggregate
@@ -70,6 +71,7 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":
+        - "_graph"
         - "_uri"
 
   - name: bare_spo_sum_grouped_by_subject
@@ -90,6 +92,7 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":
+        - "_graph"
         - "_uri"
 
   - name: bare_spo_avg_with_having
@@ -113,6 +116,7 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":
+        - "_graph"
         - "_uri"
       "_p2": 2.0
 
@@ -137,6 +141,7 @@ cases:
       "@c1_Document": "Document"
       "_p1_uri": "http://ex.org/alice"
       "_p2_sys_attrs":
+        - "_graph"
         - "_uri"
 
   - name: bare_spo_object_filter
@@ -156,5 +161,6 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":
+        - "_graph"
         - "_uri"
       "_p2": 10

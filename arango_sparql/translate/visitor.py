@@ -111,6 +111,27 @@ class _BindingState:
     user can never refer to one explicitly. Reset implicitly on
     every new visitor instance, so per-query state is isolated."""
 
+    graph_scope: list[Any] = field(default_factory=list)
+    """Stack of active SPARQL named-graph scopes. Each entry is the
+    ``GRAPH`` term — either an :class:`rdflib.URIRef` (constant graph
+    IRI) or an :class:`rdflib.Variable` (graph variable bound by the
+    pattern).
+
+    Pushed by :meth:`AlgebraVisitor.visit_Graph` on entry, popped on
+    exit, so nested ``GRAPH { GRAPH { … } }`` (legal but rare SPARQL)
+    is handled by stack discipline. Every FOR-emitting site
+    (:meth:`AlgebraVisitor._open_collection` today; extensible to
+    property-path traversal and RPT readers later) consults the top of
+    this stack via :meth:`AlgebraVisitor._apply_graph_scope` to attach
+    the right ``FILTER`` (constant IRI) or variable binding
+    (graph-variable).
+
+    See ADR-0001 for the storage-model rationale; the field name on
+    documents is :attr:`SchemaResolver.graph_field` (default
+    ``"_graph"``). Empty list = no active GRAPH scope, which is the
+    *default-graph* case handled per
+    :attr:`SchemaResolver.default_graph_includes_named`."""
+
 
 @dataclass
 class AlgebraVisitor:
@@ -992,6 +1013,37 @@ class AlgebraVisitor:
         emit_union(self, node)
 
     # ------------------------------------------------------------------
+    # GRAPH <iri> { … } / GRAPH ?g { … } — SPARQL 1.1 §8.3.
+    # Push the named-graph term onto the binding state's
+    # ``graph_scope`` stack, visit the inner pattern (which may open
+    # any number of FORs), then pop. Each FOR opened while the stack
+    # is non-empty consults :meth:`_apply_graph_scope` to attach the
+    # right filter or variable binding against the document's
+    # ``<resolver.graph_field>`` attribute.
+    # See ADR-0001 for the storage-model rationale.
+    # ------------------------------------------------------------------
+    def visit_Graph(self, node: Any) -> Any:
+        term = node.term
+        if not isinstance(term, URIRef | Variable):
+            # SPARQL grammar permits constant IRIs and variables in
+            # the GRAPH slot. rdflib will never hand us anything else
+            # (literal / BNode in that slot is a parse error), but
+            # guard explicitly so a future rdflib refactor surfaces
+            # as a typed error rather than a silent miscompile.
+            raise UnsupportedSparqlError(
+                f"GRAPH term must be a URIRef or Variable, got "
+                f"{type(term).__name__}; check the SPARQL grammar"
+            )
+        self.state.graph_scope.append(term)
+        try:
+            self.visit(node.p)
+        finally:
+            # Pop in finally so an exception in the inner pattern
+            # doesn't leave the scope stack corrupted for any
+            # try/except higher up the call chain.
+            self.state.graph_scope.pop()
+
+    # ------------------------------------------------------------------
     # ToMultiSet — SPARQL sub-SELECT and VALUES. Delegated to
     # ``arango_sparql.translate.subselect`` so this file stays under
     # the 1500-line cap from
@@ -1290,7 +1342,80 @@ class AlgebraVisitor:
         else:
             self.builder.for_(alias, collection)
         self.state.doc_to_collection[alias] = collection
+        # Named-graph scoping: when a SPARQL GRAPH wrapper is active
+        # (visit_Graph pushed onto state.graph_scope), every FOR
+        # opened inside it gets a filter on the document's graph
+        # field. Outside any GRAPH wrapper this is also where
+        # strict default-graph mode (default_graph_includes_named=False)
+        # injects ``FILTER alias.<graph_field> == null`` — kept in
+        # one place so PG / LPG / RPT collections all share the same
+        # scoping recipe. See ADR-0001.
+        self._apply_graph_scope(alias)
         return alias
+
+    def _apply_graph_scope(self, alias: str) -> None:
+        """Attach the active named-graph scope to a freshly-opened FOR.
+
+        Called from :meth:`_open_collection` immediately after the FOR
+        is emitted (and after :meth:`_enforce_tenant_scope` runs, so the
+        graph filter sits adjacent to the tenant filter when both
+        apply). Three cases:
+
+        1. **No active GRAPH scope, lax default (the v0.9 default).**
+           ``default_graph_includes_named=True`` — every document is
+           visible regardless of its ``graph_field`` value. Emit
+           nothing; preserves the existing translation goldens'
+           AQL shape.
+        2. **No active GRAPH scope, strict mode.**
+           ``default_graph_includes_named=False`` — restrict to
+           documents in the default graph. Emit
+           ``FILTER alias.<graph_field> == null`` so docs without
+           the attribute (or with it explicitly null) match, named
+           graphs do not.
+        3. **Active GRAPH scope.** The scope term is either a
+           constant ``URIRef`` (one bind variable, one ``FILTER ==``)
+           or a ``Variable``. For a variable: if it's already bound
+           in ``var_to_expr`` (e.g. the GRAPH variable also appears
+           outside the scope), emit an equality filter against the
+           prior binding so the join fires; otherwise this FOR is
+           the canonical binding and we record
+           ``var_to_expr[?g] = alias.<graph_field>`` for downstream
+           SELECT / FILTER / additional FORs to reuse.
+        """
+        graph_field = self.resolver.graph_field
+        lhs = f"{alias}.{graph_field}"
+        if not self.state.graph_scope:
+            if not self.resolver.default_graph_includes_named:
+                # Strict default-graph mode — match SPARQL §8.3
+                # semantics literally. AQL treats a missing attribute
+                # as null, so this also matches docs that pre-date
+                # the graph_field convention.
+                self.builder.filter_raw(f"{lhs} == null")
+            return
+
+        graph_term = self.state.graph_scope[-1]
+        if isinstance(graph_term, URIRef):
+            bind = self.builder.bind(str(graph_term), hint="graph")
+            self.builder.filter_eq(lhs, bind)
+            return
+
+        # graph_term is a Variable (validated in visit_Graph).
+        var_name = str(graph_term)
+        existing = self.state.var_to_expr.get(var_name)
+        if existing is None:
+            # First FOR inside this scope: this alias's graph_field
+            # is the canonical binding for ?g. Downstream sibling FORs
+            # in the same scope will fall into the ``existing`` branch
+            # and emit an equality FILTER, which is how SPARQL's
+            # implicit-join semantics fire for the graph variable.
+            self.state.var_to_expr[var_name] = lhs
+        else:
+            # ?g is already bound — either by a prior FOR in this
+            # same GRAPH scope, or by a sibling pattern outside the
+            # GRAPH wrapper that binds ?g from a different source.
+            # Either way the join is the same shape: equality between
+            # this alias's graph_field and the existing expression.
+            self.builder.filter_raw(f"{lhs} == {existing}")
 
     def _enforce_tenant_scope(self, alias: str, resolved: ResolvedClass) -> None:
         """Emit the per-entity tenant FILTER for an opened FOR alias.

@@ -1,0 +1,206 @@
+# Golden corpus for the v0.9 named-graphs slice — ``visit_Graph``
+# delivering the per-document ``_graph`` storage convention
+# documented in ADR-0001.
+#
+# The slice ports zero behaviour from the legacy Foxx service
+# (``references/arango-sparql/`` has no GRAPH support) so the
+# AQL shapes pinned here are the canonical interpretation of
+# ADR-0001 — any divergence in a future commit needs a deliberate
+# ADR amendment, not a quiet golden re-pin.
+#
+# W3C contribution (translation-only):
+#
+#   * 9 newly-passing tests (subquery/sq01–sq05, sq07,
+#     property-path/pp34, pp35, exists/exists02)
+#   * 2 tests (property-path/pp06, pp07) cleared the GRAPH
+#     hurdle and now XFAIL on the next blocker (MulPath
+#     transitive paths) — the natural next slice.
+#   * Overall coverage 60.1 % → 63.6 % (+3.5 pp).
+#
+# Cases by phenomenon (in case-list order):
+#
+#   * Constant graph IRI — one FILTER per FOR, one bind per IRI.
+#   * Variable graph IRI — first FOR records the canonical
+#     binding for ?g, sibling FORs in the same scope FILTER
+#     against it (the implicit-join semantics).
+#   * Multiple triples sharing a subject — one FOR, one filter.
+#   * Multiple subjects under one GRAPH variable — N FORs,
+#     N-1 cross-FOR equality filters on the graph variable.
+#   * Lax default (default_graph_includes_named=True) —
+#     queries outside any GRAPH wrapper emit NO graph filter.
+#     This is the v0.9 default; see ADR-0001 §Consequences for
+#     the rationale.
+#   * Strict default (default_graph_includes_named=False) —
+#     ``FILTER alias._graph == null`` per FOR. Opt-in via the
+#     resolver knob until the live-execution harness is ready
+#     to co-update goldens.
+#   * Custom graph_field — the per-document attribute is
+#     configurable via SchemaResolver.graph_field.
+#   * GRAPH inside a sub-SELECT — composes with the existing
+#     ToMultiSet emitter unchanged.
+#   * Wildcard predicate inside GRAPH — the ATTRIBUTES fan-out
+#     correctly skips the graph_field as a system attr so
+#     ``?s ?p ?o`` doesn't leak the graph IRI as a predicate.
+
+ontology: ""
+
+cases:
+  # ---- Constant graph IRI -------------------------------------------
+
+  - name: graph_const_iri_single_triple
+    # Smallest possible shape: one triple inside ``GRAPH <iri>``.
+    # One FOR over the default collection, one FILTER pinning
+    # ``_graph`` to the bound IRI bind variable. The literal IRI
+    # NEVER appears in the AQL — only ``@_p1_graph`` does.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE { GRAPH <http://ex.org/g1> { ?s :name ?n } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._graph == @_p1_graph
+      RETURN { n: doc1.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_graph": "http://ex.org/g1"
+
+  - name: graph_const_iri_two_triples_same_subject
+    # Two triples sharing the SAME subject ``?s`` — the visitor
+    # opens ONE FOR (subject-alias reuse) and emits ONE filter.
+    # Both objects come out of the same document. This pins the
+    # "filter once per FOR, not once per triple" contract.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?a WHERE {
+        GRAPH <http://ex.org/g1> {
+          ?s :name ?n . ?s :age ?a
+        }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._graph == @_p1_graph
+      RETURN { n: doc1.name, a: doc1.age }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_graph": "http://ex.org/g1"
+
+  # ---- Variable graph IRI -------------------------------------------
+
+  - name: graph_variable_single_triple
+    # ``GRAPH ?g { ?s :name ?n }`` — ?g is the variable. The
+    # only FOR in the scope is the canonical binding for ?g,
+    # so no FILTER is emitted; ?g flows into the projection
+    # as ``doc1._graph``. This is the load-bearing shape for
+    # the SPARQL "expose the graph IRI" idiom.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?g ?n WHERE { GRAPH ?g { ?s :name ?n } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      RETURN { g: doc1._graph, n: doc1.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: graph_variable_two_subjects_implicit_graph_join
+    # Two triples with DIFFERENT subjects under the same
+    # ``GRAPH ?g`` wrapper — they MUST be in the same named
+    # graph (SPARQL semantics). The visitor opens two FORs;
+    # the second consults the existing binding ``?g =
+    # doc1._graph`` and emits an equality FILTER. This is
+    # what makes a query like
+    # ``GRAPH ?g { ?p :hires ?e . ?e :hires ?_ }`` actually
+    # require both edges to live in the same graph.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?g ?n ?a WHERE {
+        GRAPH ?g {
+          ?s :name ?n .
+          ?x :age ?a
+        }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      FILTER doc2._graph == doc1._graph
+      RETURN { g: doc1._graph, n: doc1.name, a: doc2.age }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- Mixing inside / outside GRAPH wrappers -----------------------
+
+  - name: graph_inside_join_outside_lax_default
+    # ``?s :tag ?t . GRAPH ?g { ?x :name ?n }`` — a default-
+    # graph triple AND'd with a named-graph triple over a
+    # DIFFERENT subject. In lax mode (the v0.9 default) the
+    # default-graph FOR carries NO ``_graph`` filter, and the
+    # GRAPH-wrapped FOR records ``?g`` as ``doc2._graph``.
+    # No cross-FOR filter on ``_graph`` because the two
+    # triples are in different graph scopes by construction.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?g ?s ?n WHERE {
+        ?s :tag ?t .
+        GRAPH ?g { ?x :name ?n }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR doc2 IN @@c1_Document
+      RETURN { g: doc2._graph, s: doc1._uri, n: doc2.name }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- GRAPH inside a sub-SELECT ------------------------------------
+
+  - name: graph_inside_subquery
+    # SPARQL ``{ SELECT ?g WHERE { GRAPH ?g { ?s ?p ?o } } }``
+    # — combines ToMultiSet (sub-SELECT) with visit_Graph and
+    # the variable-predicate ATTRIBUTES fan-out. The sub-
+    # SELECT projects ?g; the outer query forwards it. This
+    # is the structural shape of W3C ``subquery/sq01–sq07``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?g WHERE {
+        { SELECT ?g WHERE { GRAPH ?g { ?s ?p ?o } } }
+      }
+    expected_aql: |-
+      FOR row3 IN (
+        FOR doc1 IN @@c1_Document
+        FOR k2 IN ATTRIBUTES(doc1, true)
+        FILTER k2 NOT IN @_p1_sys_attrs
+        RETURN { g: doc1._graph }
+      )
+      RETURN { g: row3.g }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_graph"
+        - "_uri"
+
+  # ---- Wildcard predicate skip-list cooperation ---------------------
+
+  - name: graph_variable_with_wildcard_predicate
+    # ``GRAPH ?g { ?s ?p ?o }`` — combines variable graph
+    # with a variable-predicate fan-out. Three things are
+    # under test here:
+    #
+    # 1. ``?g`` projects as ``doc1._graph``.
+    # 2. The ATTRIBUTES fan-out filter ``k2 NOT IN
+    #    @_p1_sys_attrs`` includes BOTH ``_uri`` AND
+    #    ``_graph`` so ``?p`` never binds to the graph
+    #    metadata attribute (the silent-leak case
+    #    ADR-0001 §Consequences calls out).
+    # 3. The graph filter does NOT attach to the inner
+    #    FOR over ATTRIBUTES (k2 iterates keys, not
+    #    documents).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?g ?s ?p ?o WHERE { GRAPH ?g { ?s ?p ?o } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      RETURN { g: doc1._graph, s: doc1._uri, p: k2, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_graph"
+        - "_uri"

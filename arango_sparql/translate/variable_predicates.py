@@ -43,6 +43,14 @@ if TYPE_CHECKING:
 # ``_uri`` is ours, so we filter it explicitly. Stored as a frozen
 # tuple so two visitors share the same bind value via the
 # builder's value-keyed dedup.
+#
+# The resolver's :attr:`SchemaResolver.graph_field` (default
+# ``"_graph"``) is appended at call time in
+# :func:`_emit_attributes_fan_out` so that wildcard-predicate
+# queries (``?s ?p ?o``) don't leak the named-graph metadata
+# attribute as a triple predicate. The constant stays minimal —
+# the dynamic part is the per-resolver graph field name, which
+# may be overridden per deployment.
 SYSTEM_ATTRIBUTES_TO_SKIP: tuple[str, ...] = ("_uri",)
 
 
@@ -225,13 +233,19 @@ def _emit_attributes_branch(
     # iteration vs. a document scan.
     key_alias = visitor.builder.fresh_alias(prefix="k")
     visitor.builder.for_attributes(key_alias, subject_alias)
-    # Skip our synthetic ``_uri`` column — ATTRIBUTES(_, true)
-    # already drops the ArangoDB system attrs. The skip list is
-    # bound through the builder so the AQL never sees inlined
-    # string literals.
-    sys_bind = visitor.builder.bind(
-        list(SYSTEM_ATTRIBUTES_TO_SKIP), hint="sys_attrs"
+    # Skip our synthetic ``_uri`` column AND the named-graph
+    # metadata attribute (``resolver.graph_field``, default
+    # ``"_graph"``) — ATTRIBUTES(_, true) already drops the
+    # ArangoDB system attrs. Without the ``graph_field`` entry a
+    # wildcard ``?s ?p ?o`` would surface the named-graph IRI as
+    # if it were a triple predicate, which is the kind of silent
+    # semantic leak ADR-0001 specifically calls out. The skip
+    # list is bound through the builder so the AQL never sees
+    # inlined string literals.
+    skip_list = sorted(
+        {*SYSTEM_ATTRIBUTES_TO_SKIP, visitor.resolver.graph_field}
     )
+    sys_bind = visitor.builder.bind(skip_list, hint="sys_attrs")
     visitor.builder.filter_raw(f"{key_alias} NOT IN {sys_bind}")
     # ``?p`` binds to the iteration key. CARVE-OUT: this is the
     # attribute NAME (a string), not the predicate IRI. See the

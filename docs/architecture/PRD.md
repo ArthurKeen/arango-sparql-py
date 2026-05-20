@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.8, 60.1 % ✅ — v1.0 §3.1 threshold cleared**; 50 algebra / 51 schema / 14 rdflib XFAILs; largest algebra bucket `Graph` at 11/50 = 22.0 %, under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.9, 63.6 % ✅ — v1.0 §3.1 threshold cleared**; 39 algebra / 53 schema / 14 rdflib XFAILs; largest algebra bucket `MulPath :p*` at 7/39 = 17.9 %, well under the 30 % ceiling — `Graph` slid out of the leaderboard after the v0.9 named-graphs slice); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -848,7 +848,7 @@ deployments.
 | **Empty-BGP scope opener** — SPARQL 1.1 §18.5 says the empty BGP is the *identity* for join (one empty solution mapping). AQL has no native empty iteration, so when `visit_BGP` encounters a triple-less node AND the builder has emitted no FOR yet, it opens a degenerate `FOR <empty_alias> IN [1]` so downstream Extend / Filter / Project clauses have somewhere to attach. When a sibling pattern has already opened a FOR (`Join(BGP[], BGP[triples])`, the common `Builtin_EXISTS` shape), the empty BGP becomes a true no-op — `visit_Join` reorders to walk non-empty arms first so this stays clean. | ✅ shipped | Bundled with the FILTER builtins goldens above. |
 | **Comprehensive FILTER builtin coverage** — 17 builtins added to `_translate_expr` in one slice: `DATATYPE`, `REPLACE`, `STRDT`, `STRLANG`, `STRBEFORE`, `STRAFTER`, `ENCODE_FOR_URI`, `COALESCE`, `ABS`/`CEIL`/`FLOOR`/`ROUND`, `NOW`/`YEAR`/`MONTH`/`DAY`/`HOURS`/`MINUTES`/`SECONDS`, `MD5`/`SHA1`/`SHA512`, `isURI`/`isIRI`/`isBLANK`/`isNUMERIC`. Each maps to an AQL builtin (`REGEX_REPLACE`, `URL_ENCODE`, `COALESCE`, `DATE_*` family, hash family) or a small expansion (`STRBEFORE`/`STRAFTER` via `FIND_FIRST` + `SUBSTRING`; `DATATYPE` synthesises XSD IRIs from the Python runtime type via an `IS_BOOL` → `IS_NUMBER` → `IS_STRING` cascade). `Builtin_SHA256` raises `UnsupportedSparqlError` rather than silently truncating SHA-512 — silent substitution would be a worse failure mode. | ✅ shipped | `tests/translate/builtin_megabundle.yml` (11 cases) + `tests/translate/test_translate_builtin_megabundle_goldens.py` (3 Python interaction cases — distinct-BNode-in-same-BGP no-join, cross-BGP BNode scope isolation, SHA-256 refusal). Live-executable without carve-out. |
 | **BNode existential substitution** — SPARQL 1.1 §17.4.1.10 / §18.5: blank nodes in query patterns are existentially-quantified variables scoped to the BGP. rdflib does not auto-substitute these; `visit_BGP` does the rewrite before triple emission, mapping each unique BNode label within the BGP to a freshly-minted internal `Variable` (`_bn_<bgp_id>_<label>`). Scope is per-BGP via a `bgp_counter` on `_BindingState`: same label in different BGPs (e.g. across UNION arms) gets distinct internal names so cross-BGP joins do NOT fire. Predicate-position BNodes are left alone (invalid SPARQL grammar). | ✅ shipped | Bundled with the FILTER builtins goldens above. |
-| **Named-graph dispatch** — `GRAPH ?g { … }` resolves to a per-graph collection or to a graph-name attribute | 🔴 v1.2 | Tracked in `COVERAGE_REPORT.md` under the `Graph` XFAIL bucket |
+| **Named-graph dispatch** — `GRAPH <iri> { … }` and `GRAPH ?g { … }` are supported through a per-document `_graph` attribute convention. `visit_Graph` pushes the named-graph term (constant `URIRef` or `Variable`) onto a `graph_scope` stack on `_BindingState`; every FOR opened inside the scope consults `_apply_graph_scope`, which attaches `FILTER alias.<graph_field> == @g` for constant IRIs or binds `?g` to `alias.<graph_field>` for variables (sibling FORs in the same scope inherit the binding and emit equality filters, so SPARQL's "same graph variable means same graph" semantics is preserved). Storage knobs on `SchemaResolver`: `graph_field` (default `"_graph"`) renames the per-document attribute; `default_graph_includes_named` (default `True` for v0.9 backward-compat) flips between lax (no filter outside a GRAPH wrapper) and strict (`FILTER alias.<graph_field> == null` outside). The wildcard-predicate skip list at `variable_predicates.SYSTEM_ATTRIBUTES_TO_SKIP` is dynamically extended with `resolver.graph_field` so `?s ?p ?o` never surfaces the named-graph IRI as a triple predicate. Layout-uniform — the same code path serves PG, LPG, and RPT collections because the layout-specific work already lives in the resolver. Storage-model rationale, alternatives considered (per-collection mapping, deferred design doc), and reversibility analysis are captured in [`docs/architecture/decisions/0001-named-graphs-per-document.md`](./decisions/0001-named-graphs-per-document.md). | ✅ shipped | `tests/translate/named_graphs.yml` (7 YAML cases covering constant/variable IRIs, multi-triple subject reuse, implicit graph joins across subjects, inside/outside mixing under lax mode, GRAPH inside sub-SELECT, and wildcard-predicate skip-list cooperation) + `tests/translate/test_translate_named_graphs_goldens.py` (3 Python interaction cases — strict-mode null filter, strict-mode no-double-filter inside GRAPH, custom-`graph_field` dual-propagation into filter AND skip list). Live-executable once the harness loads `_graph` on its fixtures. |
 | **Federated `SERVICE`** — out of scope (see §2) | ❌ won't fix in v1 | — |
 
 ### 6.7 Schema warnings (non-fatal)
@@ -1885,8 +1885,9 @@ fix before tagging v1.0.
 | v0.5 (after `Minus` + `EXISTS` / `NOT EXISTS` + `CONSTRUCT WHERE` slice) | 36.4 % | 39 | 94 | 0 | 0 % |
 | v0.6 (after `Union` + `AlternativePath` slice) | 37.9 % | 39 | 98 | 0 | 0 % |
 | v0.7 (after FILTER builtins + empty-BGP slice) | 41.5 % | 39 | 107 | 0 | 0 % |
-| **v0.8 (current — after builtin megabundle + BNode existentials slice)** | **60.1 % ✅ (v1.0 §3.1 threshold cleared)** | **39** | **154** | **0** | **0 %** |
-| v0.9 | 70 % (after `Graph` + `MulPath` slices) | 60 | 170 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
+| v0.8 (after builtin megabundle + BNode existentials slice) | 60.1 % ✅ (v1.0 §3.1 threshold cleared) | 39 | 154 | 0 | 0 % |
+| **v0.9 (current — after `visit_Graph` named-graphs slice)** | **63.6 % ✅ (v1.0 §3.1 threshold cleared, +3.5 pp)** | **39** | **161** | **0** | **0 %** |
+| v0.10 | 67 % (after `MulPath :p*` / `:p+` slice closes the remaining property-path bucket) | 60 | 170 | full PG/LPG/hybrid corpus (no RPT) | 0 % (translator can't read RPT yet) |
 | **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 60.1 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
@@ -1906,25 +1907,26 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 50 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
-| `schema` | 51 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`, `http://example/Set`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
+| `algebra` | 39 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. |
+| `schema` | 53 | Empty-resolver harness artefact (`owl:Restriction`, `owl:DatatypeProperty`, ad-hoc `http://example.org/x/c`, `http://example/Set`). Would pass against a populated ontology — fixing these means **enhancing the harness** (per-fixture mini-ontologies) rather than the translator. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.8 (60.1 %).** The §3.1 ≥ 25 % bar has been met; the slice table
+v0.9 (63.6 %).** The §3.1 ≥ 25 % bar has been met; the slice table
 below now tracks *ceiling pressure* (the > 30 % single-bucket
 constraint) and the v1.1 70 % target rather than the v1.0
-acceptance gate. With the builtin megabundle + BNode existentials
-closed, the algebra bucket has dropped from 97 to 50, but `Graph`
-at 11/50 = 22.0 % is now the constraint to watch — still under
-the 30 % ceiling but heading toward it as smaller buckets close.
+acceptance gate. With the named-graphs slice closed, the algebra
+bucket dropped from 50 to 39 (`Graph` slid completely out of the
+top-XFAIL list); `MulPath :p*` at 7/39 = 17.9 % is now the largest
+single bucket but well under the 30 % ceiling.
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `Graph` (named graphs / `GRAPH <iri> { … }`) | 11 | +4.4 pp | **Largest remaining bucket, approaching the 30 % ceiling at 22.0 %.** Needs default-vs-named-graph routing through the resolver — first slice that requires storage-model decisions. |
-| `MulPath` (`:p+`, `:p*`, `:p?`) | 9 | +3.6 pp | Largest remaining property-path operator; needs ArangoDB graph traversal (`FOR v IN min..max OUTBOUND`) for `:p+` / `:p*` and a UNION-of-zero-or-one-hop rewrite for `:p?`. |
+| `MulPath` (`:p+`, `:p*`, `:p?`) | 11 | +4.4 pp | Largest remaining property-path operator; the v0.9 named-graphs slice promoted pp06 + pp07 into this bucket so the bump is now bigger than the pre-v0.9 estimate. `:p+` / `:p*` need ArangoDB graph traversal (`FOR v IN min..max OUTBOUND`); `:p?` rewrites to a UNION-of-zero-or-one-hop. |
 | `ServiceGraphPattern` | 4 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. |
 | `OPTIONAL` unbound subject | 2 | +0.8 pp | Visitor-side limitation in `visit_LeftJoin` when the OPTIONAL's subject isn't pre-bound; small slice. |
+| `Builtin_BNODE` | 2 | +0.8 pp | Constructor builtin; map to `CONCAT("_:", …)`. |
+| `Builtin_SUBSTR` | 2 | +0.8 pp | Trivial AQL `SUBSTRING` mapping; the v0.8 megabundle missed it. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
 contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate
@@ -1978,8 +1980,29 @@ independent across UNION arms). The cascade explanation: the
 W3C corpus combines multiple builtins per test, and earlier
 per-builtin XFAIL counts undercounted the cascade — every test
 that needed two of these unblocked simultaneously when the
-whole set landed. All slices are live-executable without
-carve-out, so no new entries land in
+whole set landed. **The `visit_Graph` named-graphs slice**
+(v0.8 → v0.9) contributed +3.5 pp (+9 W3C tests; 60.1 % →
+63.6 %) by adopting a per-document `_graph` attribute storage
+convention (ADR-0001), a `graph_scope` stack on `_BindingState`,
+and a layout-uniform `_apply_graph_scope` hook in
+`_open_collection`. Constant graph IRIs compile to one
+`FILTER alias._graph == @g` per FOR; variable graph IRIs bind
+to `alias._graph` on first occurrence in scope and emit
+equality FILTERs against the canonical binding on subsequent
+FORs (preserving SPARQL's "same graph variable means same
+graph" semantics across sibling subjects). Storage knobs:
+`SchemaResolver.graph_field` (default `"_graph"`) and
+`default_graph_includes_named` (default `True`, lax). The
+slice also extends the wildcard-predicate skip list at
+`variable_predicates.SYSTEM_ATTRIBUTES_TO_SKIP` with
+`resolver.graph_field` so `?s ?p ?o` never surfaces the
+graph IRI as a triple predicate (the silent-leak case
+ADR-0001 §Consequences calls out). The 2 property-path tests
+in the original Graph bucket (`pp06`, `pp07`) cleared the
+GRAPH hurdle and now XFAIL on the next blocker
+(`MulPath :p*`), shifting the bump into the next slice's
+budget. All slices are live-executable without carve-out, so
+no new entries land in
 `tests/w3c/test_w3c_live_execution.py::SKIP_REASONS`.
 
 Carve-out (still in force from v0.3): the variable-predicate
@@ -1994,12 +2017,12 @@ mapping" follow-up slice — extending `SchemaResolver` with an
 
 The §3.1 acceptance criterion's > 30 % single-bucket ceiling
 constrains *future* slices: today's largest algebra bucket
-(`Graph` at 11/50 = 22.0 %) is now approaching the ceiling
-(closing smaller buckets in the megabundle slice raised
-`Graph`'s share even though its raw count didn't change).
-Closing `Graph` next is now both the largest single bump AND
-the only way to keep §3.1's single-bucket constraint
-comfortable as the next round of smaller buckets close.
+(`MulPath :p*` at 7/39 = 17.9 %) is comfortably under the 30 %
+ceiling — `Graph` slid completely out of the top-XFAIL list
+after the v0.9 slice. The next natural slice is `MulPath`
+(`:p+`, `:p*`, `:p?`), which now contains 11 algebra XFAILs
+(the original 9 plus the 2 that cleared the GRAPH hurdle in
+v0.9) for an approximate +4.4 pp bump.
 
 ---
 

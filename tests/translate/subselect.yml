@@ -74,6 +74,7 @@ cases:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
       "_p1_sys_attrs":
+        - "_graph"
         - "_uri"
 
   - name: subselect_with_limit

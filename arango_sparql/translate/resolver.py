@@ -173,6 +173,50 @@ class SchemaResolver:
 
     ontology: Graph
     default_collection: str = "Document"
+    graph_field: str = "_graph"
+    """Document attribute that carries the RDF named-graph IRI for
+    the SPARQL ``GRAPH <iri> { … }`` / ``GRAPH ?g { … }`` constructs.
+
+    Each document MAY carry ``<graph_field>: <iri>`` (a string) to
+    declare that the triple represented by the document lives in
+    the named graph ``<iri>``. Documents without this attribute (or
+    with the attribute set to ``null``) are considered part of the
+    dataset's *default graph*.
+
+    The default field name ``"_graph"`` mirrors the per-document
+    encoding chosen in :doc:`/docs/architecture/decisions/0001-named-graphs-per-document`
+    (ADR-0001). Deployments that already use that name for something
+    else can override here without forking the visitor.
+
+    Layout-agnostic: the same attribute name applies to PG class
+    collections, LPG edge collections, and RPT predicate
+    collections — the visitor's ``visit_Graph`` consults this
+    field on whatever document the underlying FOR loop produces.
+    """
+
+    default_graph_includes_named: bool = True
+    """Whether queries outside any ``GRAPH`` wrapper see *all*
+    documents (lax, default) or only documents in the default
+    graph (strict, SPARQL-conformant).
+
+    SPARQL 1.1 §8.3 leaves this choice to the dataset declaration,
+    so both modes are spec-conformant — pick the one that matches
+    how your dataset was loaded:
+
+    * ``True`` (lax, default): default-graph queries see every
+      document regardless of ``<graph_field>`` value. This is the
+      v0.9 default because (1) existing translation goldens do not
+      include a graph filter and would all need to change, and
+      (2) legacy data loaded before ``<graph_field>`` existed is
+      still queryable without migration.
+    * ``False`` (strict): default-graph queries emit
+      ``FILTER doc.<graph_field> == null`` on every FOR, restricting
+      results to documents that lack a named-graph assignment.
+
+    A future slice may flip the default to strict once the
+    live-execution harness lands and the goldens can be co-updated
+    mechanically; until then this knob is the migration seam.
+    """
     shard_families: tuple[tuple[str, ...], ...] = ()
     """Sorted, immutable view of the ``physicalMapping.shardFamilies``
     list from the source :class:`MappingBundle` (PRD §6.5.3).
@@ -231,12 +275,29 @@ class SchemaResolver:
         self._shard_family_by_collection = index
 
     @classmethod
-    def from_turtle(cls, ttl: str, *, default_collection: str = "Document") -> SchemaResolver:
-        """Convenience constructor — parse *ttl* into a fresh ``rdflib.Graph``."""
+    def from_turtle(
+        cls,
+        ttl: str,
+        *,
+        default_collection: str = "Document",
+        graph_field: str = "_graph",
+        default_graph_includes_named: bool = True,
+    ) -> SchemaResolver:
+        """Convenience constructor — parse *ttl* into a fresh ``rdflib.Graph``.
+
+        ``graph_field`` and ``default_graph_includes_named`` are
+        forwarded to the resolver verbatim; see the class-level
+        docstring for the named-graph storage model semantics.
+        """
         graph = Graph()
         if ttl:
             graph.parse(data=ttl, format="turtle")
-        return cls(ontology=graph, default_collection=default_collection)
+        return cls(
+            ontology=graph,
+            default_collection=default_collection,
+            graph_field=graph_field,
+            default_graph_includes_named=default_graph_includes_named,
+        )
 
     @classmethod
     def from_mapping_bundle(

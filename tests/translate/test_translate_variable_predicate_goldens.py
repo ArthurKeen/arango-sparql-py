@@ -157,7 +157,7 @@ def test_variable_predicate_pg_class_bound_subject() -> None:
     ), result.aql
     assert result.bind_vars == {
         "@c1_Person": "Person",
-        "_p1_sys_attrs": ["_uri"],
+        "_p1_sys_attrs": ["_graph", "_uri"],
     }
 
 
