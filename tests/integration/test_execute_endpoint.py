@@ -34,7 +34,12 @@ import pytest
 pytestmark = pytest.mark.integration
 
 _ARANGO_HOST = os.getenv("ARANGO_HOST", "localhost")
-_ARANGO_PORT = int(os.getenv("ARANGO_PORT", "8529"))
+# Match the host-side mapping in ``docker-compose.yml`` so the
+# integration suite boots cleanly on machines where 8529 is already
+# bound by another sibling-project container. Override with
+# ``ARANGO_PORT`` / ``ARANGO_URL`` to point at an externally-managed
+# ArangoDB.
+_ARANGO_PORT = int(os.getenv("ARANGO_PORT", "8532"))
 _ARANGO_URL = os.getenv("ARANGO_URL", f"http://{_ARANGO_HOST}:{_ARANGO_PORT}")
 _ARANGO_USER = os.getenv("ARANGO_USER", "root")
 _ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "rootpw")

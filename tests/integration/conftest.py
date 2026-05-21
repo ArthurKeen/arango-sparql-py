@@ -27,7 +27,13 @@ import time
 from pathlib import Path
 
 DEFAULT_ARANGO_HOST = os.getenv("ARANGO_HOST", "localhost")
-DEFAULT_ARANGO_PORT = int(os.getenv("ARANGO_PORT", "8529"))
+# Default host port is 8532, not the canonical 8529, so this
+# project's test ArangoDB never collides with sibling-project
+# containers that may already be bound to 8529. Mirrors the
+# host-side mapping in ``docker-compose.yml``; override via
+# ``ARANGO_PORT`` (or the full ``ARANGO_URL``) when pointing at
+# an externally-managed ArangoDB.
+DEFAULT_ARANGO_PORT = int(os.getenv("ARANGO_PORT", "8532"))
 DEFAULT_ARANGO_URL = os.getenv("ARANGO_URL", f"http://{DEFAULT_ARANGO_HOST}:{DEFAULT_ARANGO_PORT}")
 DEFAULT_ARANGO_USER = os.getenv("ARANGO_USER", "root")
 DEFAULT_ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "rootpw")

@@ -5,7 +5,13 @@ services:
     environment:
       ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:-rootpw}
     ports:
-      - "8529:8529"
+      # Host port 8532 (not the canonical 8529) so this project's
+      # test ArangoDB never collides with other sibling-project
+      # ArangoDB containers a developer may already have running.
+      # Container side stays 8529; only the host-side mapping shifts.
+      # The Python test harness defaults (tests/integration/conftest.py)
+      # follow this convention.
+      - "${ARANGO_HOST_PORT:-8532}:8529"
     volumes:
       - arango_data:/var/lib/arangodb3
     healthcheck:
