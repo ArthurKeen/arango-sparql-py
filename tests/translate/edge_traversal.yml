@@ -92,6 +92,7 @@ cases:
       FOR doc2 IN @@c1_Person
       FOR v3, e4 IN OUTBOUND doc2 @@c2_knows
       FILTER v3._uri == doc1._uri
+      FILTER HAS(doc1, "name")
       RETURN { a: doc2._uri, b: doc1._uri, n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"

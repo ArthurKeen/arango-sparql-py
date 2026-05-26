@@ -17,6 +17,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(?n = "Alice") }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER (doc1.name == @_p1)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -29,6 +30,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a > 18 && ?a < 65) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
       FILTER ((doc1.age > @_p1) && (doc1.age < @_p2))
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -42,6 +44,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(REGEX(?n, "^a", "i")) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER REGEX_TEST(doc1.name, @_p1, true)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -54,6 +57,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(BOUND(?n)) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER (doc1.name != null)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -65,6 +69,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(!BOUND(?n)) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER !((doc1.name != null))
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -76,6 +81,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(STR(?n) = "Alice") }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER (TO_STRING(doc1.name) == @_p1)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -88,6 +94,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(CONTAINS(?n, "li")) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER CONTAINS(doc1.name, @_p1)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -100,6 +107,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER((?n = "Alice" || ?n = "Bob") && BOUND(?n)) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER (((doc1.name == @_p1) || (doc1.name == @_p2)) && (doc1.name != null))
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -113,6 +121,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a + 1 > 21) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
       FILTER ((doc1.age + @_p1) > @_p2)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -126,6 +135,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(?n != "Alice") }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER (doc1.name != @_p1)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -138,6 +148,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person ; :name ?n . FILTER(STRSTARTS(?n, "Al")) }
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER STARTS_WITH(doc1.name, @_p1)
       RETURN { s: doc1._uri }
     expected_bind_vars:

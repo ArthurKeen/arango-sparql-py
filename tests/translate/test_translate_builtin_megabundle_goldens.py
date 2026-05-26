@@ -24,6 +24,7 @@ Two test blocks:
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import pytest
@@ -118,11 +119,19 @@ def test_bnode_distinct_labels_same_bgp_no_join() -> None:
         "}",
         resolver=resolver,
     )
-    # Two FORs (one per subject), zero FILTERs.
+    # Two FORs (one per subject); no JOIN FILTER tying the two
+    # BNode existentials together. Predicate-existence ``FILTER
+    # HAS(doc, "attr")`` lines DO appear (SPARQL semantics require
+    # the triple's predicate to exist on the document), but those
+    # are per-subject existence guards — never cross-FOR joins.
+    # The original "no FILTER at all" assertion was too coarse;
+    # tighten it instead to forbid equality JOINs across the two
+    # aliases.
     assert result.aql.count("FOR doc") == 2
-    assert "FILTER" not in result.aql, (
-        "distinct BNode labels must not introduce a JOIN FILTER:\n"
-        + result.aql
+    join_pattern = re.compile(r"FILTER\s+doc\d\.\w+\s*==\s*doc\d\.\w+")
+    assert not join_pattern.search(result.aql), (
+        "distinct BNode labels must not introduce a JOIN FILTER between "
+        f"the two subject aliases:\n{result.aql}"
     )
 
 

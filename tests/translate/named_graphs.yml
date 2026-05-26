@@ -58,6 +58,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER doc1._graph == @_p1_graph
+      FILTER HAS(doc1, "name")
       RETURN { n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -78,6 +79,8 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER doc1._graph == @_p1_graph
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       RETURN { n: doc1.name, a: doc1.age }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -96,6 +99,7 @@ cases:
       SELECT ?g ?n WHERE { GRAPH ?g { ?s :name ?n } }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       RETURN { g: doc1._graph, n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -119,8 +123,10 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FOR doc2 IN @@c1_Document
       FILTER doc2._graph == doc1._graph
+      FILTER HAS(doc2, "age")
       RETURN { g: doc1._graph, n: doc1.name, a: doc2.age }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -143,7 +149,9 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "tag")
       FOR doc2 IN @@c1_Document
+      FILTER HAS(doc2, "name")
       RETURN { g: doc2._graph, s: doc1._uri, n: doc2.name }
     expected_bind_vars:
       "@c1_Document": "Document"

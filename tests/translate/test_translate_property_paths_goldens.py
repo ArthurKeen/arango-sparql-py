@@ -170,8 +170,10 @@ def test_sequence_path_composes_with_type_pattern() -> None:
     )
     assert result.aql == (
         "FOR doc1 IN @@c1_Person\n"
+        'FILTER HAS(doc1, "p")\n'
         "FOR doc2 IN @@c2_Document\n"
         "FILTER doc2._uri == doc1.p\n"
+        'FILTER HAS(doc2, "q")\n'
         "RETURN { s: doc1._uri, o: doc2.q }"
     ), result.aql
     assert result.bind_vars == {

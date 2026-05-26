@@ -38,10 +38,12 @@ cases:
       FOR row3 IN UNION(
       (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "p")
         RETURN { o: doc1.p, s: doc1._uri }
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "q")
         RETURN { o: doc2.q, s: doc2._uri }
       )
       )
@@ -64,10 +66,12 @@ cases:
       FOR row3 IN UNION(
       (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "p")
         RETURN { o: doc1.p, s: doc1._uri, z: null }
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "q")
         RETURN { o: doc2.q, s: null, z: doc2._uri }
       )
       )
@@ -92,15 +96,18 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FOR row4 IN UNION(
       (
         FOR doc2 IN @@c2_Document
         FILTER doc2._uri == doc1._uri
+        FILTER HAS(doc2, "p")
         RETURN { o: doc2.p }
       ),
       (
         FOR doc3 IN @@c3_Document
         FILTER doc3._uri == doc1._uri
+        FILTER HAS(doc3, "q")
         RETURN { o: doc3.q }
       )
       )
@@ -126,10 +133,12 @@ cases:
       FOR row3 IN UNION(
       (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "p")
         RETURN { o: doc1.p, s: doc1._uri }
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "q")
         RETURN { o: doc2.q, s: doc2._uri }
       )
       )
@@ -150,14 +159,17 @@ cases:
       FOR row4 IN UNION(
       (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "p")
         RETURN { o: doc1.p, s: doc1._uri }
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "q")
         RETURN { o: doc2.q, s: doc2._uri }
       ),
       (
         FOR doc3 IN @@c3_Document
+        FILTER HAS(doc3, "r")
         RETURN { o: doc3.r, s: doc3._uri }
       )
       )

@@ -19,6 +19,7 @@ cases:
       SELECT ?n WHERE { ?s a :Person ; :name ?n } ORDER BY ?n
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       SORT doc1.name ASC
       RETURN { n: doc1.name }
     expected_bind_vars:
@@ -30,6 +31,7 @@ cases:
       SELECT ?n WHERE { ?s a :Person ; :name ?n } ORDER BY ASC(?n)
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       SORT doc1.name ASC
       RETURN { n: doc1.name }
     expected_bind_vars:
@@ -41,6 +43,7 @@ cases:
       SELECT ?a WHERE { ?s a :Person ; :age ?a } ORDER BY DESC(?a)
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
       SORT doc1.age DESC
       RETURN { a: doc1.age }
     expected_bind_vars:
@@ -53,6 +56,8 @@ cases:
       ORDER BY DESC(?a) ?n
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       SORT doc1.age DESC, doc1.name ASC
       RETURN { n: doc1.name, a: doc1.age }
     expected_bind_vars:
@@ -67,6 +72,7 @@ cases:
     # LIMIT/OFFSET is the canonical AQL shape.
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       SORT doc1.name ASC
       LIMIT 10, 5
       RETURN { n: doc1.name }
@@ -80,6 +86,8 @@ cases:
       ORDER BY (?a + 1)
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       SORT (doc1.age + @_p1) ASC
       RETURN { n: doc1.name }
     expected_bind_vars:
@@ -96,6 +104,8 @@ cases:
       ORDER BY ?n
     expected_aql: |
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       FILTER (doc1.age >= @_p1)
       SORT doc1.name ASC
       RETURN DISTINCT { n: doc1.name }

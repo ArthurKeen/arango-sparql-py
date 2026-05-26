@@ -30,6 +30,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       RETURN { n: doc1.name, email: doc1.email }
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -44,6 +45,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       RETURN { n: doc1.name, email: doc1.email, phone: doc1.phone }
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -61,6 +63,7 @@ cases:
     # a unit" semantics readable in the rendered query.
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       LET opt2 = ((doc1.email != null && STARTS_WITH(doc1.email, @_p1)) ? doc1.email : null)
       RETURN { n: doc1.name, email: opt2 }
     expected_bind_vars:
@@ -80,6 +83,7 @@ cases:
     # missing ``phone`` doesn't bleed its ``email`` into the result.
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       LET opt2 = ((doc1.email != null && doc1.phone != null) ? doc1.email : null)
       LET opt3 = ((doc1.email != null && doc1.phone != null) ? doc1.phone : null)
       RETURN { n: doc1.name, email: opt2, phone: opt3 }
@@ -96,6 +100,8 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       FILTER (doc1.age > @_p1)
       RETURN { n: doc1.name, email: doc1.email }
     expected_bind_vars:

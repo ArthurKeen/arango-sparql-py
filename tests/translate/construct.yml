@@ -43,6 +43,7 @@ cases:
       WHERE { ?s a :Person ; :name ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -65,6 +66,8 @@ cases:
       WHERE { ?s a :Person ; :name ?n ; :age ?a }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.age}, {subject: doc1._uri, predicate: @_p2_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -93,6 +96,7 @@ cases:
       WHERE { ?s a :Person ; :age ?a . FILTER (?a > 18) }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
       FILTER (doc1.age > @_p1)
       RETURN [{subject: doc1._uri, predicate: @_p2_uri, object: doc1.age}]
     expected_bind_vars:

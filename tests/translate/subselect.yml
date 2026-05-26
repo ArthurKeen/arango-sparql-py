@@ -36,8 +36,10 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FOR row3 IN (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "age")
         RETURN { s: doc2._uri }
       )
       FILTER row3.s == doc1._uri
@@ -61,6 +63,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FOR row6 IN (
         FOR doc2 IN @@c2_Document
         FOR k3 IN ATTRIBUTES(doc2, true)
@@ -91,6 +94,7 @@ cases:
     expected_aql: |-
       FOR row2 IN (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "name")
         LIMIT 5
         RETURN { s: doc1._uri }
       )
@@ -112,6 +116,7 @@ cases:
     expected_aql: |-
       FOR row2 IN (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "name")
         SORT doc1.name ASC
         LIMIT 10
         RETURN { s: doc1._uri, n: doc1.name }
@@ -133,6 +138,7 @@ cases:
     expected_aql: |-
       FOR row2 IN (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "name")
         RETURN DISTINCT { n: doc1.name }
       )
       RETURN { n: row2.n }
@@ -153,8 +159,10 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR row4 IN (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "p")
         COLLECT AGGREGATE agg3 = MAX(doc2.p)
         RETURN { max: agg3 }
       )
@@ -178,6 +186,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FOR row2 IN @_p1_values
       FILTER row2.s == doc1._uri
       RETURN { s: doc1._uri, n: doc1.name }
@@ -201,6 +210,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FOR row2 IN @_p1_values
       FILTER row2.n == doc1.name
       FILTER row2.s == doc1._uri

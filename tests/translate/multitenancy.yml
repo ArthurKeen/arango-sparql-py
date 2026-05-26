@@ -69,6 +69,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER doc1.tenant_id == @_p1_tenant
+      FILTER HAS(doc1, "name")
       RETURN { s: doc1._uri, n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"

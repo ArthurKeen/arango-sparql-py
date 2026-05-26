@@ -48,6 +48,7 @@ cases:
       SELECT (COUNT(DISTINCT ?d) AS ?c) WHERE { ?s a :Person ; :dept ?d }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
       COLLECT AGGREGATE agg2 = COUNT_DISTINCT(doc1.dept)
       RETURN { c: agg2 }
     expected_bind_vars:
@@ -59,6 +60,7 @@ cases:
       SELECT ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
       COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
       RETURN { d: grp2, c: agg3 }
     expected_bind_vars:
@@ -72,6 +74,8 @@ cases:
       } GROUP BY ?d
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "dept")
       COLLECT grp2 = doc1.dept AGGREGATE agg3 = AVG(doc1.age), agg4 = SUM(doc1.age)
       RETURN { d: grp2, avg: agg3, tot: agg4 }
     expected_bind_vars:
@@ -85,6 +89,8 @@ cases:
       } GROUP BY ?d
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "dept")
       COLLECT grp2 = doc1.dept AGGREGATE agg3 = MIN(doc1.age), agg4 = MAX(doc1.age)
       RETURN { d: grp2, mn: agg3, mx: agg4 }
     expected_bind_vars:
@@ -102,6 +108,8 @@ cases:
       } GROUP BY ?d
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
+      FILTER HAS(doc1, "name")
       COLLECT grp2 = doc1.dept AGGREGATE agg3 = CONCAT_SEPARATOR(@_p1_sep, doc1.name)
       RETURN { d: grp2, names: agg3 }
     expected_bind_vars:
@@ -121,6 +129,7 @@ cases:
       } GROUP BY ?d HAVING (COUNT(?s) > 1)
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
       COLLECT grp2 = doc1.dept AGGREGATE agg3 = COUNT(doc1._uri), agg4 = COUNT(doc1._uri)
       FILTER (agg4 > @_p1)
       RETURN { d: grp2, c: agg3 }
@@ -139,6 +148,7 @@ cases:
       } GROUP BY ?d ORDER BY DESC(?c)
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
       COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
       SORT agg3 DESC
       RETURN { d: grp2, c: agg3 }

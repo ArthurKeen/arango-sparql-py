@@ -49,6 +49,7 @@ cases:
     expected_aql: |-
       RETURN LENGTH(
         FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "age")
         FILTER (doc1.age > @_p1)
         LIMIT 1
         RETURN 1
@@ -64,6 +65,7 @@ cases:
     expected_aql: |-
       RETURN LENGTH(
         FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "name")
         FILTER REGEX_TEST(doc1.name, @_p1, false)
         LIMIT 1
         RETURN 1

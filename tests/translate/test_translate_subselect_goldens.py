@@ -205,9 +205,22 @@ def test_nested_subselect_counter_seeding() -> None:
     assert "FOR doc2 IN @@c2_Document" in result.aql
     assert "FOR doc3 IN @@c3_Document" in result.aql
     # And the inner-most LIMIT is in the inner-most block —
-    # not at the outer or middle layer.
+    # not at the outer or middle layer. ``index(")", ...)`` is too
+    # naive now that predicate-existence ``FILTER HAS(doc, "attr")``
+    # introduces its own parentheses; walk the paren stack instead
+    # so we close on the actual sub-query boundary.
     inner_block_start = result.aql.index("FOR doc3 IN @@c3_Document")
-    inner_block_end = result.aql.index(")", inner_block_start)
+    depth = 1
+    inner_block_end = inner_block_start
+    for idx in range(inner_block_start, len(result.aql)):
+        ch = result.aql[idx]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+            if depth == 0:
+                inner_block_end = idx
+                break
     assert "LIMIT 100" in result.aql[inner_block_start:inner_block_end]
 
 

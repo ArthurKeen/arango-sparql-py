@@ -1254,6 +1254,21 @@ class AlgebraVisitor:
             alias = self._ensure_subject_alias(s)
             attr_path = f"{alias}.{prop.attribute}"
             if isinstance(o, Variable):
+                # Predicate-existence filter (SPARQL 1.1 §18.5): a
+                # required BGP triple ``?s :p ?o`` only matches when
+                # the triple ``(s, p, o)`` actually exists in the
+                # graph. In our flattened doc model that means the
+                # attribute ``alias.<prop.attribute>`` must be present
+                # on the document — otherwise the subject contributes
+                # zero solutions and must be excluded from the result.
+                # ``HAS(alias, "attr")`` distinguishes "missing" from
+                # "explicit JSON null" cleanly, mirroring the legacy
+                # ``pgt-translator.js#L598`` HAS()-guarded property
+                # access. OPTIONAL doesn't enter here — ``visit_LeftJoin``
+                # has its own emission path that bypasses ``_emit_triple``
+                # so optional bindings still get the SPARQL-spec "leave
+                # unbound when missing" semantics.
+                self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
                     self._record_var_expr(o, attr_path)

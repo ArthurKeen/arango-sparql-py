@@ -60,6 +60,7 @@ cases:
       FILTER doc1.predicate == @_p1_rdftype
       FILTER doc1.object_uri == @_p2_cls
       FOR doc2 IN @@c2_Person
+      FILTER HAS(doc2, "worksAt")
       FILTER doc2.worksAt == doc1.subject_uri
       FOR doc3 IN @@c1__triples
       FILTER doc3.predicate == @_p3_pred
@@ -88,6 +89,7 @@ cases:
       FILTER doc1.object_uri == @_p2_cls
       FOR doc2 IN @@c2_Records
       FILTER doc2.kind == @_p3_kind
+      FILTER HAS(doc2, "auditedBy")
       FILTER doc2.auditedBy == doc1.subject_uri
       FOR doc3 IN @@c1__triples
       FILTER doc3.predicate == @_p4_pred
@@ -123,7 +125,9 @@ cases:
       FILTER doc2.predicate == @_p2_rdftype
       FILTER doc2.object_uri == @_p3_cls
       FOR doc3 IN @@c3_Person
+      FILTER HAS(doc1, "auditedBy")
       FILTER doc1.auditedBy == doc2.subject_uri
+      FILTER HAS(doc3, "placed")
       FILTER doc3.placed == doc1._uri
       RETURN { p: doc3._uri, o: doc1._uri, a: doc2.subject_uri }
     expected_bind_vars:

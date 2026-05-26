@@ -35,6 +35,7 @@ cases:
       SELECT ?s (IF(?n > 0, "pos", "neg") AS ?sign) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = (((doc1.n > @_p1)) ? (@_p2) : (@_p3))
       RETURN { s: doc1._uri, sign: bv2 }
     expected_bind_vars:
@@ -53,6 +54,7 @@ cases:
       SELECT ?s WHERE { ?s :n ?n . FILTER (IF(?n > 0, true, false)) }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       FILTER (((doc1.n > @_p1)) ? (@_p2) : (@_p3))
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -73,6 +75,8 @@ cases:
       SELECT (CONCAT(?a, "-", ?b) AS ?c) WHERE { ?s :a ?a ; :b ?b }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "a")
+      FILTER HAS(doc1, "b")
       LET bv2 = CONCAT(doc1.a, @_p1, doc1.b)
       RETURN { c: bv2 }
     expected_bind_vars:
@@ -94,6 +98,7 @@ cases:
       SELECT ?s WHERE { ?s :n ?n . FILTER LANGMATCHES(LANG(?n), "en") }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       FILTER ("" != '' && (@_p1 == '*' || LOWER("") == LOWER(@_p1) || STARTS_WITH(LOWER(""), CONCAT(LOWER(@_p1), '-'))))
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -110,6 +115,7 @@ cases:
       SELECT ?s WHERE { ?s :n ?n . FILTER LANGMATCHES(LANG(?n), "*") }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       FILTER ("" != '' && (@_p1 == '*' || LOWER("") == LOWER(@_p1) || STARTS_WITH(LOWER(""), CONCAT(LOWER(@_p1), '-'))))
       RETURN { s: doc1._uri }
     expected_bind_vars:

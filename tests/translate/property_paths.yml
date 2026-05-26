@@ -44,8 +44,10 @@ cases:
       SELECT ?s ?o WHERE { ?s :p/:q ?o }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
       FILTER doc2._uri == doc1.p
+      FILTER HAS(doc2, "q")
       RETURN { s: doc1._uri, o: doc2.q }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -61,10 +63,13 @@ cases:
       SELECT ?s ?o WHERE { ?s :p/:q/:r ?o }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
       FILTER doc2._uri == doc1.p
+      FILTER HAS(doc2, "q")
       FOR doc3 IN @@c1_Document
       FILTER doc3._uri == doc2.q
+      FILTER HAS(doc3, "r")
       RETURN { s: doc1._uri, o: doc3.r }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -82,6 +87,7 @@ cases:
       SELECT ?s WHERE { ?s :p/:q "Alice" }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
       FILTER doc2._uri == doc1.p
       FILTER doc2.q == @_p1_q
@@ -100,6 +106,7 @@ cases:
       SELECT ?s WHERE { ?s :p/:q <http://ex.org/alice> }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
       FILTER doc2._uri == doc1.p
       FILTER doc2.q == @_p1_q
@@ -122,6 +129,7 @@ cases:
       SELECT ?s ?o WHERE { ?s ^:p ?o }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       RETURN { s: doc1.p, o: doc1._uri }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -156,8 +164,10 @@ cases:
       SELECT ?s ?o WHERE { ?s ^(:p/:q) ?o }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
       FILTER doc2._uri == doc1.p
+      FILTER HAS(doc2, "q")
       RETURN { s: doc2.q, o: doc1._uri }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -175,8 +185,11 @@ cases:
       SELECT ?s ?o ?n WHERE { ?s :p/:q ?o . ?s :name ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
       FILTER doc2._uri == doc1.p
+      FILTER HAS(doc2, "q")
+      FILTER HAS(doc1, "name")
       RETURN { s: doc1._uri, o: doc2.q, n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"

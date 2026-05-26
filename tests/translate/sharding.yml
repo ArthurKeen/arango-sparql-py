@@ -192,6 +192,7 @@ cases:
         (FOR doc2 IN @@c1_Person_eu RETURN doc2),
         (FOR doc3 IN @@c2_Person_us RETURN doc3)
       )
+      FILTER HAS(doc1, "name")
       RETURN { s: doc1._uri, n: doc1.name }
     expected_bind_vars:
       "@c1_Person_eu": "Person_eu"

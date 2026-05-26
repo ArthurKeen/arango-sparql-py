@@ -44,6 +44,7 @@ cases:
       SELECT ?s WHERE { ?s :name ?n MINUS { ?s :hidden true } }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       LET minus_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
         FILTER doc2._uri == doc1._uri
@@ -72,6 +73,7 @@ cases:
       SELECT ?s WHERE { ?s :name ?n MINUS { ?x :hidden true } }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       RETURN { s: doc1._uri }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -92,6 +94,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       LET exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
         FILTER doc2._uri == doc1._uri
@@ -118,6 +121,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       LET not_exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
         FILTER doc2._uri == doc1._uri
@@ -147,8 +151,10 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       LET not_exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "foo")
         LIMIT 1
         RETURN 1
       ))
@@ -172,6 +178,7 @@ cases:
       CONSTRUCT WHERE { ?s :name ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -189,6 +196,8 @@ cases:
       CONSTRUCT WHERE { ?s :name ?n . ?s :age ?a }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.age}, {subject: doc1._uri, predicate: @_p2_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Document": "Document"

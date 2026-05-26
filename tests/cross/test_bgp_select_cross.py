@@ -171,6 +171,16 @@ _AQL_BUILTINS: dict[str, Any] = {
     "STARTS_WITH": _starts_with,
     "ENDS_WITH": _ends_with,
     "TO_STRING": _to_string,
+    # ``HAS(doc, "attr")`` — predicate-existence guard the visitor
+    # emits for every variable-object BGP triple (``?s :p ?o``).
+    # SPARQL §18.5 semantics: a required triple ``(s, p, o)`` only
+    # matches when the predicate is actually present on the subject,
+    # so missing-attribute documents must be excluded from the result.
+    # The eval namespace registers each alias as the raw doc dict
+    # so this builtin can do a real key-presence check; the rest of
+    # the AQL rewriter still expands ``doc.attr`` to the flat
+    # ``<alias>__<attr>`` form used elsewhere.
+    "HAS": lambda doc, attr: isinstance(doc, dict) and attr in doc,
     "LOWER": lambda v: None if v is None else str(v).lower(),
     "UPPER": lambda v: None if v is None else str(v).upper(),
     "LENGTH": lambda v: None if v is None else len(v),
@@ -304,6 +314,13 @@ def _eval_expr(
 
     namespace: dict[str, Any] = _NullDefault(_AQL_BUILTINS)
     for alias, doc in env.items():
+        # Register the doc dict under its bare alias so HAS(doc1, "attr")
+        # and similar dict-accepting builtins resolve correctly. The
+        # flat ``<alias>__<attr>`` shape stays the primary access path
+        # because the rest of the rewriter expects it (``doc1.foo`` →
+        # ``doc1__foo``); HAS() is the only builtin in our matrix today
+        # that takes a doc reference, not a doc attribute.
+        namespace[alias] = doc
         for attr, value in doc.items():
             namespace[f"{alias}__{attr}"] = value
     namespace.update(bind_vars)

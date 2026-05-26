@@ -46,6 +46,7 @@ cases:
       SELECT (DATATYPE(?n) AS ?d) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = (IS_BOOL(doc1.n) ? "http://www.w3.org/2001/XMLSchema#boolean" : (IS_NUMBER(doc1.n) ? "http://www.w3.org/2001/XMLSchema#integer" : (IS_STRING(doc1.n) ? "http://www.w3.org/2001/XMLSchema#string" : null)))
       RETURN { d: bv2 }
     expected_bind_vars:
@@ -63,6 +64,7 @@ cases:
       SELECT (REPLACE(?n, "old", "new") AS ?r) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = REGEX_REPLACE(doc1.n, @_p1, @_p2, false)
       RETURN { r: bv2 }
     expected_bind_vars:
@@ -81,6 +83,7 @@ cases:
       SELECT (REPLACE(?n, "OLD", "new", "i") AS ?r) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = REGEX_REPLACE(doc1.n, @_p1, @_p2, true)
       RETURN { r: bv2 }
     expected_bind_vars:
@@ -99,6 +102,7 @@ cases:
       WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = (FIND_FIRST(doc1.n, @_p1) >= 0 ? SUBSTRING(doc1.n, 0, FIND_FIRST(doc1.n, @_p1)) : "")
       LET bv3 = (FIND_FIRST(doc1.n, @_p2) >= 0 ? SUBSTRING(doc1.n, FIND_FIRST(doc1.n, @_p2) + LENGTH(@_p2)) : "")
       RETURN { b: bv2, a: bv3 }
@@ -121,6 +125,7 @@ cases:
       SELECT (ENCODE_FOR_URI(?n) AS ?e) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = ENCODE_URI_COMPONENT(doc1.n)
       RETURN { e: bv2 }
     expected_bind_vars:
@@ -138,6 +143,8 @@ cases:
       SELECT (COALESCE(?a, ?b, "default") AS ?x) WHERE { ?s :a ?a ; :b ?b }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "a")
+      FILTER HAS(doc1, "b")
       LET bv2 = COALESCE(doc1.a, doc1.b, @_p1)
       RETURN { x: bv2 }
     expected_bind_vars:
@@ -156,6 +163,7 @@ cases:
       WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = ABS(doc1.n)
       LET bv3 = CEIL(doc1.n)
       LET bv4 = FLOOR(doc1.n)
@@ -188,6 +196,7 @@ cases:
       SELECT (MD5(?n) AS ?h1) (SHA1(?n) AS ?h2) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       LET bv2 = MD5(doc1.n)
       LET bv3 = SHA1(doc1.n)
       RETURN { h1: bv2, h2: bv3 }
@@ -208,6 +217,7 @@ cases:
       SELECT ?s WHERE { ?s :n ?n . FILTER isURI(?s) }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "n")
       FILTER (IS_STRING(doc1._uri) && (CONTAINS(doc1._uri, '://') || STARTS_WITH(doc1._uri, 'urn:') || STARTS_WITH(doc1._uri, 'mailto:')))
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -227,6 +237,7 @@ cases:
       SELECT ?x WHERE { _:b0 :p ?x }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       RETURN { x: doc1.p }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -243,7 +254,9 @@ cases:
       SELECT ?s ?x WHERE { ?s :p _:b0 . ?x :q _:b0 }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
+      FILTER HAS(doc2, "q")
       FILTER doc2.q == doc1.p
       RETURN { s: doc1._uri, x: doc2._uri }
     expected_bind_vars:

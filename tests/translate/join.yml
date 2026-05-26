@@ -37,7 +37,9 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FOR doc2 IN @@c2_Project
+      FILTER HAS(doc2, "owner")
       FILTER doc2.owner == doc1._uri
+      FILTER HAS(doc1, "name")
       RETURN { p: doc1._uri, o: doc2._uri }
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -52,8 +54,11 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FOR doc2 IN @@c2_Project
+      FILTER HAS(doc2, "owner")
       FILTER doc2.owner == doc1._uri
+      FILTER HAS(doc2, "title")
       RETURN { n: doc1.name, title: doc2.title }
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -71,7 +76,9 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FOR doc2 IN @@c2_Project
+      FILTER HAS(doc2, "title")
       RETURN { n: doc1.name, title: doc2.title }
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -86,9 +93,12 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FILTER STARTS_WITH(doc1.name, @_p1)
       FOR doc2 IN @@c2_Project
+      FILTER HAS(doc2, "owner")
       FILTER doc2.owner == doc1._uri
+      FILTER HAS(doc2, "title")
       RETURN { n: doc1.name, title: doc2.title }
     expected_bind_vars:
       "@c1_Person": "Person"
@@ -104,8 +114,11 @@ cases:
       } ORDER BY ?n LIMIT 10
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FOR doc2 IN @@c2_Project
+      FILTER HAS(doc2, "owner")
       FILTER doc2.owner == doc1._uri
+      FILTER HAS(doc2, "title")
       SORT doc1.name ASC
       LIMIT 10
       RETURN { n: doc1.name, title: doc2.title }

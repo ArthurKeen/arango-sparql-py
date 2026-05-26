@@ -25,6 +25,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       LET bv2 = UPPER(doc1.name)
       RETURN { n: doc1.name, upper: bv2 }
     expected_bind_vars:
@@ -40,6 +41,8 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER HAS(doc1, "name")
       LET bv2 = (doc1.age * @_p1)
       FILTER (bv2 >= @_p2)
       RETURN { n: doc1.name, dbl: bv2 }
@@ -57,6 +60,7 @@ cases:
       } ORDER BY ?upper
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       LET bv2 = UPPER(doc1.name)
       SORT bv2 ASC
       RETURN { upper: bv2 }
@@ -72,6 +76,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       LET bv2 = LENGTH(doc1.name)
       RETURN { n: doc1.name, len: bv2 }
     expected_bind_vars:
@@ -87,6 +92,7 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       LET bv2 = LOWER(doc1.name)
       LET bv3 = UPPER(bv2)
       RETURN { lower: bv2, upper: bv3 }
