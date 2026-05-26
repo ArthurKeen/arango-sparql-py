@@ -289,10 +289,16 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
             f'"")'
         )
     if name == "Builtin_ENCODE_FOR_URI":
-        # ``ENCODE_FOR_URI(str)`` — URL-encode reserved chars.
-        # AQL has ``URL_ENCODE`` which implements RFC 3986
-        # percent-encoding.
-        return f"URL_ENCODE({visitor._translate_expr(expr.arg)})"
+        # ``ENCODE_FOR_URI(str)`` — percent-encode every char that
+        # SPARQL 1.1 §17.4.2.8 considers reserved/unsafe. AQL's
+        # ``ENCODE_URI_COMPONENT`` matches JavaScript's
+        # ``encodeURIComponent`` semantics: encodes every char except
+        # the unreserved set ``A-Z``, ``a-z``, ``0-9``, ``-``, ``.``,
+        # ``_``, ``~`` — exactly SPARQL's required behavior. (Earlier
+        # slices reached for the non-existent ``URL_ENCODE``; the
+        # live-execution harness caught the typo against ArangoDB
+        # 3.12.)
+        return f"ENCODE_URI_COMPONENT({visitor._translate_expr(expr.arg)})"
     if name == "Builtin_ABS":
         return f"ABS({visitor._translate_expr(expr.arg)})"
     if name == "Builtin_CEIL":

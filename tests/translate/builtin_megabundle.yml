@@ -19,7 +19,7 @@
 #   Builtin_STRLANG        — lang-tagged literal constructor (no-op in PG)
 #   Builtin_STRBEFORE      — substring before separator (FIND_FIRST + SUBSTRING)
 #   Builtin_STRAFTER       — substring after separator
-#   Builtin_ENCODE_FOR_URI — URL_ENCODE
+#   Builtin_ENCODE_FOR_URI — ENCODE_URI_COMPONENT
 #   Builtin_COALESCE       — direct AQL COALESCE
 #   Builtin_ABS / CEIL / FLOOR / ROUND
 #   Builtin_NOW / YEAR / MONTH / DAY / HOURS / MINUTES / SECONDS
@@ -106,6 +106,25 @@ cases:
       "@c1_Document": "Document"
       "_p1": "-"
       "_p2": "-"
+
+  - name: encode_for_uri_basic
+    # ``ENCODE_FOR_URI(str)`` — SPARQL 1.1 §17.4.2.8 percent-encoding
+    # of every reserved/unsafe char (everything outside the unreserved
+    # set ``A-Za-z0-9-._~``). AQL's ``ENCODE_URI_COMPONENT`` matches
+    # JavaScript's ``encodeURIComponent`` semantics, which is exactly
+    # SPARQL's required behavior. NOTE: this pins ``ENCODE_URI_COMPONENT``
+    # explicitly because an earlier slice emitted the non-existent
+    # ``URL_ENCODE`` and shipped without a golden — the live-execution
+    # harness caught it against ArangoDB 3.12.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (ENCODE_FOR_URI(?n) AS ?e) WHERE { ?s :n ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = ENCODE_URI_COMPONENT(doc1.n)
+      RETURN { e: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
 
   # ---- COALESCE ------------------------------------------------------
 
