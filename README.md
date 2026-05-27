@@ -3,7 +3,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/ArthurKeen/arango-sparql-py/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ArthurKeen/arango-sparql-py/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![W3C DAWG](https://img.shields.io/badge/W3C%20DAWG%20query%20eval-67.6%25-orange)](tests/w3c/COVERAGE_REPORT.md)
+[![W3C DAWG](https://img.shields.io/badge/W3C%20DAWG%20query%20eval-70.4%25-orange)](tests/w3c/COVERAGE_REPORT.md)
 
 > **Status: v0.1 — active development.** The translator and HTTP service
 > are working; a W3C-conformant `/sparql` Protocol endpoint is on the v1.0
@@ -130,7 +130,7 @@ W3C SPARQL 1.1 DAWG translation-only coverage at `main`:
 | --- | --- |
 | Syntax (positive) | **100.0 %** (63/63) |
 | Syntax (negative) | **67.4 %** (29/43, the 14 xfails are rdflib parser-permissiveness gaps, not translator gaps) |
-| Query evaluation | **67.6 %** (171/253) — see [`COVERAGE_REPORT.md`](tests/w3c/COVERAGE_REPORT.md) for the full XFAIL ledger driving the visitor priority queue |
+| Query evaluation | **70.4 %** (178/253) — see [`COVERAGE_REPORT.md`](tests/w3c/COVERAGE_REPORT.md) for the full XFAIL ledger driving the visitor priority queue |
 
 Visitors shipped today: `BGP`, `Filter`, `Project`, `Distinct`, `Slice`,
 `OrderBy`, `AskQuery`, `Extend` (BIND), `LeftJoin` (OPTIONAL),

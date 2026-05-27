@@ -265,6 +265,74 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         # bare lexical form (matches the ``Builtin_LANG``
         # contract that always emits ``""``).
         return visitor._translate_expr(expr.arg1)
+    if name == "Builtin_URI" or name == "Builtin_IRI":
+        # ``IRI(str)`` / ``URI(str)`` — SPARQL §17.4.2.8. Constructs
+        # an IRI from a string (or returns the IRI unchanged if the
+        # arg is already one). In our PG / LPG storage model IRIs
+        # are bare strings whose lexical form is the IRI itself, so
+        # the SPARQL semantics collapse to ``TO_STRING(arg)``. The
+        # cast is necessary because the arg can be a typed literal
+        # (e.g. ``xsd:anyURI``) whose Python value is the lexical
+        # form but whose AQL representation might be a number /
+        # boolean.
+        return f"TO_STRING({visitor._translate_expr(expr.arg)})"
+    if name == "Builtin_RAND":
+        # ``RAND()`` — SPARQL §17.4.1.7 returns a pseudo-random
+        # xsd:double in [0, 1). AQL ``RAND()`` is the same contract.
+        return "RAND()"
+    if name == "Builtin_UUID":
+        # ``UUID()`` — SPARQL §17.4.1.7 returns a fresh ``urn:uuid:…``
+        # IRI per call. AQL ``UUID()`` returns the bare lexical form,
+        # so we prepend the IRI scheme to match the spec.
+        return "CONCAT('urn:uuid:', UUID())"
+    if name == "Builtin_STRUUID":
+        # ``STRUUID()`` — SPARQL §17.4.1.7 returns the lexical-form
+        # string of a fresh UUID (no ``urn:uuid:`` prefix). Maps
+        # directly to AQL ``UUID()``.
+        return "UUID()"
+    if name == "Builtin_BNODE":
+        # ``BNODE()`` — SPARQL §17.4.1.7 mints a fresh blank node
+        # per call. ``BNODE(str)`` mints a blank node that's
+        # deterministic per ``str`` within the same query result
+        # (so two ``BNODE(?x)`` calls on the same row collapse to
+        # one node). Our blank-node serialisation is ``_:b<id>``
+        # (matches the RPT skolemisation recipe in PRD §6.6 and
+        # the ``Builtin_isBLANK`` probe below), so:
+        #
+        # * ``BNODE()``      → ``CONCAT('_:b', UUID())`` — fresh
+        #   per row, fresh per call (AQL's ``UUID()`` is re-evaluated).
+        # * ``BNODE(arg)``   → ``CONCAT('_:b', MD5(TO_STRING(arg)))``
+        #   — deterministic per source value; the MD5 hash collides
+        #   only with vanishingly low probability and keeps the
+        #   identifier opaque.
+        if "arg" not in expr.keys():
+            return "CONCAT('_:b', UUID())"
+        return f"CONCAT('_:b', MD5(TO_STRING({visitor._translate_expr(expr.arg)})))"
+    if name == "Builtin_SUBSTR":
+        # ``SUBSTR(str, start)`` / ``SUBSTR(str, start, length)`` —
+        # SPARQL 1.1 §17.4.3.3. ``start`` is **1-based** per the
+        # SPARQL spec; AQL's ``SUBSTRING`` is **0-based**, so we
+        # subtract one. ``length`` is optional in both languages —
+        # when present rdflib stores it on ``expr.length``, when
+        # absent ``expr.get("length")`` is ``None``.
+        #
+        # We bind ``start`` and ``length`` through the visitor
+        # recursion so a literal ``1`` becomes a bind variable rather
+        # than an inline integer — matches the parameterised-AQL
+        # contract from `.cursor/rules/100-backend-python.mdc`. The
+        # subtraction happens inline in the emitted AQL so a
+        # variable-driven ``start`` is correctly shifted at execution
+        # time, not just at translation time.
+        source = visitor._translate_expr(expr.arg)
+        start_expr = visitor._translate_expr(expr.start)
+        # rdflib's ``CompValue.get(key)`` returns the *key name string*
+        # (not ``None``) when the attribute is absent, which would
+        # crash the recursive expression translator. Probe ``keys()``
+        # directly so the optional-length branch is unambiguous.
+        if "length" not in expr.keys():
+            return f"SUBSTRING({source}, ({start_expr}) - 1)"
+        length_expr = visitor._translate_expr(expr["length"])
+        return f"SUBSTRING({source}, ({start_expr}) - 1, {length_expr})"
     if name == "Builtin_STRBEFORE":
         # ``STRBEFORE(str, sep)`` — substring up to (but not
         # including) the first occurrence of ``sep``, or ``""``

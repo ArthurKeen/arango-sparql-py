@@ -122,6 +122,142 @@ cases:
       "@c1_Document": "Document"
       "_p1": "*"
 
+  # ---- Builtin_SUBSTR ------------------------------------------------
+
+  - name: substr_three_arg
+    # ``SUBSTR(?n, 1, 3)`` — SPARQL §17.4.3.3 with all three args.
+    # SPARQL ``start`` is 1-based; AQL ``SUBSTRING`` is 0-based, so
+    # the emitter subtracts 1 in-line at execution time (works for
+    # both literal and variable ``start`` values).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :name ?n FILTER (SUBSTR(?n, 1, 3) = "abc") }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER (SUBSTRING(doc1.name, (@_p1) - 1, @_p2) == @_p3)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": 1
+      "_p2": 3
+      "_p3": "abc"
+
+  - name: substr_two_arg
+    # ``SUBSTR(?n, 2)`` — optional-length form (substring to end of
+    # the source string). The emitter MUST detect the missing
+    # ``length`` slot via ``"length" in expr.keys()`` because rdflib's
+    # ``CompValue.get`` returns the key name string when an attribute
+    # is absent — a ``.get(...) is None`` check would crash here.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s :name ?n FILTER (SUBSTR(?n, 2) = "bc") }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER (SUBSTRING(doc1.name, (@_p1) - 1) == @_p2)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1": 2
+      "_p2": "bc"
+
+  - name: substr_variable_start
+    # ``SUBSTR(?n, ?off)`` — variable starting offset routed
+    # through the same ``(start) - 1`` shift, exercising the case
+    # where the offset is an attribute reference (``doc1.off``)
+    # rather than a bind variable.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUBSTR(?n, ?off) AS ?suffix) WHERE { ?s :name ?n ; :off ?off }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = SUBSTRING(doc1.name, (doc1.off) - 1)
+      RETURN { suffix: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- Builtin_URI / Builtin_IRI -------------------------------------
+
+  - name: uri_constructor_from_string
+    # ``URI(str)`` / ``IRI(str)`` — SPARQL §17.4.2.8. In our PG /
+    # LPG storage model IRIs are bare strings (the lexical form
+    # itself), so the SPARQL constructor collapses to ``TO_STRING``.
+    # The cast guards against typed-literal sources (e.g.
+    # ``xsd:anyURI``) whose Python value might not already be a
+    # string.
+    sparql: |
+      SELECT (URI("http://ex.org/x") AS ?u) WHERE {}
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = TO_STRING(@_p1)
+      RETURN { u: bv2 }
+    expected_bind_vars:
+      "_p1": "http://ex.org/x"
+
+  # ---- Builtin_RAND / UUID / STRUUID / BNODE -------------------------
+
+  - name: rand_constant_projection
+    # ``RAND()`` — SPARQL §17.4.1.7 returns xsd:double in [0, 1).
+    # AQL ``RAND()`` is the same contract.
+    sparql: |
+      SELECT (RAND() AS ?r) WHERE {}
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = RAND()
+      RETURN { r: bv2 }
+    expected_bind_vars: {}
+
+  - name: uuid_returns_urn_iri
+    # ``UUID()`` — SPARQL spec requires the IRI form
+    # (``urn:uuid:…``). AQL ``UUID()`` returns the bare lexical
+    # form, so we prepend the URN scheme.
+    sparql: |
+      SELECT (UUID() AS ?u) WHERE {}
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = CONCAT('urn:uuid:', UUID())
+      RETURN { u: bv2 }
+    expected_bind_vars: {}
+
+  - name: struuid_returns_lexical_string
+    # ``STRUUID()`` — SPARQL spec returns the lexical UUID
+    # without the ``urn:uuid:`` prefix.
+    sparql: |
+      SELECT (STRUUID() AS ?u) WHERE {}
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = UUID()
+      RETURN { u: bv2 }
+    expected_bind_vars: {}
+
+  - name: bnode_no_arg_fresh_per_row
+    # ``BNODE()`` mints a fresh blank node per call. AQL's
+    # ``UUID()`` re-evaluates per row (per the AQL non-deterministic
+    # function contract), so wrapping it with the ``_:b`` blank-node
+    # sigil gives the right semantics.
+    sparql: |
+      SELECT (BNODE() AS ?b) WHERE {}
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = CONCAT('_:b', UUID())
+      RETURN { b: bv2 }
+    expected_bind_vars: {}
+
+  - name: bnode_with_arg_deterministic
+    # ``BNODE(arg)`` — same blank node for the same arg within the
+    # query result. ``MD5(TO_STRING(arg))`` makes the identifier
+    # deterministic and opaque, with collision probability low
+    # enough to be irrelevant for SPARQL semantics (the spec only
+    # requires per-row stability, not cross-row uniqueness).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s (BNODE(?n) AS ?b) WHERE { ?s :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      LET bv2 = CONCAT('_:b', MD5(TO_STRING(doc1.name)))
+      RETURN { s: doc1._uri, b: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
   # ---- Empty-BGP path ------------------------------------------------
 
   - name: empty_bgp_bind_only
