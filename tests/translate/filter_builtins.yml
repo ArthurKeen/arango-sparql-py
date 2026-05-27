@@ -128,12 +128,15 @@ cases:
     # ``SUBSTR(?n, 1, 3)`` — SPARQL §17.4.3.3 with all three args.
     # SPARQL ``start`` is 1-based; AQL ``SUBSTRING`` is 0-based, so
     # the emitter subtracts 1 in-line at execution time (works for
-    # both literal and variable ``start`` values).
+    # both literal and variable ``start`` values). The ``FILTER HAS
+    # (doc1, "name")`` guard is contributed by the variable-object
+    # BGP emitter (predicate-existence FILTER slice).
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s WHERE { ?s :name ?n FILTER (SUBSTR(?n, 1, 3) = "abc") }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FILTER (SUBSTRING(doc1.name, (@_p1) - 1, @_p2) == @_p3)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -153,6 +156,7 @@ cases:
       SELECT ?s WHERE { ?s :name ?n FILTER (SUBSTR(?n, 2) = "bc") }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       FILTER (SUBSTRING(doc1.name, (@_p1) - 1) == @_p2)
       RETURN { s: doc1._uri }
     expected_bind_vars:
@@ -164,12 +168,15 @@ cases:
     # ``SUBSTR(?n, ?off)`` — variable starting offset routed
     # through the same ``(start) - 1`` shift, exercising the case
     # where the offset is an attribute reference (``doc1.off``)
-    # rather than a bind variable.
+    # rather than a bind variable. Both ``?n`` and ``?off`` triples
+    # carry the predicate-existence guard.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT (SUBSTR(?n, ?off) AS ?suffix) WHERE { ?s :name ?n ; :off ?off }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
+      FILTER HAS(doc1, "off")
       LET bv2 = SUBSTRING(doc1.name, (doc1.off) - 1)
       RETURN { suffix: bv2 }
     expected_bind_vars:
@@ -253,6 +260,7 @@ cases:
       SELECT ?s (BNODE(?n) AS ?b) WHERE { ?s :name ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "name")
       LET bv2 = CONCAT('_:b', MD5(TO_STRING(doc1.name)))
       RETURN { s: doc1._uri, b: bv2 }
     expected_bind_vars:

@@ -187,7 +187,11 @@ cases:
 
   - name: mul_path_zero_or_one
     # ``?s :p? ?o`` — identity arm + one-hop arm. No knob needed
-    # because ``?`` is bounded at 1 by the SPARQL spec.
+    # because ``?`` is bounded at 1 by the SPARQL spec. The one-hop
+    # arm picks up the ``FILTER HAS(doc, "p")`` predicate-existence
+    # guard the variable-object BGP emitter attaches to every
+    # ``?s :p ?o`` triple; the identity arm has no triple and
+    # therefore no guard.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?o WHERE { ?s :p? ?o }
@@ -199,6 +203,7 @@ cases:
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "p")
         RETURN { o: doc2.p, s: doc2._uri }
       )
       )
@@ -209,6 +214,7 @@ cases:
 
   - name: mul_path_one_or_more_depth_two
     # ``?s :p+ ?o`` with max_depth=2 → two arms (one-hop, two-hop).
+    # Both arms gain the per-step ``FILTER HAS(doc, "p")`` guard.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?o WHERE { ?s :p+ ?o }
@@ -217,12 +223,15 @@ cases:
       FOR row4 IN UNION(
       (
         FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "p")
         RETURN { o: doc1.p, s: doc1._uri }
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "p")
         FOR doc3 IN @@c2_Document
         FILTER doc3._uri == doc2.p
+        FILTER HAS(doc3, "p")
         RETURN { o: doc3.p, s: doc2._uri }
       )
       )
@@ -245,12 +254,15 @@ cases:
       ),
       (
         FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "p")
         RETURN { o: doc2.p, s: doc2._uri }
       ),
       (
         FOR doc3 IN @@c3_Document
+        FILTER HAS(doc3, "p")
         FOR doc4 IN @@c3_Document
         FILTER doc4._uri == doc3.p
+        FILTER HAS(doc4, "p")
         RETURN { o: doc4.p, s: doc3._uri }
       )
       )
