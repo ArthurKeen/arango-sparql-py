@@ -157,19 +157,42 @@ def _emit_union_of_arms(
             set(probe.state.var_to_expr.keys()) - outer_vars
         )
 
-    all_vars = sorted(set().union(*arm_var_sets))
-    if not all_vars:
+    raw_vars = sorted(set().union(*arm_var_sets))
+    if not raw_vars:
         # An UNION whose arms bind no NEW variables is semantically
         # a "does either arm match anything?" probe — exactly the
         # NOT-EXISTS shape, but as bag-union, so every match in
         # either arm contributes a row. We could emit a degenerate
         # ``UNION((… RETURN 1), (… RETURN 1))`` but the outer
-        # scope would have nothing to bind. The W3C corpus doesn't
-        # exercise this shape; defer rather than ship empty-row
-        # semantics that look like a passthrough.
-        raise NotImplementedError(  # pragma: no cover - W3C-unreached
-            "UNION whose arms bind no new variables is not yet supported"
+        # scope would have nothing to bind. The W3C corpus does hit
+        # this shape (e.g. ``SELECT * WHERE { :a (:p)* :b }``);
+        # surface as :class:`UnsupportedSparqlError` so the
+        # translation-only harness buckets it cleanly rather than
+        # crashing collection with a bare ``NotImplementedError``.
+        from ..errors import UnsupportedSparqlError
+
+        raise UnsupportedSparqlError(
+            "UNION whose arms bind no new variables is not yet supported "
+            "(constant-only property path or alternative with no "
+            "free variables)"
         )
+
+    # Property-path intermediate variables (``_path_<n>``, minted by
+    # :meth:`AlgebraVisitor._fresh_path_var`) are internal sigil
+    # names the user can never reference — strip them from the
+    # per-arm RETURN and the outer-scope binding so the AQL only
+    # carries user-visible vars. They MUST remain in ``raw_vars``
+    # above so the empty-arms check above counts them; only the
+    # projection should be elided.
+    all_vars = [v for v in raw_vars if not v.startswith("_path_")]
+    if not all_vars:
+        # Every "new" arm var was an internal ``_path_*`` sigil. No
+        # user projection is needed; emit the union as a side-effect
+        # join over the parent's existing bindings without a row
+        # alias. The path arms still apply their FILTERs through the
+        # outer scope; downstream visitors don't need to see the
+        # intermediate vars.
+        all_vars = list(raw_vars)
 
     # ---- Phase 2: emit each arm with full-schema projection ---------
     arm_aqls: list[str] = []

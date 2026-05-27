@@ -36,12 +36,16 @@ from arango_sparql.translate.resolver import SchemaResolver
 GOLDEN_PATH = Path(__file__).parent / "property_paths.yml"
 
 
-def _load_supported() -> list[tuple[str, str, str, str, dict]]:
+def _load_supported() -> list[tuple[str, str, str, str, dict, int | None]]:
     """Return ``(name, ontology_ttl, sparql, expected_aql,
-    expected_bind_vars)`` per supported-path golden."""
+    expected_bind_vars, property_path_max_depth)`` per supported-path golden.
+
+    ``property_path_max_depth`` is ``None`` for cases that don't
+    override the resolver default; MulPath cases set it explicitly so
+    the UNION-of-fixed-paths AQL stays short and reviewable."""
     data = yaml.safe_load(GOLDEN_PATH.read_text())
     ttl = data["ontology"]
-    out: list[tuple[str, str, str, str, dict]] = []
+    out: list[tuple[str, str, str, str, dict, int | None]] = []
     for case in data["cases"]:
         out.append(
             (
@@ -50,6 +54,7 @@ def _load_supported() -> list[tuple[str, str, str, str, dict]]:
                 case["sparql"],
                 case["expected_aql"].rstrip("\n"),
                 case["expected_bind_vars"],
+                case.get("property_path_max_depth"),
             )
         )
     return out
@@ -72,7 +77,7 @@ def _load_unsupported() -> list[tuple[str, str, str]]:
 
 
 @pytest.mark.parametrize(
-    "name, ontology_ttl, sparql, expected_aql, expected_bind_vars",
+    "name, ontology_ttl, sparql, expected_aql, expected_bind_vars, max_depth",
     _load_supported(),
     ids=[c[0] for c in _load_supported()],
 )
@@ -82,6 +87,7 @@ def test_property_path_supported_golden(
     sparql: str,
     expected_aql: str,
     expected_bind_vars: dict,
+    max_depth: int | None,
 ) -> None:
     """Supported paths produce the exact AQL the golden declares.
 
@@ -94,6 +100,8 @@ def test_property_path_supported_golden(
     resolver = SchemaResolver.from_turtle(
         ontology_ttl, default_collection="Document"
     )
+    if max_depth is not None:
+        resolver.property_path_max_depth = max_depth
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
         f"AQL mismatch for {name!r}:\n"

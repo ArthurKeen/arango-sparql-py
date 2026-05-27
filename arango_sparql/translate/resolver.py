@@ -194,6 +194,10 @@ class SchemaResolver:
     field on whatever document the underlying FOR loop produces.
     """
 
+    property_path_max_depth: int = 10
+    """Maximum repetitions when lowering ``:p+`` / ``:p*`` / ``:p?``; see
+    :mod:`arango_sparql.translate.paths`."""
+
     default_graph_includes_named: bool = True
     """Whether queries outside any ``GRAPH`` wrapper see *all*
     documents (lax, default) or only documents in the default

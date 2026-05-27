@@ -46,8 +46,8 @@ coverage report stay clean and the next slice has an obvious target:
   deferred until the visitor learns to inject Union sub-patterns
   outside the visit_Union path.
 * :class:`rdflib.paths.MulPath` (``:p*`` / ``:p+`` / ``:p?``)
-  — needs ArangoDB graph traversal (``FOR v IN min..max OUTBOUND``);
-  largest single remaining property-path bucket in the W3C corpus.
+  — desugared to a UNION of zero-or-more single-path arms (bounded
+  by :data:`PROPERTY_PATH_MAX_DEPTH`); see :func:`_emit_mul_path`.
 * :class:`rdflib.paths.NegatedPath` (``!:p``)
   — needs a "predicate-not-in" filter; the LPG/PG shape requires
   enumerating every property, which is exponential. RPT-only
@@ -65,6 +65,7 @@ construction.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from rdflib import URIRef, Variable
@@ -81,6 +82,14 @@ from ..errors import UnsupportedSparqlError
 
 if TYPE_CHECKING:
     from .visitor import AlgebraVisitor
+
+# SPARQL property paths are unbounded; ArangoDB has no single AQL
+# construct for "follow document attribute p forever". We desugar
+# ``:p*`` / ``:p+`` / ``:p?`` to a UNION of fixed-length paths
+# (0..N hops) so each arm reuses the existing SequencePath / edge
+# emitters. N is configurable per deployment via
+# ``SchemaResolver.property_path_max_depth`` (default below).
+PROPERTY_PATH_MAX_DEPTH: int = 10
 
 
 def emit_path_triple(
@@ -123,9 +132,8 @@ def emit_path_triple(
         emit_alternative_path(visitor, subject, predicate, obj)
         return
     if isinstance(predicate, MulPath):
-        raise UnsupportedSparqlError(
-            f"transitive property paths (':p{predicate.mod}') are not yet supported"
-        )
+        _emit_mul_path(visitor, subject, predicate, obj)
+        return
     if isinstance(predicate, NegatedPath):
         raise UnsupportedSparqlError(
             "negated property paths ('!:p') are not yet supported"
@@ -220,6 +228,143 @@ def _emit_inverse_path(
 
     inner: Any = predicate.arg
     visitor._emit_triple((obj, inner, subject))
+
+
+def _emit_mul_path(
+    visitor: AlgebraVisitor,
+    subject: Any,
+    predicate: MulPath,
+    obj: Any,
+) -> None:
+    """Expand ``:p*`` / ``:p+`` / ``:p?`` to a bounded UNION of path lengths.
+
+    SPARQL 1.1 §18.4 defines the modifiers as repetition of the inner
+    path: ``+`` (one or more), ``*`` (zero or more), ``?`` (zero or one).
+
+    We lower each to ``UNION(arm_0, arm_1, …, arm_N)`` where ``arm_k`` is
+    the inner path repeated ``k`` times (``arm_0`` for ``*`` / ``?`` is the
+    identity binding ``?o ≡ ?s``). Each non-identity arm calls
+    :func:`emit_path_triple` (or :meth:`AlgebraVisitor._emit_triple` for a
+    plain ``URIRef`` leaf) so PG edge traversals, LPG discriminators, and
+    default-collection joins compose without duplicating traversal logic.
+
+    ``N`` is :attr:`SchemaResolver.property_path_max_depth` (default
+    :data:`PROPERTY_PATH_MAX_DEPTH`). Paths longer than ``N`` are not matched.
+    """
+    mod = predicate.mod
+    if mod not in ("*", "+", "?"):
+        raise UnsupportedSparqlError(
+            f"property path modifier {mod!r} is not supported"
+        )
+
+    inner = predicate.path
+    if isinstance(inner, (AlternativePath, MulPath, NegatedPath)):
+        raise UnsupportedSparqlError(
+            f"nested property path {type(inner).__name__!r} inside "
+            f"MulPath (':p{mod}') is not supported"
+        )
+
+    if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
+        raise UnsupportedSparqlError(
+            "property paths on RPT-mapped subjects are not yet supported"
+        )
+
+    max_depth = visitor.resolver.property_path_max_depth
+    if mod == "?":
+        min_len, max_len = 0, 1
+    elif mod == "+":
+        min_len, max_len = 1, max_depth
+    else:  # mod == "*"
+        min_len, max_len = 0, max_depth
+
+    arm_drivers: list[Callable[[AlgebraVisitor], None]] = []
+    if min_len == 0:
+        arm_drivers.append(
+            lambda v, s=subject, o=obj: _emit_zero_hop_path(v, s, o)
+        )
+    for length in range(max(1, min_len), max_len + 1):
+        expanded = _repeat_inner_path(inner, length)
+        arm_drivers.append(
+            lambda v, s=subject, p=expanded, o=obj: _emit_expanded_path_arm(
+                v, s, p, o
+            )
+        )
+
+    if len(arm_drivers) == 1:
+        arm_drivers[0](visitor)
+        return
+
+    from .union_paths import _emit_union_of_arms
+
+    _emit_union_of_arms(visitor, arm_drivers)
+
+
+def _emit_zero_hop_path(
+    visitor: AlgebraVisitor,
+    subject: Any,
+    obj: Any,
+) -> None:
+    """Identity arm for ``:p*`` / ``:p?`` — bind ``?o`` to the same URI as ``?s``."""
+    subject_alias = visitor._ensure_subject_alias(subject)
+    uri_expr = f"{subject_alias}._uri"
+    if isinstance(obj, Variable):
+        o_name = str(obj)
+        existing = visitor.state.var_to_expr.get(o_name)
+        if existing is None:
+            visitor.state.var_to_expr[o_name] = uri_expr
+        elif existing != uri_expr:
+            visitor.builder.filter_raw(f"{uri_expr} == {existing}")
+        return
+    if isinstance(obj, URIRef):
+        bind = visitor.builder.bind(str(obj), hint="uri")
+        visitor.builder.filter_eq(uri_expr, bind)
+        return
+    raise UnsupportedSparqlError(
+        f"zero-hop property path object term type {type(obj).__name__!r} "
+        f"is not supported"
+    )
+
+
+def _emit_expanded_path_arm(
+    visitor: AlgebraVisitor,
+    subject: Any,
+    expanded: Any,
+    obj: Any,
+) -> None:
+    """Emit one UNION arm: a fixed-length expansion of the inner path."""
+    if isinstance(expanded, Path):
+        emit_path_triple(visitor, subject, expanded, obj)
+        return
+    if isinstance(expanded, URIRef):
+        visitor._emit_triple((subject, expanded, obj))
+        return
+    raise UnsupportedSparqlError(
+        f"repeated path inner type {type(expanded).__name__!r} is not supported"
+    )
+
+
+def _repeat_inner_path(inner: Any, count: int) -> Any:
+    """Repeat *inner* *count* times as a path (URIRef or SequencePath)."""
+    if count < 1:
+        raise ValueError(f"path repeat count must be >= 1, got {count}")
+    if isinstance(inner, URIRef):
+        if count == 1:
+            return inner
+        return SequencePath(*([inner] * count))
+    if isinstance(inner, SequencePath):
+        if count == 1:
+            return inner
+        parts: list[Any] = []
+        for _ in range(count):
+            parts.extend(inner.args)
+        return SequencePath(*parts)
+    if isinstance(inner, InvPath):
+        if count == 1:
+            return inner
+        return SequencePath(*([inner] * count))
+    raise UnsupportedSparqlError(
+        f"cannot repeat property path inner type {type(inner).__name__!r}"
+    )
 
 
 # ---------------------------------------------------------------------------

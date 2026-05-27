@@ -174,6 +174,92 @@ cases:
 
   # ---- Composition with the rest of the visitor --------------------
 
+  # ---- MulPath (``:p?`` / ``:p+`` / ``:p*``) ------------------------
+  #
+  # SPARQL 1.1 §18.4 defines these as repetition of the inner path.
+  # Lacking an unbounded AQL construct, the translator lowers them
+  # to a ``UNION`` of fixed-length path arms bounded by
+  # :attr:`SchemaResolver.property_path_max_depth`. ``:p?`` is
+  # bounded at 1 by the modifier itself; ``:p+`` / ``:p*`` honour
+  # the resolver knob. The goldens below override the knob to keep
+  # the AQL short and reviewable; the default in production is 10.
+  # See :mod:`arango_sparql.translate.paths`.
+
+  - name: mul_path_zero_or_one
+    # ``?s :p? ?o`` — identity arm + one-hop arm. No knob needed
+    # because ``?`` is bounded at 1 by the SPARQL spec.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p? ?o }
+    expected_aql: |-
+      FOR row3 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1._uri, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        RETURN { o: doc2.p, s: doc2._uri }
+      )
+      )
+      RETURN { s: row3.s, o: row3.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: mul_path_one_or_more_depth_two
+    # ``?s :p+ ?o`` with max_depth=2 → two arms (one-hop, two-hop).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p+ ?o }
+    property_path_max_depth: 2
+    expected_aql: |-
+      FOR row4 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1.p, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        FOR doc3 IN @@c2_Document
+        FILTER doc3._uri == doc2.p
+        RETURN { o: doc3.p, s: doc2._uri }
+      )
+      )
+      RETURN { s: row4.s, o: row4.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: mul_path_zero_or_more_depth_two
+    # ``?s :p* ?o`` with max_depth=2 → three arms (identity, one-hop, two-hop).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s :p* ?o }
+    property_path_max_depth: 2
+    expected_aql: |-
+      FOR row5 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        RETURN { o: doc1._uri, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        RETURN { o: doc2.p, s: doc2._uri }
+      ),
+      (
+        FOR doc3 IN @@c3_Document
+        FOR doc4 IN @@c3_Document
+        FILTER doc4._uri == doc3.p
+        RETURN { o: doc4.p, s: doc3._uri }
+      )
+      )
+      RETURN { s: row5.s, o: row5.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "@c3_Document": "Document"
+
   - name: sequence_with_sibling_attribute_triple
     # A path triple and a plain attribute triple sharing a subject.
     # Confirms ``_ensure_subject_alias`` returns the already-bound
@@ -205,26 +291,12 @@ cases:
 # ---------------------------------------------------------------------
 
 unsupported:
-  - name: mul_path_one_or_more_rejected
-    # ``?s :p+ ?o`` — transitive one-or-more. Requires ArangoDB
-    # graph traversal (``FOR v IN 1..N OUTBOUND``), deferred to the
-    # MulPath slice.
-    sparql: |
-      PREFIX : <http://ex.org/>
-      SELECT ?s ?o WHERE { ?s :p+ ?o }
-    expected_error_substring: "transitive property paths (':p+') are not yet supported"
-
-  - name: mul_path_zero_or_more_rejected
-    sparql: |
-      PREFIX : <http://ex.org/>
-      SELECT ?s ?o WHERE { ?s :p* ?o }
-    expected_error_substring: "transitive property paths (':p*') are not yet supported"
-
-  - name: mul_path_zero_or_one_rejected
-    sparql: |
-      PREFIX : <http://ex.org/>
-      SELECT ?s ?o WHERE { ?s :p? ?o }
-    expected_error_substring: "transitive property paths (':p?') are not yet supported"
+  # NOTE: ``mul_path_*_rejected`` entries were removed once ``:p+`` /
+  # ``:p*`` / ``:p?`` shipped via the UNION-of-fixed-paths desugaring
+  # in :func:`arango_sparql.translate.paths._emit_mul_path`. The
+  # positive goldens above (``mul_path_zero_or_one``,
+  # ``mul_path_one_or_more_depth_two``, ``mul_path_zero_or_more_depth_two``)
+  # are the active coverage for those operators.
 
   # NOTE: ``alternative_path_rejected`` was removed once
   # AlternativePath (``:p|:q``) shipped via

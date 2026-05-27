@@ -14,7 +14,7 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | -------- | -----:| ----:| ----:| -----:| ----:| --------:|
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
-| Query evaluation | 253 | 161 | 0 | 92 | 0 | 63.6% |
+| Query evaluation | 253 | 171 | 0 | 82 | 0 | 67.6% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -33,7 +33,7 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 
 | Bucket | Count | Implication |
 | ------ | -----:| ----------- |
-| `algebra` | 39 | port the corresponding visitor method |
+| `algebra` | 29 | port the corresponding visitor method |
 | `schema` | 53 | harness artefact (empty resolver); will pass against a populated ontology |
 | `rdflib` | 14 | rdflib parser disagreement; out of scope here |
 
@@ -44,9 +44,7 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | 14 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#Restriction' is not declared owl:Class ...` | harness artefact (empty resolver); will pass against a populated ontology |
 | 14 | `rdflib` | `rdflib accepted invalid query` | rdflib parser disagreement; out of scope here |
 | 8 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#DatatypeProperty' is not declared owl:C...` | harness artefact (empty resolver); will pass against a populated ontology |
-| 7 | `algebra` | `UnsupportedSparql: transitive property paths (':p*') are not yet supported` | port the corresponding visitor method |
 | 6 | `schema` | `SchemaResolution: class IRI 'http://example/Set' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
-| 4 | `algebra` | `UnsupportedSparql: transitive property paths (':p+') are not yet supported` | port the corresponding visitor method |
 | 4 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'ServiceGraphPattern' is not implemented yet (see .cursor/sk...` | port the corresponding visitor method |
 | 3 | `schema` | `SchemaResolution: class IRI 'http://example.org/x/c' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
 | 2 | `algebra` | `UnsupportedSparql: OPTIONAL whose subject is not already bound by the required side is not yet supp...` | port the corresponding visitor method |
@@ -56,6 +54,8 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | 2 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_BNODE' is not yet supported (see references/aran...` | port the corresponding visitor method |
 | 2 | `algebra` | `UnsupportedSparql: Builtin_SHA256 is not supported (AQL lacks a native SHA-256 hash; use SHA-512 or...` | port the corresponding visitor method |
 | 2 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_SUBSTR' is not yet supported (see references/ara...` | port the corresponding visitor method |
+| 2 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2009/sparql/docs/tests/data-sparql11/negation#Anima...` | harness artefact (empty resolver); will pass against a populated ontology |
+| 2 | `algebra` | `SparqlParse: failed to parse SPARQL: maximum recursion depth exceeded` | port the corresponding visitor method |
 
 ## How to reproduce
 
