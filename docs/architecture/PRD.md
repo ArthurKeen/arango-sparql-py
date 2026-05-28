@@ -1936,13 +1936,21 @@ The §3.1 30 %-ratio sub-clause is over the line (largest bucket
 erroneous note — closing further *non-federation* gaps only worsens
 it (denominator shrinks, deferred-bucket share rises). The ratio can
 fall only by shipping federation itself. See the §3.1 row note; this
-is an accepted, documented state, not a defect. The next actionable
-slice is therefore the OPTIONAL cluster (the lone non-federation
-remainder), but it needs a design decision before coding (see Notes).
+is an accepted, documented state, not a defect.
+
+**Both remaining algebra clusters are now deferred** (federation and
+the OPTIONAL LeftJoin cluster), so v0.16's **95.7 %** is the effective
+translation-coverage ceiling until one of those slices is picked up.
+The OPTIONAL cluster is deferred because none of its sub-paths is both
+cheap and honest today — the design analysis (which is genuinely
+**storage-model-dependent**: trivial for RPT, ambiguous for PG/LPG,
+lossy for the flattened `Document` model the W3C harness uses) is
+captured in **ADR-0002**. Active development should pivot to
+workstreams with clear, non-lossy wins (NL→SPARQL, executor, UI).
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `OPTIONAL` unbound subject + re-binds variable | 4 | +1.6 pp | Two visitor-side limitations in `visit_LeftJoin`: **(a)** the OPTIONAL's subject is bound only as a value (not a doc alias) and the body may use a variable predicate (``?s ?p ?o OPTIONAL {?o ?p2 ?o2}`` — W3C `csvtsv02`/`jsonres02`) — needs a real cross-subject subquery emitter (``LET o = (FOR x IN coll FILTER … RETURN x)``); the semantics in the flattened doc model (what collection does ``?o`` range over? how does a variable predicate fan out?) need a **design decision before coding**. **(b)** OPTIONAL nested in MINUS that re-binds an outer variable (W3C `full-minuend`/`part-minuend`). Largest non-federation cluster but materially harder than the recent batches — surface the design question rather than guess. |
+| `OPTIONAL` cross-subject + re-binds variable | 4 | +1.6 pp (Option B only; Option A is +0 today) | **Deferred — see ADR-0002.** Two distinct problems sharing `visit_LeftJoin`: **(a)** cross-subject OPTIONAL with a variable predicate (`?s ?p ?o OPTIONAL {?o ?p2 ?o2}` — W3C `tsv02`/`jsonres02`); the design differs per storage model (RPT: trivial triples-table left-join; PG/LPG: needs `_uri → collection` resolution; default `Document`: translatable but inherits the variable-predicate carve-out → live-XFAIL). **(b)** OPTIONAL re-binding an already-bound variable inside MINUS (`full-minuend`/`part-minuend`) — model-independent §18.2.5.2 conditional-add semantics. ADR-0002 records the option matrix and recommended sequencing. |
 | `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern + SERVICE parse-recursion | 7 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. The two `SparqlParse` "maximum recursion depth" failures are both SERVICE queries — bumping `sys.setrecursionlimit` would let them parse but they'd immediately re-XFAIL on `ServiceGraphPattern`, so they travel with this slice. Shipping this is the **only** way to bring the §3.1 ratio sub-clause back under 30 %. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
