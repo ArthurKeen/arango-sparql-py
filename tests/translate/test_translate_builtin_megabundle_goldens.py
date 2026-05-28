@@ -177,16 +177,18 @@ def test_bnode_same_label_different_bgps_no_cross_scope_join() -> None:
     )
 
 
-def test_sha256_refuses_with_clear_message() -> None:
-    """SHA-256 has no native AQL builtin; silently substituting
-    SHA-512 truncated to 256 bits would be a worse failure mode
-    than translation failure. Surface a typed error so the
-    operator sees the gap.
+def test_sha256_emits_native_aql_function() -> None:
+    """ArangoDB AQL ships ``SHA256()`` as a first-class string
+    function — verified against the current arango.ai "String
+    functions in AQL" docs. An earlier slice rejected this builtin
+    under the then-accurate assumption that AQL only exposed
+    MD5 / SHA1 / SHA512; this test pins the corrected emission so
+    a future "remove SHA256" refactor breaks loudly.
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
-    with pytest.raises(UnsupportedSparqlError, match="SHA-256"):
-        translate(
-            "PREFIX : <http://ex.org/> SELECT (SHA256(?n) AS ?x) "
-            "WHERE { ?s :n ?n }",
-            resolver=resolver,
-        )
+    result = translate(
+        "PREFIX : <http://ex.org/> SELECT (SHA256(?n) AS ?x) "
+        "WHERE { ?s :n ?n }",
+        resolver=resolver,
+    )
+    assert "SHA256(doc1.n)" in result.aql

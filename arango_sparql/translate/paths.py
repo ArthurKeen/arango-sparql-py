@@ -36,22 +36,13 @@ that are pure desugarings (no new builder or resolver work):
   object and recurses on the inner path (which may itself be a
   ``Path``, e.g. ``^(:p/:q)`` is an inverse-of-sequence).
 
-The remaining three path operators raise
-:class:`~arango_sparql.errors.UnsupportedSparqlError` with stable,
-operator-grep-friendly messages so XFAIL buckets in the W3C
-coverage report stay clean and the next slice has an obvious target:
-
-* :class:`rdflib.paths.AlternativePath` (``:p|:q``)
-  — needs a Union-shaped rewrite or per-row predicate-set FILTER;
-  deferred until the visitor learns to inject Union sub-patterns
-  outside the visit_Union path.
-* :class:`rdflib.paths.MulPath` (``:p*`` / ``:p+`` / ``:p?``)
-  — desugared to a UNION of zero-or-more single-path arms (bounded
-  by :data:`PROPERTY_PATH_MAX_DEPTH`); see :func:`_emit_mul_path`.
-* :class:`rdflib.paths.NegatedPath` (``!:p``)
-  — needs a "predicate-not-in" filter; the LPG/PG shape requires
-  enumerating every property, which is exponential. RPT-only
-  implementation might land first.
+All five rdflib path operators (``SequencePath`` / ``InvPath`` /
+``AlternativePath`` / ``MulPath`` / ``NegatedPath``) have a
+dedicated expander below. The remaining gap is inverse arms inside
+``NegatedPath`` (``!(^:p)`` — see :func:`_emit_negated_path`) and
+property paths over RPT-mapped subjects; both surface stable,
+greppable ``UnsupportedSparqlError`` messages so the W3C XFAIL
+bucket stays clean.
 
 Intermediate variables minted by sequence expansion use the sigil
 ``_path_<n>`` so they cannot collide with user-supplied variable
@@ -68,7 +59,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from rdflib import URIRef, Variable
+from rdflib import Literal, URIRef, Variable
 from rdflib.paths import (
     AlternativePath,
     InvPath,
@@ -135,9 +126,8 @@ def emit_path_triple(
         _emit_mul_path(visitor, subject, predicate, obj)
         return
     if isinstance(predicate, NegatedPath):
-        raise UnsupportedSparqlError(
-            "negated property paths ('!:p') are not yet supported"
-        )
+        _emit_negated_path(visitor, subject, predicate, obj)
+        return
     raise UnsupportedSparqlError(
         f"property path type {type(predicate).__name__!r} is not supported"
     )
@@ -297,6 +287,150 @@ def _emit_mul_path(
     from .union_paths import _emit_union_of_arms
 
     _emit_union_of_arms(visitor, arm_drivers)
+
+
+def _emit_negated_path(
+    visitor: AlgebraVisitor,
+    subject: Any,
+    predicate: NegatedPath,
+    obj: Any,
+) -> None:
+    """Expand ``?s !(:p1|:p2|…) ?o`` to an ATTRIBUTES fan-out with NOT IN.
+
+    SPARQL 1.1 §18.4 defines ``!iri`` as the set of triples whose
+    predicate is *not* in the negated set. In the PG / LPG / default-
+    collection document model "the predicate" is the attribute name
+    on the subject document, so a negated path is::
+
+        FOR k IN ATTRIBUTES(<subject>, true)
+        FILTER k NOT IN [<system_attrs>, <resolved negated attrs>]
+        -- ?o bound to <subject>[k]
+
+    which iterates every non-system attribute on the subject and
+    yields one binding row per attribute whose name isn't in the
+    negated set. Shares the ``SYSTEM_ATTRIBUTES_TO_SKIP`` /
+    ``graph_field`` filter shape with
+    :func:`arango_sparql.translate.variable_predicates._emit_attributes_branch`
+    so the same wildcard-leak guarantees apply (named-graph metadata
+    never surfaces as a triple predicate).
+
+    **Limitations (deliberate XFAILs):**
+
+    * Inverse arms (``!(^:p)`` — "any predicate that is not the
+      *incoming* :p") require walking every other document's
+      outgoing edges to find candidates whose target is this
+      subject; that's a join across the entire collection per
+      query, qualitatively different from forward-attribute
+      iteration. Surfaced as ``UnsupportedSparqlError`` with the
+      ``inverse arms`` substring so the W3C XFAIL bucket is greppable.
+
+    * RPT subjects are rejected with the same typed-error shape
+      :func:`_emit_sequence_path` uses — the triples table needs
+      its own per-arm emission (``FOR row IN @@triples FILTER
+      row.subject == @s && row.predicate NOT IN @neg_preds``)
+      that we haven't ported yet. Same XFAIL bucket as
+      property-paths-on-RPT.
+    """
+
+    # ---- Reject inverse arms early --------------------------------
+    # A NegatedPath whose ``.args`` includes an InvPath has different
+    # semantics than the forward-only fan-out below, so a partial
+    # emission would be silently wrong. Catch it at dispatch time
+    # with a stable, greppable message.
+    #
+    # rdflib represents the parsed arm in two equivalent forms
+    # depending on grammar context:
+    #   * the runtime ``rdflib.paths.InvPath`` class for nested
+    #     inverse paths reached through the path-algebra builder; and
+    #   * a ``CompValue`` whose ``.name == "InversePath"`` for the
+    #     ``!(^:p)`` shape, which is constructed by the SPARQL
+    #     parser directly (verified at module-load time against
+    #     rdflib 7.x).
+    # Probe both so the XFAIL message matches what the user wrote.
+    for arm in predicate.args:
+        is_inverse = isinstance(arm, InvPath) or getattr(arm, "name", None) == "InversePath"
+        if is_inverse:
+            raise UnsupportedSparqlError(
+                "negated property paths with inverse arms "
+                "('!(^:p)') are not yet supported"
+            )
+        if not isinstance(arm, URIRef):
+            raise UnsupportedSparqlError(
+                f"negated property path arm of type "
+                f"{type(arm).__name__!r} is not supported "
+                f"(only forward IRI arms are implemented)"
+            )
+
+    # ---- Reject RPT subjects --------------------------------------
+    if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
+        raise UnsupportedSparqlError(
+            "negated property paths on RPT-mapped subjects are not yet supported"
+        )
+
+    # ---- Resolve negated predicates to physical attribute names ---
+    # The resolver may surface a ``W_SCHEMA_UNMAPPED_IRI`` warning
+    # per predicate IRI that isn't in the ontology — that's the
+    # right behaviour: a permissive resolver falls back to the
+    # local-name attribute, so an unknown ``ex:p1`` still becomes
+    # ``"p1"`` in the negated set.
+    negated_attrs = sorted(
+        {visitor.resolver.resolve_property(arm).attribute for arm in predicate.args}
+    )
+
+    # ---- Open the subject FOR -------------------------------------
+    # Handles both Variable and URIRef subjects; for URIRef it
+    # adds the ``alias._uri == @uri`` FILTER. For Variable it
+    # opens a default-collection FOR if no prior binding exists,
+    # or reuses the existing alias.
+    subject_alias = visitor._ensure_subject_alias(subject)
+
+    # ---- ATTRIBUTES fan-out + NOT IN guard -------------------------
+    # Same skip-list construction as the variable-predicates
+    # emitter so the two stay in lockstep — extending one (e.g.
+    # to skip a new system attribute) extends the other for free.
+    # Local import to avoid a hard module-level coupling between
+    # paths.py and variable_predicates.py (they otherwise have no
+    # call-graph relationship).
+    from .variable_predicates import SYSTEM_ATTRIBUTES_TO_SKIP
+
+    key_alias = visitor.builder.fresh_alias(prefix="k")
+    visitor.builder.for_attributes(key_alias, subject_alias)
+    skip_list = sorted(
+        {
+            *SYSTEM_ATTRIBUTES_TO_SKIP,
+            visitor.resolver.graph_field,
+            *negated_attrs,
+        }
+    )
+    skip_bind = visitor.builder.bind(skip_list, hint="neg_path_skip")
+    visitor.builder.filter_raw(f"{key_alias} NOT IN {skip_bind}")
+
+    # ---- Bind the object ------------------------------------------
+    # ``?o`` binds to the attribute value at this key. Same
+    # var_to_expr-aware logic the variable-predicates emitter
+    # uses, so a ``?o`` that's also bound by another triple gets
+    # the equality-FILTER join automatically.
+    value_expr = f"{subject_alias}[{key_alias}]"
+    if isinstance(obj, Variable):
+        o_name = str(obj)
+        existing = visitor.state.var_to_expr.get(o_name)
+        if existing is None:
+            visitor._record_var_expr(obj, value_expr)
+        elif existing != value_expr:
+            visitor.builder.filter_raw(f"{value_expr} == {existing}")
+        return
+    if isinstance(obj, (Literal, URIRef)):
+        # Local import to avoid circular dependency at module
+        # import time — :mod:`visitor` already imports this module.
+        from .visitor import _term_to_python
+
+        obj_bind = visitor.builder.bind(_term_to_python(obj), hint="obj")
+        visitor.builder.filter_eq(value_expr, obj_bind)
+        return
+    raise UnsupportedSparqlError(
+        f"negated property path object term type "
+        f"{type(obj).__name__!r} is not supported"
+    )
 
 
 def _emit_zero_hop_path(

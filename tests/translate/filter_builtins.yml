@@ -266,6 +266,73 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
 
+  # ---- Builtin_TZ (SPARQL §17.4.5.11) -------------------------------
+
+  - name: tz_extracts_timezone_string
+    # ``TZ(?d)`` — returns the timezone portion of an xsd:dateTime
+    # as a simple literal: ``"Z"``, ``"+HH:MM"``, ``"-HH:MM"``, or
+    # ``""`` when no timezone is present. Pure substring extraction
+    # — no AQL ``DATE_*`` parsing, because our storage model carries
+    # the dateTime as a bare string whose lexical form is the original
+    # xsd:dateTime text. The two anchored REGEX_TEST probes pick the
+    # ``Z`` vs ``[+-]HH:MM`` vs ``""`` branches; ``SUBSTRING(..., -6)``
+    # extracts the trailing six characters when the explicit-offset
+    # branch fires.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s (TZ(?d) AS ?x) WHERE { ?s :date ?d }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "date")
+      LET bv2 = (REGEX_TEST(TO_STRING(doc1.date), "Z$") ? "Z" : (REGEX_TEST(TO_STRING(doc1.date), "[+-][0-9]{2}:[0-9]{2}$") ? SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6) : ""))
+      RETURN { s: doc1._uri, x: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- Builtin_SHA256 (SPARQL §17.4.4.4) ----------------------------
+
+  - name: sha256_native_aql_function
+    # ``SHA256(?l)`` — ArangoDB AQL ships ``SHA256()`` as a built-in
+    # string function (see arango.ai docs, "String functions in AQL").
+    # An earlier slice rejected this builtin under the now-stale
+    # assumption that AQL only exposed MD5 / SHA1 / SHA512; this
+    # golden pins the corrected emission so a future "remove SHA256"
+    # refactor breaks loudly.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SHA256(?l) AS ?h) WHERE { ?s :str ?l }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "str")
+      LET bv2 = SHA256(doc1.str)
+      RETURN { h: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  # ---- Builtin_isLITERAL alias (SPARQL §17.4.2.1) -------------------
+
+  - name: isliteral_uppercase_alias
+    # ``ISLITERAL(?u)`` — rdflib's algebra translator spells the
+    # uppercase source ``ISLITERAL`` as ``Builtin_isLITERAL`` (note
+    # the case distinction) while ``isLiteral`` spells as
+    # ``Builtin_isLiteral``. Both algebra-node names route to the
+    # same emission — the same primitive-type probe the original
+    # mixed-case builtin uses. Pinning the uppercase variant here
+    # so a future dispatch-table reorganisation doesn't regress
+    # the alias.
+    sparql: |
+      SELECT (STRLEN(?u) AS ?n) WHERE {
+        BIND(STRUUID() AS ?u)
+        FILTER (ISLITERAL(?u))
+      }
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = UUID()
+      FILTER (IS_STRING(bv2) || IS_NUMBER(bv2) || IS_BOOL(bv2))
+      LET bv3 = LENGTH(bv2)
+      RETURN { n: bv3 }
+    expected_bind_vars: {}
+
   # ---- Empty-BGP path ------------------------------------------------
 
   - name: empty_bgp_bind_only

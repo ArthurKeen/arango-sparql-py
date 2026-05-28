@@ -107,7 +107,16 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
             f"ENDS_WITH({visitor._translate_expr(expr.arg1)}, "
             f"{visitor._translate_expr(expr.arg2)})"
         )
-    if name == "Builtin_isLiteral":
+    if name == "Builtin_isLiteral" or name == "Builtin_isLITERAL":
+        # SPARQL 1.1 §17.4.2.1. rdflib's algebra translator emits the
+        # uppercase ``Builtin_isLITERAL`` for source text spelled
+        # ``isLITERAL(...)`` and the mixed-case ``Builtin_isLiteral``
+        # for the more common ``isLiteral(...)`` / ``ISLITERAL(...)``
+        # spellings — same operator, two algebra-node spellings.
+        # Treat them as one branch so the W3C ``struuid01`` test
+        # (which uses ``ISLITERAL``) shares the emission with every
+        # other isLiteral call.
+        #
         # In our document model every value is either a primitive
         # (literal) or an _uri reference; treat non-string-IRI shapes
         # as literals. This is approximate; a real implementation
@@ -398,17 +407,12 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
     if name == "Builtin_SHA1":
         return f"SHA1({visitor._translate_expr(expr.arg)})"
     if name == "Builtin_SHA256":
-        # AQL has no native SHA256 builtin in older versions;
-        # SHA512 is universally available. Truncating SHA512
-        # to 256 bits is not a valid SHA256 substitute, so we
-        # surface UnsupportedSparqlError rather than silently
-        # emit a wrong hash. Tests that need SHA256 will
-        # XFAIL at translation; live execution would catch a
-        # silent mismatch as a worse failure mode.
-        raise UnsupportedSparqlError(
-            "Builtin_SHA256 is not supported (AQL lacks a "
-            "native SHA-256 hash; use SHA-512 or MD5 instead)"
-        )
+        # ArangoDB AQL ships ``SHA256()`` as a first-class string
+        # function (see arango.ai docs, "String functions in AQL").
+        # An earlier slice rejected this builtin under the (then-
+        # accurate) assumption that AQL only exposed MD5 / SHA1 /
+        # SHA512 — verified outdated against current docs.
+        return f"SHA256({visitor._translate_expr(expr.arg)})"
     if name == "Builtin_SHA512":
         return f"SHA512({visitor._translate_expr(expr.arg)})"
     if name == "Builtin_isURI" or name == "Builtin_isIRI":
@@ -437,6 +441,37 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         return f"(IS_STRING({arg}) && STARTS_WITH({arg}, '_:'))"
     if name == "Builtin_isNUMERIC":
         return f"IS_NUMBER({visitor._translate_expr(expr.arg)})"
+    if name == "Builtin_TZ":
+        # SPARQL 1.1 §17.4.5.11 — ``TZ(?dt)`` returns the time-zone
+        # portion of an xsd:dateTime as a simple literal:
+        #   * ``"Z"``          when the dateTime ends with ``Z``;
+        #   * ``"+HH:MM"`` /
+        #     ``"-HH:MM"``     when there's an explicit offset;
+        #   * ``""``           when no time-zone is present.
+        #
+        # Our PG / LPG storage model carries dateTimes as bare
+        # strings whose lexical form is the original xsd:dateTime
+        # text, so the implementation is pure substring extraction
+        # — no datetime parsing, no AQL ``DATE_*`` calls. The two
+        # ``REGEX_TEST`` probes are anchored at end-of-string so
+        # they cannot mis-fire on a dateTime whose body happens to
+        # contain a ``+HH:MM``-shaped substring (it never can per
+        # xsd:dateTime grammar, but the anchor keeps the emission
+        # robust against future storage changes).
+        #
+        # SPARQL §17.4.5.11 strictly requires the argument to be
+        # an xsd:dateTime; we don't have a literal-typing carrier
+        # in storage so we accept any string and return ``""`` for
+        # ill-shaped values rather than raising — matches the
+        # "translate-don't-validate" stance the rest of the
+        # builtin dispatcher takes (cf. ``Builtin_LANG``).
+        arg = visitor._translate_expr(expr.arg)
+        return (
+            f"(REGEX_TEST(TO_STRING({arg}), \"Z$\") ? \"Z\" : "
+            f"(REGEX_TEST(TO_STRING({arg}), \"[+-][0-9]{{2}}:[0-9]{{2}}$\") "
+            f"? SUBSTRING(TO_STRING({arg}), LENGTH(TO_STRING({arg})) - 6) "
+            f": \"\"))"
+        )
     if name == "Builtin_COALESCE":
         # ``COALESCE(a, b, c, …)`` — SPARQL §17.4.1.3 returns
         # the first arg whose evaluation doesn't raise. AQL's

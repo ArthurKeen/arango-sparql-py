@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.12, 90.1 % ✅ — v1.0 §3.1 threshold cleared by 65 pp**; 25 algebra / 0 schema / 14 rdflib XFAILs; largest algebra bucket `ServiceGraphPattern` at 4/25 = 16.0 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.13, 92.1 % ✅ — v1.0 §3.1 threshold cleared by 67 pp**; 20 algebra / 0 schema / 14 rdflib XFAILs; largest algebra bucket `ServiceGraphPattern` at 4/20 = 20.0 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -1889,7 +1889,8 @@ fix before tagging v1.0.
 | v0.9 (after `visit_Graph` named-graphs slice) | 63.6 % ✅ (v1.0 §3.1 threshold cleared, +3.5 pp) | 39 | 161 | 0 | 0 % |
 | v0.10 (after `MulPath :p*` / `:p+` / `:p?` slice closes the remaining property-path bucket) | 67.6 % (+4.0 pp) | 39 | 171 | 0 | 0 % |
 | v0.11 (after FILTER builtins megabundle — `SUBSTR` / `URI` / `RAND` / `UUID` / `STRUUID` / `BNODE`) | 70.4 % (+2.8 pp) | 39 | 178 | 0 | 0 % |
-| **v0.12 (current — opt-in permissive class resolution collapses the `schema` XFAIL bucket)** | **90.1 % ✅ (+19.7 pp; the 53 `schema` XFAILs were a harness artefact — degrading unknown class IRIs to `default_collection` mirrors how unmapped property IRIs already degrade, and matches SPARQL's open-world semantics)** | **25** | **228** | **0** | **0 %** |
+| v0.12 (opt-in permissive class resolution collapses the `schema` XFAIL bucket) | 90.1 % ✅ (+19.7 pp; the 53 `schema` XFAILs were a harness artefact — degrading unknown class IRIs to `default_collection` mirrors how unmapped property IRIs already degrade, and matches SPARQL's open-world semantics) | 25 | 228 | 0 | 0 % |
+| **v0.13 (current — long-tail algebra slice: `isLITERAL` alias, `TZ`, native `SHA256`, forward-only `NegatedPath`)** | **92.1 % (+2.0 pp; 5 W3C tests closed across four small algebra gaps; the SHA256 rejection was an outdated assumption — ArangoDB AQL ships `SHA256()` as a first-class string function)** | **20** | **233** | **0** | **0 %** |
 | **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 60.1 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
@@ -1909,29 +1910,30 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 25 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The top remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases), `Builtin_SHA256` (2 — AQL lacks SHA-256), and a long tail of single-FILTER-builtin gaps. |
+| `algebra` | 20 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The top remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases), FILTER `unbound variable` diagnostics (4 — actually a scoping bug, not a missing feature; SPARQL §18.2.5.2 says BIND evaluates before FILTER even when textually after), `SparqlParse` recursion (2 — rdflib hits Python's default recursion limit), `Builtin_TIMEZONE` (1 — needs xsd:dayTimeDuration generation), `Builtin_isLITERAL` (now shipped), `Builtin_SHA256` (now shipped — outdated rejection removed), `!:p` (now shipped — forward-only), and a long tail of single-FILTER-builtin gaps. |
 | `schema` | 0 | Empty-resolver artefact, collapsed at v0.12 by `permissive_class_resolution=True` on the harness's `SchemaResolver` — unknown class IRIs degrade to `default_collection` instead of raising, matching SPARQL's open-world semantics and mirroring how `resolve_property` already handles unmapped property IRIs. Non-zero counts here would indicate a regression in the permissive path. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.12 (90.1 %).** The §3.1 ≥ 25 % bar was met five slices ago; the
-slice table below now tracks the *long-tail* algebra gaps that
-remain after the v0.12 permissive-class-resolution slice collapsed
-the entire `schema` XFAIL bucket. With that bucket at 0, the
-algebra distribution is small (25 total) and dominated by federation
-(`ServiceGraphPattern`, deferred), OPTIONAL edge cases, FILTER
-unbound-variable diagnostics, and a long tail of single-builtin
-gaps. The largest single bucket is `ServiceGraphPattern` at
-4/25 = 16.0 %, well under the > 30 % ceiling.
+v0.13 (92.1 %).** The §3.1 ≥ 25 % bar was met six slices ago; the
+slice table below tracks the *long-tail* algebra gaps that remain
+after v0.12 collapsed the entire `schema` XFAIL bucket and v0.13
+cleared four small algebra gaps (TZ, native SHA256, isLITERAL,
+forward-only NegatedPath). The remaining 20 algebra XFAILs are
+dominated by federation (`ServiceGraphPattern`, deferred), OPTIONAL
+edge cases, and what appear to be FILTER scoping bugs rather than
+missing features. The largest single bucket is `ServiceGraphPattern`
+at 4/20 = 20.0 %, well under the > 30 % ceiling.
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `ServiceGraphPattern` | 4 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. |
+| FILTER `unbound variable ?X` scoping bug | 5 | +2.0 pp | NOT a missing feature — the visitor refuses queries where a FILTER references a variable the BGP never bound at FILTER-emission time, but per SPARQL §18.2.5.2 "bottom-up evaluation" BIND fires before FILTER even when textually after. The fix is in `visit_Filter` / `_translate_expr`: when a Variable lookup misses, check whether an Extend in the same Group will bind it before raising. Touches `bind08.rq`, `bind10.rq`, `bind11.rq`, plus two other ``?nova`` queries. |
+| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern | 5 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. |
 | `OPTIONAL` unbound subject + re-binds variable | 4 | +1.6 pp | Two visitor-side limitations in `visit_LeftJoin`: (a) the OPTIONAL's subject isn't pre-bound by the required side; (b) the OPTIONAL re-binds a variable already bound by the required side. Both need scope-aware projection rewriting. |
-| FILTER `unbound variable ?X` diagnostics | 4 | +1.6 pp | Visitor refuses queries where a FILTER references a variable the BGP never bound; in some W3C tests this is the *correct* SPARQL semantics (FILTER over an unbound = `error`). Need to distinguish "really unbound" from "bound in a parallel arm we haven't unified yet". |
-| `Builtin_SHA256` | 2 | +0.8 pp | AQL lacks a native SHA-256; current behaviour XFAILs. Two paths: (a) emit SHA-512 with a warning that hash output differs; (b) implement SHA-256 client-side post-fetch. |
-| Parse recursion in `SparqlParse` | 2 | +0.8 pp | rdflib hits Python's recursion limit on two W3C queries with deeply nested property paths. Workaround: bump `sys.setrecursionlimit` or pre-flatten before parse. |
-| Builtin_TIMEZONE / Builtin_TZ / Builtin_isLITERAL / FILTER `Function` / `!:p` negated property path | 5 | +2.0 pp | Single-item algebra gaps — each fixable in isolation. The cumulative effect closes the long tail. |
+| Parse recursion in `SparqlParse` | 2 | +0.8 pp | rdflib hits Python's default recursion limit on two W3C queries with deeply nested property paths. Workaround: bump `sys.setrecursionlimit` at translate-call entry or pre-flatten before parse. |
+| `Builtin_TIMEZONE` | 1 | +0.4 pp | SPARQL §17.4.5.10 — returns xsd:dayTimeDuration. Same lexical-extraction recipe as v0.13's `Builtin_TZ` plus a ternary duration generator (``PT0S`` / ``-PT8H`` / ``PT5H30M``). |
+| Nested `MulPath` inside `MulPath` (``:p*/:q*``) | 1 | +0.4 pp | v0.10's `_emit_mul_path` rejects nested unbounded operators because the bind-name pool would explode geometrically. The fix is a per-call depth cap distinct from `property_path_max_depth`. |
+| `FILTER Function` + `FILTER expression has no .name attribute: str` | 2 | +0.8 pp | Two FILTER-dispatch fall-throughs in `_translate_expr` — generic SPARQL function calls (e.g. ``xsd:integer(?x)``) and a defensive-error path that fires when an expression has no algebra-recognised name. Both fixable in `_translate_expr`. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
 contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate
@@ -2049,6 +2051,29 @@ went from 53 XFAILs to 0; algebra bucket rose from 22 to
 25 because three queries that previously failed at
 schema-resolution now make it to the algebra step and
 expose real visitor gaps (correct signal, not regression).
+**The long-tail algebra slice** (v0.12 → v0.13)
+contributed +2.0 pp (+5 W3C tests; 90.1 % → 92.1 %) by
+landing four small algebra gaps in one batch: (a) a
+``Builtin_isLITERAL`` alias of the existing
+``Builtin_isLiteral`` so the uppercase rdflib algebra
+spelling (W3C ``struuid01``) shares the same emission;
+(b) ``Builtin_TZ`` as a pure substring-extraction
+ternary (``Z`` / ``[+-]HH:MM`` / ``""``) since our
+storage model carries dateTimes as bare strings;
+(c) ``Builtin_SHA256`` reverted from the v0.7-era
+rejection to a direct ``SHA256(arg)`` emission after
+verifying against the current arango.ai "String
+functions in AQL" docs that ArangoDB AQL ships
+``SHA256()`` as a first-class function; and (d)
+``NegatedPath`` forward-only via an ``ATTRIBUTES(doc,
+true) FILTER k NOT IN [<system attrs>, <graph_field>,
+<resolved negated attrs>]`` fan-out that mirrors the
+v0.3 variable-predicates emitter — sharing
+``SYSTEM_ATTRIBUTES_TO_SKIP`` and the resolver
+``graph_field`` so the wildcard-leak guarantees compose.
+Inverse arms (``!(^:p)``) and RPT subjects cleanly
+XFAIL with greppable messages so the next slice has
+obvious targets.
 
 Carve-out (still in force from v0.3): the variable-predicate
 unbound-subject branch binds `?p` to the attribute *name* (a

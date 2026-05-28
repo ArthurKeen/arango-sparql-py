@@ -292,6 +292,78 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
 
+  # ---- NegatedPath (forward-only, SPARQL 1.1 §18.4) -----------------
+
+  - name: negated_path_single_forward_iri
+    # ``?s !:p ?o`` — the simplest negated path. Lowered to an
+    # ATTRIBUTES fan-out so every non-system attribute on the
+    # subject contributes one binding row, with ``"p"`` excluded
+    # via the NOT IN guard. ``_uri`` and the resolver's
+    # ``graph_field`` (default ``"_graph"``) are always excluded
+    # — they're physical metadata, not RDF predicates.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !:p ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_neg_path_skip
+      RETURN { s: doc1._uri, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_neg_path_skip":
+        - "_graph"
+        - "_uri"
+        - "p"
+
+  - name: negated_path_alternative_multi_forward
+    # ``?s !(:p|:q) ?o`` — multi-arm negation, identical shape to
+    # the single-arm case but with a longer NOT IN skip list. The
+    # arms are sorted to keep the bind value stable across runs
+    # regardless of source-order; otherwise two semantically-equal
+    # queries would compare unequal at golden-diff time.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !(:p|:q) ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_neg_path_skip
+      RETURN { s: doc1._uri, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_neg_path_skip":
+        - "_graph"
+        - "_uri"
+        - "p"
+        - "q"
+
+  - name: negated_path_uri_subject_pp10_shape
+    # Mirrors the W3C ``property-path/pp10.rq`` test:
+    # ``in:a !(ex:p1|ex:p2) ?x``. The URIRef subject adds a single
+    # ``doc1._uri == @_p1_uri`` FILTER on top of the standard
+    # ATTRIBUTES fan-out; the negated set picks up the resolver's
+    # local-name fallback for the unmapped predicates (``"p1"``,
+    # ``"p2"``).
+    sparql: |
+      prefix ex: <http://www.example.org/schema#>
+      prefix in: <http://www.example.org/instance#>
+      SELECT ?x WHERE { in:a !(ex:p1|ex:p2) ?x }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER doc1._uri == @_p1_uri
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p2_neg_path_skip
+      RETURN { x: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_uri": "http://www.example.org/instance#a"
+      "_p2_neg_path_skip":
+        - "_graph"
+        - "_uri"
+        - "p1"
+        - "p2"
+
 # ---------------------------------------------------------------------
 # Unsupported-path goldens.
 #
@@ -317,9 +389,20 @@ unsupported:
   # equivalence golden in test_translate_union_paths_goldens.py
   # for active coverage.
 
-  - name: negated_path_rejected
-    # ``?s !:p ?o`` — predicate negation. Defer.
+  # NOTE: ``negated_path_rejected`` (forward-only ``!:p``) was removed
+  # once NegatedPath shipped via the ATTRIBUTES + NOT IN emission in
+  # :func:`arango_sparql.translate.paths._emit_negated_path`. Positive
+  # goldens above (``negated_path_single_forward_iri``,
+  # ``negated_path_alternative_multi_forward``,
+  # ``negated_path_uri_subject_pp10_shape``) are the active coverage.
+
+  - name: negated_path_inverse_arm_rejected
+    # ``?s !(^:p) ?o`` — "any predicate that is not the *incoming*
+    # ``:p``". Requires scanning every other document's outgoing
+    # edges per query (a full-collection join), qualitatively
+    # different from the forward attribute-iteration shape. Defer
+    # to its own slice; surface a stable, greppable XFAIL message.
     sparql: |
       PREFIX : <http://ex.org/>
-      SELECT ?s ?o WHERE { ?s !:p ?o }
-    expected_error_substring: "negated property paths ('!:p') are not yet supported"
+      SELECT ?s ?o WHERE { ?s !(^:p) ?o }
+    expected_error_substring: "negated property paths with inverse arms"
