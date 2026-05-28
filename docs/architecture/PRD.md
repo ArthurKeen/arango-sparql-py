@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.15, 95.3 % ✅ — v1.0 §3.1 coverage bar cleared by 70 pp**; 12 algebra / 0 schema / 14 rdflib XFAILs). **NOTE on the 30 % ratio sub-clause:** the largest actionable bucket `ServiceGraphPattern` now sits at 4/12 = 33.3 % of algebra XFAILs — just over the 30 % guideline. This is a *benign denominator-shrink artefact*: v0.13–v0.15 cleared the smaller algebra buckets faster than the deliberately-deferred SPARQL-federation work, so the deferred bucket's share rose even though its absolute count is unchanged (4). The ratio drops back under 30 % the moment EITHER the post-v1.0 federation slice ships OR any one remaining non-federation gap (e.g. `Builtin_TIMEZONE`) is closed. The sub-clause's intent — "don't mask a systemic gap behind one giant bucket" — is not violated: the dominant bucket is a single, well-understood, intentionally-postponed feature (SERVICE), not a hidden systemic defect. `tests/w3c/analyze_coverage.py --check` remains CI-blocking at the v1.0 coverage threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.16, 95.7 % ✅ — v1.0 §3.1 coverage bar cleared by 71 pp**; 11 algebra / 0 schema / 14 rdflib XFAILs). **NOTE on the 30 % ratio sub-clause (corrected reasoning):** the largest actionable bucket `ServiceGraphPattern` sits at 4/11 = 36.4 % of algebra XFAILs, over the 30 % guideline. Crucially — and contrary to an earlier note in this doc that has now been fixed — this ratio **only worsens** as we close non-federation gaps: the SERVICE-federation bucket is the dominant *deferred* remainder, so every non-federation fix shrinks the denominator and *raises* the deferred bucket's share. The ratio can therefore only fall by **shipping the federation slice itself** (reducing the numerator from 4); no non-federation slice will restore headroom. We accept this consciously: the §3.1 *primary* bar (coverage ≥ 25 %) is cleared by 71 pp, and the sub-clause's intent — "don't mask a systemic gap behind one giant bucket" — is not violated, because the dominant bucket is a single, well-understood, intentionally-postponed feature (SPARQL federation / SERVICE), not a hidden systemic defect. There is no numeric CI gate on either the coverage percentage or the ratio sub-clause: `tests/w3c/test_w3c_query_evaluation.py` *tracks* (not gates) current state by recording each still-unsupported case as an imperative `pytest.xfail`, and `analyze_coverage.py --write` regenerates the human-readable ledger. Per-construct regression protection comes from the deterministic golden suites under `tests/translate/`, not from the W3C harness (an imperative-xfail'd case that regresses to raising would silently re-xfail rather than fail the run). | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -1892,7 +1892,8 @@ fix before tagging v1.0.
 | v0.12 (opt-in permissive class resolution collapses the `schema` XFAIL bucket) | 90.1 % ✅ (+19.7 pp; the 53 `schema` XFAILs were a harness artefact — degrading unknown class IRIs to `default_collection` mirrors how unmapped property IRIs already degrade, and matches SPARQL's open-world semantics) | 25 | 228 | 0 | 0 % |
 | v0.13 (long-tail algebra slice: `isLITERAL` alias, `TZ`, native `SHA256`, forward-only `NegatedPath`) | 92.1 % (+2.0 pp; 5 W3C tests closed across four small algebra gaps; the SHA256 rejection was an outdated assumption — ArangoDB AQL ships `SHA256()` as a first-class string function) | 20 | 233 | 0 | 0 % |
 | v0.14 (SPARQL §17.2.1 unbound-in-expression + UNION-scope propagation fix) | 94.1 % (+2.0 pp; 5 W3C tests closed: `_translate_expr` now emits `null` + `W_UNBOUND_VARIABLE_IN_EXPR` warning for truly-unbound variables per SPARQL §17.2.1 error semantics — fixes FILTER / BIND / COALESCE / DATATYPE / arithmetic uniformly via AQL null-propagation; separately, `union_paths._spawn_child` now propagates `graph_scope` so GRAPH variables don't drop on UNION descent — fixes pp35) | 15 | 238 | 0 | 0 % |
-| **v0.15 (current — long-tail correctness batch: empty `IN`/`NOT IN`, nested-`MulPath` collapse, XSD constructor casts)** | **95.3 % (+1.2 pp; 3 W3C tests closed: empty-set `IN ()`/`NOT IN ()` rdf:nil handling — `notin01`; nested transitive-path modifier collapse `((:p)*)*` → `:p*` — `pp37`; XSD `Function`-node casts `xsd:double`/`xsd:integer`/… — `agg-err-02`)** | **12** | **241** | **0** | **0 %** |
+| v0.15 (long-tail correctness batch: empty `IN`/`NOT IN`, nested-`MulPath` collapse, XSD constructor casts) | 95.3 % (+1.2 pp; 3 W3C tests closed: empty-set `IN ()`/`NOT IN ()` rdf:nil handling — `notin01`; nested transitive-path modifier collapse `((:p)*)*` → `:p*` — `pp37`; XSD `Function`-node casts `xsd:double`/`xsd:integer`/… — `agg-err-02`) | 12 | 241 | 0 | 0 % |
+| **v0.16 (current — `Builtin_TIMEZONE` → xsd:dayTimeDuration)** | **95.7 % (+0.4 pp; 1 W3C test closed: `TIMEZONE(?dt)` returns an xsd:dayTimeDuration via lexical-offset substring math — `Z`/`±00:00` → `PT0S`, `-08:00` → `-PT8H`, `+05:30` → `PT5H30M`, no-timezone → error→null/unbound — `functions/timezone-01`)** | **11** | **242** | **0** | **0 %** |
 | **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 60.1 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
@@ -1912,35 +1913,37 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 12 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred) + `OPTIONAL`-body-`ServiceGraphPattern` (1 — also federation), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases needing a cross-subject subquery emitter), `SparqlParse` recursion (2 — both are SERVICE queries that hit Python's default recursion limit; resolving them still leaves a federation XFAIL, so deferred with federation), and `Builtin_TIMEZONE` (1 — needs xsd:dayTimeDuration generation). |
+| `algebra` | 11 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred) + `OPTIONAL`-body-`ServiceGraphPattern` (1 — also federation), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases needing a cross-subject subquery emitter), and `SparqlParse` recursion (2 — both are SERVICE queries that hit Python's default recursion limit; resolving them still leaves a federation XFAIL, so deferred with federation). **7 of the 11 are federation-blocked**; the only non-federation remainder is the 4 OPTIONAL LeftJoin edge cases. |
 | `schema` | 0 | Empty-resolver artefact, collapsed at v0.12 by `permissive_class_resolution=True` on the harness's `SchemaResolver` — unknown class IRIs degrade to `default_collection` instead of raising, matching SPARQL's open-world semantics and mirroring how `resolve_property` already handles unmapped property IRIs. Non-zero counts here would indicate a regression in the permissive path. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.15 (95.3 %).** The §3.1 ≥ 25 % bar was met eight slices ago; the
+v0.16 (95.7 %).** The §3.1 ≥ 25 % bar was met nine slices ago; the
 slice table below tracks the *long-tail* algebra gaps that remain
 after v0.12 collapsed the entire `schema` XFAIL bucket, v0.13 cleared
 four small algebra gaps, v0.14 fixed the §17.2.1 unbound-in-expression
-semantic + a GRAPH-through-UNION propagation bug, and v0.15 closed a
-batch of three correctness gaps (empty `IN`, nested-`MulPath`
-collapse, XSD casts). The remaining 12 algebra XFAILs are now
-*heavily* dominated by SPARQL federation: `ServiceGraphPattern` (4) +
-`OPTIONAL`-body-`ServiceGraphPattern` (1) + two `SparqlParse`
-recursion failures that are both SERVICE queries = **7 of 12 are
-federation-blocked**. Only 5 are non-federation (4 OPTIONAL LeftJoin
-edge cases + 1 `Builtin_TIMEZONE`).
+semantic + a GRAPH-through-UNION propagation bug, v0.15 closed a batch
+of three correctness gaps (empty `IN`, nested-`MulPath` collapse, XSD
+casts), and v0.16 added `Builtin_TIMEZONE`. The remaining 11 algebra
+XFAILs are now *heavily* dominated by SPARQL federation:
+`ServiceGraphPattern` (4) + `OPTIONAL`-body-`ServiceGraphPattern` (1)
++ two `SparqlParse` recursion failures that are both SERVICE queries =
+**7 of 11 are federation-blocked**. The only non-federation remainder
+is the 4 OPTIONAL LeftJoin edge cases.
 
-The §3.1 30 %-ratio sub-clause is technically tripped (largest bucket
-`ServiceGraphPattern` = 4/12 = 33.3 %) but benignly so — see the §3.1
-row note above. The slice plan below front-loads the cheap
-non-federation `Builtin_TIMEZONE` fix (which alone drops the ratio
-back under 30 %) before the heavier OPTIONAL and federation work.
+The §3.1 30 %-ratio sub-clause is over the line (largest bucket
+`ServiceGraphPattern` = 4/11 = 36.4 %) and — corrected from a prior
+erroneous note — closing further *non-federation* gaps only worsens
+it (denominator shrinks, deferred-bucket share rises). The ratio can
+fall only by shipping federation itself. See the §3.1 row note; this
+is an accepted, documented state, not a defect. The next actionable
+slice is therefore the OPTIONAL cluster (the lone non-federation
+remainder), but it needs a design decision before coding (see Notes).
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `Builtin_TIMEZONE` | 1 | +0.4 pp | SPARQL §17.4.5.10 — returns xsd:dayTimeDuration. Same lexical-extraction recipe as v0.13's `Builtin_TZ` plus a ternary duration generator (``PT0S`` / ``-PT8H`` / ``PT5H30M``), and an error→unbound path when no timezone is present. Deferred from v0.13/v0.15 as disproportionately fiddly for one test; do this FIRST next time because it also restores the §3.1 ratio headroom. |
-| `OPTIONAL` unbound subject + re-binds variable | 4 | +1.6 pp | Two visitor-side limitations in `visit_LeftJoin`: (a) the OPTIONAL's subject is bound only as a value (not a doc alias) and the body may use a variable predicate — needs a real cross-subject subquery emitter (``LET o = (FOR x IN coll FILTER … RETURN x)``); semantics in the flattened doc model need a design decision first. (b) OPTIONAL nested in MINUS that re-binds an outer variable. Both are the largest non-federation cluster but materially harder than the recent batches. |
-| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern + SERVICE parse-recursion | 7 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. The two `SparqlParse` "maximum recursion depth" failures are both SERVICE queries — bumping `sys.setrecursionlimit` would let them parse but they'd immediately re-XFAIL on `ServiceGraphPattern`, so they travel with this slice. |
+| `OPTIONAL` unbound subject + re-binds variable | 4 | +1.6 pp | Two visitor-side limitations in `visit_LeftJoin`: **(a)** the OPTIONAL's subject is bound only as a value (not a doc alias) and the body may use a variable predicate (``?s ?p ?o OPTIONAL {?o ?p2 ?o2}`` — W3C `csvtsv02`/`jsonres02`) — needs a real cross-subject subquery emitter (``LET o = (FOR x IN coll FILTER … RETURN x)``); the semantics in the flattened doc model (what collection does ``?o`` range over? how does a variable predicate fan out?) need a **design decision before coding**. **(b)** OPTIONAL nested in MINUS that re-binds an outer variable (W3C `full-minuend`/`part-minuend`). Largest non-federation cluster but materially harder than the recent batches — surface the design question rather than guess. |
+| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern + SERVICE parse-recursion | 7 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. The two `SparqlParse` "maximum recursion depth" failures are both SERVICE queries — bumping `sys.setrecursionlimit` would let them parse but they'd immediately re-XFAIL on `ServiceGraphPattern`, so they travel with this slice. Shipping this is the **only** way to bring the §3.1 ratio sub-clause back under 30 %. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
 contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate
@@ -2193,8 +2196,41 @@ bucket past the §3.1 30 % ratio guideline (4/12 =
 the bucket is the deliberately-deferred SERVICE
 federation work and its absolute count (4) is
 unchanged. See the §3.1 row note for why the
-sub-clause's intent is not violated and how the next
-non-federation slice restores headroom.
+sub-clause's intent is not violated.
+
+**The `Builtin_TIMEZONE` slice** (v0.15 → v0.16)
+added +0.4 pp (+1 W3C test; 95.3 % → 95.7 %) by
+implementing SPARQL §17.4.5.10. ``TIMEZONE(?dt)``
+looks superficially like the already-shipped
+``Builtin_TZ`` but differs in two ways that matter:
+it returns an **xsd:dayTimeDuration** value (``PT0S``
+/ ``-PT8H`` / ``PT5H30M``) rather than the raw lexical
+offset string, and it **raises an error** (leaving the
+binding unbound) when the dateTime has no timezone —
+where ``TZ`` returns ``""``. The implementation reuses
+TZ's flattened-storage substring extraction (the
+dateTime is a bare lexical string, so no AQL
+``DATE_*`` calls) then formats the ``±HH:MM`` offset
+into an ISO-8601 duration with a ``CONCAT`` of
+conditionally-elided H/M components, and maps the
+no-timezone case to AQL ``null`` (the visitor's
+standard error→unbound convention). Pinned by an
+exact-AQL golden in ``filter_builtins.yml`` and
+verified against all four W3C ``timezone-01`` rows
+(``Z`` and ``+00:00`` → ``PT0S``, ``-08:00`` →
+``-PT8H``, no-tz → unbound) plus extra edge cases
+(``+05:30`` → ``PT5H30M``, ``+05:00`` → ``PT5H``,
+``-00:30`` → ``-PT30M``).
+
+**Correction logged here for posterity:** an earlier
+revision of this section claimed the TIMEZONE fix
+would "restore the §3.1 ratio headroom". That was
+wrong — closing a *non-federation* XFAIL shrinks the
+algebra denominator and *raises* the deferred SERVICE
+bucket's share (4/12 = 33.3 % → 4/11 = 36.4 %). The
+ratio sub-clause can only be satisfied by shipping the
+federation slice itself; this is now stated correctly
+in the §3.1 row and the slice-priority intro.
 
 Carve-out (still in force from v0.3): the variable-predicate
 unbound-subject branch binds `?p` to the attribute *name* (a

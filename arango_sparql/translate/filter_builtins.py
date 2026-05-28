@@ -472,6 +472,29 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
             f"? SUBSTRING(TO_STRING({arg}), LENGTH(TO_STRING({arg})) - 6) "
             f": \"\"))"
         )
+    if name == "Builtin_TIMEZONE":
+        # SPARQL 1.1 §17.4.5.10 — ``TIMEZONE(?dt)`` returns the time-zone
+        # of an xsd:dateTime as an **xsd:dayTimeDuration** value (NOT the
+        # lexical string ``Builtin_TZ`` returns):
+        #   * ``"Z"`` / ``"+00:00"`` / ``"-00:00"`` → ``"PT0S"``;
+        #   * ``"-08:00"``                          → ``"-PT8H"``;
+        #   * ``"+05:30"``                          → ``"PT5H30M"``;
+        #   * NO time-zone present                  → an ERROR.
+        #
+        # The error case is the crucial difference from ``TZ`` (which
+        # returns ``""``): SPARQL says a dateTime with no time-zone makes
+        # ``TIMEZONE`` raise, so the surrounding operator leaves the
+        # binding unbound (W3C ``functions/timezone-01`` row ``d4`` has
+        # no ``?x`` binding at all). We model "error" as AQL ``null`` —
+        # the same error→null convention the rest of the visitor uses —
+        # so a BIND/projection over it yields an unbound column.
+        #
+        # Same flattened-storage assumption as ``TZ``: the dateTime is a
+        # bare lexical string, so this is substring math + CONCAT, no
+        # AQL ``DATE_*`` calls. ``arg`` is re-evaluated by the helper
+        # (it's a side-effect-free attribute/bind reference in practice).
+        arg = visitor._translate_expr(expr.arg)
+        return _timezone_duration_expr(f"TO_STRING({arg})")
     if name == "Builtin_COALESCE":
         # ``COALESCE(a, b, c, …)`` — SPARQL §17.4.1.3 returns
         # the first arg whose evaluation doesn't raise. AQL's
@@ -487,6 +510,48 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         f"FILTER expression node {name!r} is not yet supported (see "
         f"references/arango-sparql/src/lib/filter-translator.js for the "
         f"legacy implementation)"
+    )
+
+
+def _timezone_duration_expr(s: str) -> str:
+    """Build the AQL for ``TIMEZONE(dt)`` → xsd:dayTimeDuration.
+
+    Args:
+        s: An AQL expression evaluating to the dateTime's lexical
+            string (the caller wraps the argument in ``TO_STRING``).
+            It is interpolated several times; callers must pass a
+            side-effect-free expression (an attribute or bind ref).
+
+    Returns:
+        A parenthesised AQL ternary that yields:
+
+        * ``"PT0S"`` for a ``Z`` suffix or a zero offset
+          (``+00:00`` / ``-00:00``);
+        * ``"-PT8H"`` / ``"PT5H30M"`` for a non-zero ``±HH:MM`` offset
+          (positive durations carry no sign per xsd:dayTimeDuration;
+          negative durations are prefixed ``-``; a zero hours or zero
+          minutes component is elided, so ``+05:00`` → ``PT5H`` and
+          ``+00:30`` → ``PT30M``);
+        * ``null`` when no time-zone is present — modelling SPARQL's
+          "error → unbound" contract (§17.4.5.10).
+    """
+    # The trailing 6 chars are the ``±HH:MM`` offset when present.
+    offset = f"SUBSTRING({s}, LENGTH({s}) - 6)"
+    sign = f"SUBSTRING({offset}, 0, 1)"
+    hh = f"TO_NUMBER(SUBSTRING({offset}, 1, 2))"
+    mm = f"TO_NUMBER(SUBSTRING({offset}, 4, 2))"
+    body = (
+        "CONCAT("
+        f'({sign} == "-" ? "-" : ""), '
+        '"PT", '
+        f'({hh} > 0 ? CONCAT(TO_STRING({hh}), "H") : ""), '
+        f'({mm} > 0 ? CONCAT(TO_STRING({mm}), "M") : "")'
+        ")"
+    )
+    offset_dur = f'(({hh} == 0 && {mm} == 0) ? "PT0S" : {body})'
+    return (
+        f'(REGEX_TEST({s}, "Z$") ? "PT0S" : '
+        f'(REGEX_TEST({s}, "[+-][0-9]{{2}}:[0-9]{{2}}$") ? {offset_dur} : null))'
     )
 
 

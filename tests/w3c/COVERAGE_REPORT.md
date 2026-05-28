@@ -14,7 +14,7 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | -------- | -----:| ----:| ----:| -----:| ----:| --------:|
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
-| Query evaluation | 253 | 241 | 0 | 12 | 0 | 95.3% |
+| Query evaluation | 253 | 242 | 0 | 11 | 0 | 95.7% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -33,7 +33,7 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 
 | Bucket | Count | Implication |
 | ------ | -----:| ----------- |
-| `algebra` | 12 | port the corresponding visitor method |
+| `algebra` | 11 | port the corresponding visitor method |
 | `schema` | 0 | real schema-resolution failure even under permissive mode (should be 0 — investigate any non-zero count) |
 | `rdflib` | 14 | rdflib parser disagreement; out of scope here |
 
@@ -46,7 +46,6 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | 2 | `algebra` | `UnsupportedSparql: OPTIONAL whose subject is not already bound by the required side is not yet supp...` | port the corresponding visitor method |
 | 2 | `algebra` | `UnsupportedSparql: OPTIONAL re-binds variable ?b that's already bound by the required side` | port the corresponding visitor method |
 | 2 | `algebra` | `SparqlParse: failed to parse SPARQL: maximum recursion depth exceeded` | port the corresponding visitor method |
-| 1 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_TIMEZONE' is not yet supported (see references/a...` | port the corresponding visitor method |
 | 1 | `algebra` | `UnsupportedSparql: OPTIONAL whose body is 'ServiceGraphPattern' (not a plain BGP) is not yet suppor...` | port the corresponding visitor method |
 
 ## How to reproduce
