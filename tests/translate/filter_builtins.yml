@@ -367,3 +367,65 @@ cases:
     expected_bind_vars:
       "_p1": 1
       "_p2": 2
+
+  # ---- XSD constructor casts (rdflib ``Function`` node, §17.5) -------
+  #
+  # IRI-named function calls like ``xsd:double(?v)`` parse to a
+  # ``Function`` algebra node (NOT a ``Builtin_*``), dispatched via
+  # ``filter_builtins.translate_function``. The casts map to AQL's
+  # type-coercion builtins. ``xsd:integer`` (and its bounded-integer
+  # siblings) truncate toward zero — NOT floor — so negatives round
+  # the right way (``xsd:integer(-3.7)`` is ``-3``, not ``-4``); the
+  # ternary picks FLOOR for non-negatives and CEIL for negatives.
+
+  - name: xsd_cast_double_to_number
+    sparql: |
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX : <http://ex.org/>
+      SELECT (xsd:double(?v) AS ?d) WHERE { ?s :v ?v }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "v")
+      LET bv2 = TO_NUMBER(doc1.v)
+      RETURN { d: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: xsd_cast_integer_truncates_toward_zero
+    sparql: |
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX : <http://ex.org/>
+      SELECT (xsd:integer(?v) AS ?i) WHERE { ?s :v ?v }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "v")
+      LET bv2 = (TO_NUMBER(doc1.v) >= 0 ? FLOOR(TO_NUMBER(doc1.v)) : CEIL(TO_NUMBER(doc1.v)))
+      RETURN { i: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: xsd_cast_string_to_string
+    sparql: |
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX : <http://ex.org/>
+      SELECT (xsd:string(?v) AS ?st) WHERE { ?s :v ?v }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "v")
+      LET bv2 = TO_STRING(doc1.v)
+      RETURN { st: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+
+  - name: xsd_cast_boolean_to_bool
+    sparql: |
+      PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+      PREFIX : <http://ex.org/>
+      SELECT (xsd:boolean(?v) AS ?b) WHERE { ?s :v ?v }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "v")
+      LET bv2 = TO_BOOL(doc1.v)
+      RETURN { b: bv2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"

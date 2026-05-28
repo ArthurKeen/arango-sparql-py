@@ -223,6 +223,61 @@ def test_property_path_on_rpt_subject_refuses() -> None:
     assert "property paths on RPT-mapped subjects" in str(exc_info.value)
 
 
+@pytest.mark.parametrize(
+    "nested, equivalent",
+    [
+        # (P*)*  ==  P*   (W3C property-path/pp37)
+        ("((:P)*)*", "(:P)*"),
+        # (P+)+  ==  P+
+        ("(:P+)+", "(:P)+"),
+        # (P*)+  ==  P*   — outer + repeats a zero-admitting inner
+        ("(:P*)+", "(:P)*"),
+        # (P+)*  ==  P*   — outer * admits zero hops
+        ("(:P+)*", "(:P)*"),
+        # (P?)+  ==  P*   — one-or-more of optional collapses to *
+        ("(:P?)+", "(:P)*"),
+        # (P?)*  ==  P*
+        ("(:P?)*", "(:P)*"),
+        # (P+)?  ==  P*   — zero-or-(one-or-more) admits zero
+        ("(:P+)?", "(:P)*"),
+        # (P*)?  ==  P*
+        ("(:P*)?", "(:P)*"),
+        # (P?)?  ==  P?   — the only nesting that stays bounded
+        ("(:P?)?", "(:P)?"),
+        # Triple nesting folds the same way: ((P+)*)?  ==  P*
+        ("((:P+)*)?", "(:P)*"),
+    ],
+)
+def test_nested_mul_path_collapses_to_equivalent_modifier(
+    nested: str, equivalent: str
+) -> None:
+    """Nested transitive modifiers fold to a single equivalent
+    modifier (SPARQL 1.1 §18.4).
+
+    Rather than byte-pin the ~200-line UNION expansion of each form,
+    we assert the stronger *semantic equivalence* property: the
+    nested path must translate to byte-identical AQL as its
+    single-modifier equivalent. This is exactly the invariant
+    :func:`arango_sparql.translate.paths._combine_mul_modifiers`
+    must preserve, and it catches any drift in the fold table that a
+    fixed golden could mask. Covers W3C ``property-path/pp37``
+    (``((:P)*)*``) plus the full nine-pair modifier matrix and a
+    triple-nesting case to prove the fold loops correctly.
+    """
+    resolver = SchemaResolver.from_turtle("", default_collection="Document")
+    prefix = "prefix : <http://example.org/> "
+    nested_aql = translate(
+        f"{prefix}SELECT ?X WHERE {{ :A0 {nested} ?X }}", resolver=resolver
+    ).aql
+    equiv_aql = translate(
+        f"{prefix}SELECT ?X WHERE {{ :A0 {equivalent} ?X }}", resolver=resolver
+    ).aql
+    assert nested_aql == equiv_aql, (
+        f"{nested} should translate identically to {equivalent}:\n"
+        f"--- nested ---\n{nested_aql}\n--- equivalent ---\n{equiv_aql}"
+    )
+
+
 def test_fresh_path_var_increments_monotonically() -> None:
     """The intermediate-variable counter is per-query: two paths in
     the same query produce ``?_path_1``, ``?_path_2``, … in order,

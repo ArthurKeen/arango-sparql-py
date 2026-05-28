@@ -26,7 +26,7 @@ from ..errors import (
     UnsupportedSparqlError,
 )
 from .builder import AqlQueryBuilder
-from .filter_builtins import translate_builtin
+from .filter_builtins import translate_builtin, translate_function
 from .minus_exists import emit_minus
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
@@ -1945,9 +1945,23 @@ class AlgebraVisitor:
                 return f"({left} {self._RELATIONAL_OP_MAP[op]} {right})"
             if op in ("IN", "NOT IN"):
                 left = self._translate_expr(expr.expr)
-                # ``other`` for IN/NOT IN is a list of expressions to test
-                # against; render as an inline AQL list.
-                items = [self._translate_expr(item) for item in expr.other]
+                # ``other`` for IN/NOT IN is normally a Python list of
+                # expressions to test against. BUT rdflib represents an
+                # EMPTY list (``?x IN ()`` / ``?x NOT IN ()``) as the
+                # ``rdf:nil`` URIRef rather than ``[]`` — and since
+                # ``URIRef`` is a ``str`` subclass, naively iterating it
+                # would walk the IRI's characters and crash downstream
+                # with "FILTER expression has no .name attribute: str"
+                # (W3C ``functions/notin01``). Normalise nil → empty
+                # list so the membership test degenerates correctly:
+                # ``x IN []`` is always false, ``x NOT IN []`` always
+                # true — exactly SPARQL 1.1 §17.4.1.9's contract for the
+                # empty-set case.
+                raw_items = expr.other
+                if isinstance(raw_items, URIRef) and raw_items == RDF.nil:
+                    items: list[str] = []
+                else:
+                    items = [self._translate_expr(item) for item in raw_items]
                 aql_op = "IN" if op == "IN" else "NOT IN"
                 return f"({left} {aql_op} [{', '.join(items)}])"
             raise UnsupportedSparqlError(f"unsupported relational operator in FILTER: {op!r}")
@@ -1966,6 +1980,14 @@ class AlgebraVisitor:
         # composition above) recurse back here.
         if name.startswith("Builtin_"):
             return translate_builtin(self, expr)
+
+        # ----- Function call (XSD constructor casts, etc.) ---------------
+        # rdflib emits a ``Function`` node for IRI-named function calls
+        # such as the XSD constructor casts ``xsd:double(?x)`` /
+        # ``xsd:integer(?x)`` (SPARQL 1.1 §17.5). Delegated to
+        # :mod:`filter_builtins` so this over-cap module doesn't grow.
+        if name == "Function":
+            return translate_function(self, expr)
 
         raise UnsupportedSparqlError(
             f"FILTER expression node {name!r} is not yet supported (see "

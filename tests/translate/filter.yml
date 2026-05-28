@@ -185,3 +185,41 @@ cases:
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "Al"
+
+  # ---- IN / NOT IN (SPARQL §17.4.1.9) -------------------------------
+
+  - name: in_nonempty_list
+    # ``?a IN (18, 21)`` — the membership operator over a non-empty
+    # list. rdflib hands the candidate set as a Python list, which
+    # maps directly to an inline AQL ``[…]`` of bind variables.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a IN (18, 21)) }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER (doc1.age IN [@_p1, @_p2])
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 18
+      "_p2": 21
+
+  - name: not_in_empty_list
+    # ``?a NOT IN ()`` — the EMPTY-set case. rdflib represents the
+    # empty candidate list as the ``rdf:nil`` URIRef (NOT ``[]``);
+    # since ``URIRef`` is a ``str`` subclass, the visitor must
+    # special-case it or it would iterate the IRI's characters and
+    # crash. Normalised to an empty AQL list, so ``NOT IN []`` is
+    # always true (and ``IN []`` always false) — SPARQL §17.4.1.9's
+    # empty-set contract. Regression for W3C ``functions/notin01``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a NOT IN ()) }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      FILTER (doc1.age NOT IN [])
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"

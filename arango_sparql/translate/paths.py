@@ -248,7 +248,28 @@ def _emit_mul_path(
         )
 
     inner = predicate.path
-    if isinstance(inner, (AlternativePath, MulPath, NegatedPath)):
+
+    # Collapse nested transitive modifiers — ``(:p*)*`` / ``(:p+)*`` /
+    # ``(:p?)+`` / … all reduce to a single equivalent modifier on the
+    # leaf path (SPARQL 1.1 §18.4; W3C ``property-path/pp37`` is the
+    # ``((:P)*)*`` case). The algebra is exact, not an approximation:
+    #
+    #   * ``?`` ∘ ``?``                     → ``?``   (at most one hop either way)
+    #   * anything involving ``*`` or ``+``:
+    #       - includes a zero-hop option iff EITHER modifier admits
+    #         zero (``*`` or ``?``)            → ``*``
+    #       - otherwise (both are ``+``)        → ``+``
+    #
+    # Verified against the nine modifier pairs: (``*``,``*``)→``*``,
+    # (``+``,``+``)→``+``, (``*``,``+``)/(``+``,``*``)→``*``,
+    # (``?``,``+``)/(``+``,``?``)→``*``, (``?``,``*``)/(``*``,``?``)→``*``,
+    # (``?``,``?``)→``?``. Looped so arbitrarily deep nesting
+    # (``(((:p+)*)?)`` …) folds to one modifier before expansion.
+    while isinstance(inner, MulPath):
+        mod = _combine_mul_modifiers(mod, inner.mod)
+        inner = inner.path
+
+    if isinstance(inner, (AlternativePath, NegatedPath)):
         raise UnsupportedSparqlError(
             f"nested property path {type(inner).__name__!r} inside "
             f"MulPath (':p{mod}') is not supported"
@@ -475,6 +496,22 @@ def _emit_expanded_path_arm(
     raise UnsupportedSparqlError(
         f"repeated path inner type {type(expanded).__name__!r} is not supported"
     )
+
+
+def _combine_mul_modifiers(outer: str, inner: str) -> str:
+    """Fold two nested transitive-path modifiers into one.
+
+    See the table in :func:`_emit_mul_path`. ``outer`` is the modifier
+    applied to the (already-modified) inner path; ``inner`` is the
+    modifier on the leaf. Both are one of ``"*"`` / ``"+"`` / ``"?"``.
+    """
+    if outer == "?" and inner == "?":
+        return "?"
+    # At least one side is ``*`` or ``+`` → the result is unbounded.
+    # It admits the zero-hop (identity) arm iff either side does, i.e.
+    # either side is ``*`` (zero-or-more) or ``?`` (zero-or-one).
+    includes_zero = outer in ("*", "?") or inner in ("*", "?")
+    return "*" if includes_zero else "+"
 
 
 def _repeat_inner_path(inner: Any, count: int) -> Any:

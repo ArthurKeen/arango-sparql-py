@@ -488,3 +488,118 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         f"references/arango-sparql/src/lib/filter-translator.js for the "
         f"legacy implementation)"
     )
+
+
+# XSD namespace prefix — the constructor-cast functions
+# (``xsd:double(...)`` etc.) all live under this IRI.
+_XSD = "http://www.w3.org/2001/XMLSchema#"
+
+# XSD constructor casts that collapse to a numeric value. SPARQL 1.1
+# §17.5 treats ``xsd:double`` / ``xsd:float`` / ``xsd:decimal`` as
+# producing a (possibly fractional) number; AQL's ``TO_NUMBER`` is the
+# faithful map (it parses numeric strings, passes numbers through, and
+# yields ``null`` on unparseable input — matching the SPARQL "cast
+# error" → unbound contract once null-propagation is applied).
+_XSD_NUMERIC_CASTS: frozenset[str] = frozenset(
+    {
+        f"{_XSD}double",
+        f"{_XSD}float",
+        f"{_XSD}decimal",
+        f"{_XSD}integer",
+        f"{_XSD}int",
+        f"{_XSD}long",
+        f"{_XSD}short",
+        f"{_XSD}byte",
+        f"{_XSD}nonNegativeInteger",
+        f"{_XSD}nonPositiveInteger",
+        f"{_XSD}negativeInteger",
+        f"{_XSD}positiveInteger",
+        f"{_XSD}unsignedLong",
+        f"{_XSD}unsignedInt",
+        f"{_XSD}unsignedShort",
+        f"{_XSD}unsignedByte",
+    }
+)
+
+# The subset of the above whose SPARQL semantics REQUIRE an integral
+# result. xsd:integer casting of a fractional value truncates toward
+# zero (SPARQL 1.1 §17.5 / XPath ``xs:integer`` casting), which is
+# NOT what ``FLOOR`` does for negatives — so we truncate explicitly.
+_XSD_INTEGER_CASTS: frozenset[str] = frozenset(
+    {
+        f"{_XSD}integer",
+        f"{_XSD}int",
+        f"{_XSD}long",
+        f"{_XSD}short",
+        f"{_XSD}byte",
+        f"{_XSD}nonNegativeInteger",
+        f"{_XSD}nonPositiveInteger",
+        f"{_XSD}negativeInteger",
+        f"{_XSD}positiveInteger",
+        f"{_XSD}unsignedLong",
+        f"{_XSD}unsignedInt",
+        f"{_XSD}unsignedShort",
+        f"{_XSD}unsignedByte",
+    }
+)
+
+
+def translate_function(visitor: AlgebraVisitor, expr: Any) -> str:
+    """Translate an rdflib ``Function`` node (IRI-named function call).
+
+    The only IRI-named functions in SPARQL 1.1 core are the XSD
+    constructor casts (§17.5) — ``xsd:double(?x)`` and friends. rdflib
+    stores the function IRI on ``expr.iri`` and the argument list on
+    ``expr.expr`` (a Python list; casts are unary so we read the first
+    element).
+
+    Args:
+        visitor: The owning :class:`AlgebraVisitor`, used to recurse on
+            the cast argument via ``visitor._translate_expr``.
+        expr: The ``Function`` algebra node (``expr.name == "Function"``).
+
+    Returns:
+        A parenthesised AQL expression string.
+
+    Raises:
+        UnsupportedSparqlError: If the function IRI is not a recognised
+            XSD constructor cast (custom-function extension IRIs are out
+            of scope — SPARQL federation / extension functions are a
+            post-v1.0 concern).
+    """
+    iri = str(expr.iri)
+    args = list(expr.expr) if expr.expr is not None else []
+    if len(args) != 1:
+        raise UnsupportedSparqlError(
+            f"function {iri!r} called with {len(args)} arguments; only "
+            f"unary XSD constructor casts are supported"
+        )
+    inner = visitor._translate_expr(args[0])
+
+    if iri in _XSD_INTEGER_CASTS:
+        # Truncate toward zero (NOT floor — floor of -3.7 is -4, but
+        # xsd:integer(-3.7) is -3). ``inner`` is re-evaluated in both
+        # ternary arms; SPARQL/AQL expressions are side-effect-free so
+        # the duplication is safe (and ``inner`` is almost always a
+        # bare attribute / bind reference).
+        num = f"TO_NUMBER({inner})"
+        return f"({num} >= 0 ? FLOOR({num}) : CEIL({num}))"
+    if iri in _XSD_NUMERIC_CASTS:
+        return f"TO_NUMBER({inner})"
+    if iri == f"{_XSD}string":
+        return f"TO_STRING({inner})"
+    if iri == f"{_XSD}boolean":
+        return f"TO_BOOL({inner})"
+    if iri == f"{_XSD}dateTime" or iri == f"{_XSD}date":
+        # PG / LPG storage carries dateTimes as bare strings whose
+        # lexical form is the original xsd:dateTime text, so the cast
+        # is an identity on the lexical value (mirrors ``Builtin_STRDT``
+        # / the ``Builtin_TZ`` storage-model assumption). ``TO_STRING``
+        # keeps a numeric-typed source coercing to its lexical form.
+        return f"TO_STRING({inner})"
+
+    raise UnsupportedSparqlError(
+        f"function {iri!r} is not a supported XSD constructor cast; "
+        f"custom/extension function IRIs are out of scope (SPARQL "
+        f"extension functions are a post-v1.0 federation concern)"
+    )
