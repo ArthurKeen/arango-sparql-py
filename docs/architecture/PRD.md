@@ -112,7 +112,7 @@ under *Where detailed* — these one-line summaries are the contract.
 | ---- | --- | --- | --- |
 | §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.16, 95.7 % ✅ — v1.0 §3.1 coverage bar cleared by 71 pp**; 11 algebra / 0 schema / 14 rdflib XFAILs). **NOTE on the 30 % ratio sub-clause (corrected reasoning):** the largest actionable bucket `ServiceGraphPattern` sits at 4/11 = 36.4 % of algebra XFAILs, over the 30 % guideline. Crucially — and contrary to an earlier note in this doc that has now been fixed — this ratio **only worsens** as we close non-federation gaps: the SERVICE-federation bucket is the dominant *deferred* remainder, so every non-federation fix shrinks the denominator and *raises* the deferred bucket's share. The ratio can therefore only fall by **shipping the federation slice itself** (reducing the numerator from 4); no non-federation slice will restore headroom. We accept this consciously: the §3.1 *primary* bar (coverage ≥ 25 %) is cleared by 71 pp, and the sub-clause's intent — "don't mask a systemic gap behind one giant bucket" — is not violated, because the dominant bucket is a single, well-understood, intentionally-postponed feature (SPARQL federation / SERVICE), not a hidden systemic defect. There is no numeric CI gate on either the coverage percentage or the ratio sub-clause: `tests/w3c/test_w3c_query_evaluation.py` *tracks* (not gates) current state by recording each still-unsupported case as an imperative `pytest.xfail`, and `analyze_coverage.py --write` regenerates the human-readable ledger. Per-construct regression protection comes from the deterministic golden suites under `tests/translate/`, not from the W3C harness (an imperative-xfail'd case that regresses to raising would silently re-xfail rather than fail the run). | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
-| §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` (translation goldens) + `tests/cross/test_multimodel_cross.py` (PG/LPG/RPT pyoxigraph binding parity from one source-of-truth dataset) + `tests/schema/test_fixtures.py` §13.3 contracts #3/#4 (per-entity emission across all 9 fixtures) | §6.1, §6.6 |
+| §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) and PG+LPG hybrids | `tests/translate/{bgp_select,hybrid,rpt}.yml` (translation goldens) + `tests/cross/test_multimodel_cross.py` (PG / LPG / PG+LPG-hybrid / RPT pyoxigraph binding parity, incl. cross-class joins, from one source-of-truth dataset) + `tests/schema/test_fixtures.py` §13.3 contracts #3/#4 (per-entity emission across all 9 fixtures) | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
 | §3.5 | **Schema detection (algorithmic + analyzer-backed)** — both detectors ship; analyzer wins on `auto`; classifies the sister project's mapping-fixture corpus + this project's RPT fixtures with zero false negatives | `tests/schema/test_classify.py`, `tests/schema/test_acquire.py`, `tests/schema/fixtures/*.export.json` | §6.3 |
 | §3.6 | **Schema HTTP surface parity with `arango-cypher-py`** — all 9 schema/mapping routes exist with documented response shapes | `tests/test_service_schema_routes.py`; route names listed in §5.1 | §5.1, §6.4 |
@@ -1829,14 +1829,18 @@ per row in `tests/security/`):
   - `test_bgp_select_cross.py` — the **PG** (collection-per-class)
     model across the full clause matrix (BGP, FILTER, BIND, OPTIONAL,
     aggregates, joins, ORDER BY).
-  - `test_multimodel_cross.py` — the **PG / LPG / RPT** models in
-    parallel over the BGP/FILTER/DISTINCT/ORDER-BY core, all three
-    stores derived from one source-of-truth dataset so they cannot
-    drift. This is where the structural-divergence risk lives: LPG adds
-    a `typeField` discriminator FILTER and RPT self-joins the `_triples`
-    table on `subject_uri` reading objects via
-    `COALESCE(object_uri, object_value)` — the cross-check proves all
-    three emit identical bindings for identical facts.
+  - `test_multimodel_cross.py` — the **PG / LPG / PG+LPG-hybrid / RPT**
+    models in parallel over the BGP/FILTER/DISTINCT/ORDER-BY core *and*
+    cross-class joins, all four stores derived from one source-of-truth
+    dataset so they cannot drift. This is where the structural-
+    divergence risk lives: LPG adds a `typeField` discriminator FILTER,
+    RPT self-joins the `_triples` table on `subject_uri` reading objects
+    via `COALESCE(object_uri, object_value)`, and the **hybrid** maps
+    one class PG (own collection) and another LPG (shared `vertices` +
+    discriminator) so a `Project ⋈ Person` join straddles both physical
+    styles in one query. The cross-check proves every model emits
+    identical bindings for identical facts — the storage shape is
+    invisible to the result.
 
 ### 13.3 Schema-detection corpus
 

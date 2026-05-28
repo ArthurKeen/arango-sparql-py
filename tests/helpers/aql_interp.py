@@ -305,19 +305,31 @@ def run_aql_subset(
     """Execute the FOR/FILTER/LET/COLLECT/SORT/LIMIT/RETURN subset of
     AQL the visitor emits today against an in-memory document store.
 
-    Multi-FOR queries are nested left-to-right (Cartesian product, like
-    a real AQL plan); shared-variable equality FILTERs collapse that to
-    the intended join. This is exactly how a multi-triple BGP lowers
-    under both the PG/LPG model (one FOR per class) and the RPT model
-    (one FOR per triple, self-joined on ``subject_uri``).
+    The pre-COLLECT region runs as a source-ordered pipeline: each FOR
+    opens a loop and each FILTER / LET executes at its position, so a
+    shared-variable equality FILTER prunes the loop level it sits under
+    instead of materialising a full Cartesian product first. This is
+    what keeps an RPT multi-triple self-join (one FOR per triple, joined
+    on ``subject_uri``) tractable — a naive product would be
+    O(rows ** triples).
 
-    LET (BIND) bindings are evaluated once per row in source order and
-    appear as plain identifiers in subsequent FILTER / SORT / RETURN
-    expressions — same scoping rules as AQL.
+    LET (BIND) bindings are evaluated in source order and appear as
+    plain identifiers in subsequent FILTER / SORT / RETURN expressions —
+    same scoping rules as AQL.
     """
     lines = [line for line in aql.splitlines() if line.strip()]
-    fors: list[tuple[str, str]] = []
-    body_steps: list[tuple[str, str, str | None]] = []
+    # The pre-COLLECT region is parsed into an ordered pipeline of
+    # ``("FOR", alias, collection)`` / ``("FILTER", expr, None)`` /
+    # ``("LET", expr, alias)`` ops *preserving source order*. Executing
+    # it as a nested pipeline (rather than building the full FOR
+    # Cartesian product and only then filtering) pushes each FILTER
+    # down to the moment its referenced docs are bound — matching how a
+    # real AQL plan prunes, and the only thing that keeps an RPT
+    # multi-triple self-join (one FOR per triple) from exploding
+    # combinatorially. The visitor always emits a FILTER after the FORs
+    # that bind its variables, so source-order execution never
+    # references an unbound alias.
+    pre_collect_plan: list[tuple[str, str, str | None]] = []
     collect_keys: list[tuple[str, str]] | None = None
     collect_aggregates: list[tuple[str, str]] | None = None
     collect_count_into: str | None = None
@@ -327,12 +339,6 @@ def run_aql_subset(
     return_distinct = False
     return_pairs: list[tuple[str, str]] = []
     seen_collect = False
-
-    def _push_step(step: tuple[str, str, str | None]) -> None:
-        if seen_collect:
-            post_collect_steps.append(step)
-        else:
-            body_steps.append(step)
 
     for line in lines:
         if _WITH_RE.match(line):
@@ -344,7 +350,7 @@ def run_aql_subset(
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, coll_var = m.groups()
-            fors.append((alias, bind_vars[f"@{coll_var}"]))
+            pre_collect_plan.append(("FOR", alias, bind_vars[f"@{coll_var}"]))
         elif _COLLECT_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"second COLLECT not supported: {line!r}")
@@ -354,9 +360,11 @@ def run_aql_subset(
             seen_collect = True
         elif m := _LET_RE.match(line):
             alias, expr = m.groups()
-            _push_step(("LET", expr.strip(), alias))
+            step: tuple[str, str, str | None] = ("LET", expr.strip(), alias)
+            (post_collect_steps if seen_collect else pre_collect_plan).append(step)
         elif m := _FILTER_RE.match(line):
-            _push_step(("FILTER", m.group(1).strip(), None))
+            fstep: tuple[str, str, str | None] = ("FILTER", m.group(1).strip(), None)
+            (post_collect_steps if seen_collect else pre_collect_plan).append(fstep)
         elif m := _SORT_RE.match(line):
             sort_keys.extend(_split_sort_keys(m.group(1).strip()))
         elif m := _LIMIT_RE.match(line):
@@ -381,23 +389,24 @@ def run_aql_subset(
 
     envs: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
 
-    def recurse(idx: int, env: dict[str, dict[str, Any]]) -> None:
-        if idx == len(fors):
-            let_env: dict[str, Any] = {}
-            for kind, expr, alias in body_steps:
-                if kind == "FILTER":
-                    if not _eval_filter(expr, env, bind_vars, let_env):
-                        return
-                else:  # LET
-                    assert alias is not None
-                    let_env[alias] = _eval_expr(expr, env, bind_vars, let_env)
-            envs.append((env, let_env))
+    def run_plan(idx: int, env: dict[str, dict[str, Any]], let_env: dict[str, Any]) -> None:
+        if idx == len(pre_collect_plan):
+            envs.append((env, dict(let_env)))
             return
-        alias, collection = fors[idx]
-        for doc in docs.get(collection, []):
-            recurse(idx + 1, {**env, alias: doc})
+        kind, a, b = pre_collect_plan[idx]
+        if kind == "FOR":
+            alias, collection = a, b
+            assert collection is not None
+            for doc in docs.get(collection, []):
+                run_plan(idx + 1, {**env, alias: doc}, let_env)
+        elif kind == "FILTER":
+            if _eval_filter(a, env, bind_vars, let_env):
+                run_plan(idx + 1, env, let_env)
+        else:  # LET
+            assert b is not None
+            run_plan(idx + 1, env, {**let_env, b: _eval_expr(a, env, bind_vars, let_env)})
 
-    recurse(0, {})
+    run_plan(0, {}, {})
 
     if seen_collect:
         keys = collect_keys or []
