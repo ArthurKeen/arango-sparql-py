@@ -84,7 +84,25 @@ class CategoryStats:
 
 
 def _empty_resolver() -> SchemaResolver:
-    return SchemaResolver.from_turtle("", default_collection="Document")
+    """Build a permissive :class:`SchemaResolver` for the translation-
+    only coverage analyzer.
+
+    The harness intentionally runs every query against an empty
+    ontology — its purpose is to measure the *visitor*'s coverage,
+    not the operator's schema-mapping discipline. The
+    ``permissive_class_resolution=True`` flag lets unknown class IRIs
+    degrade to the default ``Document`` collection rather than
+    raising, mirroring how :meth:`SchemaResolver.resolve_property`
+    already handles unmapped property IRIs. This converts the bulk
+    of the historical ``schema`` XFAIL bucket into measurable
+    translation PASSes; the ``algebra`` bucket continues to track
+    real roadmap gaps.
+    """
+    return SchemaResolver.from_turtle(
+        "",
+        default_collection="Document",
+        permissive_class_resolution=True,
+    )
 
 
 def _read(case: W3CTestCase) -> str | None:
@@ -216,8 +234,8 @@ def _bucket(reason: str) -> str:
 _BUCKET_IMPLICATION: dict[str, str] = {
     BUCKET_ALGEBRA: "port the corresponding visitor method",
     BUCKET_SCHEMA: (
-        "harness artefact (empty resolver); will pass against a "
-        "populated ontology"
+        "real schema-resolution failure even under permissive mode "
+        "(should be 0 — investigate any non-zero count)"
     ),
     BUCKET_RDFLIB: "rdflib parser disagreement; out of scope here",
     BUCKET_OTHER: "uncategorised — triage manually",
@@ -342,10 +360,13 @@ def _format_markdown(
     lines.append("")
     lines.append(
         "Each XFAIL is bucketed by what fixing it would require — "
-        "this distinguishes real roadmap gaps from artefacts of the "
-        "translation-only harness, which runs every query against an "
+        "this distinguishes real roadmap gaps (``algebra``) from "
+        "out-of-our-hands rdflib disagreements (``rdflib``). The "
+        "translation-only harness runs every query against a permissive "
         "empty resolver (`SchemaResolver.from_turtle('', "
-        "default_collection='Document')`)."
+        "default_collection='Document', permissive_class_resolution="
+        "True)`), so unknown class IRIs degrade to the default collection "
+        "rather than masking algebra gaps behind schema XFAILs."
     )
     lines.append("")
     lines.append("| Bucket | Count | Implication |")

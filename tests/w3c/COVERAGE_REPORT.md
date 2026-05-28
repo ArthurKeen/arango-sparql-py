@@ -14,7 +14,7 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | -------- | -----:| ----:| ----:| -----:| ----:| --------:|
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
-| Query evaluation | 253 | 178 | 0 | 75 | 0 | 70.4% |
+| Query evaluation | 253 | 228 | 0 | 25 | 0 | 90.1% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -29,33 +29,33 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 
 ## XFAIL implication summary
 
-Each XFAIL is bucketed by what fixing it would require — this distinguishes real roadmap gaps from artefacts of the translation-only harness, which runs every query against an empty resolver (`SchemaResolver.from_turtle('', default_collection='Document')`).
+Each XFAIL is bucketed by what fixing it would require — this distinguishes real roadmap gaps (``algebra``) from out-of-our-hands rdflib disagreements (``rdflib``). The translation-only harness runs every query against a permissive empty resolver (`SchemaResolver.from_turtle('', default_collection='Document', permissive_class_resolution=True)`), so unknown class IRIs degrade to the default collection rather than masking algebra gaps behind schema XFAILs.
 
 | Bucket | Count | Implication |
 | ------ | -----:| ----------- |
-| `algebra` | 22 | port the corresponding visitor method |
-| `schema` | 53 | harness artefact (empty resolver); will pass against a populated ontology |
+| `algebra` | 25 | port the corresponding visitor method |
+| `schema` | 0 | real schema-resolution failure even under permissive mode (should be 0 — investigate any non-zero count) |
 | `rdflib` | 14 | rdflib parser disagreement; out of scope here |
 
 ## Top XFAIL reasons
 
 | Count | Bucket | Reason | Implication |
 | -----:| ------ | ------ | ----------- |
-| 14 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#Restriction' is not declared owl:Class ...` | harness artefact (empty resolver); will pass against a populated ontology |
 | 14 | `rdflib` | `rdflib accepted invalid query` | rdflib parser disagreement; out of scope here |
-| 8 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#DatatypeProperty' is not declared owl:C...` | harness artefact (empty resolver); will pass against a populated ontology |
-| 6 | `schema` | `SchemaResolution: class IRI 'http://example/Set' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
 | 4 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'ServiceGraphPattern' is not implemented yet (see .cursor/sk...` | port the corresponding visitor method |
-| 3 | `schema` | `SchemaResolution: class IRI 'http://example.org/x/c' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
+| 2 | `algebra` | `UnsupportedSparql: FILTER references unbound variable ?nova; the BGP never bound it. Are you missin...` | port the corresponding visitor method |
 | 2 | `algebra` | `UnsupportedSparql: OPTIONAL whose subject is not already bound by the required side is not yet supp...` | port the corresponding visitor method |
-| 2 | `schema` | `SchemaResolution: class IRI 'http://example.org/ns#c2' is not declared owl:Class in the ontology` | harness artefact (empty resolver); will pass against a populated ontology |
-| 2 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2002/07/owl#Class' is not declared owl:Class in the...` | harness artefact (empty resolver); will pass against a populated ontology |
-| 2 | `schema` | `SchemaResolution: class IRI 'http://example.org/test#Person' is not declared owl:Class in the onto...` | harness artefact (empty resolver); will pass against a populated ontology |
 | 2 | `algebra` | `UnsupportedSparql: Builtin_SHA256 is not supported (AQL lacks a native SHA-256 hash; use SHA-512 or...` | port the corresponding visitor method |
-| 2 | `schema` | `SchemaResolution: class IRI 'http://www.w3.org/2009/sparql/docs/tests/data-sparql11/negation#Anima...` | harness artefact (empty resolver); will pass against a populated ontology |
+| 2 | `algebra` | `UnsupportedSparql: OPTIONAL re-binds variable ?b that's already bound by the required side` | port the corresponding visitor method |
 | 2 | `algebra` | `SparqlParse: failed to parse SPARQL: maximum recursion depth exceeded` | port the corresponding visitor method |
-| 2 | `schema` | `SchemaResolution: class IRI 'http://www.example.orgOrder' is not declared owl:Class in the ontolog...` | harness artefact (empty resolver); will pass against a populated ontology |
 | 1 | `algebra` | `UnsupportedSparql: FILTER expression node 'Function' is not yet supported (see references/arango-sp...` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: FILTER references unbound variable ?z; the BGP never bound it. Are you missing a...` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: FILTER expression has no .name attribute: str` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_isLITERAL' is not yet supported (see references/...` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_TIMEZONE' is not yet supported (see references/a...` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: FILTER expression node 'Builtin_TZ' is not yet supported (see references/arango-...` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: FILTER references unbound variable ?m; the BGP never bound it. Are you missing a...` | port the corresponding visitor method |
+| 1 | `algebra` | `UnsupportedSparql: negated property paths ('!:p') are not yet supported` | port the corresponding visitor method |
 
 ## How to reproduce
 

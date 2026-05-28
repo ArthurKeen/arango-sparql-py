@@ -63,15 +63,27 @@ _CASES: list[W3CTestCase] = collect_cases(types=frozenset({QUERY_EVAL}))
 
 
 def _empty_resolver() -> SchemaResolver:
-    """Build a no-op :class:`SchemaResolver` for W3C tests.
+    """Build a permissive :class:`SchemaResolver` for W3C tests.
 
     The DAWG corpus is plain RDF triples — there's no OWL ontology to
-    project on top of, and no ArangoDB physical mapping. Once the
-    visitor learns to fall back to a default ``Document`` collection
-    for unmapped IRIs (or a future "ontology-less RDF mode" lands),
-    this stays the canonical entry point so we change one place.
+    project on top of, and no ArangoDB physical mapping. The
+    ``permissive_class_resolution=True`` flag lets the visitor degrade
+    every unknown class IRI (``foaf:Person``, ``owl:Restriction``,
+    arbitrary ad-hoc test classes) to the default ``Document``
+    collection rather than raising ``SchemaResolutionError`` — the
+    exact behaviour the historical XFAIL comment below used to ask
+    for. Semantically this matches SPARQL's open-world contract: an
+    unknown class returns zero rows, not a translation error.
+
+    The schema-warning surface still records every fallback so an
+    operator running this harness can see what was silently routed
+    to the default collection.
     """
-    return SchemaResolver.from_turtle("", default_collection="Document")
+    return SchemaResolver.from_turtle(
+        "",
+        default_collection="Document",
+        permissive_class_resolution=True,
+    )
 
 
 def _read_query(case: W3CTestCase) -> str:

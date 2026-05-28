@@ -198,6 +198,26 @@ class SchemaResolver:
     """Maximum repetitions when lowering ``:p+`` / ``:p*`` / ``:p?``; see
     :mod:`arango_sparql.translate.paths`."""
 
+    permissive_class_resolution: bool = False
+    """When ``True``, an unknown class IRI degrades to
+    :attr:`default_collection` + a ``W_SCHEMA_UNMAPPED_CLASS`` warning,
+    mirroring how :meth:`resolve_property` already handles unmapped
+    property IRIs.
+
+    Default is ``False`` to preserve the strict pre-existing contract
+    that production callers rely on (every queried class IRI MUST be
+    declared in the ontology). The W3C DAWG translation-only harness
+    flips this on so the visitor can be exercised against the
+    arbitrary IRIs the W3C corpus uses (``foaf:Person``,
+    ``owl:Restriction``, ad-hoc test classes) without authoring a
+    matching ontology per query.
+
+    Semantically defensible: SPARQL is open-world. A query that
+    references a class IRI the database doesn't know about should
+    return no rows (the open-world correct answer), not raise a
+    translation error. The warning surface preserves the diagnostic
+    so operators can see what fell back."""
+
     default_graph_includes_named: bool = True
     """Whether queries outside any ``GRAPH`` wrapper see *all*
     documents (lax, default) or only documents in the default
@@ -286,12 +306,17 @@ class SchemaResolver:
         default_collection: str = "Document",
         graph_field: str = "_graph",
         default_graph_includes_named: bool = True,
+        permissive_class_resolution: bool = False,
     ) -> SchemaResolver:
         """Convenience constructor — parse *ttl* into a fresh ``rdflib.Graph``.
 
         ``graph_field`` and ``default_graph_includes_named`` are
         forwarded to the resolver verbatim; see the class-level
         docstring for the named-graph storage model semantics.
+
+        ``permissive_class_resolution`` — when ``True``, unknown class
+        IRIs degrade to ``default_collection`` rather than raising
+        ``SchemaResolutionError``; see the class-level field doc.
         """
         graph = Graph()
         if ttl:
@@ -301,6 +326,7 @@ class SchemaResolver:
             default_collection=default_collection,
             graph_field=graph_field,
             default_graph_includes_named=default_graph_includes_named,
+            permissive_class_resolution=permissive_class_resolution,
         )
 
     @classmethod
@@ -309,6 +335,7 @@ class SchemaResolver:
         bundle: MappingBundle,
         *,
         default_collection: str = "Document",
+        permissive_class_resolution: bool = False,
     ) -> SchemaResolver:
         """Build a resolver from a :class:`~arango_sparql.translate.mapping.MappingBundle`.
 
@@ -345,12 +372,14 @@ class SchemaResolver:
                 ontology=graph,
                 default_collection=default_collection,
                 shard_families=shard_families,
+                permissive_class_resolution=permissive_class_resolution,
             )
         graph = _synthesize_graph_from_bundle(bundle)
         return cls(
             ontology=graph,
             default_collection=default_collection,
             shard_families=shard_families,
+            permissive_class_resolution=permissive_class_resolution,
         )
 
     # ------------------------------------------------------------------
@@ -363,7 +392,38 @@ class SchemaResolver:
             return cached
         ref = URIRef(key)
         if (ref, RDF.type, OWL.Class) not in self.ontology:
-            raise SchemaResolutionError(f"class IRI {key!r} is not declared owl:Class in the ontology")
+            if not self.permissive_class_resolution:
+                raise SchemaResolutionError(
+                    f"class IRI {key!r} is not declared owl:Class in the ontology"
+                )
+            # Permissive mode (opt-in): degrade to the default
+            # document collection — same shape that
+            # :meth:`resolve_property` already uses for unmapped
+            # property IRIs. The shard-family reverse index is
+            # consulted so a permissive fallback still picks up the
+            # cluster fan-out if the default collection is part of a
+            # sharded family.
+            fallback_collection = self.default_collection
+            self._warn_schema(
+                code="W_SCHEMA_UNMAPPED_CLASS",
+                message=(
+                    f"class IRI {key!r} is not declared owl:Class in the "
+                    f"ontology; falling back to default collection "
+                    f"{fallback_collection!r} (permissive mode)"
+                ),
+                iri=key,
+                fallback_collection=fallback_collection,
+            )
+            shard_family = self._shard_family_by_collection.get(
+                fallback_collection
+            )
+            resolved = ResolvedClass(
+                iri=key,
+                collection=fallback_collection,
+                shard_family=shard_family,
+            )
+            self._class_cache[key] = resolved
+            return resolved
         physical = self._physical_string(ref, "collectionName")
         if physical is None:
             # Class is declared in the ontology but the mapper did not

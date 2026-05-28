@@ -737,3 +737,135 @@ def test_resolver_from_empty_bundle_has_empty_ontology() -> None:
     r = SchemaResolver.from_mapping_bundle(MappingBundle())
     with pytest.raises(SchemaResolutionError):
         r.resolve_class("http://example/Unknown")
+
+
+# ---------------------------------------------------------------------------
+# Permissive class resolution (opt-in fallback to default_collection)
+# ---------------------------------------------------------------------------
+
+
+def test_permissive_class_resolution_degrades_unknown_iri_to_default_collection() -> None:
+    """Opt-in permissive mode mirrors how :meth:`resolve_property` already
+    handles unmapped property IRIs: degrade to the default collection
+    instead of raising. SPARQL is open-world; a query that names an
+    unknown class should return zero rows from the default collection,
+    not crash the translator.
+    """
+
+    r = SchemaResolver.from_turtle(
+        "",
+        default_collection="Document",
+        permissive_class_resolution=True,
+    )
+
+    resolved = r.resolve_class("http://example.org/foaf#Person")
+
+    assert resolved.collection == "Document"
+    assert resolved.iri == "http://example.org/foaf#Person"
+    assert resolved.style is None
+    assert resolved.type_field is None
+    assert resolved.type_value is None
+
+
+def test_permissive_class_resolution_emits_unmapped_class_warning() -> None:
+    """The fallback path MUST surface a ``W_SCHEMA_UNMAPPED_CLASS``
+    advisory so operators (and the UI's schema-warnings sidebar) can
+    see what silently fell back to the default collection.
+    """
+
+    r = SchemaResolver.from_turtle(
+        "",
+        default_collection="Document",
+        permissive_class_resolution=True,
+    )
+
+    r.resolve_class("http://example.org/foaf#Person")
+
+    assert len(r.warnings) == 1
+    w = r.warnings[0]
+    assert w["code"] == "W_SCHEMA_UNMAPPED_CLASS"
+    assert w["iri"] == "http://example.org/foaf#Person"
+    assert w["fallback_collection"] == "Document"
+    assert "permissive mode" in w["message"]
+
+
+def test_permissive_class_resolution_deduplicates_repeated_warnings() -> None:
+    """Visitors invoke ``resolve_class`` once per triple — a query like
+    ``?a a :Unknown . ?b a :Unknown`` would otherwise produce two
+    identical warnings. The ``_warned_keys`` guard inherited from
+    :meth:`_warn_schema` MUST collapse them to one.
+    """
+
+    r = SchemaResolver.from_turtle(
+        "",
+        default_collection="Document",
+        permissive_class_resolution=True,
+    )
+
+    r.resolve_class("http://example.org/foaf#Person")
+    r.resolve_class("http://example.org/foaf#Person")
+    r.resolve_class("http://example.org/foaf#Person")
+
+    assert len(r.warnings) == 1
+
+
+def test_strict_mode_is_the_default_and_still_raises() -> None:
+    """The opt-in flag MUST default to ``False`` so production callers
+    that rely on strict schema validation see no behaviour change.
+    The default constructor and ``from_turtle`` without the flag both
+    keep the historical strict contract.
+    """
+
+    from arango_sparql.errors import SchemaResolutionError
+
+    r_default = SchemaResolver.from_turtle("", default_collection="Document")
+    with pytest.raises(SchemaResolutionError):
+        r_default.resolve_class("http://example.org/foaf#Person")
+
+    r_explicit_strict = SchemaResolver.from_turtle(
+        "",
+        default_collection="Document",
+        permissive_class_resolution=False,
+    )
+    with pytest.raises(SchemaResolutionError):
+        r_explicit_strict.resolve_class("http://example.org/foaf#Person")
+
+
+def test_permissive_mode_respects_custom_default_collection() -> None:
+    """The fallback target is whatever ``default_collection`` was set
+    to — not hard-coded to ``"Document"``. A deployment that uses a
+    different umbrella collection (e.g. ``"Triples"`` for RPT-only
+    datasets) should see its unknowns degrade there.
+    """
+
+    r = SchemaResolver.from_turtle(
+        "",
+        default_collection="Triples",
+        permissive_class_resolution=True,
+    )
+
+    resolved = r.resolve_class("http://example.org/foaf#Person")
+    assert resolved.collection == "Triples"
+
+
+def test_permissive_mode_does_not_shadow_declared_classes() -> None:
+    """When a class IRI IS declared in the ontology, permissive mode
+    MUST still resolve through the normal path — it's a fallback for
+    unknowns, not an override that erases the ontology.
+    """
+
+    ttl = """
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix phys: <https://arango.solutions/phys#> .
+    @prefix : <http://example.org/> .
+    :Person a owl:Class ; phys:collectionName "people" .
+    """
+    r = SchemaResolver.from_turtle(
+        ttl,
+        default_collection="Document",
+        permissive_class_resolution=True,
+    )
+
+    resolved = r.resolve_class("http://example.org/Person")
+    assert resolved.collection == "people"
+    assert r.warnings == []  # no fallback warning for a real class
