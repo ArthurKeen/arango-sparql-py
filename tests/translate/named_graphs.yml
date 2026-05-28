@@ -183,6 +183,46 @@ cases:
         - "_graph"
         - "_uri"
 
+  # ---- GRAPH variable propagation across UNION arms -----------------
+
+  - name: graph_variable_through_union_arms
+    # ``GRAPH ?g { ?s (:p|:q) ?o }`` — the inner pattern uses an
+    # AlternativePath, which the visitor lowers to a UNION of two
+    # arms. Without explicit scope-stack propagation in
+    # ``union_paths._spawn_child``, each per-arm child visitor
+    # would start with an empty ``graph_scope`` and
+    # ``_apply_graph_scope`` would never fire, dropping ``?g`` on
+    # the floor — the bug that historically failed W3C
+    # ``property-path/pp35`` with the misleading
+    # ``FILTER references unbound variable ?g`` diagnostic.
+    #
+    # The correct shape: each arm projects its own
+    # ``docN._graph`` as the union row's ``g`` column, and the
+    # outer scope binds ``?g`` to ``row3.g``. A surrounding FILTER
+    # (e.g. ``FILTER(?g = <graph>)``) then sees ``?g`` correctly
+    # bound. This pins both the per-arm projection AND the
+    # outer-scope row binding for ``?g``.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?g ?o WHERE { GRAPH ?g { ?s (:p|:q) ?o } }
+    expected_aql: |-
+      FOR row3 IN UNION(
+      (
+        FOR doc1 IN @@c1_Document
+        FILTER HAS(doc1, "p")
+        RETURN { g: doc1._graph, o: doc1.p, s: doc1._uri }
+      ),
+      (
+        FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "q")
+        RETURN { g: doc2._graph, o: doc2.q, s: doc2._uri }
+      )
+      )
+      RETURN { g: row3.g, o: row3.o }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
   # ---- Wildcard predicate skip-list cooperation ---------------------
 
   - name: graph_variable_with_wildcard_predicate

@@ -227,7 +227,7 @@ def _emit_union_of_arms(
 
 
 def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
-    """Spawn a child visitor with outer-scope ``var_to_expr``
+    """Spawn a child visitor with outer-scope binding & scope state
     pre-seeded.
 
     Pre-seeding plays the same role as in
@@ -237,6 +237,47 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
     BGP emitter's ``_bind_subject`` does the right thing as long
     as ``var_to_expr`` has the outer's binding when the inner
     triple is visited.
+
+    **Scope-stack propagation** — beyond ``var_to_expr`` we also
+    carry forward four pieces of ambient state so the child
+    behaves identically to the outer scope it was spawned from:
+
+    * ``graph_scope`` — the active SPARQL named-graph stack. When
+      a ``GRAPH ?g { … }`` wrapper opens a UNION (e.g. the path
+      pattern in W3C ``property-path/pp35``), each child arm's
+      ``_open_collection`` calls must see the ``?g`` term on the
+      stack so ``_apply_graph_scope`` can both attach the
+      ``alias.<graph_field>`` filter AND bind the graph variable
+      into the child's ``var_to_expr``. The standard UNION-emitter
+      re-projection then promotes that binding to the outer's
+      ``row.<g>`` expression for the surrounding FILTER. Forgetting
+      to propagate this stack used to fail pp35 with the misleading
+      ``FILTER references unbound variable ?g`` diagnostic — the
+      variable was perfectly well-scoped at the SPARQL level; the
+      visitor just dropped it on UNION descent.
+
+    * ``var_to_rpt_class`` — an outer-scope RPT type pattern (``?s
+      a :Person``) binds ``?s`` to a ``ResolvedClass`` in this map;
+      a UNION arm that references the same ``?s`` must continue to
+      route through the RPT reader, not the PG/LPG emitter. Same
+      copy-on-spawn discipline as ``var_to_expr``.
+
+    * ``tenant_entity`` / ``tenant_bind_placeholder`` — the
+      per-query tenant commitment and its cached AQL bind variable
+      (PRD §6.5.1). A UNION arm that opens a tenant-scoped class
+      must apply the SAME tenant filter, not mint a fresh one, so
+      EXPLAIN output stays clean and cross-tenant-join detection
+      stays consistent. Propagating both the commitment and the
+      cached placeholder is what keeps the per-query tenant bind
+      a single AQL parameter no matter how many UNION arms touch
+      tenant-scoped collections.
+
+    The two counters on ``BindingState`` (``path_var_counter`` and
+    ``bgp_counter``) are deliberately NOT propagated — they mint
+    internal sigil names (``_path_<n>`` / ``_bn_<bgp>_<label>``)
+    whose scope is intra-arm, and resetting them per child gives
+    deterministic per-arm AQL even when arms re-enter the same
+    visitor code path.
 
     Counter sharing follows the standard
     :meth:`AqlQueryBuilder.create_child` /
@@ -254,4 +295,8 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         tenant_id=visitor.tenant_id,
     )
     cv.state.var_to_expr = dict(visitor.state.var_to_expr)
+    cv.state.graph_scope = list(visitor.state.graph_scope)
+    cv.state.var_to_rpt_class = dict(visitor.state.var_to_rpt_class)
+    cv.state.tenant_entity = visitor.state.tenant_entity
+    cv.state.tenant_bind_placeholder = visitor.state.tenant_bind_placeholder
     return cv

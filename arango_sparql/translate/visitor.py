@@ -1862,10 +1862,50 @@ class AlgebraVisitor:
         if isinstance(expr, Variable):
             mapped = self.state.var_to_expr.get(str(expr))
             if mapped is None:
-                raise UnsupportedSparqlError(
-                    f"FILTER references unbound variable ?{expr}; the BGP "
-                    f"never bound it. Are you missing a triple pattern?"
+                # SPARQL §17.2.1: a variable referenced in an expression
+                # but not bound by the surrounding pattern evaluates to
+                # the spec's "error" value, and the SURROUNDING OPERATOR
+                # decides what to do with the error:
+                #
+                #   * ``FILTER(expr)`` — row is excluded (§18.5).
+                #   * ``BIND(expr AS ?v)`` — row is kept, ``?v`` is left
+                #     unbound on this row (§18.6).
+                #   * ``COALESCE(a, b, …)`` — skip to the next argument
+                #     (§17.4.1.3).
+                #   * Most other builtins (DATATYPE, arithmetic, …) —
+                #     propagate the error so the enclosing assignment
+                #     leaves its target unbound.
+                #
+                # AQL's ``null`` follows the same error-propagation
+                # semantics by construction: ``null == X`` → ``null``,
+                # ``null + 1`` → ``null``, ``COALESCE(null, x)`` → ``x``,
+                # and ``FILTER null`` excludes the row. So emitting the
+                # literal ``null`` here gives every spec-correct
+                # downstream behaviour for free — no per-operator
+                # special-case code is needed.
+                #
+                # A SPARQL typo (``?nove`` vs ``?nova``) presents
+                # identically to a deliberate use of an OPTIONAL-bound
+                # variable, so we surface a ``W_UNBOUND_VARIABLE_IN_EXPR``
+                # warning on the builder. The translation harness and
+                # ops UI both render warnings, giving operators the
+                # disambiguation a silent ``null`` would deny them.
+                # The translation itself does NOT raise — that would
+                # block W3C-conformant queries like
+                # ``COALESCE(?z, -3)`` from translating.
+                self.builder.warn(
+                    code="W_UNBOUND_VARIABLE_IN_EXPR",
+                    message=(
+                        f"variable ?{expr} is referenced in an expression "
+                        f"but never bound by the surrounding pattern; per "
+                        f"SPARQL §17.2.1 this evaluates to an 'error' value "
+                        f"(emitted as AQL ``null``, which the surrounding "
+                        f"FILTER / BIND / COALESCE / arithmetic handles "
+                        f"per its own null-propagation rules)"
+                    ),
+                    variable=str(expr),
                 )
+                return "null"
             return mapped
         if isinstance(expr, URIRef):
             return self.builder.bind(str(expr), hint="uri")

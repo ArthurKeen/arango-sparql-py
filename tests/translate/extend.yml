@@ -98,3 +98,78 @@ cases:
       RETURN { lower: bv2, upper: bv3 }
     expected_bind_vars:
       "@c1_Person": "Person"
+
+  # ---- BIND with an unbound right-hand side (SPARQL §17.2.1) --------
+  #
+  # SPARQL §17.4.1.2 + §17.2.1: when ``BIND(expr AS ?v)`` evaluates
+  # ``expr`` and a referenced variable is unbound, the expression
+  # evaluates to the spec's "error" value; the row is KEPT, and
+  # ``?v`` is simply left unbound on this row. The visitor lowers
+  # this to ``LET <bv> = null`` so the row continues, ``?v`` carries
+  # ``null`` (our model's representation of "unbound"), and every
+  # downstream FILTER / projection treats it per the null-propagation
+  # rules SPARQL §17.2.1 prescribes (FILTER(null) → row excluded;
+  # COALESCE(null, x) → x; arithmetic with null → null; etc.).
+  #
+  # Translation also emits a ``W_UNBOUND_VARIABLE_IN_EXPR`` warning
+  # so an operator can disambiguate a deliberate use from a typo
+  # (``?nove`` vs ``?nova``) without the silent semantics of bare
+  # ``null``. The warning is pinned by a separate Python test —
+  # the YAML golden only locks the AQL byte-shape.
+
+  - name: bind_unbound_rhs_emits_null
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?z WHERE {
+        ?s a :Person ; :name ?n .
+        BIND(?nova AS ?z)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      LET bv2 = null
+      RETURN { z: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: projection_coalesce_unbound_var_skipped
+    # ``SELECT (COALESCE(?z, -3) AS ?d)`` — ``?z`` never bound by
+    # the pattern. AQL's ``COALESCE(null, x)`` returns ``x``, which
+    # is exactly what SPARQL §17.4.1.3 prescribes: COALESCE skips
+    # the error-evaluating arg and returns the next. So the
+    # projection ``?d`` cleanly carries ``-3`` for every row.
+    # Mirrors the W3C ``functions/coalesce01`` shape (which uses
+    # multiple COALESCE arms in one SELECT).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n (COALESCE(?z, -3) AS ?d) WHERE {
+        ?s a :Person ; :name ?n
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      LET bv2 = COALESCE(null, (-@_p1))
+      RETURN { n: doc1.name, d: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 3
+
+  - name: projection_datatype_unbound_propagates_null
+    # ``SELECT (DATATYPE(?m) AS ?dt)`` — ``?m`` never bound. The
+    # visitor's ``Builtin_DATATYPE`` emission is a nested ternary
+    # probing IS_BOOL / IS_NUMBER / IS_STRING on the arg. All three
+    # probes return false for ``null``, so the whole expression
+    # short-circuits to ``null`` → ``?dt`` is left unbound on every
+    # row. Mirrors the W3C ``project-expression/projexp06`` shape.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n (DATATYPE(?m) AS ?dt) WHERE {
+        ?s a :Person ; :name ?n
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      LET bv2 = (IS_BOOL(null) ? "http://www.w3.org/2001/XMLSchema#boolean" : (IS_NUMBER(null) ? "http://www.w3.org/2001/XMLSchema#integer" : (IS_STRING(null) ? "http://www.w3.org/2001/XMLSchema#string" : null)))
+      RETURN { n: doc1.name, dt: bv2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"

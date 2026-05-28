@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.13, 92.1 % ✅ — v1.0 §3.1 threshold cleared by 67 pp**; 20 algebra / 0 schema / 14 rdflib XFAILs; largest algebra bucket `ServiceGraphPattern` at 4/20 = 20.0 %, well under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.14, 94.1 % ✅ — v1.0 §3.1 threshold cleared by 69 pp**; 15 algebra / 0 schema / 14 rdflib XFAILs; largest algebra bucket `ServiceGraphPattern` at 4/15 = 26.7 %, just under the 30 % ceiling); `tests/w3c/analyze_coverage.py --check` is CI-blocking at the v1.0 threshold | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) | `tests/translate/{bgp_select,hybrid,rpt}.yml` + matching cross-validation cases | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -1890,7 +1890,8 @@ fix before tagging v1.0.
 | v0.10 (after `MulPath :p*` / `:p+` / `:p?` slice closes the remaining property-path bucket) | 67.6 % (+4.0 pp) | 39 | 171 | 0 | 0 % |
 | v0.11 (after FILTER builtins megabundle — `SUBSTR` / `URI` / `RAND` / `UUID` / `STRUUID` / `BNODE`) | 70.4 % (+2.8 pp) | 39 | 178 | 0 | 0 % |
 | v0.12 (opt-in permissive class resolution collapses the `schema` XFAIL bucket) | 90.1 % ✅ (+19.7 pp; the 53 `schema` XFAILs were a harness artefact — degrading unknown class IRIs to `default_collection` mirrors how unmapped property IRIs already degrade, and matches SPARQL's open-world semantics) | 25 | 228 | 0 | 0 % |
-| **v0.13 (current — long-tail algebra slice: `isLITERAL` alias, `TZ`, native `SHA256`, forward-only `NegatedPath`)** | **92.1 % (+2.0 pp; 5 W3C tests closed across four small algebra gaps; the SHA256 rejection was an outdated assumption — ArangoDB AQL ships `SHA256()` as a first-class string function)** | **20** | **233** | **0** | **0 %** |
+| v0.13 (long-tail algebra slice: `isLITERAL` alias, `TZ`, native `SHA256`, forward-only `NegatedPath`) | 92.1 % (+2.0 pp; 5 W3C tests closed across four small algebra gaps; the SHA256 rejection was an outdated assumption — ArangoDB AQL ships `SHA256()` as a first-class string function) | 20 | 233 | 0 | 0 % |
+| **v0.14 (current — SPARQL §17.2.1 unbound-in-expression + UNION-scope propagation fix)** | **94.1 % (+2.0 pp; 5 W3C tests closed: `_translate_expr` now emits `null` + `W_UNBOUND_VARIABLE_IN_EXPR` warning for truly-unbound variables per SPARQL §17.2.1 error semantics — fixes FILTER / BIND / COALESCE / DATATYPE / arithmetic uniformly via AQL null-propagation; separately, `union_paths._spawn_child` now propagates `graph_scope` so GRAPH variables don't drop on UNION descent — fixes pp35)** | **15** | **238** | **0** | **0 %** |
 | **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 60.1 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
@@ -1910,25 +1911,29 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 20 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The top remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases), FILTER `unbound variable` diagnostics (4 — actually a scoping bug, not a missing feature; SPARQL §18.2.5.2 says BIND evaluates before FILTER even when textually after), `SparqlParse` recursion (2 — rdflib hits Python's default recursion limit), `Builtin_TIMEZONE` (1 — needs xsd:dayTimeDuration generation), `Builtin_isLITERAL` (now shipped), `Builtin_SHA256` (now shipped — outdated rejection removed), `!:p` (now shipped — forward-only), and a long tail of single-FILTER-builtin gaps. |
+| `algebra` | 15 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases), `SparqlParse` recursion (2 — rdflib hits Python's default recursion limit), nested `MulPath` inside `MulPath` (1), `OPTIONAL`-body-`ServiceGraphPattern` (1), `Builtin_TIMEZONE` (1 — needs xsd:dayTimeDuration generation), `FILTER Function` (1), and a defensive-error `FILTER expression has no .name attribute: str` (1). |
 | `schema` | 0 | Empty-resolver artefact, collapsed at v0.12 by `permissive_class_resolution=True` on the harness's `SchemaResolver` — unknown class IRIs degrade to `default_collection` instead of raising, matching SPARQL's open-world semantics and mirroring how `resolve_property` already handles unmapped property IRIs. Non-zero counts here would indicate a regression in the permissive path. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.13 (92.1 %).** The §3.1 ≥ 25 % bar was met six slices ago; the
+v0.14 (94.1 %).** The §3.1 ≥ 25 % bar was met seven slices ago; the
 slice table below tracks the *long-tail* algebra gaps that remain
-after v0.12 collapsed the entire `schema` XFAIL bucket and v0.13
-cleared four small algebra gaps (TZ, native SHA256, isLITERAL,
-forward-only NegatedPath). The remaining 20 algebra XFAILs are
-dominated by federation (`ServiceGraphPattern`, deferred), OPTIONAL
-edge cases, and what appear to be FILTER scoping bugs rather than
-missing features. The largest single bucket is `ServiceGraphPattern`
-at 4/20 = 20.0 %, well under the > 30 % ceiling.
+after v0.12 collapsed the entire `schema` XFAIL bucket, v0.13 cleared
+four small algebra gaps, and v0.14 fixed a 4-shape unbound-variable
+diagnostic (originally suspected to be a scoping bug but turns out
+to be exactly the SPARQL §17.2.1 "unbound-in-expression → error"
+semantic — fixed by emitting AQL ``null`` instead of raising) plus
+a GRAPH-variable-through-UNION propagation bug. The remaining 15
+algebra XFAILs are dominated by federation (`ServiceGraphPattern`,
+deferred). The largest single bucket is `ServiceGraphPattern` at
+4/15 = 26.7 %, just under the > 30 % ceiling — at this density a
+single targeted slice on any remaining cluster could trip the rule,
+so the slice plan below alternates between federation-unblocking
+work and §3.1-stability work.
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| FILTER `unbound variable ?X` scoping bug | 5 | +2.0 pp | NOT a missing feature — the visitor refuses queries where a FILTER references a variable the BGP never bound at FILTER-emission time, but per SPARQL §18.2.5.2 "bottom-up evaluation" BIND fires before FILTER even when textually after. The fix is in `visit_Filter` / `_translate_expr`: when a Variable lookup misses, check whether an Extend in the same Group will bind it before raising. Touches `bind08.rq`, `bind10.rq`, `bind11.rq`, plus two other ``?nova`` queries. |
-| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern | 5 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. |
+| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern | 5 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. Once shipped, the largest bucket drops to OPTIONAL gaps at 4 — comfortably under the §3.1 ratio cap. |
 | `OPTIONAL` unbound subject + re-binds variable | 4 | +1.6 pp | Two visitor-side limitations in `visit_LeftJoin`: (a) the OPTIONAL's subject isn't pre-bound by the required side; (b) the OPTIONAL re-binds a variable already bound by the required side. Both need scope-aware projection rewriting. |
 | Parse recursion in `SparqlParse` | 2 | +0.8 pp | rdflib hits Python's default recursion limit on two W3C queries with deeply nested property paths. Workaround: bump `sys.setrecursionlimit` at translate-call entry or pre-flatten before parse. |
 | `Builtin_TIMEZONE` | 1 | +0.4 pp | SPARQL §17.4.5.10 — returns xsd:dayTimeDuration. Same lexical-extraction recipe as v0.13's `Builtin_TZ` plus a ternary duration generator (``PT0S`` / ``-PT8H`` / ``PT5H30M``). |
@@ -2074,6 +2079,62 @@ v0.3 variable-predicates emitter — sharing
 Inverse arms (``!(^:p)``) and RPT subjects cleanly
 XFAIL with greppable messages so the next slice has
 obvious targets.
+
+**The unbound-in-expression + UNION-scope slice**
+(v0.13 → v0.14) contributed another +2.0 pp (+5 W3C
+tests; 92.1 % → 94.1 %) by closing what initially
+looked like a uniform 5-XFAIL FILTER bucket but on
+inspection turned out to be two distinct bugs of
+opposite character. The first (4 of 5) was a
+*missing semantic* — SPARQL §17.2.1 specifies that
+an unbound variable referenced in an expression
+evaluates to an "error" value, which the surrounding
+operator handles per its own rules (FILTER → row
+excluded, BIND → row kept with target unbound,
+COALESCE → skip to next arg, DATATYPE / arithmetic
+→ propagate to leave target unbound). The visitor
+was raising ``UnsupportedSparqlError`` at the first
+unbound-variable lookup, blocking translation
+entirely; the fix is in
+``_translate_expr``'s Variable branch — return the
+AQL literal ``null`` (which propagates through
+AQL the same way SPARQL's "error" propagates,
+since ``null == X``, ``null + 1``, and ``FILTER null``
+all behave exactly as the SPARQL spec requires) and
+emit a ``W_UNBOUND_VARIABLE_IN_EXPR`` warning on
+the builder so an operator can distinguish a typo
+(``?nove`` vs ``?nova``) from a deliberate
+COALESCE-defaulted reference. Fixes W3C
+``bind/bind04``, ``entailment/bind04``,
+``functions/coalesce01``, and
+``project-expression/projexp06`` uniformly with one
+change.
+
+The second bug (1 of 5, ``pp35``) was a real
+*scope-stack propagation* defect in
+``union_paths._spawn_child``: child visitors spawned
+for UNION arms copied ``var_to_expr`` from the outer
+scope but NOT ``graph_scope`` / ``var_to_rpt_class``
+/ ``tenant_entity`` / ``tenant_bind_placeholder``,
+so a ``GRAPH ?g { ?s :p1* ?t }`` whose inner BGP
+desugared into a UNION (MulPath does that) saw the
+``?g`` term dropped on UNION descent — the child
+arm's ``_apply_graph_scope`` never fired, ``?g``
+was never bound, and the surrounding FILTER reported
+``?g`` as unbound. Fix is one literal copy per
+state field. Independent verification: the WAS-XFAIL
+bucket now reads exactly the same set of UNION-arm
+emissions you'd expect to see from a hand-translated
+``GRAPH ?g { ?s :p1*OR_NOTHING ?t }``, with each
+arm projecting ``docN._graph`` as the union row's
+``g`` column and the outer scope binding ``?g`` to
+``row<N>.g``. Both fixes are pinned by goldens in
+``extend.yml``, ``filter.yml``, and
+``named_graphs.yml``, plus a dedicated Python test
+on the warning emission (the AQL byte-shape is
+indistinguishable from a legitimate ``BIND(IRI() AS
+?z)`` that happens to yield null at runtime — only
+the warning disambiguates).
 
 Carve-out (still in force from v0.3): the variable-predicate
 unbound-subject branch binds `?p` to the attribute *name* (a

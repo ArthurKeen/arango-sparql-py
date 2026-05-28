@@ -142,6 +142,37 @@ cases:
       "@c1_Person": "Person"
       "_p1": "Alice"
 
+  # ---- FILTER with an unbound variable (SPARQL §17.2.1) ------------
+  #
+  # SPARQL §17.2.1: a variable referenced in a FILTER expression but
+  # never bound by the surrounding pattern evaluates to an "error"
+  # value, which causes the FILTER to fail and the row to be
+  # excluded (§18.5). AQL's null follows the same propagation:
+  # ``null == X`` evaluates to ``null``, and ``FILTER null`` excludes
+  # the row. So emitting the literal ``null`` for the unbound
+  # variable lookup gives the spec-correct row-exclusion semantics
+  # for free — no special-case visitor code per surrounding operator.
+  #
+  # A ``W_UNBOUND_VARIABLE_IN_EXPR`` warning is also emitted on the
+  # builder so a SPARQL typo (``?nove`` vs ``?nova``) doesn't go
+  # unnoticed; the YAML golden pins only the AQL byte-shape.
+
+  - name: filter_unbound_variable_emits_null
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE {
+        ?s a :Person ; :name ?n .
+        FILTER(?z = 3)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      FILTER (null == @_p1)
+      RETURN { s: doc1._uri }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 3
+
   - name: starts_with
     sparql: |
       PREFIX : <http://ex.org/>
