@@ -171,10 +171,12 @@ arango_sparql/
     prompt.py, client.py, repair.py, cost.py, models.py
 tests/
   translate/            # parser unit tests + YAML-driven goldens
-  cross/                # pyoxigraph cross-validation
+  cross/                # pyoxigraph cross-validation (PG + multi-model PG/LPG/RPT)
+  schema/               # MappingBundle fixtures + §13.3 per-model contracts
   w3c/                  # W3C SPARQL 1.1 DAWG runner + COVERAGE_REPORT.md
   nl2sparql/eval/       # NL eval harness (slow, gated on RUN_EVAL=1)
-  helpers/oxi.py        # pyoxigraph fixtures
+  helpers/oxi.py        # pyoxigraph fixtures + binding comparison
+  helpers/aql_interp.py # shared in-memory AQL-subset interpreter
 ui/                     # Vite + React + TS frontend
 references/             # symlinks to sibling repos (gitignored, recreated locally)
 docs/architecture/      # PRD (the v1 spec) + vision (inception narrative)

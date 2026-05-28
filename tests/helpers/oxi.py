@@ -79,6 +79,42 @@ def oxi_bindings(store: Any, sparql: str) -> list[dict[str, str]]:
     return rows
 
 
+def normalize_oxi_row(row: dict[str, str]) -> dict[str, Any]:
+    """Strip pyoxigraph's N-Triples lexical envelope from a SELECT row.
+
+    pyoxigraph stringifies Literals as ``"Alice"`` (with quotes, plus an
+    optional ``^^<datatype>`` suffix) and IRIs as ``<http://...>``. The
+    AQL interpreter returns plain Python values, so to compare bindings
+    we unwrap each term to a bare ``str`` / ``int``. Integer-lexical
+    literals are coerced to ``int`` so ``"30"^^xsd:integer`` compares
+    equal to the AQL side's ``30``.
+    """
+    out: dict[str, Any] = {}
+    for k, v in row.items():
+        if v.startswith('"'):
+            inner = v.split('"^^')[0].strip('"')
+            try:
+                out[k] = int(inner)
+            except ValueError:
+                out[k] = inner
+        elif v.startswith("<") and v.endswith(">"):
+            out[k] = v[1:-1]
+        else:
+            out[k] = v
+    return out
+
+
+def drop_null_bindings(row: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``None`` values from an AQL-derived solution row.
+
+    pyoxigraph omits unbound projection variables from each solution
+    (see :func:`oxi_bindings`), so for OPTIONAL / left-join parity the
+    Arango side must drop its ``null`` bindings before comparison. For
+    fully-bound queries this is a no-op.
+    """
+    return {k: v for k, v in row.items() if v is not None}
+
+
 def assert_bindings_equal(
     expected: list[dict[str, str]],
     actual: list[dict[str, str]],

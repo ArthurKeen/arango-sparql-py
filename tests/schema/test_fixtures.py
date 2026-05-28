@@ -7,7 +7,7 @@ layer, and the UI. By exercising the same 9 fixtures across every
 slice we ensure a regression in one layer cannot hide behind green
 tests in another.
 
-This module asserts the first two of the four §13.3 contracts:
+This module asserts all four of the §13.3 contracts:
 
 1. **Wire-dict round-trip** — every fixture parses through
    :func:`mapping_from_wire_dict` and re-emits an equivalent
@@ -15,12 +15,23 @@ This module asserts the first two of the four §13.3 contracts:
 2. **Resolver smoke** — every entity and relationship in the
    fixture's ``conceptualSchema`` half resolves through
    :meth:`SchemaResolver.from_mapping_bundle` without raising.
+3. **Translator emits model-correct AQL per entity** — for every
+   conceptual entity in every fixture, a type-pattern query
+   translates to non-empty AQL that references the entity's resolved
+   physical collection. This exercises PG (one collection per class),
+   LPG (shared collection + ``typeField`` discriminator), RPT (rows in
+   a ``triplesCollection``), the RPT/PG/LPG hybrids, multitenant
+   (tenant-scoped FOR), and sharded (cross-shard ``WITH``) — i.e. the
+   actual translator, not just the resolver, against all nine models.
+4. **RPT AQL references the legacy columns** — for every RPT-style
+   entity, the emitted AQL references the fixture's declared
+   ``triplesCollection`` and the legacy Foxx column overrides
+   (``subject_uri`` / ``predicate`` / ``object_uri``).
 
-The third (translator emits AQL per entity) and fourth (RPT AQL
-references the right columns) §13.3 contracts wait for translator
-slices that follow this one — they are tracked under the
-``@pytest.mark.xfail`` markers further down and will be promoted to
-hard asserts when those slices land.
+Contracts #3 and #4 were promoted from xfail stubs to hard asserts in
+the multi-model cross-validation slice (the translator slices they
+waited on — RPT/LPG/hybrid/sharded/multitenant emission — have all
+landed).
 """
 
 from __future__ import annotations
@@ -31,6 +42,7 @@ from urllib.parse import quote
 
 import pytest
 
+from arango_sparql.api import translate
 from arango_sparql.errors import SchemaResolutionError
 from arango_sparql.translate.mapping import (
     MappingBundle,
@@ -457,30 +469,128 @@ def test_sharded_fixture_preserves_shard_families() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Future contracts (PRD §13.3 contracts #3 and #4)
+# Translator emission per model (PRD §13.3 contracts #3 and #4)
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason=(
-        "PRD §13.3 contract #3 (translator emits AQL per entity) requires "
-        "translator slices that read the bundle's physical mapping — "
-        "deferred until the schema-routes + AQL-builder integration "
-        "lands. See schema-layer Slice 6."
-    ),
-    strict=False,
-)
-def test_translator_emits_aql_per_entity_in_every_fixture() -> None:
-    raise NotImplementedError("Pending later schema-layer slice.")
+def _tenant_id_for(bundle: MappingBundle) -> str | None:
+    """Return a tenant id to thread through ``translate`` when the
+    fixture declares field-strategy multitenancy, else ``None``.
+
+    Tenant-scoped classes raise ``CrossTenantJoinError`` if no tenant
+    context is supplied (PRD §6.5), so the multitenant fixture's
+    entities can only be translated with a tenant in scope. The actual
+    value is irrelevant to the structural assertion — it only has to be
+    present — so we use a stable sentinel.
+    """
+
+    mt = bundle.metadata.get("multitenancy")
+    if isinstance(mt, dict) and mt.get("strategy") == "field":
+        return "tenant-001"
+    return None
 
 
-@pytest.mark.xfail(
-    reason=(
-        "PRD §13.3 contract #4 (RPT AQL references the correct triples "
-        "collection and column names) requires the RPT-aware translator "
-        "path, which depends on contract #3. See schema-layer Slice 6+."
-    ),
-    strict=False,
-)
-def test_rpt_translator_references_legacy_columns_in_emitted_aql() -> None:
-    raise NotImplementedError("Pending later schema-layer slice.")
+@pytest.mark.parametrize("name", FIXTURE_NAMES)
+def test_translator_emits_aql_per_entity_in_every_fixture(name: str) -> None:
+    """PRD §13.3 contract #3 — every conceptual entity in every fixture
+    translates to non-empty AQL that references its resolved physical
+    collection.
+
+    A bare type-pattern (``SELECT ?s WHERE { ?s a <entity-iri> }``) is
+    the minimal query that forces the translator to open the entity's
+    physical home, so it cleanly distinguishes the models: PG opens
+    ``@@<collectionName>``, LPG opens the shared collection plus a
+    ``typeField`` discriminator, RPT opens the ``triplesCollection``,
+    sharded opens a cross-shard ``WITH`` list, and multitenant adds a
+    tenant FILTER. We assert the resolved collection name appears in the
+    emitted AQL — which holds across all of those shapes because the
+    shard-suffixed and discriminated forms still contain the base
+    collection token as a substring.
+    """
+
+    raw = _load_fixture(name)
+    bundle = mapping_from_wire_dict(raw)
+    resolver = SchemaResolver.from_mapping_bundle(bundle)
+    tenant_id = _tenant_id_for(bundle)
+
+    entities = (raw.get("conceptualSchema") or {}).get("entities", [])
+    assert entities, f"Fixture {name!r} has no conceptual entities to translate"
+
+    for entity in entities:
+        ename = entity["name"]
+        iri = _synthetic_iri(ename)
+        resolved = resolver.resolve_class(iri)
+        sparql = f"SELECT ?s WHERE {{ ?s a <{iri}> }}"
+        result = translate(sparql, resolver=resolver, tenant_id=tenant_id)
+
+        assert result.aql, (
+            f"Fixture {name!r} entity {ename!r}: translator returned empty AQL"
+        )
+        # The emission must open the entity's physical home. The first
+        # clause is FOR (single/sharded-via-subquery) or WITH (sharded
+        # cross-collection) — never an empty or RETURN-only body.
+        first_clause = result.aql.lstrip().split(None, 1)[0]
+        assert first_clause in {"FOR", "WITH"}, (
+            f"Fixture {name!r} entity {ename!r}: AQL does not open a "
+            f"collection (first clause {first_clause!r}):\n{result.aql}"
+        )
+        assert resolved.collection in result.aql, (
+            f"Fixture {name!r} entity {ename!r}: resolved collection "
+            f"{resolved.collection!r} not referenced in emitted AQL:\n{result.aql}"
+        )
+
+
+@pytest.mark.parametrize("name", sorted(RPT_FIXTURE_NAMES))
+def test_rpt_translator_references_legacy_columns_in_emitted_aql(name: str) -> None:
+    """PRD §13.3 contract #4 — RPT-style entities emit AQL that
+    references the fixture's ``triplesCollection`` and the legacy Foxx
+    column overrides.
+
+    A type-pattern over an RPT entity compiles to a triples-table scan
+    of the shape ``FOR t IN @@triples FILTER t.<predicateColumn> == …
+    FILTER t.<objectUriColumn> == … RETURN { s: t.<subjectColumn> }``,
+    so all three of subject/predicate/object-uri columns appear in the
+    one query. We read the expected names from the fixture's physical
+    spec (rather than hard-coding ``subject_uri`` etc.) so a fixture
+    that legitimately overrides a column name is validated against its
+    own declaration.
+    """
+
+    raw = _load_fixture(name)
+    bundle = mapping_from_wire_dict(raw)
+    resolver = SchemaResolver.from_mapping_bundle(bundle)
+    tenant_id = _tenant_id_for(bundle)
+
+    rpt_entities = [
+        (label, spec)
+        for label, spec in bundle.entities().items()
+        if spec.get("style") == "RPT"
+    ]
+    assert rpt_entities, (
+        f"Fixture {name!r} is in RPT_FIXTURE_NAMES but declares no RPT entity"
+    )
+
+    for label, spec in rpt_entities:
+        iri = _synthetic_iri(label)
+        result = translate(
+            f"SELECT ?s WHERE {{ ?s a <{iri}> }}",
+            resolver=resolver,
+            tenant_id=tenant_id,
+        )
+        triples_collection = spec.get("triplesCollection") or "_triples"
+        subject_col = spec.get("subjectColumn") or "subject_uri"
+        predicate_col = spec.get("predicateColumn") or "predicate"
+        object_uri_col = spec.get("objectUriColumn") or "object_uri"
+
+        # ``triplesCollection`` is a substring of the sharded forms
+        # (``_triples`` ⊂ ``_triples_us``), so substring containment is
+        # the right check across both plain and sharded RPT.
+        assert triples_collection in result.aql, (
+            f"Fixture {name!r} RPT entity {label!r}: triples collection "
+            f"{triples_collection!r} not referenced:\n{result.aql}"
+        )
+        for column in (subject_col, predicate_col, object_uri_col):
+            assert column in result.aql, (
+                f"Fixture {name!r} RPT entity {label!r}: legacy column "
+                f"{column!r} not referenced in emitted AQL:\n{result.aql}"
+            )
