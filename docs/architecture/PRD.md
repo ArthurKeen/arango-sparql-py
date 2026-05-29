@@ -556,7 +556,22 @@ Heuristics, in order:
 4. **Edge classification** — typed (`GENERIC_WITH_TYPE`) vs dedicated
    (`DEDICATED_COLLECTION`) using the same discriminator rules against
    `{type, relation, relType, _type}`.
-5. **Aggregate** — per-collection signals are tallied; all-PG ⇒ `pg`,
+5. **Relationship endpoint inference** (cross-collection) — for every
+   edge collection, `infer_edge_endpoint_index` samples `_from` / `_to`
+   and resolves each handle to its entity: a `COLLECTION`-style target
+   resolves to the collection's entity name directly; a `LABEL`-style
+   (LPG) target is resolved per-document by a single batched read of the
+   target's discriminator field, so a shared `vertices` collection
+   hosting many classes still yields a precise endpoint — including the
+   PG+LPG-hybrid case where an edge spans a PG collection on one side and
+   an LPG shared collection on the other. `fromEntity` / `toEntity` are
+   pinned only when every resolvable edge agrees; a genuinely
+   polymorphic edge (or one whose endpoints land in an RPT/unclassified
+   bucket) stays `"Any"` rather than guessing a majority. For RPT stores,
+   `infer_rpt_object_property_relationships` instead types each object
+   property's endpoints from the subject's and object's `rdf:type` rows
+   (see §6.3.2), since RPT triples carry no `_from` / `_to`.
+6. **Aggregate** — per-collection signals are tallied; all-PG ⇒ `pg`,
    all-LPG ⇒ `lpg`, all-RPT ⇒ `rpt`, mixed ⇒ `hybrid`.
 
 The heuristic detector emits a `MappingBundle` (the same shape the
@@ -605,6 +620,18 @@ then post-processes:
    to **add `RPT` entries the analyzer would not detect on its own**
    (the analyzer only knows PG/LPG today). RPT entries are merged into
    `physicalMapping.entities` with `style = "RPT"`.
+   The same pass then **synthesizes `RPT_EDGE` relationships** for each
+   object property in the triples store
+   (`infer_rpt_object_property_relationships`): it groups the non-`rdf:type`
+   `object_uri`-bearing rows by predicate and types each relationship's
+   `fromEntity` / `toEntity` from the subject's and object's `rdf:type`
+   rows (a batched lookup tops up any endpoint whose class assertion fell
+   outside the sample). This is the cross-collection inference the
+   analyzer's Cypher-centric PG/LPG classification cannot perform and the
+   bare RPT entity overlay does not attempt. The merge is additive —
+   a relationship an upstream producer already declared is never
+   overwritten — and the synthesized relationship names are recorded under
+   `metadata.enrichmentApplied[].relationships` for observability.
 3. Optionally export the conceptual half as OWL/Turtle via
    `export_conceptual_model_as_owl_turtle` and attach to the bundle.
 

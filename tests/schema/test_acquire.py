@@ -65,8 +65,21 @@ class _MockAql:
         if not bind_vars:
             return []
         name = bind_vars.get("@col")
-        n = int(bind_vars.get("n", 0) or 0)
         docs = list(self.samples.get(name, []))
+        # RPT type lookup issued by the relationship-synthesis pass:
+        # FILTER t[@pred] == @rdftype AND t[@subj] IN @uris RETURN {s, o}
+        if "rdftype" in bind_vars:
+            pred = bind_vars.get("pred")
+            subj = bind_vars.get("subj")
+            obj = bind_vars.get("obj")
+            rdftype = bind_vars.get("rdftype")
+            uris = set(bind_vars.get("uris") or [])
+            return [
+                {"s": d.get(subj), "o": d.get(obj)}
+                for d in docs
+                if d.get(pred) == rdftype and d.get(subj) in uris
+            ]
+        n = int(bind_vars.get("n", 0) or 0)
         return docs[:n]
 
 
@@ -146,6 +159,43 @@ def _rpt_db() -> MockDb:
         collections=[_doc("_triples")],
         samples={"_triples": triples_docs},
     )
+
+
+_RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+_EX = "http://example.org/"
+
+
+def _rpt_typed_db() -> MockDb:
+    """An RPT ``_triples`` store carrying ``rdf:type`` rows *and*
+    object-property rows, so the relationship-synthesis pass can type
+    the endpoints (``Person`` --authored--> ``Doc``).
+    """
+
+    def type_row(subject: str, klass: str) -> dict[str, Any]:
+        return {
+            "subject_uri": _EX + subject,
+            "predicate": _RDF_TYPE,
+            "object_uri": _EX + klass,
+            "object_value": None,
+        }
+
+    def obj_row(subject: str, predicate: str, obj: str) -> dict[str, Any]:
+        return {
+            "subject_uri": _EX + subject,
+            "predicate": _EX + predicate,
+            "object_uri": _EX + obj,
+            "object_value": None,
+        }
+
+    triples = [
+        type_row("alice", "Person"),
+        type_row("bob", "Person"),
+        type_row("doc1", "Doc"),
+        type_row("doc2", "Doc"),
+        obj_row("alice", "authored", "doc1"),
+        obj_row("bob", "authored", "doc2"),
+    ]
+    return MockDb(collections=[_doc("_triples")], samples={"_triples": triples})
 
 
 # ---------------------------------------------------------------------------
@@ -593,6 +643,56 @@ def test_rpt_enrichment_tags_metadata(
         and "_triples" in (e.get("collections") or [])
         for e in enrichment
     )
+
+
+def test_rpt_enrichment_synthesizes_typed_object_property_relationships(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The enrichment pass connects an RPT object property to its
+    typed endpoints — the cross-collection inference the analyzer's
+    PG/LPG classification and the bare RPT entity overlay both miss.
+    """
+
+    # Analyzer declares no relationships; enrichment must supply them.
+    cls, fn = _make_analyzer_mock(
+        conceptual={"entities": [], "relationships": []},
+        physical={"entities": {}, "relationships": {}},
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_rpt_typed_db(), strategy="analyzer")
+
+    relationships = bundle.physical_mapping.get("relationships") or {}
+    assert "authored" in relationships
+    authored = relationships["authored"]
+    assert authored["style"] == "RPT_EDGE"
+    assert authored["fromEntity"] == "Person"
+    assert authored["toEntity"] == "Doc"
+    assert authored["triplesCollection"] == "_triples"
+
+    # The synthesized relationship names are recorded for observability.
+    enrichment = bundle.metadata.get("enrichmentApplied") or []
+    assert any(
+        "authored" in (e.get("relationships") or []) for e in enrichment
+    )
+
+
+def test_rpt_enrichment_does_not_clobber_existing_relationship(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """If an upstream producer already declared a relationship of the
+    same name, synthesis must not overwrite it (additive ``setdefault``
+    contract).
+    """
+
+    sentinel = {"style": "RPT_EDGE", "fromEntity": "Curated", "toEntity": "Curated"}
+    cls, fn = _make_analyzer_mock(
+        conceptual={"entities": [], "relationships": []},
+        physical={"entities": {}, "relationships": {"authored": sentinel}},
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_rpt_typed_db(), strategy="analyzer")
+    relationships = bundle.physical_mapping.get("relationships") or {}
+    assert relationships["authored"] == sentinel
 
 
 def test_rpt_enrichment_skipped_when_no_rpt_collections(

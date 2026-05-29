@@ -18,7 +18,14 @@ Three tiers, in priority order:
    ``is_rpt=True`` collections into ``physicalMapping.entities`` with
    ``style="RPT"``. The analyzer alone only knows PG/LPG; this pass
    is what gives us correct routing for legacy ``_triples`` layouts
-   even when the analyzer is installed (PRD §6.3.2 step 2).
+   even when the analyzer is installed (PRD §6.3.2 step 2). The same
+   pass then synthesizes ``RPT_EDGE`` relationships for every object
+   property in the triples store via
+   :func:`arango_sparql.schema.detect.infer_rpt_object_property_relationships`,
+   typing each relationship's ``fromEntity`` / ``toEntity`` from the
+   subject's and object's ``rdf:type`` — the cross-collection
+   inference neither the analyzer (Cypher-centric) nor the bare RPT
+   entity overlay performs.
 
 Public surface:
 
@@ -47,6 +54,7 @@ from typing import Any, Literal
 from arango_sparql.schema.detect import (
     build_heuristic_mapping,
     detect_rpt_pattern,
+    infer_rpt_object_property_relationships,
 )
 from arango_sparql.translate.mapping import (
     MappingBundle,
@@ -446,6 +454,24 @@ def _apply_rpt_enrichment(
     if not rpt_entries:
         return bundle
 
+    # Synthesize RPT object-property relationships with rdf:type-typed
+    # endpoints (PRD §6.3.2 step 2 — cross-collection inference). The
+    # entity overlay above only marks the triples bucket as RPT; this
+    # pass is what connects an object property (e.g. ``AUTHORED``) to
+    # its typed domain/range (``Person`` → ``Doc``) so the planner and
+    # NL→SPARQL surface see relationships, not just an opaque store.
+    # Additive: never clobbers a relationship an upstream producer
+    # (analyzer / imported OWL) already declared.
+    try:
+        rpt_relationships = infer_rpt_object_property_relationships(db, rpt_results)
+    except Exception:
+        logger.warning(
+            "RPT object-property relationship synthesis failed; bundle "
+            "keeps its existing relationships. Endpoint typing skipped.",
+            exc_info=True,
+        )
+        rpt_relationships = {}
+
     # Build a new physical mapping with the RPT entries overlaid.
     # Preserves dict order: existing entries first, RPT-overridden
     # entries kept at their original position.
@@ -454,6 +480,12 @@ def _apply_rpt_enrichment(
     for name, spec in rpt_entries.items():
         existing_entities[name] = spec
     new_physical["entities"] = existing_entities
+
+    if rpt_relationships:
+        existing_relationships = dict(new_physical.get("relationships") or {})
+        for name, spec in rpt_relationships.items():
+            existing_relationships.setdefault(name, spec)
+        new_physical["relationships"] = existing_relationships
 
     # Tag the bundle metadata so downstream consumers know RPT
     # enrichment ran. The cumulative pattern list is sorted to keep
@@ -465,13 +497,14 @@ def _apply_rpt_enrichment(
     detected.sort()
     new_metadata["detectedPatterns"] = detected
     enrichment_log = list(new_metadata.get("enrichmentApplied") or [])
-    enrichment_log.append(
-        {
-            "kind": "rpt_overlay",
-            "appliedAt": when.isoformat(),
-            "collections": sorted(rpt_entries.keys()),
-        }
-    )
+    entry: dict[str, Any] = {
+        "kind": "rpt_overlay",
+        "appliedAt": when.isoformat(),
+        "collections": sorted(rpt_entries.keys()),
+    }
+    if rpt_relationships:
+        entry["relationships"] = sorted(rpt_relationships.keys())
+    enrichment_log.append(entry)
     new_metadata["enrichmentApplied"] = enrichment_log
 
     return MappingBundle(

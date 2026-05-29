@@ -52,7 +52,9 @@ Tests use a minimal duck-typed mock; the live integration with
 
 from __future__ import annotations
 
+import logging
 import re
+from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -62,6 +64,14 @@ from arango_sparql.translate.mapping import (
     is_valid_collection_name,
     mapping_from_wire_dict,
 )
+
+logger = logging.getLogger(__name__)
+
+# Sentinel for an edge endpoint we could not pin to a single entity.
+# Matches the analyzer's convention and the bundle wire shape (PRD
+# §6.2 relationships carry ``fromEntity`` / ``toEntity`` strings; an
+# un-inferable endpoint is ``"Any"``, never absent).
+ANY_ENTITY: str = "Any"
 
 # Sample-size cap from PRD §6.3.1 step 1. Held as a constant so the
 # acquire layer can pass it through to /schema/introspect query
@@ -623,8 +633,166 @@ def _emit_entities(classifications: list[CollectionClassification]) -> dict[str,
     return entities
 
 
+# Type alias for the per-edge-collection endpoint index:
+# ``{edge_collection: {type_value | None: (fromEntity, toEntity)}}``.
+# The ``None`` key carries the single endpoint pair for a
+# ``DEDICATED_COLLECTION`` edge; a ``GENERIC_WITH_TYPE`` edge is keyed
+# per discriminator value because each type value is a distinct
+# relationship with its own domain/range.
+EndpointIndex = dict[str, dict[str | None, tuple[str, str]]]
+
+
+def _parse_handle(handle: Any) -> tuple[str, str] | None:
+    """Split an ArangoDB document handle ``collection/key`` into its
+    parts. Returns ``None`` for anything that is not a well-formed
+    handle so a malformed ``_from`` / ``_to`` cannot crash inference.
+    """
+
+    if not isinstance(handle, str):
+        return None
+    coll, sep, key = handle.partition("/")
+    if not sep or not coll or not key:
+        return None
+    return coll, key
+
+
+def _resolve_edge_handle_labels(
+    db: Any,
+    edges: list[dict[str, Any]],
+    entity_by_collection: dict[str, CollectionClassification],
+) -> dict[str, str]:
+    """Map each distinct ``_from`` / ``_to`` handle in *edges* to the
+    entity label it points at.
+
+    * A handle into a ``COLLECTION``-style collection resolves to that
+      collection's entity name directly — the heuristic keys a PG
+      entity by its collection name, so no read is needed.
+    * A handle into a ``LABEL``-style (LPG) collection resolves to the
+      value of *that document's* discriminator field, so a single
+      shared collection (``vertices``) hosting many types still yields
+      a precise per-endpoint label. These are read in one batched AQL
+      query per collection, capped by the number of distinct sampled
+      handles.
+    * Anything else (RPT bucket, unclassified, system) is left
+      unresolved and simply omitted from the returned map.
+    """
+
+    handles: set[str] = set()
+    for e in edges:
+        for side in ("_from", "_to"):
+            h = e.get(side)
+            if isinstance(h, str):
+                handles.add(h)
+
+    out: dict[str, str] = {}
+    label_keys: dict[str, set[str]] = defaultdict(set)
+    for handle in handles:
+        parsed = _parse_handle(handle)
+        if parsed is None:
+            continue
+        coll, key = parsed
+        cls = entity_by_collection.get(coll)
+        if cls is None:
+            continue
+        if cls.style == "COLLECTION":
+            out[handle] = coll
+        elif cls.style == "LABEL":
+            label_keys[coll].add(key)
+        # RPT / UNKNOWN entity collections: endpoint left unresolved.
+
+    for coll, keys in label_keys.items():
+        type_field = entity_by_collection[coll].type_field
+        if not type_field:
+            continue
+        try:
+            rows = db.aql.execute(
+                "FOR d IN @@col FILTER d._key IN @keys "
+                "RETURN {k: d._key, t: d[@tf]}",
+                bind_vars={"@col": coll, "keys": sorted(keys), "tf": type_field},
+            )
+        except Exception:
+            logger.warning(
+                "Endpoint inference: failed reading discriminator %r from "
+                "LABEL collection %r; those endpoints stay unresolved.",
+                type_field,
+                coll,
+                exc_info=True,
+            )
+            continue
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            key = row.get("k")
+            type_value = row.get("t")
+            if isinstance(key, str) and isinstance(type_value, str) and type_value:
+                out[f"{coll}/{key}"] = type_value
+    return out
+
+
+def _endpoints_from_edges(
+    edges: list[dict[str, Any]],
+    handle_labels: dict[str, str],
+) -> tuple[str, str]:
+    """Reduce a set of edges to a single ``(fromEntity, toEntity)``.
+
+    An endpoint is pinned only when *every* resolvable edge agrees on
+    one entity. A generic edge that legitimately connects several types
+    stays ``"Any"`` rather than guessing a majority — a relationship's
+    declared domain/range must not silently exclude valid endpoints.
+    Unresolved handles (RPT/unclassified) are ignored, not counted as a
+    disagreement, so a partially-resolvable edge still pins when the
+    resolvable side is unanimous.
+    """
+
+    from_labels = {handle_labels[e["_from"]] for e in edges if e.get("_from") in handle_labels}
+    to_labels = {handle_labels[e["_to"]] for e in edges if e.get("_to") in handle_labels}
+    frm = next(iter(from_labels)) if len(from_labels) == 1 else ANY_ENTITY
+    to = next(iter(to_labels)) if len(to_labels) == 1 else ANY_ENTITY
+    return frm, to
+
+
+def infer_edge_endpoint_index(
+    db: Any,
+    classifications: list[CollectionClassification],
+    *,
+    sample_size: int = DEFAULT_SAMPLE_SIZE,
+) -> EndpointIndex:
+    """Infer ``(fromEntity, toEntity)`` for every edge collection by
+    sampling ``_from`` / ``_to`` and resolving the endpoints through
+    the entity classifications.
+
+    Exposed publicly so the acquire layer can run the *same* inference
+    over a bundle the analyzer produced (the analyzer leaves endpoints
+    unresolved for the legacy/hybrid shapes this service cares about).
+    """
+
+    entity_by_collection = {c.name: c for c in classifications if not c.is_edge}
+    index: EndpointIndex = {}
+    for c in classifications:
+        if not c.is_edge:
+            continue
+        edges = _sample_collection(db, c.name, sample_size)
+        if not edges:
+            continue
+        handle_labels = _resolve_edge_handle_labels(db, edges, entity_by_collection)
+        if c.style == "GENERIC_WITH_TYPE" and c.type_field:
+            groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
+            for e in edges:
+                type_value = e.get(c.type_field)
+                if isinstance(type_value, str) and type_value:
+                    groups[type_value].append(e)
+            index[c.name] = {
+                tv: _endpoints_from_edges(grp, handle_labels)
+                for tv, grp in groups.items()
+            }
+        else:
+            index[c.name] = {None: _endpoints_from_edges(edges, handle_labels)}
+    return index
+
+
 def _emit_relationships(
     classifications: list[CollectionClassification],
+    endpoint_index: EndpointIndex | None = None,
 ) -> dict[str, Any]:
     """Project edge classifications into
     ``physicalMapping.relationships``.
@@ -634,39 +802,217 @@ def _emit_relationships(
     style, one relationship per distinct discriminator value, all
     sharing the underlying edge collection.
 
-    ``fromEntity`` / ``toEntity`` are left as ``"Any"`` — inferring
-    them requires sampling ``_from`` / ``_to`` and dereferencing them
-    through the entity classifications, which is intentionally out
-    of scope for the v0.x heuristic detector (PRD §6.3.1's "no
-    cross-collection inference" guarantee). The analyzer fills
-    these when present.
+    ``fromEntity`` / ``toEntity`` are filled from *endpoint_index*
+    (see :func:`infer_edge_endpoint_index`) when an endpoint could be
+    pinned to a single entity, and fall back to ``"Any"`` otherwise —
+    a genuinely polymorphic edge, or one whose endpoints land in an
+    RPT/unclassified collection, stays ``"Any"`` rather than guessing.
     """
 
+    endpoint_index = endpoint_index or {}
     relationships: dict[str, Any] = {}
     for c in classifications:
         if not c.is_edge:
             continue
+        per_type = endpoint_index.get(c.name, {})
         if c.style == "GENERIC_WITH_TYPE":
             for type_value in sorted(c.type_values):
                 if not type_value:
                     continue
+                from_entity, to_entity = per_type.get(
+                    type_value, (ANY_ENTITY, ANY_ENTITY)
+                )
                 relationships[type_value] = {
                     "style": "GENERIC_WITH_TYPE",
                     "edgeCollectionName": c.name,
                     "typeField": c.type_field,
                     "typeValue": type_value,
-                    "fromEntity": "Any",
-                    "toEntity": "Any",
+                    "fromEntity": from_entity,
+                    "toEntity": to_entity,
                 }
         else:
             # DEDICATED_COLLECTION (or fallback UNKNOWN treated as
             # dedicated): the relationship type IS the collection
             # name.
+            from_entity, to_entity = per_type.get(None, (ANY_ENTITY, ANY_ENTITY))
             relationships[c.name] = {
                 "style": "DEDICATED_COLLECTION",
                 "edgeCollectionName": c.name,
-                "fromEntity": "Any",
-                "toEntity": "Any",
+                "fromEntity": from_entity,
+                "toEntity": to_entity,
+            }
+    return relationships
+
+
+# ---------------------------------------------------------------------------
+# RPT object-property relationship synthesis (cross-collection, RDF)
+# ---------------------------------------------------------------------------
+
+# The RDF typing predicate. In an RPT ``_triples`` store a class
+# assertion is the row ``(subject_uri, rdf:type, object_uri=ClassURI)``;
+# we read those rows to type the endpoints of every other object
+# property. Hard-coded because it is a W3C constant, not a config knob.
+_RDF_TYPE_URI: str = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+
+def _local_name(uri: str) -> str:
+    """Return the local name of an IRI — the fragment after the last
+    ``#`` or ``/`` — so an RPT endpoint reads ``Person`` / ``AUTHORED``
+    rather than the full IRI, matching the conceptual entity / relation
+    names the rest of the bundle uses. Falls back to the whole string
+    when there is no separator (e.g. a blank-node or bare token).
+    """
+
+    for sep in ("#", "/"):
+        if sep in uri:
+            tail = uri.rsplit(sep, 1)[-1]
+            if tail:
+                return tail
+    return uri
+
+
+def _fetch_rpt_subject_types(
+    db: Any,
+    triples_collection: str,
+    *,
+    subject_column: str,
+    predicate_column: str,
+    object_uri_column: str,
+    uris: list[str],
+) -> dict[str, str]:
+    """Read ``(uri, rdf:type, ClassURI)`` rows for *uris* in one
+    batched query, returning ``{uri: ClassURI}``.
+
+    Used to type RPT endpoints whose ``rdf:type`` row was not in the
+    main sample (the object of an object property is some other
+    subject whose class assertion is an unrelated row). Bounded by the
+    number of distinct endpoint URIs the sample referenced.
+    """
+
+    if not uris:
+        return {}
+    rows = db.aql.execute(
+        "FOR t IN @@col "
+        "FILTER t[@pred] == @rdftype AND t[@subj] IN @uris "
+        "RETURN {s: t[@subj], o: t[@obj]}",
+        bind_vars={
+            "@col": triples_collection,
+            "pred": predicate_column,
+            "subj": subject_column,
+            "obj": object_uri_column,
+            "rdftype": _RDF_TYPE_URI,
+            "uris": sorted(set(uris)),
+        },
+    )
+    out: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        subject = row.get("s")
+        class_uri = row.get("o")
+        if isinstance(subject, str) and isinstance(class_uri, str) and class_uri:
+            out[subject] = class_uri
+    return out
+
+
+def infer_rpt_object_property_relationships(
+    db: Any,
+    rpt_results: dict[str, RptDetectionResult],
+    *,
+    sample_size: int = DEFAULT_SAMPLE_SIZE,
+) -> dict[str, dict[str, Any]]:
+    """Synthesize ``RPT_EDGE`` relationships for each object property
+    in an RPT triples store, with ``fromEntity`` / ``toEntity`` typed
+    from the subject's and object's ``rdf:type``.
+
+    For every RPT collection in *rpt_results*:
+
+    1. Sample the triples table once.
+    2. Index ``(s, rdf:type, ClassURI)`` rows into ``subject → class``.
+    3. Group the remaining ``(s, predicate, object_uri)`` rows (object
+       properties — ``object_uri`` is non-null, ``predicate`` is not
+       ``rdf:type``) by predicate.
+    4. Type any endpoint whose class row was outside the sample via one
+       batched :func:`_fetch_rpt_subject_types` lookup.
+    5. Emit one ``RPT_EDGE`` per predicate, keyed by the predicate's
+       local name, pinning ``fromEntity`` / ``toEntity`` only when every
+       resolvable endpoint agrees (else ``"Any"`` — never a guess).
+
+    Returns ``{relationship_name: spec}``. The caller (acquire layer)
+    merges these into ``physicalMapping.relationships`` without
+    clobbering relationships an upstream producer already declared.
+    """
+
+    relationships: dict[str, dict[str, Any]] = {}
+    for collection_name, result in rpt_results.items():
+        if not result.is_rpt:
+            continue
+        triples_collection = result.triples_collection or collection_name
+        subject_column = result.subject_column
+        predicate_column = result.predicate_column
+        object_uri_column = result.object_uri_column
+
+        sample = _sample_collection(db, triples_collection, sample_size)
+        if not sample:
+            continue
+
+        subject_type: dict[str, str] = {}
+        by_predicate: dict[str, list[tuple[str, str]]] = defaultdict(list)
+        endpoint_uris: set[str] = set()
+        for row in sample:
+            predicate = row.get(predicate_column)
+            subject = row.get(subject_column)
+            object_uri = row.get(object_uri_column)
+            if not isinstance(predicate, str) or not isinstance(subject, str):
+                continue
+            if predicate == _RDF_TYPE_URI:
+                if isinstance(object_uri, str) and object_uri:
+                    subject_type[subject] = object_uri
+                continue
+            if isinstance(object_uri, str) and object_uri:
+                by_predicate[predicate].append((subject, object_uri))
+                endpoint_uris.add(subject)
+                endpoint_uris.add(object_uri)
+
+        if not by_predicate:
+            continue
+
+        missing = [u for u in endpoint_uris if u not in subject_type]
+        if missing:
+            subject_type.update(
+                _fetch_rpt_subject_types(
+                    db,
+                    triples_collection,
+                    subject_column=subject_column,
+                    predicate_column=predicate_column,
+                    object_uri_column=object_uri_column,
+                    uris=missing,
+                )
+            )
+
+        for predicate, pairs in by_predicate.items():
+            from_classes = {
+                subject_type[s] for s, _o in pairs if s in subject_type
+            }
+            to_classes = {
+                subject_type[o] for _s, o in pairs if o in subject_type
+            }
+            from_entity = (
+                _local_name(next(iter(from_classes)))
+                if len(from_classes) == 1
+                else ANY_ENTITY
+            )
+            to_entity = (
+                _local_name(next(iter(to_classes)))
+                if len(to_classes) == 1
+                else ANY_ENTITY
+            )
+            relationships[_local_name(predicate)] = {
+                "style": "RPT_EDGE",
+                "predicate": predicate,
+                "triplesCollection": triples_collection,
+                "fromEntity": from_entity,
+                "toEntity": to_entity,
             }
     return relationships
 
@@ -758,7 +1104,8 @@ def build_heuristic_mapping(
         schema_type = _aggregate_classification(classifications)
 
     physical_entities = _emit_entities(classifications)
-    physical_rels = _emit_relationships(classifications)
+    endpoint_index = infer_edge_endpoint_index(db, classifications, sample_size=sample_size)
+    physical_rels = _emit_relationships(classifications, endpoint_index)
     physical_mapping = {
         "entities": physical_entities,
         "relationships": physical_rels,
@@ -842,9 +1189,11 @@ def _aggregate_classification(
 
 
 __all__ = [
+    "ANY_ENTITY",
     "COVERAGE_THRESHOLD",
     "CollectionClassification",
     "DEFAULT_SAMPLE_SIZE",
+    "EndpointIndex",
     "RptDetectionResult",
     "SchemaType",
     "TIER_2_MAX_DISTINCT",
@@ -852,4 +1201,6 @@ __all__ = [
     "build_heuristic_mapping",
     "classify_schema",
     "detect_rpt_pattern",
+    "infer_edge_endpoint_index",
+    "infer_rpt_object_property_relationships",
 ]

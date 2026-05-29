@@ -40,7 +40,11 @@ from arango_sparql.schema.detect import (
     build_heuristic_mapping,
     classify_schema,
     detect_rpt_pattern,
+    infer_rpt_object_property_relationships,
 )
+
+_RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+_EX = "http://example.org/"
 from arango_sparql.schema.fingerprint import compute_bundle_fingerprint
 from arango_sparql.translate.mapping import MappingBundle
 
@@ -66,8 +70,31 @@ class _MockAql:
         if not bind_vars:
             return []
         name = bind_vars.get("@col")
-        n = int(bind_vars.get("n", 0) or 0)
         docs = list(self.samples.get(name, []))
+        # Endpoint-inference discriminator read:
+        # FOR d IN @@col FILTER d._key IN @keys RETURN {k: d._key, t: d[@tf]}
+        if "keys" in bind_vars:
+            wanted = set(bind_vars.get("keys") or [])
+            type_field = bind_vars.get("tf")
+            return [
+                {"k": d.get("_key"), "t": d.get(type_field)}
+                for d in docs
+                if d.get("_key") in wanted
+            ]
+        # RPT type lookup:
+        # FILTER t[@pred] == @rdftype AND t[@subj] IN @uris RETURN {s, o}
+        if "rdftype" in bind_vars:
+            pred = bind_vars.get("pred")
+            subj = bind_vars.get("subj")
+            obj = bind_vars.get("obj")
+            rdftype = bind_vars.get("rdftype")
+            uris = set(bind_vars.get("uris") or [])
+            return [
+                {"s": d.get(subj), "o": d.get(obj)}
+                for d in docs
+                if d.get(pred) == rdftype and d.get(subj) in uris
+            ]
+        n = int(bind_vars.get("n", 0) or 0)
         return docs[:n]
 
 
@@ -417,6 +444,277 @@ def test_edge_relation_field_alias_qualifies() -> None:
     bundle = build_heuristic_mapping(db)
     assert "MENTIONS" in bundle.relationships()
     assert bundle.relationships()["MENTIONS"]["typeField"] == "relation"
+
+
+# ---------------------------------------------------------------------------
+# Edge endpoint inference (fromEntity / toEntity) — cross-collection
+# ---------------------------------------------------------------------------
+
+
+def test_dedicated_edge_endpoints_resolve_to_pg_entity() -> None:
+    """A dedicated PG edge whose ``_from`` / ``_to`` all land in one
+    ``COLLECTION``-style collection pins both endpoints to that
+    entity — no per-doc read needed, the entity name *is* the
+    collection name.
+    """
+
+    db = MockDb(
+        collections=[_doc_collection("persons"), _edge_collection("follows")],
+        samples={
+            "persons": _make_pg_docs(),
+            "follows": _make_pg_edge_docs(),
+        },
+    )
+    bundle = build_heuristic_mapping(db)
+    follows = bundle.relationships()["follows"]
+    assert follows["style"] == "DEDICATED_COLLECTION"
+    assert follows["fromEntity"] == "persons"
+    assert follows["toEntity"] == "persons"
+
+
+def test_generic_edge_endpoints_resolve_via_label_discriminator() -> None:
+    """A generic (``GENERIC_WITH_TYPE``) edge into a shared LABEL
+    collection resolves each endpoint by reading the *target doc's*
+    discriminator, so a single ``vertices`` collection hosting both
+    ``Person`` and ``Company`` still yields a precise domain/range.
+    """
+
+    vertices = [{"_key": f"p{i}", "type": "Person"} for i in range(4)] + [
+        {"_key": f"c{i}", "type": "Company"} for i in range(4)
+    ]
+    works_at = [
+        {"_from": f"vertices/p{i}", "_to": f"vertices/c{i}", "relation": "WORKS_AT"}
+        for i in range(4)
+    ]
+    db = MockDb(
+        collections=[_doc_collection("vertices"), _edge_collection("edges")],
+        samples={"vertices": vertices, "edges": works_at},
+    )
+    bundle = build_heuristic_mapping(db)
+    rel = bundle.relationships()["WORKS_AT"]
+    assert rel["style"] == "GENERIC_WITH_TYPE"
+    assert rel["fromEntity"] == "Person"
+    assert rel["toEntity"] == "Company"
+
+
+def test_hybrid_edge_endpoints_span_lpg_source_and_pg_target() -> None:
+    """The PG+LPG hybrid case: an edge from a LABEL-style ``vertices``
+    (LPG, ``Person`` read from the discriminator) to a ``COLLECTION``-
+    style ``Project`` (PG, name == collection) resolves *both* sides
+    even though they live in physically different model shapes.
+    """
+
+    vertices = [{"_key": f"p{i}", "type": "Person"} for i in range(6)]
+    projects = [{"_key": f"pr{i}", "name": f"proj{i}"} for i in range(6)]
+    owns = [
+        {"_from": f"vertices/p{i}", "_to": f"Project/pr{i}", "relation": "OWNS"}
+        for i in range(6)
+    ]
+    db = MockDb(
+        collections=[
+            _doc_collection("vertices"),
+            _doc_collection("Project"),
+            _edge_collection("edges"),
+        ],
+        samples={"vertices": vertices, "Project": projects, "edges": owns},
+    )
+    bundle = build_heuristic_mapping(db)
+    rel = bundle.relationships()["OWNS"]
+    assert rel["fromEntity"] == "Person"
+    assert rel["toEntity"] == "Project"
+
+
+def test_polymorphic_edge_endpoints_stay_any() -> None:
+    """An edge that genuinely connects more than one entity on a side
+    must stay ``"Any"`` — the detector never guesses a majority and
+    silently drops valid endpoints.
+    """
+
+    persons = _make_pg_docs()
+    companies = [{"_key": str(i), "name": f"c{i}"} for i in range(10)]
+    links = [
+        {"_from": "persons/0", "_to": "companies/0"},
+        {"_from": "companies/1", "_to": "persons/1"},
+    ]
+    db = MockDb(
+        collections=[
+            _doc_collection("persons"),
+            _doc_collection("companies"),
+            _edge_collection("links"),
+        ],
+        samples={"persons": persons, "companies": companies, "links": links},
+    )
+    bundle = build_heuristic_mapping(db)
+    rel = bundle.relationships()["links"]
+    assert rel["fromEntity"] == "Any"
+    assert rel["toEntity"] == "Any"
+
+
+def test_malformed_edge_handles_do_not_crash_inference() -> None:
+    """A malformed ``_from`` (no ``/``) or a non-string ``_to`` is
+    skipped, not fatal; the well-formed edges still pin the endpoint.
+    """
+
+    persons = _make_pg_docs()
+    follows = [
+        {"_from": "no-slash", "_to": None},
+        {"_from": "persons/0", "_to": "persons/1"},
+    ]
+    db = MockDb(
+        collections=[_doc_collection("persons"), _edge_collection("follows")],
+        samples={"persons": persons, "follows": follows},
+    )
+    bundle = build_heuristic_mapping(db)
+    rel = bundle.relationships()["follows"]
+    assert rel["fromEntity"] == "persons"
+    assert rel["toEntity"] == "persons"
+
+
+def test_endpoints_into_unclassified_collection_stay_any() -> None:
+    """Endpoints landing in a collection the heuristic did not classify
+    as an entity (here only the edge collection exists) cannot be
+    resolved and remain ``"Any"``.
+    """
+
+    follows = [{"_from": f"ghost/{i}", "_to": f"ghost/{i+1}"} for i in range(10)]
+    db = MockDb(
+        collections=[_edge_collection("follows")],
+        samples={"follows": follows},
+    )
+    bundle = build_heuristic_mapping(db)
+    rel = bundle.relationships()["follows"]
+    assert rel["fromEntity"] == "Any"
+    assert rel["toEntity"] == "Any"
+
+
+# ---------------------------------------------------------------------------
+# RPT object-property relationship synthesis (rdf:type-typed endpoints)
+# ---------------------------------------------------------------------------
+
+
+def _type_triple(subject: str, class_local: str) -> dict[str, Any]:
+    return {
+        "subject_uri": _EX + subject,
+        "predicate": _RDF_TYPE,
+        "object_uri": _EX + class_local,
+        "object_value": None,
+    }
+
+
+def _object_triple(subject: str, predicate_local: str, obj: str) -> dict[str, Any]:
+    return {
+        "subject_uri": _EX + subject,
+        "predicate": _EX + predicate_local,
+        "object_uri": _EX + obj,
+        "object_value": None,
+    }
+
+
+def _data_triple(subject: str, predicate_local: str, value: str) -> dict[str, Any]:
+    return {
+        "subject_uri": _EX + subject,
+        "predicate": _EX + predicate_local,
+        "object_uri": None,
+        "object_value": value,
+    }
+
+
+def test_rpt_object_property_endpoints_typed_from_rdf_type() -> None:
+    """An RPT object property is connected to its typed domain/range by
+    reading the subject's and object's ``rdf:type`` rows. A datatype
+    property (``object_value`` only) is *not* emitted as a relationship.
+    """
+
+    triples = [
+        _type_triple("alice", "Person"),
+        _type_triple("bob", "Person"),
+        _type_triple("doc1", "Doc"),
+        _type_triple("doc2", "Doc"),
+        _object_triple("alice", "authored", "doc1"),
+        _object_triple("bob", "authored", "doc2"),
+        _object_triple("alice", "knows", "bob"),
+        _data_triple("alice", "age", "30"),
+    ]
+    db = MockDb(
+        collections=[_doc_collection("_triples", system=True)],
+        samples={"_triples": triples},
+    )
+    rels = infer_rpt_object_property_relationships(db, detect_rpt_pattern(db))
+
+    assert set(rels) == {"authored", "knows"}
+    assert rels["authored"]["style"] == "RPT_EDGE"
+    assert rels["authored"]["predicate"] == _EX + "authored"
+    assert rels["authored"]["triplesCollection"] == "_triples"
+    assert rels["authored"]["fromEntity"] == "Person"
+    assert rels["authored"]["toEntity"] == "Doc"
+    assert rels["knows"]["fromEntity"] == "Person"
+    assert rels["knows"]["toEntity"] == "Person"
+    assert "age" not in rels
+
+
+def test_rpt_object_property_types_fetched_when_outside_sample() -> None:
+    """When the endpoints' ``rdf:type`` rows fall outside the initial
+    sample, the synthesizer issues one batched lookup to type them — so
+    a small sample still yields precise endpoints rather than ``"Any"``.
+    """
+
+    object_rows = [
+        _object_triple("alice", "authored", "doc1"),
+        _object_triple("bob", "authored", "doc2"),
+    ]
+    type_rows = [
+        _type_triple("alice", "Person"),
+        _type_triple("bob", "Person"),
+        _type_triple("doc1", "Doc"),
+        _type_triple("doc2", "Doc"),
+    ]
+    # Object rows first so a small sample sees only object properties;
+    # the type rows must be fetched by the batched rdf:type lookup.
+    db = MockDb(
+        collections=[_doc_collection("_triples", system=True)],
+        samples={"_triples": object_rows + type_rows},
+    )
+    rpt = detect_rpt_pattern(db, sample_size=len(object_rows))
+    rels = infer_rpt_object_property_relationships(
+        db, rpt, sample_size=len(object_rows)
+    )
+    assert rels["authored"]["fromEntity"] == "Person"
+    assert rels["authored"]["toEntity"] == "Doc"
+
+
+def test_rpt_object_property_mixed_endpoints_stay_any() -> None:
+    """A predicate whose subjects span multiple classes keeps the
+    ambiguous side ``"Any"`` rather than guessing.
+    """
+
+    triples = [
+        _type_triple("alice", "Person"),
+        _type_triple("acme", "Company"),
+        _type_triple("doc1", "Doc"),
+        _type_triple("doc2", "Doc"),
+        _object_triple("alice", "owns", "doc1"),
+        _object_triple("acme", "owns", "doc2"),
+    ]
+    db = MockDb(
+        collections=[_doc_collection("_triples", system=True)],
+        samples={"_triples": triples},
+    )
+    rels = infer_rpt_object_property_relationships(db, detect_rpt_pattern(db))
+    assert rels["owns"]["fromEntity"] == "Any"
+    assert rels["owns"]["toEntity"] == "Doc"
+
+
+def test_rpt_synthesis_skips_non_rpt_collections() -> None:
+    """A collection that did not classify as RPT contributes no
+    synthesized relationships.
+    """
+
+    db = MockDb(
+        collections=[_doc_collection("persons")],
+        samples={"persons": _make_pg_docs()},
+    )
+    rels = infer_rpt_object_property_relationships(db, detect_rpt_pattern(db))
+    assert rels == {}
 
 
 # ---------------------------------------------------------------------------
