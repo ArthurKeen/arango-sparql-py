@@ -861,9 +861,9 @@ deployments.
 | --- | --- | --- |
 | **PG `COLLECTION`** — one OWL class ↔ one ArangoDB collection; datatype properties as top-level attributes | ✅ shipped | `tests/translate/bgp_select.yml` (every case but the `hybrid_collection_emits_type_filter` row) |
 | **LPG `LABEL`** — multi-class collection with `phys:typeField`/`phys:typeValue` discriminator | ✅ shipped | `tests/translate/bgp_select.yml :: hybrid_collection_emits_type_filter` |
-| **PG `DEDICATED_COLLECTION` edges** — OWL `ObjectProperty` resolves to a `phys:edgeCollectionName`; SPARQL traversal lowers to `FOR v, e IN OUTBOUND` | 🟡 v1.0 | Currently raises `UnsupportedSparqlError("Object property … requires edge traversal")`. Top XFAIL bucket. |
-| **LPG `GENERIC_WITH_TYPE` edges** — typed-edge traversal with discriminator FILTER | 🟡 v1.0 | depends on the previous row |
-| **RPT (`_triples` triple-store)** — read subject/predicate/object rows, `COALESCE(object_uri, object_value)` for objects, `STARTS_WITH(_, "_:")` heuristic for blank nodes | 🟡 v1.0 | Tracked under criterion §3.7 (Foxx parity); fixture corpus to land at `tests/translate/rpt.yml` and `tests/cross/test_rpt_cross.py` |
+| **PG `DEDICATED_COLLECTION` edges** — OWL `ObjectProperty` resolves to a `phys:edgeCollectionName`; SPARQL traversal lowers to `FOR v, e IN OUTBOUND <s> @@edgeColl`, binding the target vertex's `_uri` to the SPARQL object (so a follow-up `?o a :Person` / `?o :name ?n` joins on `_uri` automatically). Implemented in `visitor.py::_emit_edge_triple` (BGP) and `visit_LeftJoin` (OPTIONAL, single-step OUTBOUND via `let_outbound_first_uri`). | ✅ shipped | `tests/translate/edge_traversal.yml` + `tests/translate/test_translate_edge_traversal_goldens.py` |
+| **LPG `GENERIC_WITH_TYPE` edges** — typed-edge traversal with discriminator FILTER (`FILTER e.<typeField> == @<typeValue>`) so multiple relationship types sharing one edge collection stay separated | ✅ shipped | `tests/translate/edge_traversal.yml` (DEDICATED + GENERIC arms exercised in both BGP and OPTIONAL) |
+| **RPT (`_triples` triple-store)** — read subject/predicate/object rows, `COALESCE(object_uri, object_value)` for objects (object properties read the `object_uri` column in the same triples table — no separate edge traversal), `STARTS_WITH(_, "_:")` heuristic for blank nodes | ✅ shipped | `tests/translate/rpt.yml` (type patterns + datatype/object property reads); cross-model binding parity in `tests/cross/test_multimodel_cross.py` (RPT arm + cross-class joins) |
 | **Mixed-model BGP** (RPT + PG, RPT + LPG, PG + LPG, all three) | 🟡 v1.0 | Criterion §3.4; fixture corpus `tests/translate/hybrid.yml` |
 | **Property-path expansion** — `SequencePath` (`:p/:q`) and `InvPath` (`^:p`) ship in v1 as pure desugarings via `arango_sparql/translate/paths.py`; `MulPath` (`:p*`, `:p+`, `:p?`), `AlternativePath` (`:p\|:q`), and `NegatedPath` (`!:p`) remain v1.1 deliverables. | 🟡 v1 partial / v1.1 full | `tests/translate/property_paths.yml`; remaining buckets tracked in `COVERAGE_REPORT.md` under per-operator XFAIL rows (`:p+`, `:p*`, `:p\|:q`) |
 | **Variable predicates (`?s ?p ?o`)** — RPT subject projects the predicate column directly and is W3C-spec-correct; PG/LPG/default-collection subject fans out via `FOR k IN ATTRIBUTES(doc, true)`. CARVE-OUT: the ATTRIBUTES branch binds `?p` to the attribute **name** (a string) not the predicate IRI; the per-class attribute-name to predicate-URI mapping is a v1.1 follow-up. | 🟡 v1 partial (RPT correct; PG/LPG translates but `?p` is attribute-name string) / v1.1 full (resolver-driven URI mapping) | `tests/translate/variable_predicate.yml` (10 cases); live-execution XFAILs registered in `tests/w3c/test_w3c_live_execution.py::SKIP_REASONS` for the 27 affected W3C tests |
@@ -2367,9 +2367,11 @@ test enforcement, security-testing rows) gate the public release tag.
 - W3C SPARQL 1.1 Protocol endpoint (§5.2)
 - Service Description response (`text/turtle`)
 - Result-format content negotiation (JSON / XML / CSV / TSV)
-- Edge-collection traversal in `visit_BGP` for both `DEDICATED_COLLECTION`
-  and `GENERIC_WITH_TYPE` styles (the "object property requires edge
-  traversal" XFAIL bucket goes to zero)
+- ✅ Edge-collection traversal in `visit_BGP` for both `DEDICATED_COLLECTION`
+  and `GENERIC_WITH_TYPE` styles — shipped (`visitor.py::_emit_edge_triple`
+  + `visit_LeftJoin`; goldens in `tests/translate/edge_traversal.yml`). The
+  object-property edge-traversal XFAIL bucket is at zero in
+  `tests/w3c/COVERAGE_REPORT.md`.
 - ASK / SELECT response in W3C SPARQL Results shapes
 - W3C query-evaluation coverage ≥ 25 %
 - Full nightly W3C workflow on `main`
