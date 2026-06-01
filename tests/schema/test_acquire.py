@@ -710,6 +710,104 @@ def test_rpt_enrichment_skipped_when_no_rpt_collections(
     assert "enrichmentApplied" not in bundle.metadata
 
 
+# ---------------------------------------------------------------------------
+# Edge-endpoint enrichment (producer-agnostic)
+# ---------------------------------------------------------------------------
+
+
+def _pg_edge_db() -> MockDb:
+    """PG DB with a ``Person`` collection and a dedicated ``knows`` edge
+    whose ``_from`` / ``_to`` both land in ``Person``.
+    """
+
+    persons = [{"_key": str(i), "name": f"p{i}"} for i in range(5)]
+    knows = [{"_from": f"Person/{i}", "_to": f"Person/{i+1}"} for i in range(4)]
+    return MockDb(
+        collections=[_doc("Person"), _edge("knows")],
+        samples={"Person": persons, "knows": knows},
+    )
+
+
+def test_edge_endpoint_enrichment_fills_any_on_analyzer_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The analyzer leaves the edge relationship's endpoints ``"Any"``;
+    the always-on enrichment resolves them from ``_from`` / ``_to``.
+    """
+
+    cls, fn = _make_analyzer_mock(
+        conceptual={"entities": [], "relationships": []},
+        physical={
+            "entities": {"Person": {"style": "COLLECTION", "collectionName": "Person"}},
+            "relationships": {
+                "knows": {
+                    "style": "DEDICATED_COLLECTION",
+                    "edgeCollectionName": "knows",
+                    "fromEntity": "Any",
+                    "toEntity": "Any",
+                }
+            },
+        },
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_pg_edge_db(), strategy="analyzer")
+
+    knows = (bundle.physical_mapping.get("relationships") or {})["knows"]
+    assert knows["fromEntity"] == "Person"
+    assert knows["toEntity"] == "Person"
+    enrichment = bundle.metadata.get("enrichmentApplied") or []
+    assert any(
+        e.get("kind") == "edge_endpoint_inference"
+        and "knows" in (e.get("relationships") or [])
+        for e in enrichment
+    )
+
+
+def test_edge_endpoint_enrichment_never_overwrites_pinned_endpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A ``fromEntity`` the producer already pinned is preserved; only
+    the still-``"Any"`` side is filled.
+    """
+
+    cls, fn = _make_analyzer_mock(
+        conceptual={"entities": [], "relationships": []},
+        physical={
+            "entities": {"Person": {"style": "COLLECTION", "collectionName": "Person"}},
+            "relationships": {
+                "knows": {
+                    "style": "DEDICATED_COLLECTION",
+                    "edgeCollectionName": "knows",
+                    "fromEntity": "Curated",
+                    "toEntity": "Any",
+                }
+            },
+        },
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_pg_edge_db(), strategy="analyzer")
+
+    knows = (bundle.physical_mapping.get("relationships") or {})["knows"]
+    assert knows["fromEntity"] == "Curated"
+    assert knows["toEntity"] == "Person"
+
+
+def test_edge_endpoint_enrichment_noop_when_no_relationships(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A pure-PG DB with no edge relationships gets no endpoint-inference
+    metadata — the pass is a no-op when there's nothing to fill.
+    """
+
+    cls, fn = _make_analyzer_mock()
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_pg_db(), strategy="analyzer")
+    enrichment = bundle.metadata.get("enrichmentApplied") or []
+    assert not any(
+        e.get("kind") == "edge_endpoint_inference" for e in enrichment
+    )
+
+
 def test_rpt_enrichment_is_safe_when_detect_throws(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

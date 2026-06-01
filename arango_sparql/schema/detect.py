@@ -790,6 +790,23 @@ def infer_edge_endpoint_index(
     return index
 
 
+def infer_edge_endpoints_from_db(
+    db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE
+) -> EndpointIndex:
+    """Classify *db* and infer the edge-endpoint index in one call.
+
+    Convenience wrapper over :func:`infer_edge_endpoint_index` that does
+    its own collection classification, so a caller holding only a live
+    ``db`` handle (e.g. the acquire layer enriching an analyzer-produced
+    bundle) can resolve edge endpoints without first running the full
+    heuristic mapping. The heuristic path itself does not use this — it
+    already has classifications in hand.
+    """
+
+    classifications = _classify_all(db, sample_size=sample_size)
+    return infer_edge_endpoint_index(db, classifications, sample_size=sample_size)
+
+
 def _emit_relationships(
     classifications: list[CollectionClassification],
     endpoint_index: EndpointIndex | None = None,
@@ -1202,5 +1219,6 @@ __all__ = [
     "classify_schema",
     "detect_rpt_pattern",
     "infer_edge_endpoint_index",
+    "infer_edge_endpoints_from_db",
     "infer_rpt_object_property_relationships",
 ]

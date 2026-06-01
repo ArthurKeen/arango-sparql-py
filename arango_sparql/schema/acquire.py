@@ -27,6 +27,15 @@ Three tiers, in priority order:
    inference neither the analyzer (Cypher-centric) nor the bare RPT
    entity overlay performs.
 
+4. **Edge-endpoint enrichment (always).** Runs
+   :func:`_apply_edge_endpoint_enrichment` over whichever bundle the
+   tiers above produced, filling relationship ``fromEntity`` /
+   ``toEntity`` that are still ``"Any"`` by sampling ``_from`` / ``_to``
+   (:func:`arango_sparql.schema.detect.infer_edge_endpoints_from_db`).
+   Strictly additive — an endpoint a producer already pinned is never
+   overwritten — so it closes the analyzer's cross-collection gap
+   without fighting it.
+
 Public surface:
 
 * :func:`acquire_mapping_bundle` — the orchestration entry point.
@@ -54,6 +63,7 @@ from typing import Any, Literal
 from arango_sparql.schema.detect import (
     build_heuristic_mapping,
     detect_rpt_pattern,
+    infer_edge_endpoints_from_db,
     infer_rpt_object_property_relationships,
 )
 from arango_sparql.translate.mapping import (
@@ -175,6 +185,7 @@ def acquire_mapping_bundle(
         when=when,
     )
     bundle = _apply_rpt_enrichment(db, bundle, when=when)
+    bundle = _apply_edge_endpoint_enrichment(db, bundle, when=when)
     bundle = _stamp_acquisition_timestamp(bundle, when=when)
     return bundle
 
@@ -505,6 +516,125 @@ def _apply_rpt_enrichment(
     if rpt_relationships:
         entry["relationships"] = sorted(rpt_relationships.keys())
     enrichment_log.append(entry)
+    new_metadata["enrichmentApplied"] = enrichment_log
+
+    return MappingBundle(
+        conceptual_schema=bundle.conceptual_schema,
+        physical_mapping=new_physical,
+        metadata=new_metadata,
+        owl_turtle=bundle.owl_turtle,
+        source=bundle.source,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Edge-endpoint enrichment (producer-agnostic, PRD §6.3.2 step 2)
+# ---------------------------------------------------------------------------
+
+
+def _apply_edge_endpoint_enrichment(
+    db: Any, bundle: MappingBundle, *, when: datetime
+) -> MappingBundle:
+    """Fill ``fromEntity`` / ``toEntity`` on edge relationships that are
+    still ``"Any"`` (or absent), using ``_from`` / ``_to`` sampling.
+
+    Why this runs over *any* bundle, analyzer-produced included: the
+    analyzer classifies relationship *styles* (``DEDICATED_COLLECTION`` /
+    ``GENERIC_WITH_TYPE``) but may leave the endpoints unresolved for the
+    legacy and hybrid shapes this service targets. Re-using the same
+    cross-collection inference the heuristic path runs
+    (:func:`infer_edge_endpoints_from_db`) closes that gap regardless of
+    which tier produced the bundle — exactly mirroring why RPT enrichment
+    is always-on.
+
+    **Strictly additive.** An endpoint the producer already pinned to a
+    real entity is never overwritten; only ``"Any"`` / missing values are
+    filled, and only when the inference resolves to a single entity. So a
+    better upstream answer always wins, and an ambiguous edge stays
+    ``"Any"`` rather than being replaced by a guess.
+
+    Relationship-to-edge matching is by ``edgeCollectionName`` plus
+    ``typeValue`` (the discriminator distinguishes the several
+    ``GENERIC_WITH_TYPE`` relationships that share one edge collection).
+    ``RPT_EDGE`` relationships carry no edge collection and are skipped
+    here — their endpoints come from the RPT ``rdf:type`` synthesis pass.
+
+    Defensive: any failure is logged and swallowed; the original bundle
+    is returned untouched. Endpoint enrichment is additive, not
+    load-bearing.
+    """
+
+    relationships = bundle.physical_mapping.get("relationships")
+    if not isinstance(relationships, dict) or not relationships:
+        return bundle
+
+    # Only do the (one classification pass) work if there's actually an
+    # unresolved edge endpoint to fill — keeps the analyzer happy-path
+    # and the already-resolved heuristic path from paying for a no-op.
+    def _needs_fill(spec: Any) -> bool:
+        if not isinstance(spec, dict):
+            return False
+        if spec.get("style") == "RPT_EDGE" or not spec.get("edgeCollectionName"):
+            return False
+        return spec.get("fromEntity", "Any") == "Any" or spec.get("toEntity", "Any") == "Any"
+
+    if not any(_needs_fill(spec) for spec in relationships.values()):
+        return bundle
+
+    try:
+        endpoint_index = infer_edge_endpoints_from_db(db)
+    except Exception:
+        logger.warning(
+            "Edge-endpoint enrichment failed; bundle returned without "
+            "endpoint inference. Relationship fromEntity/toEntity may "
+            "stay 'Any'.",
+            exc_info=True,
+        )
+        return bundle
+
+    if not endpoint_index:
+        return bundle
+
+    new_relationships: dict[str, Any] = {}
+    filled: list[str] = []
+    for name, spec in relationships.items():
+        if not _needs_fill(spec):
+            new_relationships[name] = spec
+            continue
+        edge_collection = spec["edgeCollectionName"]
+        type_value = spec.get("typeValue")  # None for DEDICATED_COLLECTION
+        inferred = endpoint_index.get(edge_collection, {}).get(type_value)
+        if inferred is None:
+            new_relationships[name] = spec
+            continue
+        from_entity, to_entity = inferred
+        updated = dict(spec)
+        changed = False
+        if updated.get("fromEntity", "Any") == "Any" and from_entity != "Any":
+            updated["fromEntity"] = from_entity
+            changed = True
+        if updated.get("toEntity", "Any") == "Any" and to_entity != "Any":
+            updated["toEntity"] = to_entity
+            changed = True
+        new_relationships[name] = updated
+        if changed:
+            filled.append(name)
+
+    if not filled:
+        return bundle
+
+    new_physical = dict(bundle.physical_mapping)
+    new_physical["relationships"] = new_relationships
+
+    new_metadata = dict(bundle.metadata)
+    enrichment_log = list(new_metadata.get("enrichmentApplied") or [])
+    enrichment_log.append(
+        {
+            "kind": "edge_endpoint_inference",
+            "appliedAt": when.isoformat(),
+            "relationships": sorted(filled),
+        }
+    )
     new_metadata["enrichmentApplied"] = enrichment_log
 
     return MappingBundle(

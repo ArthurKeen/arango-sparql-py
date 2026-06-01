@@ -40,6 +40,7 @@ from arango_sparql.schema.detect import (
     build_heuristic_mapping,
     classify_schema,
     detect_rpt_pattern,
+    infer_edge_endpoints_from_db,
     infer_rpt_object_property_relationships,
 )
 
@@ -585,6 +586,22 @@ def test_endpoints_into_unclassified_collection_stay_any() -> None:
     rel = bundle.relationships()["follows"]
     assert rel["fromEntity"] == "Any"
     assert rel["toEntity"] == "Any"
+
+
+def test_infer_edge_endpoints_from_db_classifies_and_indexes() -> None:
+    """The db-level wrapper classifies and returns the endpoint index in
+    one call (used by the acquire layer, which holds only a db handle).
+    """
+
+    db = MockDb(
+        collections=[_doc_collection("persons"), _edge_collection("follows")],
+        samples={
+            "persons": _make_pg_docs(),
+            "follows": _make_pg_edge_docs(),
+        },
+    )
+    index = infer_edge_endpoints_from_db(db)
+    assert index["follows"][None] == ("persons", "persons")
 
 
 # ---------------------------------------------------------------------------

@@ -632,7 +632,19 @@ then post-processes:
    a relationship an upstream producer already declared is never
    overwritten — and the synthesized relationship names are recorded under
    `metadata.enrichmentApplied[].relationships` for observability.
-3. Optionally export the conceptual half as OWL/Turtle via
+3. Run edge-endpoint enrichment (`_apply_edge_endpoint_enrichment`) over
+   the bundle: for any relationship whose `fromEntity` / `toEntity` is
+   still `"Any"`, resolve it by sampling the edge collection's `_from` /
+   `_to` (`infer_edge_endpoints_from_db`) and matching by
+   `edgeCollectionName` + `typeValue`. **Strictly additive** — an
+   endpoint a producer already pinned is never overwritten, and an
+   ambiguous edge stays `"Any"` rather than being replaced by a guess.
+   Filled relationship names are recorded under
+   `metadata.enrichmentApplied[].relationships` (`kind:
+   "edge_endpoint_inference"`). This closes the analyzer's
+   cross-collection endpoint gap regardless of which tier produced the
+   bundle, mirroring why RPT enrichment is always-on.
+4. Optionally export the conceptual half as OWL/Turtle via
    `export_conceptual_model_as_owl_turtle` and attach to the bundle.
 
 **Resolution priority on `strategy="auto"`** (matches the sister project):
