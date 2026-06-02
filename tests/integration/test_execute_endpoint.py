@@ -43,7 +43,9 @@ _ARANGO_PORT = int(os.getenv("ARANGO_PORT", "8532"))
 _ARANGO_URL = os.getenv("ARANGO_URL", f"http://{_ARANGO_HOST}:{_ARANGO_PORT}")
 _ARANGO_USER = os.getenv("ARANGO_USER", "root")
 _ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "rootpw")
-_ARANGO_DB = os.getenv("ARANGO_TEST_DB", "_system")
+# Dedicated test DB (never ``_system``); see tests/integration/conftest.py
+# for the resolution order. Auto-provisioned by the fixture below.
+_ARANGO_DB = os.getenv("ARANGO_TEST_DB") or os.getenv("ARANGO_DB") or "sparql-to-aql"
 
 _TEST_COLLECTION = "Person"
 
@@ -136,7 +138,15 @@ def _seeded_collection(_live_arango: None) -> Iterator[list[dict]]:
     """
     from arango import ArangoClient
 
+    from arango_sparql.arango_admin import ensure_database
+
     client = ArangoClient(hosts=_ARANGO_URL)
+    # Provision the dedicated test database if it doesn't exist yet so a
+    # fresh ``sparql-to-aql`` works without a manual setup step.
+    if _ARANGO_DB != "_system":
+        ensure_database(
+            client, _ARANGO_DB, username=_ARANGO_USER, password=_ARANGO_PASSWORD
+        )
     db = client.db(_ARANGO_DB, username=_ARANGO_USER, password=_ARANGO_PASSWORD)
 
     if db.has_collection(_TEST_COLLECTION):

@@ -57,6 +57,7 @@ from tests.integration.conftest import (
     DEFAULT_ARANGO_URL,
     DEFAULT_ARANGO_USER,
     arangodb_reachable,
+    ensure_test_database,
     integration_enabled,
     try_boot_arangodb_via_compose,
 )
@@ -161,6 +162,10 @@ def _live_arango_db() -> Iterator[Any]:
         from arango import ArangoClient
     except ImportError as exc:  # pragma: no cover - python-arango is required
         pytest.skip(f"python-arango unavailable: {exc}")
+
+    # Provision the dedicated database if it doesn't exist yet (no-op for
+    # ``_system``) so a fresh ``sparql-to-aql`` works without manual setup.
+    ensure_test_database()
 
     client = ArangoClient(hosts=DEFAULT_ARANGO_URL)
     db = client.db(

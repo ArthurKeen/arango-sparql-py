@@ -37,7 +37,41 @@ DEFAULT_ARANGO_PORT = int(os.getenv("ARANGO_PORT", "8532"))
 DEFAULT_ARANGO_URL = os.getenv("ARANGO_URL", f"http://{DEFAULT_ARANGO_HOST}:{DEFAULT_ARANGO_PORT}")
 DEFAULT_ARANGO_USER = os.getenv("ARANGO_USER", "root")
 DEFAULT_ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "rootpw")
-DEFAULT_ARANGO_DB = os.getenv("ARANGO_TEST_DB", "_system")
+# Prefer an explicit test-DB override, then the service's configured
+# ``ARANGO_DB``, then a dedicated ``sparql-to-aql`` default — anything
+# but ``_system`` so the suite never drops/recreates collections in the
+# ArangoDB catalogue database. The DB is auto-provisioned by the
+# fixtures (``ensure_test_database``) since it may not exist yet.
+DEFAULT_ARANGO_DB = (
+    os.getenv("ARANGO_TEST_DB") or os.getenv("ARANGO_DB") or "sparql-to-aql"
+)
+
+
+def ensure_test_database() -> None:
+    """Best-effort: create :data:`DEFAULT_ARANGO_DB` if it is missing.
+
+    Integration / W3C-live fixtures call this before opening the database
+    so a fresh ``sparql-to-aql`` (or operator-chosen ``ARANGO_DB``) works
+    without a manual provisioning step. ``_system`` is skipped — it
+    always exists. Failures propagate to the caller's connection attempt,
+    which already surfaces a clear skip/error.
+    """
+    if DEFAULT_ARANGO_DB == "_system":
+        return
+    from arango import ArangoClient
+
+    from arango_sparql.arango_admin import ensure_database
+
+    client = ArangoClient(hosts=DEFAULT_ARANGO_URL.rstrip("/"))
+    try:
+        ensure_database(
+            client,
+            DEFAULT_ARANGO_DB,
+            username=DEFAULT_ARANGO_USER,
+            password=DEFAULT_ARANGO_PASSWORD,
+        )
+    finally:
+        client.close()
 
 
 def integration_enabled() -> bool:
