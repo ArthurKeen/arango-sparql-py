@@ -78,6 +78,75 @@ cases:
     expected_bind_vars:
       "@c1_Document": "Document"
 
+  # ---- MINUS containing OPTIONAL (conditional-add) ------------------
+
+  - name: minus_optional_single_rebind
+    # SPARQL §18.2.5.2 + §8.3.4 (ADR-0002 Problem 2). The MINUS right
+    # side's OPTIONAL re-binds ``?b``, which the outer side already
+    # bound. The optional triple is therefore NOT a fresh binding but a
+    # *conditional add* — a compatibility test against the existing
+    # value. Two FILTERs encode that:
+    #   1. compatibility — the optional matches iff its value is absent
+    #      or equals the outer binding (null on either side is vacuously
+    #      OK): ``(q1 == null || p == null || q1 == p)``.
+    #   2. disjoint-domain "overlap" guard (§8.3.4) — because the ONLY
+    #      shared variable (``?b``) is bound by an optional, an inner row
+    #      removes an outer row only if it actually shares that bound
+    #      value: ``(q1 != null && p != null && q1 == p)``. Without this
+    #      guard a ``?d`` matching nothing (q1 absent) would wrongly
+    #      delete every outer row.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?b WHERE { ?x :p ?b MINUS { ?d :base ?z OPTIONAL { ?d :q1 ?b } } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
+      LET minus_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "base")
+        FILTER (doc2.q1 == null || doc1.p == null || doc2.q1 == doc1.p)
+        FILTER (doc2.q1 != null && doc1.p != null && doc2.q1 == doc1.p)
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER minus_probe3 == 0
+      RETURN { b: doc1.p }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
+  - name: minus_optional_two_rebinds
+    # The W3C ``negation/full-minuend`` shape: two OPTIONALs each
+    # re-bind a distinct outer variable (``?b``, ``?c``). Each emits its
+    # own compatibility FILTER; the overlap guard is the OR across both
+    # (an inner row removes an outer row if it shares *either* bound
+    # value). ``tests/cross/test_minus_optional_cross.py`` pins the
+    # binding-level correctness of this exact shape against pyoxigraph.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?b ?c WHERE {
+        ?x :p ?b ; :p2 ?c
+        MINUS { ?d :base ?z OPTIONAL { ?d :q1 ?b } OPTIONAL { ?d :q2 ?c } }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FILTER HAS(doc1, "p")
+      FILTER HAS(doc1, "p2")
+      LET minus_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Document
+        FILTER HAS(doc2, "base")
+        FILTER (doc2.q1 == null || doc1.p == null || doc2.q1 == doc1.p)
+        FILTER (doc2.q2 == null || doc1.p2 == null || doc2.q2 == doc1.p2)
+        FILTER ((doc2.q1 != null && doc1.p != null && doc2.q1 == doc1.p) || (doc2.q2 != null && doc1.p2 != null && doc2.q2 == doc1.p2))
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER minus_probe3 == 0
+      RETURN { b: doc1.p, c: doc1.p2 }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+
   # ---- FILTER EXISTS / NOT EXISTS -----------------------------------
 
   - name: exists_shared_subject

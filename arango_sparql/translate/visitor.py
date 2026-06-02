@@ -132,6 +132,21 @@ class _BindingState:
     *default-graph* case handled per
     :attr:`SchemaResolver.default_graph_includes_named`."""
 
+    optional_rebind_sink: list[tuple[str, str, str]] | None = None
+    """Probe-mode collector for ``OPTIONAL`` triples that re-bind an
+    already-bound variable. ``None`` outside a MINUS probe (the default),
+    where such a re-bind is rejected as unsupported (ADR-0002 Problem 2).
+
+    Inside a MINUS probe (set to ``[]`` by
+    :func:`arango_sparql.translate.minus_exists._translate_probe`),
+    ``visit_LeftJoin`` does **not** reject the re-bind: per SPARQL
+    §18.2.5.2 an OPTIONAL over an in-scope variable is a *conditional
+    add* (compatibility test, not a fresh binding). It emits the
+    compatibility FILTER inline and appends
+    ``(var_name, inner_value_expr, outer_bound_expr)`` here so
+    ``emit_minus`` can build the disjoint-domain "overlap" guard
+    (§8.3.4) the minuend semantics require."""
+
 
 @dataclass
 class AlgebraVisitor:
@@ -647,11 +662,14 @@ class AlgebraVisitor:
                 # express without a subquery. Refuse for now.
                 raise UnsupportedSparqlError("OPTIONAL with a non-variable object is not yet supported")
             o_name = str(o)
-            if o_name in self.state.var_to_expr:
-                # The var was already bound by p1 — OPTIONAL re-binding
-                # an in-scope variable would shift semantics from LEFT
-                # JOIN toward INNER JOIN; rdflib should have lifted
-                # that triple out of the LeftJoin, but defend in case.
+            is_rebind = o_name in self.state.var_to_expr
+            if is_rebind and self.state.optional_rebind_sink is None:
+                # The var was already bound by p1 and we are NOT inside a
+                # MINUS probe — OPTIONAL re-binding an in-scope variable
+                # would shift semantics from LEFT JOIN toward INNER JOIN.
+                # Inside a probe (sink set) this is instead a valid
+                # conditional-add per SPARQL §18.2.5.2 (handled below);
+                # everywhere else we still reject (ADR-0002 Problem 2).
                 raise UnsupportedSparqlError(
                     f"OPTIONAL re-binds variable ?{o_name} that's already bound by the required side"
                 )
@@ -685,10 +703,29 @@ class AlgebraVisitor:
                         start_alias=subject_alias,
                         edge_collection=prop.edge_collection,
                     )
-                new_bindings.append((o_name, let_alias))
+                value_expr = let_alias
             else:
-                attr_path = f"{subject_alias}.{prop.attribute}"
-                new_bindings.append((o_name, attr_path))
+                value_expr = f"{subject_alias}.{prop.attribute}"
+
+            if is_rebind:
+                # Conditional-add inside a MINUS probe (SPARQL §18.2.5.2):
+                # the optional triple does NOT introduce a fresh binding;
+                # it tests compatibility with the value the variable
+                # already carries. The optional "matches" iff its value
+                # is absent (the optional didn't fire) or equals the
+                # existing binding — a null on either side is vacuously
+                # compatible. The disjoint-domain "overlap" guard
+                # (§8.3.4) is assembled by ``emit_minus`` from the sink.
+                bound_expr = self.state.var_to_expr[o_name]
+                self.builder.filter_raw(
+                    f"({value_expr} == null || {bound_expr} == null "
+                    f"|| {value_expr} == {bound_expr})"
+                )
+                assert self.state.optional_rebind_sink is not None
+                self.state.optional_rebind_sink.append((o_name, value_expr, bound_expr))
+                continue
+
+            new_bindings.append((o_name, value_expr))
             seen_vars.add(o_name)
 
         if not new_bindings:

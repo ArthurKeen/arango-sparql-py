@@ -110,7 +110,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.16, 95.7 % ✅ — v1.0 §3.1 coverage bar cleared by 71 pp**; 11 algebra / 0 schema / 14 rdflib XFAILs). **NOTE on the 30 % ratio sub-clause (corrected reasoning):** the largest actionable bucket `ServiceGraphPattern` sits at 4/11 = 36.4 % of algebra XFAILs, over the 30 % guideline. Crucially — and contrary to an earlier note in this doc that has now been fixed — this ratio **only worsens** as we close non-federation gaps: the SERVICE-federation bucket is the dominant *deferred* remainder, so every non-federation fix shrinks the denominator and *raises* the deferred bucket's share. The ratio can therefore only fall by **shipping the federation slice itself** (reducing the numerator from 4); no non-federation slice will restore headroom. We accept this consciously: the §3.1 *primary* bar (coverage ≥ 25 %) is cleared by 71 pp, and the sub-clause's intent — "don't mask a systemic gap behind one giant bucket" — is not violated, because the dominant bucket is a single, well-understood, intentionally-postponed feature (SPARQL federation / SERVICE), not a hidden systemic defect. There is no numeric CI gate on either the coverage percentage or the ratio sub-clause: `tests/w3c/test_w3c_query_evaluation.py` *tracks* (not gates) current state by recording each still-unsupported case as an imperative `pytest.xfail`, and `analyze_coverage.py --write` regenerates the human-readable ledger. Per-construct regression protection comes from the deterministic golden suites under `tests/translate/`, not from the W3C harness (an imperative-xfail'd case that regresses to raising would silently re-xfail rather than fail the run). | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.17, 96.4 % ✅ — v1.0 §3.1 coverage bar cleared by 71 pp**; 9 algebra / 0 schema / 14 rdflib XFAILs). **NOTE on the 30 % ratio sub-clause (corrected reasoning):** the largest actionable bucket `ServiceGraphPattern` sits at 4/9 = 44.4 % of algebra XFAILs, over the 30 % guideline. Crucially — and contrary to an earlier note in this doc that has now been fixed — this ratio **only worsens** as we close non-federation gaps: the SERVICE-federation bucket is the dominant *deferred* remainder, so every non-federation fix shrinks the denominator and *raises* the deferred bucket's share. The ratio can therefore only fall by **shipping the federation slice itself** (reducing the numerator from 4); no non-federation slice will restore headroom. We accept this consciously: the §3.1 *primary* bar (coverage ≥ 25 %) is cleared by 71 pp, and the sub-clause's intent — "don't mask a systemic gap behind one giant bucket" — is not violated, because the dominant bucket is a single, well-understood, intentionally-postponed feature (SPARQL federation / SERVICE), not a hidden systemic defect. There is no numeric CI gate on either the coverage percentage or the ratio sub-clause: `tests/w3c/test_w3c_query_evaluation.py` *tracks* (not gates) current state by recording each still-unsupported case as an imperative `pytest.xfail`, and `analyze_coverage.py --write` regenerates the human-readable ledger. Per-construct regression protection comes from the deterministic golden suites under `tests/translate/`, not from the W3C harness (an imperative-xfail'd case that regresses to raising would silently re-xfail rather than fail the run). | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) and PG+LPG hybrids | `tests/translate/{bgp_select,hybrid,rpt}.yml` (translation goldens) + `tests/cross/test_multimodel_cross.py` (PG / LPG / PG+LPG-hybrid / RPT pyoxigraph binding parity, incl. cross-class joins, from one source-of-truth dataset) + `tests/cross/test_edge_traversal_cross.py` (DEDICATED + GENERIC_WITH_TYPE edge-collection `OUTBOUND` traversal binding parity) + `tests/schema/test_fixtures.py` §13.3 contracts #3/#4 (per-entity emission across all 9 fixtures) | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -1863,11 +1863,24 @@ per row in `tests/security/`):
   (`tests/helpers/aql_interp.py`) that consumes our translator output.
   Bindings must match by bag (or by order, for `ORDER BY` cases). This
   is the fastest way to catch a translator bug — every visitor change
-  should land with at least one cross case. The harness runs in three
-  modules so the same ground truth covers every physical model:
+  should land with at least one cross case. The harness runs in five
+  modules so the same ground truth covers every physical model and the
+  subtler algebra constructs:
   - `test_bgp_select_cross.py` — the **PG** (collection-per-class)
     model across the full clause matrix (BGP, FILTER, BIND, OPTIONAL,
     aggregates, joins, ORDER BY).
+  - `test_minus_exists_cross.py` — **MINUS / NOT EXISTS / EXISTS** on the
+    permissive Document model. These lower to a correlated
+    `LET p = LENGTH((<probe>))` + `FILTER p {==0|>0}`; the interpreter
+    grew a probe executor (multi-line `LENGTH((…))`, correlated outer
+    scope, scalar `RETURN`) so the previously goldens-only translations
+    are now binding-validated.
+  - `test_minus_optional_cross.py` — **MINUS containing OPTIONAL** (the
+    W3C `full-minuend` / `part-minuend` cases, ADR-0002 Problem 2). The
+    SPARQL §18.2.5.2 conditional-add + §8.3.4 disjoint-domain overlap
+    truth table is too subtle to trust to goldens, so it is pinned
+    against pyoxigraph on the real W3C data (under a PG ontology so the
+    `?a a :Min` / `?d a :Sub` type patterns resolve to real FOR loops).
   - `test_edge_traversal_cross.py` — **edge-collection traversal** of an
     object property the *other* two modules map inline. The same
     `Project ⋈ Person` join is stored as a **`DEDICATED_COLLECTION`**
@@ -1964,7 +1977,8 @@ fix before tagging v1.0.
 | v0.13 (long-tail algebra slice: `isLITERAL` alias, `TZ`, native `SHA256`, forward-only `NegatedPath`) | 92.1 % (+2.0 pp; 5 W3C tests closed across four small algebra gaps; the SHA256 rejection was an outdated assumption — ArangoDB AQL ships `SHA256()` as a first-class string function) | 20 | 233 | 0 | 0 % |
 | v0.14 (SPARQL §17.2.1 unbound-in-expression + UNION-scope propagation fix) | 94.1 % (+2.0 pp; 5 W3C tests closed: `_translate_expr` now emits `null` + `W_UNBOUND_VARIABLE_IN_EXPR` warning for truly-unbound variables per SPARQL §17.2.1 error semantics — fixes FILTER / BIND / COALESCE / DATATYPE / arithmetic uniformly via AQL null-propagation; separately, `union_paths._spawn_child` now propagates `graph_scope` so GRAPH variables don't drop on UNION descent — fixes pp35) | 15 | 238 | 0 | 0 % |
 | v0.15 (long-tail correctness batch: empty `IN`/`NOT IN`, nested-`MulPath` collapse, XSD constructor casts) | 95.3 % (+1.2 pp; 3 W3C tests closed: empty-set `IN ()`/`NOT IN ()` rdf:nil handling — `notin01`; nested transitive-path modifier collapse `((:p)*)*` → `:p*` — `pp37`; XSD `Function`-node casts `xsd:double`/`xsd:integer`/… — `agg-err-02`) | 12 | 241 | 0 | 0 % |
-| **v0.16 (current — `Builtin_TIMEZONE` → xsd:dayTimeDuration)** | **95.7 % (+0.4 pp; 1 W3C test closed: `TIMEZONE(?dt)` returns an xsd:dayTimeDuration via lexical-offset substring math — `Z`/`±00:00` → `PT0S`, `-08:00` → `-PT8H`, `+05:30` → `PT5H30M`, no-timezone → error→null/unbound — `functions/timezone-01`)** | **11** | **242** | **0** | **0 %** |
+| v0.16 (`Builtin_TIMEZONE` → xsd:dayTimeDuration) | 95.7 % (+0.4 pp; 1 W3C test closed: `TIMEZONE(?dt)` returns an xsd:dayTimeDuration via lexical-offset substring math — `Z`/`±00:00` → `PT0S`, `-08:00` → `-PT8H`, `+05:30` → `PT5H30M`, no-timezone → error→null/unbound — `functions/timezone-01`) | 11 | 242 | 0 | 0 % |
+| **v0.17 (current — MINUS+OPTIONAL conditional-add, ADR-0002 Problem 2)** | **96.4 % (+0.7 pp; 2 W3C tests closed: `negation/full-minuend` + `negation/part-minuend`. An OPTIONAL inside MINUS re-binding an already-bound variable is a SPARQL §18.2.5.2 conditional-add (compat FILTER, not a fresh binding) plus a §8.3.4 disjoint-domain overlap guard. Binding-validated vs pyoxigraph in `tests/cross/test_minus_optional_cross.py`; the AQL-subset interpreter now executes the `LET = LENGTH((…))` probe, which also retro-fitted cross-validation onto the previously goldens-only MINUS/EXISTS suite.)** | **9** | **244** | **0** | **0 %** |
 | **v1.0 (acceptance)** | **≥ 25 %** ✅ (currently 60.1 %; ceiling stays in force as smaller buckets close) | **≥ 80** | **≥ 100** | **full corpus incl. RPT + RPT-hybrid** | **≥ 90 % of legacy SELECT/ASK fixtures** |
 | v1.1 | 35 % (after `MulPath` + `AlternativePath` + `NegatedPath` close the property-path bucket) | 100 | 130 | + property-path-aware fixtures | ≥ 95 % |
 
@@ -1984,44 +1998,46 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 11 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred) + `OPTIONAL`-body-`ServiceGraphPattern` (1 — also federation), `OPTIONAL whose subject is not already bound` and `OPTIONAL re-binds variable` (4 combined — LeftJoin edge cases needing a cross-subject subquery emitter), and `SparqlParse` recursion (2 — both are SERVICE queries that hit Python's default recursion limit; resolving them still leaves a federation XFAIL, so deferred with federation). **7 of the 11 are federation-blocked**; the only non-federation remainder is the 4 OPTIONAL LeftJoin edge cases. |
+| `algebra` | 9 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred) + `OPTIONAL`-body-`ServiceGraphPattern` (1 — also federation), `OPTIONAL whose subject is not already bound` (2 — cross-subject LeftJoin needing a subquery emitter, ADR-0002 Problem 1), and `SparqlParse` recursion (2 — both are SERVICE queries that hit Python's default recursion limit; resolving them still leaves a federation XFAIL, so deferred with federation). **7 of the 9 are federation-blocked**; the only non-federation remainder is the 2 cross-subject OPTIONAL cases. (The 2 OPTIONAL-rebind-in-MINUS cases — ADR-0002 Problem 2 — were closed at v0.17.) |
 | `schema` | 0 | Empty-resolver artefact, collapsed at v0.12 by `permissive_class_resolution=True` on the harness's `SchemaResolver` — unknown class IRIs degrade to `default_collection` instead of raising, matching SPARQL's open-world semantics and mirroring how `resolve_property` already handles unmapped property IRIs. Non-zero counts here would indicate a regression in the permissive path. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
 **Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.16 (95.7 %).** The §3.1 ≥ 25 % bar was met nine slices ago; the
+v0.17 (96.4 %).** The §3.1 ≥ 25 % bar was met ten slices ago; the
 slice table below tracks the *long-tail* algebra gaps that remain
 after v0.12 collapsed the entire `schema` XFAIL bucket, v0.13 cleared
 four small algebra gaps, v0.14 fixed the §17.2.1 unbound-in-expression
 semantic + a GRAPH-through-UNION propagation bug, v0.15 closed a batch
 of three correctness gaps (empty `IN`, nested-`MulPath` collapse, XSD
-casts), and v0.16 added `Builtin_TIMEZONE`. The remaining 11 algebra
-XFAILs are now *heavily* dominated by SPARQL federation:
+casts), v0.16 added `Builtin_TIMEZONE`, and v0.17 closed the
+OPTIONAL-rebind-in-MINUS cluster (ADR-0002 Problem 2). The remaining 9
+algebra XFAILs are now *heavily* dominated by SPARQL federation:
 `ServiceGraphPattern` (4) + `OPTIONAL`-body-`ServiceGraphPattern` (1)
 + two `SparqlParse` recursion failures that are both SERVICE queries =
-**7 of 11 are federation-blocked**. The only non-federation remainder
-is the 4 OPTIONAL LeftJoin edge cases.
+**7 of 9 are federation-blocked**. The only non-federation remainder
+is the 2 cross-subject OPTIONAL cases (ADR-0002 Problem 1).
 
 The §3.1 30 %-ratio sub-clause is over the line (largest bucket
-`ServiceGraphPattern` = 4/11 = 36.4 %) and — corrected from a prior
+`ServiceGraphPattern` = 4/9 = 44.4 %) and — corrected from a prior
 erroneous note — closing further *non-federation* gaps only worsens
 it (denominator shrinks, deferred-bucket share rises). The ratio can
 fall only by shipping federation itself. See the §3.1 row note; this
 is an accepted, documented state, not a defect.
 
 **Both remaining algebra clusters are now deferred** (federation and
-the OPTIONAL LeftJoin cluster), so v0.16's **95.7 %** is the effective
-translation-coverage ceiling until one of those slices is picked up.
-The OPTIONAL cluster is deferred because none of its sub-paths is both
-cheap and honest today — the design analysis (which is genuinely
-**storage-model-dependent**: trivial for RPT, ambiguous for PG/LPG,
-lossy for the flattened `Document` model the W3C harness uses) is
-captured in **ADR-0002**. Active development should pivot to
+the cross-subject OPTIONAL Problem 1), so v0.17's **96.4 %** is the
+effective translation-coverage ceiling until one of those slices is
+picked up. Cross-subject OPTIONAL is deferred because none of its
+sub-paths is both cheap and honest today — the design analysis (which
+is genuinely **storage-model-dependent**: trivial for RPT, ambiguous
+for PG/LPG, lossy for the flattened `Document` model the W3C harness
+uses) is captured in **ADR-0002**. Active development should pivot to
 workstreams with clear, non-lossy wins (NL→SPARQL, executor, UI).
 
 | Slice | Algebra XFAILs unlocked | Approximate W3C bump | Notes |
 | --- | ---: | ---: | --- |
-| `OPTIONAL` cross-subject + re-binds variable | 4 | +1.6 pp (Option B only; Option A is +0 today) | **Deferred — see ADR-0002.** Two distinct problems sharing `visit_LeftJoin`: **(a)** cross-subject OPTIONAL with a variable predicate (`?s ?p ?o OPTIONAL {?o ?p2 ?o2}` — W3C `tsv02`/`jsonres02`); the design differs per storage model (RPT: trivial triples-table left-join; PG/LPG: needs `_uri → collection` resolution; default `Document`: translatable but inherits the variable-predicate carve-out → live-XFAIL). **(b)** OPTIONAL re-binding an already-bound variable inside MINUS (`full-minuend`/`part-minuend`) — model-independent §18.2.5.2 conditional-add semantics. ADR-0002 records the option matrix and recommended sequencing. |
+| ✅ `OPTIONAL` re-binds variable inside MINUS | 2 | +0.7 pp (shipped v0.17) | **Done — ADR-0002 Problem 2.** OPTIONAL inside MINUS re-binding an already-bound variable (`full-minuend`/`part-minuend`) is a model-independent §18.2.5.2 conditional-add (compat FILTER) + §8.3.4 disjoint-domain overlap guard. `visit_LeftJoin` + `_translate_probe`; goldens (`minus_optional_*`) + pyoxigraph parity (`tests/cross/test_minus_optional_cross.py`). |
+| `OPTIONAL` cross-subject (variable predicate) | 2 | +0.8 pp (Option B only; Option A is +0 today) | **Deferred — see ADR-0002 Problem 1.** Cross-subject OPTIONAL with a variable predicate (`?s ?p ?o OPTIONAL {?o ?p2 ?o2}` — W3C `tsv02`/`jsonres02`); the design differs per storage model (RPT: trivial triples-table left-join; PG/LPG: needs `_uri → collection` resolution; default `Document`: translatable but inherits the variable-predicate carve-out → live-XFAIL). ADR-0002 records the option matrix and recommended sequencing. |
 | `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern + SERVICE parse-recursion | 7 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. The two `SparqlParse` "maximum recursion depth" failures are both SERVICE queries — bumping `sys.setrecursionlimit` would let them parse but they'd immediately re-XFAIL on `ServiceGraphPattern`, so they travel with this slice. Shipping this is the **only** way to bring the §3.1 ratio sub-clause back under 30 %. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
@@ -2310,6 +2326,32 @@ bucket's share (4/12 = 33.3 % → 4/11 = 36.4 %). The
 ratio sub-clause can only be satisfied by shipping the
 federation slice itself; this is now stated correctly
 in the §3.1 row and the slice-priority intro.
+
+**The MINUS+OPTIONAL slice** (v0.16 → v0.17) added
++0.7 pp (+2 W3C tests; 95.7 % → 96.4 %) by closing
+ADR-0002 **Problem 2** — an `OPTIONAL` inside `MINUS`
+that re-binds a variable the outer side already bound
+(`negation/full-minuend`, `negation/part-minuend`).
+Per SPARQL §18.2.5.2 the optional triple is a
+*conditional add* (a compatibility test, not a fresh
+binding): `visit_LeftJoin` emits
+`(<inner> == null || <outer> == null || <inner> == <outer>)`
+and records the re-bind in `optional_rebind_sink` instead
+of rejecting. Per §8.3.4, because the shared variables are
+bound *only* by optionals, the probe also needs a
+disjoint-domain *overlap* guard (the OR of
+`<inner> != null && <outer> != null && <inner> == <outer>`)
+so a `?d` that matches nothing does not vacuously delete
+every outer row. As the §3.1 reasoning predicts, the ratio
+sub-clause worsened (4/11 = 36.4 % → 4/9 = 44.4 %) — this
+is the expected, accepted effect of closing a non-federation
+gap. The fix was binding-validated against pyoxigraph rather
+than golden-pinned only: the AQL-subset interpreter learned
+to execute the correlated `LET = LENGTH((…))` probe, which
+also retro-fitted cross-validation onto the previously
+goldens-only MINUS / EXISTS suite
+(`tests/cross/test_minus_exists_cross.py`,
+`tests/cross/test_minus_optional_cross.py`).
 
 Carve-out (still in force from v0.3): the variable-predicate
 unbound-subject branch binds `?p` to the attribute *name* (a

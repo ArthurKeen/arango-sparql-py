@@ -111,7 +111,12 @@ def emit_minus(visitor: AlgebraVisitor, node: Any) -> None:
         # whenever the inner matches even one row.
         return
 
-    inner_aql = _translate_probe(visitor, node.p2)
+    inner_aql = _translate_probe(
+        visitor,
+        node.p2,
+        allow_optional_rebind=True,
+        overlap_var_names={str(v) for v in shared},
+    )
 
     probe_alias = visitor.builder.fresh_alias(prefix="minus_probe")
     visitor.builder.let(probe_alias, f"LENGTH((\n{_indent(inner_aql)}\n))")
@@ -168,10 +173,34 @@ def emit_exists_filter(
 # ---------------------------------------------------------------------------
 
 
-def _translate_probe(visitor: AlgebraVisitor, inner_pattern: Any) -> str:
+def _translate_probe(
+    visitor: AlgebraVisitor,
+    inner_pattern: Any,
+    *,
+    allow_optional_rebind: bool = False,
+    overlap_var_names: set[str] | None = None,
+) -> str:
     """Spawn a child visitor for *inner_pattern*, emit a row-count
     probe (``LIMIT 1`` + ``RETURN 1``), absorb its binds, and
     return the inner AQL.
+
+    ``allow_optional_rebind`` (MINUS only) lets the child accept an
+    ``OPTIONAL`` that re-binds an outer-scoped variable as a SPARQL
+    §18.2.5.2 conditional-add instead of rejecting it; the child's
+    ``visit_LeftJoin`` emits the per-optional compatibility FILTER and
+    records each ``(var, inner_value, outer_bound)`` in
+    ``state.optional_rebind_sink``.
+
+    ``overlap_var_names`` is the set of shared-variable names (the MINUS
+    compatibility domain). When the *only* shared variables are bound by
+    such optionals — i.e. every shared var appears in the sink, with no
+    required inner triple binding any of them — the probe must also pass
+    SPARQL §8.3.4's *disjoint-domain* test: an inner row removes an outer
+    row only if it shares **at least one bound** variable with it. We
+    encode that as an extra ``overlap`` FILTER (the OR of "this shared
+    var is bound on both sides and equal"). If any shared var is bound by
+    a required triple, the child already FILTERs equality on it, so
+    overlap is guaranteed and no extra guard is emitted.
 
     Shared with both ``emit_minus`` and ``emit_exists_filter`` —
     the only behavioural difference between those two is the
@@ -216,8 +245,28 @@ def _translate_probe(visitor: AlgebraVisitor, inner_pattern: Any) -> str:
     # against the outer's expressions (the SPARQL compatibility
     # check, expressed in AQL).
     child_visitor.state.var_to_expr = dict(visitor.state.var_to_expr)
+    if allow_optional_rebind:
+        # Switch the child out of "reject re-bind" mode (ADR-0002
+        # Problem 2) into conditional-add mode; visit_LeftJoin appends
+        # one entry per re-binding optional triple.
+        child_visitor.state.optional_rebind_sink = []
 
     child_visitor.visit(inner_pattern)
+
+    sink = child_visitor.state.optional_rebind_sink or []
+    if overlap_var_names is not None and sink:
+        soft_vars = {var for var, _, _ in sink}
+        # A shared var bound by a *required* inner triple (not in the
+        # sink) already carries a hard equality FILTER ⇒ overlap is
+        # guaranteed and no guard is needed. Only when every shared var
+        # is optional-bound must we add the §8.3.4 disjoint-domain guard.
+        if not (overlap_var_names - soft_vars):
+            terms = [
+                f"({value} != null && {bound} != null && {value} == {bound})"
+                for _, value, bound in sink
+            ]
+            overlap = terms[0] if len(terms) == 1 else "(" + " || ".join(terms) + ")"
+            child_builder.filter_raw(overlap)
 
     # Short-circuit the cursor: we only need to know whether ≥ 1
     # row matches, not how many, so LIMIT 1 + RETURN 1 is the

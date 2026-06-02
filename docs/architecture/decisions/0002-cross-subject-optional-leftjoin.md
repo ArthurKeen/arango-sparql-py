@@ -1,8 +1,13 @@
 # ADR-0002: Cross-subject `OPTIONAL` (LeftJoin) emitter — design options
 
-- **Status:** Proposed — **deferred to post-v1.0** (travels with the
-  SPARQL-federation slice; see PRD §3.1 slice-priority table)
-- **Date:** 2026-05-28
+- **Status:** **Partially resolved.** Problem 2 (OPTIONAL-rebind inside
+  MINUS) is **shipped** (2026-06-02) — `negation/full-minuend` and
+  `negation/part-minuend` now translate, are golden-pinned, and are
+  binding-validated against pyoxigraph
+  (`tests/cross/test_minus_optional_cross.py`). Problem 1 (cross-subject
+  OPTIONAL, Options A/B/C) remains **deferred to post-v1.0** (travels
+  with the SPARQL-federation slice; see PRD §3.1 slice-priority table).
+- **Date:** 2026-05-28 (Problem 2 resolved 2026-06-02)
 - **Owner:** arango-sparql-py
 - **Related code:** `arango_sparql/translate/visitor.py::visit_LeftJoin`
   (the two `UnsupportedSparqlError` rejection branches),
@@ -133,7 +138,7 @@ resolved-collection subquery, default → Option B path.
   a UNION-cost story (O(N collections) per cross-subject OPTIONAL absent
   an index). Disproportionate for 2 W3C tests.
 
-## Considered options (Problem 2 — OPTIONAL-rebind-in-MINUS)
+## Considered options (Problem 2 — OPTIONAL-rebind-in-MINUS) — **RESOLVED**
 
 This is model-independent. The fix is in how the MINUS child visitor and
 `visit_LeftJoin` treat an OPTIONAL object variable that is **already
@@ -147,21 +152,60 @@ ideally, pyoxigraph cross-validation because the truth table
 (`full-minuend` vs `part-minuend` differ only in whether the outer side
 also has the OPTIONALs) is subtle.
 
-## Decision (provisional)
+### What shipped (2026-06-02)
 
-**Defer the whole cluster to post-v1.0, bundled with the SPARQL-federation
-slice.** When picked up, the recommended sequencing is:
+The subtlety turned out to have **two** parts, both of which the
+implementation now handles:
 
-1. **Option A first** (RPT-native), because it is the spec-faithful core
-   and is the natural shape once RPT gets a live-execution harness — even
-   though it scores 0 W3C points today, it is the design the other two
-   options layer onto.
-2. **Problem 2** next (model-independent, unblocks 2 tests, no
-   collection-resolution dependency).
-3. **Option B** only if a W3C-coverage headline is explicitly wanted and
+1. **Conditional add (§18.2.5.2).** `_BindingState.optional_rebind_sink`
+   switches `visit_LeftJoin` out of "reject re-bind" mode while inside a
+   MINUS probe. Each re-binding optional triple emits a compatibility
+   FILTER `(<inner> == null || <outer> == null || <inner> == <outer>)`
+   and records `(var, inner_value, outer_bound)` in the sink — it does
+   **not** create a fresh binding.
+2. **Disjoint-domain exemption (§8.3.4).** A MINUS inner row only removes
+   an outer row when the two share **at least one bound** variable. When
+   every shared variable is bound by an optional (so a `?d` matching
+   nothing would otherwise vacuously delete every outer row),
+   `_translate_probe` adds an *overlap* guard — the OR of
+   `(<inner> != null && <outer> != null && <inner> == <outer>)` across
+   the sink. If any shared variable is bound by a *required* inner
+   triple, the child already FILTERs equality on it, so overlap is
+   guaranteed and the guard is omitted.
+
+Verification is exactly what this section asked for: golden AQL
+(`minus_optional_single_rebind`, `minus_optional_two_rebinds`) **plus**
+binding parity against pyoxigraph on the real W3C data
+(`tests/cross/test_minus_optional_cross.py`, run under a PG ontology so
+`?a a :Min` / `?d a :Sub` resolve to type-filtered FOR loops — the
+permissive Document model drops those filters). The probe shape is now
+executable by the AQL-subset interpreter (correlated `LET = LENGTH((…))`
++ scalar `RETURN`), which also retro-fitted cross-validation onto the
+previously goldens-only MINUS / EXISTS translations
+(`tests/cross/test_minus_exists_cross.py`).
+
+## Decision
+
+**Problem 2 is done (2026-06-02).** It was taken first — out of the
+original sequencing order — because it is model-independent, closes two
+real W3C tests with no lossiness, and needs no collection-resolution
+dependency. A key fact had also changed since this ADR was written: the
+AQL-subset interpreter learned to execute the MINUS / EXISTS probe shape
+(`LET = LENGTH((…))`), so Problem 2 could be **binding-cross-validated**
+rather than golden-pinned only — and that same capability removes
+Option A's biggest con below ("ships untested end-to-end").
+
+**Problem 1 stays deferred to post-v1.0, bundled with the
+SPARQL-federation slice.** When picked up, the recommended sequencing is:
+
+1. **Option A** (RPT-native), the spec-faithful core the other two
+   options layer onto. It now has the live-execution path it lacked (the
+   interpreter probe executor), though it still scores 0 W3C points (the
+   harness is Document/PG, not RPT).
+2. **Option B** only if a W3C-coverage headline is explicitly wanted and
    we accept logging `tsv02`/`jsonres02` as live-execution XFAILs (the
    honest accounting, consistent with the variable-predicate carve-out).
-4. **Option C** only if/when multi-collection PG cross-subject queries
+3. **Option C** only if/when multi-collection PG cross-subject queries
    become a real corpus need.
 
 Rationale for deferral: the cluster is the **lone non-federation algebra
@@ -185,11 +229,15 @@ to workstreams with clear, non-lossy wins (NL→SPARQL, executor, UI).
   re-derive the "which collection" problem from scratch.
 
 ### Negative
-- W3C query-eval coverage stays at 95.7 % until either this cluster or
+- W3C query-eval coverage moved 95.7 % → 96.4 % when Problem 2 shipped
+  (`full-minuend` + `part-minuend`); it stays at 96.4 % for the
+  remaining Problem-1 cluster (`tsv02`/`jsonres02`) until that cluster or
   federation ships.
 
 ### Neutral
-- No code changes land with this ADR; it is a design record only.
+- The ADR began as a design record only; Problem 2's resolution
+  (`visit_LeftJoin` conditional-add + `_translate_probe` overlap guard +
+  interpreter probe executor) landed under it on 2026-06-02.
 
 ## References
 - SPARQL 1.1 §18.2.5.2 (translation of `OPTIONAL` / `LeftJoin`),
