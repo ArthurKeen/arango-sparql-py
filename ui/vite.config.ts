@@ -8,29 +8,37 @@ import tailwindcss from "@tailwindcss/vite";
 // not implement yet (e.g. `/explain`, `/nl2sparql`) are still proxied so
 // the wire failures surface at the service tier with the right status
 // code instead of a stray 404 from the dev server.
+//
+// The target is overridable via `SPARQL_API_TARGET` so the SPARQL
+// service can run on an alternate port when the default :8001 is taken
+// by the sibling Cypher service (e.g. `SPARQL_API_TARGET=http://localhost:8002`).
+const apiTarget = process.env.SPARQL_API_TARGET ?? "http://localhost:8001";
+
+const proxiedPaths = [
+  "/connect",
+  "/disconnect",
+  "/connections",
+  "/translate",
+  "/execute",
+  "/execute-aql",
+  "/validate",
+  "/explain",
+  "/aql-profile",
+  "/sparql-profile",
+  "/nl2sparql",
+  "/nl2aql",
+  "/nl-samples",
+  "/sample-queries",
+  "/schema",
+  "/health",
+];
+
 export default defineConfig({
   base: "./",
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
-    proxy: {
-      "/connect": "http://localhost:8001",
-      "/disconnect": "http://localhost:8001",
-      "/connections": "http://localhost:8001",
-      "/translate": "http://localhost:8001",
-      "/execute": "http://localhost:8001",
-      "/execute-aql": "http://localhost:8001",
-      "/validate": "http://localhost:8001",
-      "/explain": "http://localhost:8001",
-      "/aql-profile": "http://localhost:8001",
-      "/sparql-profile": "http://localhost:8001",
-      "/nl2sparql": "http://localhost:8001",
-      "/nl2aql": "http://localhost:8001",
-      "/nl-samples": "http://localhost:8001",
-      "/sample-queries": "http://localhost:8001",
-      "/schema": "http://localhost:8001",
-      "/health": "http://localhost:8001",
-    },
+    proxy: Object.fromEntries(proxiedPaths.map((path) => [path, apiTarget])),
   },
   build: {
     outDir: "dist",
