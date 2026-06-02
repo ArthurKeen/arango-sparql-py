@@ -28,6 +28,10 @@ from ..errors import (
 from .builder import AqlQueryBuilder
 from .filter_builtins import translate_builtin, translate_function
 from .minus_exists import emit_minus
+from .optional_crosssubject import (
+    emit_rpt_cross_subject_optional,
+    is_rpt_cross_subject_optional,
+)
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, SchemaResolver
 from .subselect import emit_to_multiset
@@ -623,6 +627,16 @@ class AlgebraVisitor:
             raise UnsupportedSparqlError(
                 f"OPTIONAL whose body is {p2.name!r} (not a plain BGP) is not yet supported"
             )
+
+        # RPT-native cross-subject OPTIONAL (ADR-0002 Problem 1, Option
+        # A): the OPTIONAL subject is bound only as a *value* by the
+        # required side, and we're in RPT mode, so the OPTIONAL is a
+        # plain left-join scan of the triples table. Everything else
+        # (PG/LPG/default cross-subject) still falls through to the
+        # structured rejection below.
+        if is_rpt_cross_subject_optional(self, p2, node):
+            emit_rpt_cross_subject_optional(self, p2.triples[0], node)
+            return
 
         # Walk the optional triples once to collect (var, source_expr)
         # pairs, *without* mutating ``var_to_expr`` yet — the inner
