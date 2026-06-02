@@ -52,6 +52,22 @@ _RETURN_SCALAR_RE = re.compile(r"RETURN\s+(?!DISTINCT\b)([^{].*?)\s*$")
 # environment and binds ``<alias>`` to the resulting row count.
 _LEN_SUBQUERY_START_RE = re.compile(r"LET\s+(\w+)\s*=\s*LENGTH\(\(\s*$")
 _SUBQUERY_END_RE = re.compile(r"^\)\)\s*$")
+# Row-returning correlated subquery the cross-subject OPTIONAL emitter
+# (ADR-0002 Problem 1, Option A) binds to a LET: ``LET <alias> = (``
+# opens the block, a bare ``)`` closes it, and the inner lines are a
+# self-contained (outer-correlated) FOR/FILTER/RETURN-object query. The
+# alias is bound to the *list of row dicts* (not a count), which the
+# following FOR-inline then iterates with ``[null]`` padding. Checked
+# after ``_LEN_SUBQUERY_START_RE`` so ``LET x = LENGTH((`` never matches
+# this opener.
+_ROWS_SUBQUERY_START_RE = re.compile(r"LET\s+(\w+)\s*=\s*\(\s*$")
+_SUBQUERY_PAREN_END_RE = re.compile(r"^\)\s*$")
+# FOR over an inline list expression — the ``[null]``-padded left-join
+# loop the cross-subject OPTIONAL emitter writes:
+# ``FOR <row> IN (LENGTH(<opt>) > 0 ? <opt> : [null])``. Distinct from
+# ``_FOR_RE`` (collection bind) and ``_FOR_TRAVERSAL_RE`` (OUTBOUND) by
+# the parenthesised expression source; checked after both.
+_FOR_INLINE_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\(.+\))\s*$")
 _LIMIT_RE = re.compile(r"LIMIT\s+(?:(\d+)\s*,\s*)?(\d+)")
 _SORT_RE = re.compile(r"SORT\s+(.+)$")
 # COLLECT clause patterns the visitor emits today:
@@ -69,22 +85,25 @@ _COLLECT_RE = re.compile(r"^COLLECT\b")
 _WITH_RE = re.compile(r"^WITH\b")
 # Document/traversal attribute access. ``docN`` are FOR-loop documents
 # and triples rows; ``vN`` / ``eN`` are the target vertex / edge bound
-# by an OUTBOUND traversal. All three are accessed as ``<alias>.<attr>``
-# and rewritten to the flat ``<alias>__<attr>`` namespace key.
-_DOC_ATTR_RE = re.compile(r"\b((?:doc|v|e)\d+)\.(\w+)\b")
+# by an OUTBOUND traversal; ``optrowN`` is the per-row dict bound by the
+# cross-subject OPTIONAL FOR-inline loop (or ``null`` for the padded
+# no-match row). All are accessed as ``<alias>.<attr>`` and rewritten to
+# the flat ``<alias>__<attr>`` namespace key.
+_DOC_ATTR_RE = re.compile(r"\b((?:doc|v|e|optrow)\d+)\.(\w+)\b")
 # Post-rewrite namespace identifier shape — used by the eval namespace
 # default-dict to recognise a missing-doc-attribute lookup as a
 # null-binding (AQL parity) rather than a programmer error.
-_DOC_ATTR_NAMESPACE_RE = re.compile(r"^(?:doc|v|e)\d+__\w+$")
+_DOC_ATTR_NAMESPACE_RE = re.compile(r"^(?:doc|v|e|optrow)\d+__\w+$")
 _BIND_RE = re.compile(r"@(_\w+)")
-# C-style ternary the visitor emits inside OPTIONAL+FILTER LETs:
+# C-style ternary the visitor emits inside OPTIONAL+FILTER LETs and the
+# cross-subject OPTIONAL FOR-inline source:
 #   ``(<cond> ? <true> : <false>)``
 # Python's conditional is ``<true> if <cond> else <false>``, so we
-# textually rewrite. The false branch in our visitor output is always a
-# bare identifier or ``null`` (we never emit a complex false branch
-# yet), which keeps this regex unambiguous; nested ternaries would need
-# a depth-aware parser.
-_TERNARY_RE = re.compile(r"\((.+?) \? (.+?) : (\w+(?:\.\w+)?|null)\)")
+# textually rewrite. The false branch in our visitor output is a bare
+# identifier, ``null``, or a list literal (``[null]`` — the padded
+# no-match row of a left join); anything more complex would need a
+# depth-aware parser.
+_TERNARY_RE = re.compile(r"\((.+?) \? (.+?) : (\w+(?:\.\w+)?|null|\[[^\]]*\])\)")
 
 
 def _regex_test(text: Any, pattern: str, case_insensitive: bool = False) -> bool:
@@ -282,8 +301,13 @@ def _eval_expr(
         # because the rest of the rewriter expects it (``doc1.foo`` →
         # ``doc1__foo``).
         namespace[alias] = doc
-        for attr, value in doc.items():
-            namespace[f"{alias}__{attr}"] = value
+        # The cross-subject OPTIONAL FOR-inline binds ``optrowN`` to
+        # ``null`` for the padded no-match row; there are no attributes
+        # to flatten, and any ``optrowN.<f>`` read falls through to the
+        # ``_NullDefault`` (→ ``None``, SPARQL "unbound").
+        if isinstance(doc, dict):
+            for attr, value in doc.items():
+                namespace[f"{alias}__{attr}"] = value
     namespace.update(bind_vars)
     if let_env:
         namespace.update(let_env)
@@ -404,6 +428,27 @@ def run_aql_subset(
             sub_step: tuple[str, Any, Any] = ("SUBQUERY_LEN", alias, "\n".join(inner))
             (post_collect_steps if seen_collect else pre_collect_plan).append(sub_step)
             continue
+        if m := _ROWS_SUBQUERY_START_RE.match(line):
+            # ``LET <alias> = (`` … ``)`` — consume the inner block up to
+            # the closing single ``)`` and stash it as a correlated
+            # row-LIST op (the cross-subject OPTIONAL scan). At run time
+            # the inner query executes against the outer row and the
+            # alias binds to the resulting list of row dicts.
+            alias = m.group(1)
+            rows_inner: list[str] = []
+            while i < len(lines) and not _SUBQUERY_PAREN_END_RE.match(lines[i]):
+                rows_inner.append(lines[i])
+                i += 1
+            if i >= len(lines):  # pragma: no cover - malformed AQL
+                raise AssertionError("unterminated LET = ( subquery in AQL")
+            i += 1  # skip the closing ``)``
+            rows_step: tuple[str, Any, Any] = (
+                "SUBQUERY_ROWS",
+                alias,
+                "\n".join(rows_inner),
+            )
+            (post_collect_steps if seen_collect else pre_collect_plan).append(rows_step)
+            continue
         if m := _FOR_TRAVERSAL_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
@@ -416,6 +461,11 @@ def run_aql_subset(
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, coll_var = m.groups()
             pre_collect_plan.append(("FOR", alias, bind_vars[f"@{coll_var}"]))
+        elif m := _FOR_INLINE_RE.match(line):
+            if seen_collect:  # pragma: no cover
+                raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
+            alias, inline_expr = m.groups()
+            pre_collect_plan.append(("FOR_INLINE", alias, inline_expr))
         elif _COLLECT_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"second COLLECT not supported: {line!r}")
@@ -480,6 +530,15 @@ def run_aql_subset(
             assert collection is not None
             for doc in docs.get(collection, []):
                 run_plan(idx + 1, {**env, alias: doc}, let_env)
+        elif kind == "FOR_INLINE":
+            # ``FOR <alias> IN (<expr>)`` — the expr evaluates to a list
+            # (the ``[null]``-padded OPTIONAL subquery result). Iterate
+            # it, binding each element (a row dict, or ``None`` for the
+            # padded no-match row) under <alias>.
+            alias = a
+            sequence = _eval_expr(b, env, bind_vars, let_env)
+            for element in sequence or []:
+                run_plan(idx + 1, {**env, alias: element}, let_env)
         elif kind == "OUTBOUND":
             v_alias, e_alias, start_alias = a
             edge_collection = b
@@ -504,6 +563,15 @@ def run_aql_subset(
                 b, bind_vars, docs, _outer_env=env, _outer_let=let_env
             )
             run_plan(idx + 1, env, {**let_env, a: len(inner_rows)})
+        elif kind == "SUBQUERY_ROWS":
+            # Correlated row-LIST subquery (cross-subject OPTIONAL scan):
+            # run the inner query with this outer row in scope and bind
+            # <alias> to the resulting list of row dicts so the following
+            # FOR-inline can iterate (and ``[null]``-pad) it.
+            inner_rows = run_aql_subset(
+                b, bind_vars, docs, _outer_env=env, _outer_let=let_env
+            )
+            run_plan(idx + 1, env, {**let_env, a: inner_rows})
         else:  # LET
             assert b is not None
             run_plan(idx + 1, env, {**let_env, b: _eval_expr(a, env, bind_vars, let_env)})
@@ -551,6 +619,12 @@ def run_aql_subset(
                         field_b, bind_vars, docs, _outer_env=env, _outer_let=let_env
                     )
                     let_env[field_a] = len(inner_rows)
+                elif kind == "SUBQUERY_ROWS":
+                    # Stored as ("SUBQUERY_ROWS", alias, inner_aql) — bind
+                    # the alias to the full row list (not a count).
+                    let_env[field_a] = run_aql_subset(
+                        field_b, bind_vars, docs, _outer_env=env, _outer_let=let_env
+                    )
                 else:  # LET — stored as ("LET", expr, alias)
                     assert field_b is not None
                     let_env[field_b] = _eval_expr(field_a, env, bind_vars, let_env)
