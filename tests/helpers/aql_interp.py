@@ -39,6 +39,19 @@ _FOR_TRAVERSAL_RE = re.compile(
 _FILTER_RE = re.compile(r"FILTER\s+(.+)$")
 _LET_RE = re.compile(r"LET\s+(\w+)\s*=\s*(.+)$")
 _RETURN_RE = re.compile(r"RETURN(?:\s+(DISTINCT))?\s+\{\s*(.+?)\s*\}\s*$")
+# Scalar projection the MINUS / EXISTS probe subquery emits
+# (``RETURN 1``) — anything after RETURN that is not a ``{…}`` object
+# and not the ``DISTINCT`` keyword. Checked only after the object-form
+# RETURN above fails to match.
+_RETURN_SCALAR_RE = re.compile(r"RETURN\s+(?!DISTINCT\b)([^{].*?)\s*$")
+# Correlated row-count subquery the MINUS / NOT EXISTS / EXISTS emitter
+# wraps an inner probe in: ``LET <alias> = LENGTH((`` opens the block,
+# a bare ``))`` closes it, and the lines between are a self-contained
+# (but outer-correlated) FOR/FILTER/LIMIT/RETURN-scalar query. The
+# interpreter executes that inner query against the current outer row's
+# environment and binds ``<alias>`` to the resulting row count.
+_LEN_SUBQUERY_START_RE = re.compile(r"LET\s+(\w+)\s*=\s*LENGTH\(\(\s*$")
+_SUBQUERY_END_RE = re.compile(r"^\)\)\s*$")
 _LIMIT_RE = re.compile(r"LIMIT\s+(?:(\d+)\s*,\s*)?(\d+)")
 _SORT_RE = re.compile(r"SORT\s+(.+)$")
 # COLLECT clause patterns the visitor emits today:
@@ -314,6 +327,9 @@ def run_aql_subset(
     aql: str,
     bind_vars: dict[str, Any],
     docs: dict[str, list[dict[str, Any]]],
+    *,
+    _outer_env: dict[str, Any] | None = None,
+    _outer_let: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Execute the FOR/FILTER/LET/COLLECT/SORT/LIMIT/RETURN subset of
     AQL the visitor emits today against an in-memory document store.
@@ -329,8 +345,15 @@ def run_aql_subset(
     LET (BIND) bindings are evaluated in source order and appear as
     plain identifiers in subsequent FILTER / SORT / RETURN expressions —
     same scoping rules as AQL.
+
+    Correlated subqueries (``LET p = LENGTH((<inner>))``, the MINUS /
+    EXISTS probe shape) execute the inner query per outer row with the
+    outer environment in scope; ``_outer_env`` / ``_outer_let`` carry
+    that scope into the recursive call and are private to it.
     """
-    lines = [line for line in aql.splitlines() if line.strip()]
+    # Strip each line so a nested (indented) probe subquery re-parses
+    # cleanly — the line-anchored regexes below expect no leading space.
+    lines = [line.strip() for line in aql.splitlines() if line.strip()]
     # The pre-COLLECT region is parsed into an ordered pipeline of
     # ``("FOR", alias, collection)`` / ``("FILTER", expr, None)`` /
     # ``("LET", expr, alias)`` ops *preserving source order*. Executing
@@ -354,13 +377,32 @@ def run_aql_subset(
     limit: tuple[int, int] | None = None
     return_distinct = False
     return_pairs: list[tuple[str, str]] = []
+    return_scalar_expr: str | None = None
     seen_collect = False
 
-    for line in lines:
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
         if _WITH_RE.match(line):
             # ``WITH @@c1, @@c2`` collection prelude — no-op for the
             # interpreter; the FOR lines that follow carry the bind
             # vars we actually resolve against.
+            continue
+        if m := _LEN_SUBQUERY_START_RE.match(line):
+            # ``LET <alias> = LENGTH((`` … ``))`` — consume the inner
+            # block up to the closing ``))`` and stash it as a correlated
+            # row-count op evaluated per outer row at run time.
+            alias = m.group(1)
+            inner: list[str] = []
+            while i < len(lines) and not _SUBQUERY_END_RE.match(lines[i]):
+                inner.append(lines[i])
+                i += 1
+            if i >= len(lines):  # pragma: no cover - malformed AQL
+                raise AssertionError("unterminated LENGTH(( subquery in AQL")
+            i += 1  # skip the closing ``))``
+            sub_step: tuple[str, Any, Any] = ("SUBQUERY_LEN", alias, "\n".join(inner))
+            (post_collect_steps if seen_collect else pre_collect_plan).append(sub_step)
             continue
         if m := _FOR_TRAVERSAL_RE.match(line):
             if seen_collect:  # pragma: no cover
@@ -407,6 +449,11 @@ def run_aql_subset(
             for pair in _split_top_level_commas(m.group(2)):
                 key, _, value_expr = pair.partition(":")
                 return_pairs.append((key.strip(), value_expr.strip()))
+        elif m := _RETURN_SCALAR_RE.match(line):
+            # ``RETURN 1`` (probe subquery) — a single scalar column.
+            # Only the row *count* matters to the enclosing LENGTH((…)),
+            # so the value is projected under a fixed key.
+            return_scalar_expr = m.group(1).strip()
         else:  # pragma: no cover
             raise AssertionError(f"interpreter cannot handle AQL line: {line!r}")
 
@@ -450,11 +497,18 @@ def run_aql_subset(
         elif kind == "FILTER":
             if _eval_filter(a, env, bind_vars, let_env):
                 run_plan(idx + 1, env, let_env)
+        elif kind == "SUBQUERY_LEN":
+            # Correlated probe: run the inner query with this outer row's
+            # environment in scope, bind <alias> to its row count.
+            inner_rows = run_aql_subset(
+                b, bind_vars, docs, _outer_env=env, _outer_let=let_env
+            )
+            run_plan(idx + 1, env, {**let_env, a: len(inner_rows)})
         else:  # LET
             assert b is not None
             run_plan(idx + 1, env, {**let_env, b: _eval_expr(a, env, bind_vars, let_env)})
 
-    run_plan(0, {}, {})
+    run_plan(0, dict(_outer_env or {}), dict(_outer_let or {}))
 
     if seen_collect:
         keys = collect_keys or []
@@ -486,14 +540,20 @@ def run_aql_subset(
         filtered_envs: list[tuple[dict, dict]] = []
         for env, let_env in envs:
             keep = True
-            for kind, expr, alias in post_collect_steps:
+            for kind, field_a, field_b in post_collect_steps:
                 if kind == "FILTER":
-                    if not _eval_filter(expr, env, bind_vars, let_env):
+                    if not _eval_filter(field_a, env, bind_vars, let_env):
                         keep = False
                         break
-                else:  # LET
-                    assert alias is not None
-                    let_env[alias] = _eval_expr(expr, env, bind_vars, let_env)
+                elif kind == "SUBQUERY_LEN":
+                    # Stored as ("SUBQUERY_LEN", alias, inner_aql).
+                    inner_rows = run_aql_subset(
+                        field_b, bind_vars, docs, _outer_env=env, _outer_let=let_env
+                    )
+                    let_env[field_a] = len(inner_rows)
+                else:  # LET — stored as ("LET", expr, alias)
+                    assert field_b is not None
+                    let_env[field_b] = _eval_expr(field_a, env, bind_vars, let_env)
             if keep:
                 filtered_envs.append((env, let_env))
         envs = filtered_envs
@@ -508,8 +568,14 @@ def run_aql_subset(
     rows: list[dict[str, Any]] = []
     for env, let_env in envs:
         row: dict[str, Any] = {}
-        for key, value_expr in return_pairs:
-            row[key] = _eval_expr(value_expr, env, bind_vars, let_env)
+        if return_scalar_expr is not None:
+            # Probe subquery: one scalar column per row. Only the row
+            # count matters to the enclosing LENGTH((…)); the value is
+            # projected under a fixed key so the row is non-empty.
+            row["_scalar"] = _eval_expr(return_scalar_expr, env, bind_vars, let_env)
+        else:
+            for key, value_expr in return_pairs:
+                row[key] = _eval_expr(value_expr, env, bind_vars, let_env)
         rows.append(row)
 
     if return_distinct:
