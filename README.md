@@ -171,7 +171,7 @@ arango_sparql/
     prompt.py, client.py, repair.py, cost.py, models.py
 tests/
   translate/            # parser unit tests + YAML-driven goldens
-  cross/                # pyoxigraph cross-validation (PG + multi-model PG/LPG/hybrid/RPT + edge-collection traversal + MINUS/EXISTS + MINUS-with-OPTIONAL)
+  cross/                # pyoxigraph cross-validation (PG + multi-model PG/LPG/hybrid/RPT + edge-collection traversal + MINUS/EXISTS + MINUS-with-OPTIONAL + RPT cross-subject OPTIONAL)
   schema/               # MappingBundle fixtures + §13.3 per-model contracts
   w3c/                  # W3C SPARQL 1.1 DAWG runner + COVERAGE_REPORT.md
   nl2sparql/eval/       # NL eval harness (slow, gated on RUN_EVAL=1)

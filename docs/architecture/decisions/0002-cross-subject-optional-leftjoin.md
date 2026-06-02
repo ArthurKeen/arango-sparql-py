@@ -1,18 +1,22 @@
 # ADR-0002: Cross-subject `OPTIONAL` (LeftJoin) emitter — design options
 
 - **Status:** **Partially resolved.** Problem 2 (OPTIONAL-rebind inside
-  MINUS) is **shipped** (2026-06-02) — `negation/full-minuend` and
-  `negation/part-minuend` now translate, are golden-pinned, and are
+  MINUS) is **shipped** (2026-06-02). Problem 1 **Option A** (RPT-native
+  cross-subject OPTIONAL) is **shipped** (2026-06-02) — golden-pinned and
   binding-validated against pyoxigraph
-  (`tests/cross/test_minus_optional_cross.py`). Problem 1 (cross-subject
-  OPTIONAL, Options A/B/C) remains **deferred to post-v1.0** (travels
-  with the SPARQL-federation slice; see PRD §3.1 slice-priority table).
-- **Date:** 2026-05-28 (Problem 2 resolved 2026-06-02)
+  (`tests/cross/test_optional_crosssubject_cross.py`). Problem 1
+  **Options B/C** (Document/PG emulation and full multi-model
+  `_uri → collection` resolution) remain **deferred to post-v1.0**
+  (travel with the SPARQL-federation slice; see PRD §3.1 slice-priority
+  table).
+- **Date:** 2026-05-28 (Problem 2 + Problem 1 Option A resolved 2026-06-02)
 - **Owner:** arango-sparql-py
 - **Related code:** `arango_sparql/translate/visitor.py::visit_LeftJoin`
-  (the two `UnsupportedSparqlError` rejection branches),
+  (the remaining `UnsupportedSparqlError` rejection branches),
+  `arango_sparql/translate/optional_crosssubject.py` (the shipped
+  Option A emitter),
   `arango_sparql/translate/variable_predicates.py` (the `ATTRIBUTES`
-  fan-out carve-out this design would inherit),
+  fan-out carve-out Options B/C would inherit),
   `arango_sparql/translate/resolver.py::SchemaResolver` (the `?o → collection`
   resolution seam any PG emulation needs)
 - **Supersedes:** —
@@ -86,7 +90,7 @@ the RPT one (Option A) — which the harness never exercises.
 
 ## Considered options (Problem 1)
 
-### Option A — RPT-native left-join only; reject flattened models
+### Option A — RPT-native left-join only; reject flattened models — **SHIPPED (2026-06-02)**
 
 Implement cross-subject OPTIONAL **only** when the OPTIONAL's subject
 resolves to RPT-backed data. Emit the standard AQL left-join-via-subquery
@@ -106,9 +110,39 @@ FOR _row IN (LENGTH(_opt) > 0 ? _opt : [null])
 - **Pro:** Reversible — leaves Options B/C addable later.
 - **Con:** **Moves the W3C number by 0** — the harness is Document/PG,
   not RPT. Pure correctness investment, no coverage headline.
-- **Con:** RPT cross-subject OPTIONAL has no golden today and no
-  live-execution harness on RPT, so it ships untested end-to-end
-  (translation goldens only).
+- **Con (resolved):** the original "ships untested end-to-end" worry no
+  longer holds — the interpreter's row-list subquery + `[null]`-pad
+  FOR-inline executor (added with this slice) gives Option A full
+  binding cross-validation, not goldens only.
+
+#### What shipped (2026-06-02)
+
+`arango_sparql/translate/optional_crosssubject.py` implements exactly
+the idiom above. `visit_LeftJoin` detects the RPT cross-subject case —
+single-triple OPTIONAL body, no inner FILTER, subject bound in
+`var_to_expr` but **not** in `var_to_doc_alias`, and `var_to_rpt_class`
+non-empty (so a triples collection + column overrides are known) — and
+routes to the emitter; everything else still hits the structured
+rejection. Emission is `LET <opt> = (FOR doc IN @@triples FILTER
+doc.<subject> == <o> [FILTER doc.<predicate> == @p] RETURN {…})` followed
+by `FOR <row> IN (LENGTH(<opt>) > 0 ? <opt> : [null])`, binding each new
+variable to `<row>.f<i>`. The `[null]` pad is what makes it a LEFT join;
+multiple matches fan out (correct multiset OPTIONAL). A variable
+predicate `?p2` projects the predicate column directly — the spec-
+correct IRI binding the `Document` model cannot express. Non-variable
+objects (existence tests) and multi-triple / filtered OPTIONAL bodies
+remain refused with typed errors (future slices).
+
+Verification: byte-for-byte goldens
+(`tests/translate/test_translate_optional_crosssubject_goldens.py`) for
+the variable- and fixed-predicate shapes plus rejection tests, and
+binding parity against pyoxigraph over a shared RPT triples store
+(`tests/cross/test_optional_crosssubject_cross.py`) covering fan-out,
+single-match, and no-match→null-pad. Per the storage-model table this
+moves the W3C harness number by **0** (the harness runs Document/PG, not
+RPT) — `tsv02`/`jsonres02` stay XFAIL until Option B/C or federation
+ships; this slice is a pure spec-faithfulness investment for real RPT
+deployments.
 
 ### Option B — Default/single-collection emulation (the W3C-moving option)
 
@@ -195,49 +229,56 @@ AQL-subset interpreter learned to execute the MINUS / EXISTS probe shape
 rather than golden-pinned only — and that same capability removes
 Option A's biggest con below ("ships untested end-to-end").
 
-**Problem 1 stays deferred to post-v1.0, bundled with the
-SPARQL-federation slice.** When picked up, the recommended sequencing is:
+**Problem 1 Option A is done (2026-06-02).** It was taken next because
+the interpreter capability added for Problem 2 (correlated subqueries)
+generalised cheaply to the row-list + `[null]`-pad shape, removing
+Option A's only real blocker ("ships untested end-to-end"). It is the
+spec-faithful core the other two options layer onto, and shipping it now
+means RPT deployments get correct cross-subject OPTIONAL while leaving
+Options B/C addable later.
 
-1. **Option A** (RPT-native), the spec-faithful core the other two
-   options layer onto. It now has the live-execution path it lacked (the
-   interpreter probe executor), though it still scores 0 W3C points (the
-   harness is Document/PG, not RPT).
-2. **Option B** only if a W3C-coverage headline is explicitly wanted and
+**Problem 1 Options B/C stay deferred to post-v1.0, bundled with the
+SPARQL-federation slice:**
+
+1. **Option B** only if a W3C-coverage headline is explicitly wanted and
    we accept logging `tsv02`/`jsonres02` as live-execution XFAILs (the
    honest accounting, consistent with the variable-predicate carve-out).
-3. **Option C** only if/when multi-collection PG cross-subject queries
+2. **Option C** only if/when multi-collection PG cross-subject queries
    become a real corpus need.
 
-Rationale for deferral: the cluster is the **lone non-federation algebra
-remainder (4 of 11 XFAILs)**, but (a) the §3.1 *coverage* bar is cleared
-by 71 pp, (b) the §3.1 *ratio* sub-clause can only be fixed by shipping
-federation regardless (closing these 4 would *raise* the federation
-bucket's share, not lower it — see PRD §3.1 note), and (c) the
-highest-value version (Option A) needs the RPT live-execution harness
-that doesn't exist yet, while the W3C-moving version (Option B) is known
-to be semantically lossy. None of the four sub-paths is both cheap and
-honest right now, so the right move is to capture the design and pivot
-to workstreams with clear, non-lossy wins (NL→SPARQL, executor, UI).
+Rationale for deferring B/C: closing `tsv02`/`jsonres02` *in the harness*
+requires the Document/PG emulation, which is known to be semantically
+lossy (the variable predicate binds an attribute name, not an IRI), so
+it would move the gap rather than close it. The §3.1 *coverage* bar is
+already cleared by 71 pp, and the §3.1 *ratio* sub-clause can only be
+fixed by shipping federation regardless (closing these would *raise* the
+federation bucket's share, not lower it — see PRD §3.1 note). With the
+spec-faithful RPT path now landed, the remaining sub-paths are neither
+cheap nor non-lossy, so the right move is to pivot to workstreams with
+clear, non-lossy wins (NL→SPARQL, executor, UI).
 
 ## Consequences
 
 ### Positive
-- The two rejection branches in `visit_LeftJoin` keep raising
+- RPT deployments now get spec-correct cross-subject OPTIONAL, including
+  variable predicates, golden-pinned and pyoxigraph-cross-validated.
+- The remaining rejection branches in `visit_LeftJoin` keep raising
   **structured, greppable** `UnsupportedSparqlError`s (no silently-wrong
-  AQL), and the XFAIL ledger keeps the gap visible.
-- The per-model analysis is captured, so whoever picks this up doesn't
-  re-derive the "which collection" problem from scratch.
+  AQL) for the PG/LPG/default cross-subject cases, and the XFAIL ledger
+  keeps the harness gap visible.
+- The per-model analysis is captured, so whoever picks up Options B/C
+  doesn't re-derive the "which collection" problem from scratch.
 
 ### Negative
 - W3C query-eval coverage moved 95.7 % → 96.4 % when Problem 2 shipped
-  (`full-minuend` + `part-minuend`); it stays at 96.4 % for the
-  remaining Problem-1 cluster (`tsv02`/`jsonres02`) until that cluster or
-  federation ships.
+  (`full-minuend` + `part-minuend`); Option A moves it by **0** (the
+  harness runs Document/PG, not RPT), so `tsv02`/`jsonres02` stay XFAIL
+  until Option B/C or federation ships.
 
 ### Neutral
-- The ADR began as a design record only; Problem 2's resolution
-  (`visit_LeftJoin` conditional-add + `_translate_probe` overlap guard +
-  interpreter probe executor) landed under it on 2026-06-02.
+- The ADR began as a design record only; Problem 2 (2026-06-02) and
+  Problem 1 Option A (`optional_crosssubject.py` + the interpreter's
+  row-list/`[null]`-pad executor, 2026-06-02) both landed under it.
 
 ## References
 - SPARQL 1.1 §18.2.5.2 (translation of `OPTIONAL` / `LeftJoin`),
