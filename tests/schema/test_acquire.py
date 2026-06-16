@@ -500,6 +500,48 @@ def test_analyzer_metadata_dict_shape_is_supported(
     assert bundle.metadata.get("source") == "dict-shape"
 
 
+def test_analyzer_string_warnings_are_normalized_to_dicts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: the analyzer can attach a *bare string* advisory
+    (e.g. "LLM provider not configured ...") to ``metadata.warnings``.
+    The wire contract types every ``warnings`` field as ``list[dict]``,
+    so a string entry previously crashed ``SchemaIntrospectResponse``
+    validation with an opaque 500. ``acquire_mapping_bundle`` must
+    coerce such entries into ``{code, message}`` dicts.
+    """
+
+    advisory = "LLM provider not configured; using heuristic baseline inference"
+    cls, fn = _make_analyzer_mock(
+        metadata={"source": "analyzer", "warnings": [advisory]},
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+
+    bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer")
+    warnings = bundle.metadata.get("warnings") or []
+    assert warnings, "expected the analyzer advisory to survive normalization"
+    assert all(isinstance(w, dict) for w in warnings), warnings
+    assert any(w.get("message") == advisory for w in warnings), warnings
+
+
+def test_dict_warnings_pass_through_normalization_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A producer that already emits ``{code, message}`` dicts must be
+    left untouched — normalization is shape-coercion, not rewriting.
+    """
+
+    dict_warning = {"code": "W_SOMETHING", "message": "already structured"}
+    cls, fn = _make_analyzer_mock(
+        metadata={"source": "analyzer", "warnings": [dict_warning]},
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+
+    bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer")
+    warnings = bundle.metadata.get("warnings") or []
+    assert dict_warning in warnings
+
+
 def test_analyzer_strategy_raises_when_extra_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

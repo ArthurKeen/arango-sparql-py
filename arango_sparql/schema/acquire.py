@@ -85,6 +85,16 @@ logger = logging.getLogger(__name__)
 # ``strategy="heuristic"`` request.
 W_ANALYZER_NOT_INSTALLED: str = "ANALYZER_NOT_INSTALLED"
 
+# Code stamped on a warning that arrived as a *bare string* rather than the
+# canonical ``{code, message}`` dict. The analyzer (and some of its
+# downstream exporters) emit free-text advisories — e.g. "LLM provider not
+# configured, falling back to heuristic baseline inference" — as plain
+# strings, but every ``warnings`` field in the wire contract
+# (``service/models.py``) is typed ``list[dict]``. Coercing at the bundle
+# boundary (:func:`_normalize_bundle_warnings`) keeps that invariant so a
+# string advisory cannot 500 the response-model validation.
+W_ANALYZER_ADVISORY: str = "W_ANALYZER_ADVISORY"
+
 # Kept for backward-import compat — older slices referenced this
 # name. Both codes are emitted on the auto-fallback path: the
 # provenance marker and the install hint coexist on the same
@@ -186,6 +196,7 @@ def acquire_mapping_bundle(
     )
     bundle = _apply_rpt_enrichment(db, bundle, when=when)
     bundle = _apply_edge_endpoint_enrichment(db, bundle, when=when)
+    bundle = _normalize_bundle_warnings(bundle)
     bundle = _stamp_acquisition_timestamp(bundle, when=when)
     return bundle
 
@@ -671,6 +682,52 @@ def _attach_warning(
         entry["install_hint"] = install_hint
     warnings.append(entry)
     new_metadata["warnings"] = warnings
+    return MappingBundle(
+        conceptual_schema=bundle.conceptual_schema,
+        physical_mapping=bundle.physical_mapping,
+        metadata=new_metadata,
+        owl_turtle=bundle.owl_turtle,
+        source=bundle.source,
+    )
+
+
+def _normalize_warning_entry(entry: Any) -> dict[str, Any]:
+    """Coerce one warning into the canonical ``{code, message}`` dict.
+
+    Dicts pass through untouched (the catalogue producers already emit
+    the right shape). A bare string is wrapped under
+    :data:`W_ANALYZER_ADVISORY`; any other type is stringified so the
+    wire shape stays ``dict[str, Any]`` no matter what an upstream
+    producer hands us.
+    """
+
+    if isinstance(entry, dict):
+        return entry
+    return {"code": W_ANALYZER_ADVISORY, "message": str(entry)}
+
+
+def _normalize_bundle_warnings(bundle: MappingBundle) -> MappingBundle:
+    """Ensure ``metadata.warnings`` is a list of ``{code, message}`` dicts.
+
+    The wire contract (:mod:`arango_sparql.service.models`) types every
+    ``warnings`` field as ``list[dict]``; the analyzer, however, can attach
+    free-text string advisories (e.g. the "LLM provider not configured"
+    baseline-inference note). Left unconverted those strings fail the
+    response-model validation and surface as an opaque 500 on
+    ``/schema/introspect`` and ``/schema/force-reacquire``. Normalising
+    here — at the single point every bundle flows through — restores the
+    invariant for *all* consumers (routes, planner, NL pipeline).
+
+    Returns *bundle* unchanged when there is nothing to fix (no warnings,
+    or all already dicts) so the common path allocates nothing.
+    """
+
+    raw = (bundle.metadata or {}).get("warnings")
+    if not isinstance(raw, list) or all(isinstance(w, dict) for w in raw):
+        return bundle
+
+    new_metadata = dict(bundle.metadata)
+    new_metadata["warnings"] = [_normalize_warning_entry(w) for w in raw]
     return MappingBundle(
         conceptual_schema=bundle.conceptual_schema,
         physical_mapping=bundle.physical_mapping,
