@@ -905,6 +905,7 @@ advisories" panel.
 | `W_SCHEMA_RPT_INFERRED` | The RPT detector flagged a collection as triples-shaped but the OWL ontology did not declare it as such. Resolver treats it as RPT and surfaces this so the operator can either accept the inference or annotate the OWL. |
 | `W_SCHEMA_HYBRID_DETECTED` | The mapping contains entities of two or more `style` values (e.g. one `RPT` + one `LABEL`). Informational only; useful for the UI banner. |
 | `W_SCHEMA_HEURISTIC_FALLBACK` | The mapping was acquired heuristically because `arangodb-schema-analyzer` was not importable (`SCHEMA_ANALYZER_REQUIRED=false`) or because a transient analyzer error fell back per `ARANGO_SPARQL_ALLOW_HEURISTIC=true`. Pairs with the route-layer `503` only when both opt-outs are off (see §6.3.4). |
+| `W_ANALYZER_ADVISORY` | Carries a free-text advisory the analyzer attached to its own `metadata.warnings` as a bare string (e.g. "LLM provider not configured; using heuristic baseline inference"). `acquire_mapping_bundle` normalizes such strings into this `{code, message}` shape at the bundle boundary so a string advisory cannot fail the `list[dict]` response-model validation (which previously surfaced as an opaque `500` on `/schema/introspect` against a fresh database). Informational only. |
 | `W_SCHEMA_LOW_CONFIDENCE` | `metadata.confidence < 0.5`; the operator should review the mapping before relying on it for a production workload. |
 | `W_SCHEMA_DRIFT_STATS` | `/schema/status` detected a counts-fingerprint change since last refresh. Cardinality-aware planning may be stale. |
 | `W_SCHEMA_DRIFT_SHAPE` | `/schema/status` detected a shape-fingerprint change since last refresh. The mapping itself is stale; a re-acquire is recommended. |
@@ -3111,12 +3112,27 @@ supplies them per `/connect`).
 | --- | --- | --- | --- |
 | `ARANGO_HOST` | `localhost` | no | |
 | `ARANGO_PORT` | `8529` | no | |
-| `ARANGO_DB` | `_system` | no | |
+| `ARANGO_DB` | `_system` | no | Connect-defaults database. When set to a dedicated database (e.g. `sparql-to-aql`), the service **auto-creates it on boot** if missing — see the bootstrap note below. |
 | `ARANGO_USER` | `root` | no | |
 | `ARANGO_PASSWORD` | empty | no | Documented dev-only default; never use in prod |
 | `ARANGO_USE_TLS` | `false` | no | |
 | `ARANGO_CA_BUNDLE_PATH` | empty | no | Path to PEM bundle for ArangoOasis or self-signed clusters |
 | `ARANGO_POOL_SIZE` | `16` | no | python-arango connection pool size per tenant |
+| `ARANGO_SPARQL_SKIP_DB_BOOTSTRAP` | `false` | no | Opt out of the boot-time `ARANGO_DB` auto-create (below). For operators who provision databases out-of-band. |
+
+**Database bootstrap.** ArangoDB never auto-creates a database, so
+pointing `ARANGO_DB` at a fresh database would otherwise fail every
+`/connect` until it is created by hand. On boot (`main.py`), and **only
+outside `PUBLIC_MODE`**, the service runs a best-effort
+`maybe_bootstrap_configured_database()` that creates `ARANGO_DB` via the
+`_system` catalogue when it is missing (`_system` itself is skipped —
+it always exists). It is *best-effort*: any connection/permission
+failure is logged and swallowed so an ArangoDB outage can never stop
+the translation-only service from starting. Suppressed entirely in
+`PUBLIC_MODE` (public deployments provision databases explicitly) or
+when `ARANGO_SPARQL_SKIP_DB_BOOTSTRAP=true`. The same logic is exposed
+out-of-band as `scripts/ensure_database.py` for explicit/demo
+provisioning.
 
 ### A.5 Schema acquisition & cache
 
@@ -3173,6 +3189,7 @@ supplies them per `/connect`).
 | --- | --- | --- | --- |
 | `VITE_BASE_PATH` | `/` | no | UI base path when served from a sub-path |
 | `VITE_API_BASE_URL` | empty | no | Override API origin for cross-origin UI deployments |
+| `SPARQL_API_TARGET` | `http://localhost:8001` | no | Dev-server (`vite.config.ts`) proxy target for every API path. Override when the backend runs on an alternate port (e.g. `http://localhost:8002` when `:8001` is taken by the sibling Cypher service). |
 
 ### A.10 Test-only & internal
 
