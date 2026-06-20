@@ -23,6 +23,9 @@ ENV/
 *~
 .DS_Store
 
+# Local-only Cursor rule (kept private per developer)
+.cursor/rules/arango-frontend-rules.mdc
+
 # Testing / Coverage
 .coverage
 .coverage.*
