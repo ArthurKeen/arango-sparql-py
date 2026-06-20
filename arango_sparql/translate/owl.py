@@ -69,6 +69,7 @@ __all__ = [
     "OwlParseError",
     "count_triples",
     "mapping_to_turtle",
+    "owl_graph_view",
     "resolve_max_triples",
     "turtle_to_mapping",
 ]
@@ -472,3 +473,139 @@ def mapping_to_turtle(
         graph.bind("owl", OWL, replace=True)
         graph.bind("rdfs", RDFS, replace=True)
     return graph.serialize(format="turtle")
+
+
+# ---------------------------------------------------------------------------
+# OWL/Turtle → schema-graph view (classes + properties)
+# ---------------------------------------------------------------------------
+
+
+def _graph_view_comment(graph: Graph, subject: URIRef) -> str | None:
+    """Return the first ``rdfs:comment`` literal on *subject*, or ``None``."""
+
+    obj = next(graph.objects(subject, RDFS.comment), None)
+    if isinstance(obj, Literal):
+        text = str(obj)
+        return text or None
+    return None
+
+
+def _classes_view_from_graph(graph: Graph) -> list[dict[str, Any]]:
+    """Project every ``owl:Class`` resource into the UI class shape."""
+
+    out: list[dict[str, Any]] = []
+    for cls_iri in sorted(set(graph.subjects(RDF.type, OWL.Class)), key=str):
+        if not isinstance(cls_iri, URIRef):
+            continue
+        name = local_name(cls_iri)
+        if not name:
+            continue
+        supers = sorted(
+            str(s)
+            for s in graph.objects(cls_iri, RDFS.subClassOf)
+            if isinstance(s, URIRef)
+        )
+        item: dict[str, Any] = {
+            "iri": str(cls_iri),
+            "localName": name,
+            "superClasses": supers,
+        }
+        comment = _graph_view_comment(graph, cls_iri)
+        if comment:
+            item["comment"] = comment
+        out.append(item)
+    return out
+
+
+# OWL property types projected into the graph view, in precedence order.
+# A resource typed as more than one (rare, but legal RDF) is emitted once
+# under the first matching kind so the renderer never sees a duplicate.
+_PROPERTY_KINDS: tuple[tuple[Any, str], ...] = (
+    (OWL.ObjectProperty, "object"),
+    (OWL.DatatypeProperty, "datatype"),
+    (OWL.AnnotationProperty, "annotation"),
+)
+
+
+def _properties_view_from_graph(graph: Graph) -> list[dict[str, Any]]:
+    """Project every OWL property resource into the UI property shape."""
+
+    out: list[dict[str, Any]] = []
+    seen: set[URIRef] = set()
+    for rdf_type, kind in _PROPERTY_KINDS:
+        for prop_iri in sorted(set(graph.subjects(RDF.type, rdf_type)), key=str):
+            if not isinstance(prop_iri, URIRef) or prop_iri in seen:
+                continue
+            name = local_name(prop_iri)
+            if not name:
+                continue
+            seen.add(prop_iri)
+            domain = sorted(
+                str(o)
+                for o in graph.objects(prop_iri, RDFS.domain)
+                if isinstance(o, URIRef)
+            )
+            rng = sorted(
+                str(o)
+                for o in graph.objects(prop_iri, RDFS.range)
+                if isinstance(o, URIRef)
+            )
+            item: dict[str, Any] = {
+                "iri": str(prop_iri),
+                "localName": name,
+                "domain": domain,
+                "range": rng,
+                "kind": kind,
+            }
+            comment = _graph_view_comment(graph, prop_iri)
+            if comment:
+                item["comment"] = comment
+            out.append(item)
+    return out
+
+
+def owl_graph_view(
+    turtle: str | None, *, max_triples: int | None = None
+) -> dict[str, list[dict[str, Any]]]:
+    """Parse OWL/Turtle into the UI schema-graph shape.
+
+    Returns ``{"classes": [...], "properties": [...]}`` where each class is
+    ``{iri, localName, superClasses, comment?}`` and each property is
+    ``{iri, localName, domain, range, kind, comment?}`` (``kind`` ∈
+    ``"object" | "datatype" | "annotation"``).
+
+    This is the server-side counterpart to the frontend's ``n3``-based
+    parser: both produce the identical ``OwlClass`` / ``OwlProperty`` shape
+    consumed by ``CytoscapeSchemaGraph``, so a database-derived schema and
+    an in-editor ontology render the same way.
+
+    An empty / whitespace-only / ``None`` input yields empty lists rather
+    than raising — the GRAPH tab treats "nothing to draw" as a normal,
+    non-error state. A malformed ontology raises :class:`OwlParseError`
+    (``E_OWL_PARSE``); an oversized one raises :class:`OwlBombError`
+    (``E_OWL_TOO_LARGE``), reusing the same triple cap as
+    :func:`turtle_to_mapping` so a direct library call cannot bypass it.
+    """
+
+    if turtle is None or not isinstance(turtle, str) or not turtle.strip():
+        return {"classes": [], "properties": []}
+
+    graph = Graph()
+    try:
+        graph.parse(data=turtle, format="turtle")
+    except Exception as exc:
+        raise OwlParseError(f"failed to parse Turtle: {exc}") from exc
+
+    cap = resolve_max_triples(max_triples)
+    triples = count_triples(graph)
+    if triples > cap:
+        raise OwlBombError(
+            f"OWL ontology exceeds the {MAPPING_IMPORT_MAX_TRIPLES_ENV} "
+            f"cap ({triples} > {cap} triples). Lower the cap, split the "
+            "ontology, or push it directly to the analyzer."
+        )
+
+    return {
+        "classes": _classes_view_from_graph(graph),
+        "properties": _properties_view_from_graph(graph),
+    }

@@ -82,10 +82,13 @@ from .models import (
     NlExplainResponse,
     NlTranslateRequest,
     NlTranslateResponse,
+    OwlClassModel,
     OwlExportRequest,
     OwlExportResponse,
     OwlImportRequest,
     OwlImportResponse,
+    OwlPropertyModel,
+    OwlSchemaResponse,
     RawAqlRequest,
     RawAqlResponse,
     SchemaFingerprintBlock,
@@ -109,7 +112,7 @@ from .models import (
 
 # 3) HTTP-shape mapping helpers — re-exported so tests can build
 #    resolvers via the public surface without importing the submodule.
-from .mapping import _mapping_from_dict, _resolver_from_request
+from .mapping import _resolver_from_request
 
 # 4) Process-wide extension registry singleton (stub today — see
 #    :mod:`.registry`). Re-exported so the route layer's import path
@@ -193,10 +196,13 @@ __all__ = [
     "NlExplainResponse",
     "NlTranslateRequest",
     "NlTranslateResponse",
+    "OwlClassModel",
     "OwlExportRequest",
     "OwlExportResponse",
     "OwlImportRequest",
     "OwlImportResponse",
+    "OwlPropertyModel",
+    "OwlSchemaResponse",
     "RawAqlRequest",
     "RawAqlResponse",
     "SchemaFingerprintBlock",

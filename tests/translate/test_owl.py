@@ -33,6 +33,7 @@ from arango_sparql.translate.owl import (
     OwlParseError,
     count_triples,
     mapping_to_turtle,
+    owl_graph_view,
     resolve_max_triples,
     turtle_to_mapping,
 )
@@ -497,3 +498,81 @@ def test_count_triples_matches_rdflib_len() -> None:
     g = Graph()
     g.parse(data=PG_TURTLE, format="turtle")
     assert count_triples(g) == len(g)
+
+
+# ---------------------------------------------------------------------------
+# owl_graph_view — OWL/Turtle → UI schema-graph shape
+# ---------------------------------------------------------------------------
+
+
+_GRAPH_VIEW_TTL = """
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://example.org/> .
+
+ex:Person a owl:Class ; rdfs:comment "A person" .
+ex:Org a owl:Class .
+ex:Employee a owl:Class ; rdfs:subClassOf ex:Person .
+ex:knows a owl:ObjectProperty ; rdfs:domain ex:Person ; rdfs:range ex:Person .
+ex:worksAt a owl:ObjectProperty ; rdfs:domain ex:Person ; rdfs:range ex:Org .
+ex:name a owl:DatatypeProperty ; rdfs:domain ex:Person ; rdfs:range rdfs:Literal .
+ex:note a owl:AnnotationProperty ; rdfs:domain ex:Org .
+"""
+
+
+def test_graph_view_projects_classes_with_supers_and_comments() -> None:
+    view = owl_graph_view(_GRAPH_VIEW_TTL)
+    by_name = {c["localName"]: c for c in view["classes"]}
+    assert set(by_name) == {"Person", "Org", "Employee"}
+    assert by_name["Person"]["comment"] == "A person"
+    # subClassOf is captured as a full IRI list.
+    assert by_name["Employee"]["superClasses"] == ["http://example.org/Person"]
+    # No comment → key omitted (not an empty string).
+    assert "comment" not in by_name["Org"]
+
+
+def test_graph_view_classifies_property_kinds() -> None:
+    view = owl_graph_view(_GRAPH_VIEW_TTL)
+    by_name = {p["localName"]: p for p in view["properties"]}
+    assert by_name["knows"]["kind"] == "object"
+    assert by_name["worksAt"]["kind"] == "object"
+    assert by_name["name"]["kind"] == "datatype"
+    assert by_name["note"]["kind"] == "annotation"
+
+
+def test_graph_view_object_property_domain_range_are_class_iris() -> None:
+    view = owl_graph_view(_GRAPH_VIEW_TTL)
+    works = next(p for p in view["properties"] if p["localName"] == "worksAt")
+    assert works["domain"] == ["http://example.org/Person"]
+    assert works["range"] == ["http://example.org/Org"]
+
+
+@pytest.mark.parametrize("empty", [None, "", "   ", "\n\t"])
+def test_graph_view_empty_input_yields_empty_lists(empty: Any) -> None:
+    assert owl_graph_view(empty) == {"classes": [], "properties": []}
+
+
+def test_graph_view_malformed_turtle_raises_owl_parse_error() -> None:
+    with pytest.raises(OwlParseError) as excinfo:
+        owl_graph_view("this is not turtle :{(")
+    assert excinfo.value.code == "E_OWL_PARSE"
+
+
+def test_graph_view_respects_triple_cap() -> None:
+    with pytest.raises(OwlBombError) as excinfo:
+        owl_graph_view(_GRAPH_VIEW_TTL, max_triples=1)
+    assert excinfo.value.code == "E_OWL_TOO_LARGE"
+
+
+def test_graph_view_property_typed_twice_emits_once_object_wins() -> None:
+    """A resource typed as both ObjectProperty and DatatypeProperty (legal
+    but unusual RDF) must appear exactly once, under the object kind."""
+    ttl = """
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix ex: <http://example.org/> .
+    ex:rel a owl:ObjectProperty, owl:DatatypeProperty .
+    """
+    props = owl_graph_view(ttl)["properties"]
+    rel = [p for p in props if p["localName"] == "rel"]
+    assert len(rel) == 1
+    assert rel[0]["kind"] == "object"

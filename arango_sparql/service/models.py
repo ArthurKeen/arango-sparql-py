@@ -13,7 +13,7 @@ model.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -555,4 +555,60 @@ class OwlExportResponse(BaseModel):
     turtle: str
     mime_type: str = "text/turtle"
     triple_count: int = 0
+    elapsed_ms: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# OWL schema graph view (PRD §6.4 — ``GET /schema/owl``)
+# ---------------------------------------------------------------------------
+#
+# Structured projection of the connected database's OWL ontology for the
+# UI's GRAPH tab. Classes become nodes, object properties become edges,
+# datatype/annotation properties become per-class property bags. The shape
+# is identical to the frontend's client-side ``n3`` parser output so the
+# Cytoscape renderer can consume either source interchangeably.
+
+
+class OwlClassModel(BaseModel):
+    """One OWL class in the schema-graph view (a node)."""
+
+    iri: str
+    local_name: str = Field(..., alias="localName")
+    super_classes: list[str] = Field(default_factory=list, alias="superClasses")
+    comment: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class OwlPropertyModel(BaseModel):
+    """One OWL property in the schema-graph view.
+
+    ``kind`` discriminates how the renderer draws it: ``object`` →
+    domain→range edge; ``datatype`` / ``annotation`` → a property bag
+    glyph attached to each domain class.
+    """
+
+    iri: str
+    local_name: str = Field(..., alias="localName")
+    domain: list[str] = Field(default_factory=list)
+    range: list[str] = Field(default_factory=list)
+    kind: Literal["object", "datatype", "annotation"]
+    comment: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class OwlSchemaResponse(BaseModel):
+    """Response body for ``GET /schema/owl``.
+
+    ``turtle`` carries the source ontology so a UI can round-trip it
+    (e.g. populate the Turtle editor) without a second request. Classes
+    and properties are the structured projection the GRAPH tab renders.
+    """
+
+    classes: list[OwlClassModel] = Field(default_factory=list)
+    properties: list[OwlPropertyModel] = Field(default_factory=list)
+    turtle: str | None = None
+    source: dict[str, Any] | None = None
+    warnings: list[dict[str, Any]] = Field(default_factory=list)
     elapsed_ms: float = 0.0

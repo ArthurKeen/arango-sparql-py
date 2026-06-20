@@ -894,6 +894,139 @@ def test_force_reacquire_invalid_strategy_returns_422(
 
 
 # ---------------------------------------------------------------------------
+# /schema/owl — OWL schema-graph projection
+# ---------------------------------------------------------------------------
+
+
+_OWL_TTL = """
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix ex: <http://example.org/> .
+
+ex:Person a owl:Class ; rdfs:label "Person" .
+ex:Org a owl:Class ; rdfs:comment "An organisation" .
+ex:knows a owl:ObjectProperty ; rdfs:domain ex:Person ; rdfs:range ex:Person .
+ex:worksAt a owl:ObjectProperty ; rdfs:domain ex:Person ; rdfs:range ex:Org .
+ex:name a owl:DatatypeProperty ; rdfs:domain ex:Person ; rdfs:range rdfs:Literal .
+"""
+
+
+def _bundle_with_owl() -> MappingBundle:
+    """A bundle carrying an inline OWL ontology so ``/schema/owl`` is
+    deterministic: ``mapping_to_turtle`` returns the inline Turtle
+    verbatim and ``owl_graph_view`` parses it back into the graph shape.
+    """
+
+    return MappingBundle(
+        conceptual_schema={"entities": [], "relationships": []},
+        physical_mapping={"entities": {}, "relationships": {}},
+        metadata={"source": "test_fixture_owl", "warnings": []},
+        owl_turtle=_OWL_TTL,
+        source=MappingSource(kind="imported_owl", notes="owl fixture"),
+    )
+
+
+def test_owl_requires_session(client: TestClient) -> None:
+    resp = client.get("/schema/owl")
+    assert resp.status_code == 401
+
+
+def test_owl_happy_path_projects_classes_and_properties(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    stub_acquire["bundle"] = _bundle_with_owl()
+    resp = client.get(
+        "/schema/owl",
+        headers={"X-Arango-Session": session_token},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+
+    # Classes → nodes (camelCase aliases, matching the frontend shape).
+    class_names = {c["localName"] for c in body["classes"]}
+    assert class_names == {"Person", "Org"}
+    org = next(c for c in body["classes"] if c["localName"] == "Org")
+    assert org["comment"] == "An organisation"
+
+    # Object properties → edges; datatype property → bag (kind tag).
+    by_name = {p["localName"]: p for p in body["properties"]}
+    assert by_name["knows"]["kind"] == "object"
+    assert by_name["knows"]["domain"] == ["http://example.org/Person"]
+    assert by_name["knows"]["range"] == ["http://example.org/Person"]
+    assert by_name["worksAt"]["range"] == ["http://example.org/Org"]
+    assert by_name["name"]["kind"] == "datatype"
+
+    # The source TTL rides along for round-tripping into the editor.
+    assert "ex:Person" in body["turtle"]
+    assert body["source"]["kind"] == "imported_owl"
+
+
+def test_owl_forwards_include_owl_to_acquire(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    stub_acquire["bundle"] = _bundle_with_owl()
+    client.get("/schema/owl", headers={"X-Arango-Session": session_token})
+    assert stub_acquire["calls"], "acquire was not called"
+    assert stub_acquire["calls"][0]["include_owl"] is True
+
+
+def test_owl_empty_bundle_returns_empty_graph(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    """An empty database (no entities, no inline OWL) must yield empty
+    class/property lists with a 200 — "nothing to draw" is a normal,
+    non-error state for the GRAPH tab, not a 404/500.
+    """
+
+    stub_acquire["bundle"] = MappingBundle(
+        conceptual_schema={"entities": [], "relationships": []},
+        physical_mapping={"entities": {}, "relationships": {}},
+        metadata={"source": "empty_fixture", "warnings": []},
+        source=MappingSource(kind="analyzer", notes="empty"),
+    )
+    resp = client.get(
+        "/schema/owl",
+        headers={"X-Arango-Session": session_token},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["classes"] == []
+    assert body["properties"] == []
+
+
+def test_owl_strategy_invalid_returns_422(
+    client: TestClient, session_token: str
+) -> None:
+    resp = client.get(
+        "/schema/owl?strategy=bogus",
+        headers={"X-Arango-Session": session_token},
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "E_SCHEMA_STRATEGY_INVALID"
+
+
+def test_owl_second_call_is_cache_hit(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    stub_acquire["bundle"] = _bundle_with_owl()
+    headers = {"X-Arango-Session": session_token}
+    first = client.get("/schema/owl", headers=headers)
+    assert first.status_code == 200
+    second = client.get("/schema/owl", headers=headers)
+    assert second.status_code == 200
+    # Cache shared with introspect → only one acquire call.
+    assert len(stub_acquire["calls"]) == 1
+
+
+# ---------------------------------------------------------------------------
 # OpenAPI surface
 # ---------------------------------------------------------------------------
 
@@ -903,6 +1036,7 @@ def test_openapi_includes_all_schema_routes(client: TestClient) -> None:
     paths = set(spec.get("paths", {}).keys())
     expected = {
         "/schema/introspect",
+        "/schema/owl",
         "/schema/properties",
         "/schema/summary",
         "/schema/statistics",

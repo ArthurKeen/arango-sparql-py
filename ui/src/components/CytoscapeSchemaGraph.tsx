@@ -63,12 +63,19 @@ export default function CytoscapeSchemaGraph({ classes, properties }: Props) {
       },
     }));
 
+    // Only classes exist as nodes; an object property whose domain/range
+    // points at an IRI we have no class node for (e.g. an undeclared range)
+    // would make Cytoscape throw on a dangling edge. Guard by checking the
+    // node id set before adding each edge.
+    const nodeIds = new Set(classes.map((c) => c.iri));
     const cyEdges: cytoscape.ElementDefinition[] = [];
     let edgeIdx = 0;
     for (const p of properties) {
       if (p.kind !== "object") continue;
       for (const from of p.domain) {
+        if (!nodeIds.has(from)) continue;
         for (const to of p.range) {
+          if (!nodeIds.has(to)) continue;
           cyEdges.push({
             data: {
               id: `edge-${edgeIdx++}`,
@@ -130,7 +137,6 @@ export default function CytoscapeSchemaGraph({ classes, properties }: Props) {
       ],
       minZoom: 0.15,
       maxZoom: 5,
-      wheelSensitivity: 0.3,
     });
 
     cyRef.current = cy;

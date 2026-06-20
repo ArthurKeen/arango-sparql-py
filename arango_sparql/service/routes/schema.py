@@ -45,10 +45,17 @@ from ...translate.mapping import (
     mapping_from_wire_dict,
     mapping_to_wire_dict,
 )
+from ...translate.owl import (
+    OwlBombError,
+    OwlParseError,
+    mapping_to_turtle,
+    owl_graph_view,
+)
 from ..app import app
 from ..models import (
     SchemaFingerprintBlock,
     SchemaForceReacquireResponse,
+    OwlSchemaResponse,
     SchemaIntrospectResponse,
     SchemaInvalidateCacheResponse,
     SchemaPropertiesResponse,
@@ -413,6 +420,104 @@ def schema_introspect(
         warnings=warnings,
         source=_bundle_source_dict(bundle),
         cache_hit=cache_hit,
+        elapsed_ms=elapsed_ms,
+    )
+
+
+# ---------------------------------------------------------------------------
+# 1b) GET /schema/owl
+# ---------------------------------------------------------------------------
+
+
+@app.get("/schema/owl", response_model=OwlSchemaResponse)
+def schema_owl(
+    force: bool = False,
+    strategy: str = "auto",
+    _: None = Depends(_check_compute_rate_limit),
+    session: _Session = Depends(_get_session),
+) -> OwlSchemaResponse:
+    """OWL schema-graph projection of the connected database.
+
+    Acquires (or reuses the cached) :class:`MappingBundle` for the
+    session's database, serialises it to OWL/Turtle via
+    :func:`mapping_to_turtle`, and projects it into the
+    ``{classes, properties}`` shape the UI's GRAPH tab renders (the same
+    shape the frontend's client-side ``n3`` parser produces for in-editor
+    ontologies). Acquisition, cache, and ``strategy`` semantics mirror
+    ``/schema/introspect``.
+    """
+
+    typed_strategy = _strategy_or_422(strategy)
+    t0 = time.perf_counter()
+
+    try:
+        bundle, cache_hit = _get_or_acquire(
+            session.db, force=force, strategy=typed_strategy, include_owl=True
+        )
+    except AnalyzerNotInstalledError as exc:
+        log_endpoint_timing(
+            "/schema/owl",
+            round((time.perf_counter() - t0) * 1000, 1),
+            status="error",
+            code="E_ANALYZER_NOT_INSTALLED",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": _sanitize_error(str(exc)),
+                "code": "E_ANALYZER_NOT_INSTALLED",
+                "install_hint": ANALYZER_INSTALL_HINT,
+            },
+        ) from exc
+    except MappingError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
+
+    try:
+        turtle = mapping_to_turtle(bundle)
+        view = owl_graph_view(turtle)
+    except (OwlParseError, OwlBombError) as exc:
+        # The Turtle we just serialised could not be re-parsed into the
+        # graph view — this is an internal-consistency failure, but it is
+        # driven by the (possibly customer-supplied) ontology, so surface
+        # it as a 422 with the typed code rather than a 500.
+        log_endpoint_timing(
+            "/schema/owl",
+            round((time.perf_counter() - t0) * 1000, 1),
+            status="error",
+            code=exc.code,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
+    except MappingError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": _sanitize_error(str(exc)), "code": exc.code},
+        ) from exc
+
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    warnings = (bundle.metadata or {}).get("warnings") or []
+    log_endpoint_timing(
+        "/schema/owl",
+        elapsed_ms,
+        force=force,
+        strategy=typed_strategy,
+        cache_hit=cache_hit,
+        classes=len(view["classes"]),
+        properties=len(view["properties"]),
+        warnings=len(warnings),
+        source=(bundle.source.kind if bundle.source is not None else "unknown"),
+    )
+    return OwlSchemaResponse(
+        classes=view["classes"],
+        properties=view["properties"],
+        turtle=turtle,
+        source=_bundle_source_dict(bundle),
+        warnings=warnings,
         elapsed_ms=elapsed_ms,
     )
 

@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getOwlSchema, type OwlClass, type OwlProperty } from "../api/client";
+import { owlSchemaFromTurtle } from "../api/owlFromTurtle";
 import CytoscapeSchemaGraph from "./CytoscapeSchemaGraph";
 
 // Schema graph viewer for the SPARQL UI.
@@ -9,49 +10,72 @@ import CytoscapeSchemaGraph from "./CytoscapeSchemaGraph";
 // Cytoscape graph (classes as nodes, properties as edges) so the
 // user can see the OWL structure they're querying against.
 //
-// TODO(schema-owl-endpoint): the SPARQL backend does not implement
-// `/schema/owl` yet. Once it does, the component will:
-//   1. Pull `OwlSchemaResponse` (see `api/client.ts`) and pass it to
-//      `CytoscapeSchemaGraph` for layout + interaction.
-//   2. Optionally accept the ontology TTL the user is editing in
-//      `MappingPanel`, parse it client-side via rdflib-js or a small
-//      local turtle parser, and render that instead of the
-//      server-side OWL — useful when the user is iterating on a
-//      proposed ontology before persisting it.
-//
-// Until then we render a "No schema loaded" placeholder so the
-// layout slot is visible and obviously aspirational.
+// Two data sources, in priority order:
+//   1. The OWL/Turtle the user is editing in the Turtle tab — parsed
+//      client-side via `owlSchemaFromTurtle` (n3). This renders the
+//      in-flight ontology immediately, with no round-trip, and works
+//      even against an empty database. Preferred whenever the editor
+//      holds a non-trivial ontology.
+//   2. The backend `/schema/owl` endpoint — the database-derived OWL
+//      schema. Used when the editor is empty so a connected user still
+//      sees the schema the analyzer inferred from their collections.
 
 interface Props {
-  // Raw OWL/Turtle text the user is editing in `MappingPanel`. The
-  // future client-side render path will parse this; today we display
-  // it as a hint that the user has an ontology in flight.
+  // Raw OWL/Turtle text the user is editing in `MappingPanel`. Parsed
+  // client-side and rendered in preference to the backend schema.
   ontologyTtl?: string;
 }
 
 export default function SchemaGraph({ ontologyTtl }: Props) {
-  const [classes, setClasses] = useState<OwlClass[]>([]);
-  const [properties, setProperties] = useState<OwlProperty[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const [serverClasses, setServerClasses] = useState<OwlClass[]>([]);
+  const [serverProperties, setServerProperties] = useState<OwlProperty[]>([]);
+  const [serverError, setServerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Parse the in-editor ontology client-side. A parse failure surfaces a
+  // message rather than crashing the panel; an empty editor yields empty
+  // lists so we fall through to the backend schema.
+  const { editorClasses, editorProperties, editorError } = useMemo(() => {
+    try {
+      const view = owlSchemaFromTurtle(ontologyTtl);
+      return {
+        editorClasses: view.classes,
+        editorProperties: view.properties,
+        editorError: null as string | null,
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return {
+        editorClasses: [] as OwlClass[],
+        editorProperties: [] as OwlProperty[],
+        editorError: msg,
+      };
+    }
+  }, [ontologyTtl]);
+
+  const hasEditorSchema =
+    editorClasses.length > 0 || editorProperties.length > 0;
+
+  // Only consult the backend when the editor has nothing to render — the
+  // editor ontology is the more immediate, user-controlled source.
   useEffect(() => {
+    if (hasEditorSchema) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
-    setError(null);
+    setServerError(null);
     getOwlSchema()
       .then((resp) => {
         if (cancelled) return;
-        setClasses(resp.classes ?? []);
-        setProperties(resp.properties ?? []);
+        setServerClasses(resp.classes ?? []);
+        setServerProperties(resp.properties ?? []);
       })
       .catch((err) => {
         if (cancelled) return;
-        // Endpoint not implemented yet → friendly placeholder. We
-        // distinguish 404 from real errors so a misconfigured
-        // backend doesn't masquerade as "endpoint missing".
         const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
+        setServerError(msg);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -59,7 +83,16 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hasEditorSchema]);
+
+  if (hasEditorSchema) {
+    return (
+      <CytoscapeSchemaGraph
+        classes={editorClasses}
+        properties={editorProperties}
+      />
+    );
+  }
 
   if (loading) {
     return (
@@ -69,31 +102,33 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
     );
   }
 
-  if (classes.length === 0 && properties.length === 0) {
+  if (serverClasses.length > 0 || serverProperties.length > 0) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
-        <div className="text-sm text-gray-300 font-medium">No schema loaded</div>
-        <div className="text-xs text-gray-500 max-w-md">
-          Load an OWL/Turtle ontology in the Turtle tab (or the
-          backend's <code className="text-gray-400">/schema/owl</code>{" "}
-          endpoint, when wired up) to see classes and property edges
-          here.
-        </div>
-        {ontologyTtl && ontologyTtl.trim().length > 0 && (
-          <div className="text-[11px] text-gray-600 max-w-md">
-            You have {ontologyTtl.length.toLocaleString()} bytes of
-            Turtle in the editor — client-side rendering of in-flight
-            ontologies is a planned follow-up.
-          </div>
-        )}
-        {error && (
-          <div className="text-[11px] text-amber-500 max-w-md break-words">
-            <span className="font-mono">/schema/owl</span>: {error}
-          </div>
-        )}
-      </div>
+      <CytoscapeSchemaGraph
+        classes={serverClasses}
+        properties={serverProperties}
+      />
     );
   }
 
-  return <CytoscapeSchemaGraph classes={classes} properties={properties} />;
+  return (
+    <div className="h-full flex flex-col items-center justify-center gap-3 px-6 text-center">
+      <div className="text-sm text-gray-300 font-medium">No schema loaded</div>
+      <div className="text-xs text-gray-500 max-w-md">
+        Paste an OWL/Turtle ontology in the Turtle tab to see its classes
+        and property edges here, or connect to a database whose schema the
+        analyzer can infer.
+      </div>
+      {editorError && (
+        <div className="text-[11px] text-amber-500 max-w-md break-words">
+          Turtle parse error: {editorError}
+        </div>
+      )}
+      {serverError && !editorError && (
+        <div className="text-[11px] text-gray-600 max-w-md break-words">
+          <span className="font-mono">/schema/owl</span>: {serverError}
+        </div>
+      )}
+    </div>
+  );
 }

@@ -388,7 +388,6 @@ export default function CytoscapeGraph({
       ],
       minZoom: 0.15,
       maxZoom: 5,
-      wheelSensitivity: 0.3,
     });
 
     cy.on("tap", "node", (evt: EventObject) => {
