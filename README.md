@@ -100,6 +100,15 @@ uv run arango-sparql-py translate \
   --ontology-file my-schema.ttl
 ```
 
+> **Dedicated database (no manual setup).** Point `ARANGO_DB` at a
+> database other than `_system` (e.g. `ARANGO_DB=sparql-to-aql` in
+> `.env`) and the service **auto-creates it on first boot** when it is
+> missing — `main.py` runs a best-effort provisioning step outside
+> public mode. ArangoDB never auto-creates databases, so this saves a
+> manual step before `/connect` works. To provision out-of-band instead,
+> run `uv run python scripts/ensure_database.py`; to disable the boot
+> step, set `ARANGO_SPARQL_SKIP_DB_BOOTSTRAP=1`.
+
 > Sibling-repo work (porting from the legacy Foxx service or mirroring
 > patterns from `arango-cypher-py`)? Run `./scripts/setup_references.sh`
 > to symlink them under `references/`. Symlinks are gitignored — they
