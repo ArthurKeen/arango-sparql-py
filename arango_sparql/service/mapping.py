@@ -21,8 +21,15 @@ Two payload shapes are recognised, in order of precedence:
    through the same field the Cypher project uses for its dict
    mapping). When the SPARQL service grows a richer wire shape — e.g.
    ``{"classes": [...], "properties": [...]}`` for a fully JSON-native
-   mapping — extend :func:`_mapping_from_dict` here rather than at
+   mapping — extend :func:`_graph_from_request` here rather than at
    every call site.
+
+When the caller supplies the analyzer-discovered :class:`MappingBundle`
+for the connected database, :func:`_resolver_from_request` **merges** its
+physical mapping into the inline ontology by local name (see
+:func:`_enrich_graph_with_bundle`) so a user who queries a class they
+declared but did not annotate still gets the discovered
+``phys:collectionName`` rather than the local-name fallback.
 
 Returns an *empty* resolver (graph with no triples) when neither
 field is set. The resolver's unmapped-property fallback degrades any
@@ -37,29 +44,152 @@ from __future__ import annotations
 
 from typing import Any
 
-from rdflib import Graph
+from rdflib import OWL, RDF, Graph, Literal, URIRef
 
-from ..translate.resolver import SchemaResolver
+from ..translate.mapping import MappingBundle
+from ..translate.resolver import (
+    _PHYS_NAMESPACES,
+    _SYNTHETIC_PHYS_NS,
+    SchemaResolver,
+    local_name,
+)
+
+# ---------------------------------------------------------------------------
+# Analyzer-bundle merge (enrich the inline ontology with discovered mapping)
+# ---------------------------------------------------------------------------
+#
+# The translate/execute path's resolver is graph-based: it resolves a class
+# IRI by reading the ``phys:*`` annotations on that IRI's ``owl:Class`` node.
+# A hand-authored ontology (the Turtle a user types in the UI editor) rarely
+# carries those annotations, so the resolver falls back to the IRI's local
+# name and emits ``W_SCHEMA_DEFAULT_COLLECTION``.
+#
+# The arango-schema-analyzer *does* discover the physical mapping
+# (collection names, edge collections, RPT columns, …) for the connected
+# database, but it lands in a separate :class:`MappingBundle` keyed by entity
+# *label* (local name) with synthetic ``urn:`` IRIs — so a blind graph union
+# would never match the user's ``http://…#Person`` IRI.
+#
+# The merge therefore enriches *by local name*: for each ``owl:Class`` /
+# ``owl:ObjectProperty`` in the inline graph, look up the analyzer entity /
+# relationship with the same local name and copy its ``phys:*`` annotations
+# onto the inline IRI — but only those the inline ontology did not already
+# declare. Inline annotations always win; the bundle only fills gaps.
+
+# Entity-spec field (analyzer-canonical camelCase) → ``phys:<local>`` the
+# resolver reads. ``style`` is special-cased to ``phys:mappingStyle`` to match
+# the synthesizer / resolver contract.
+_ENTITY_FIELD_TO_PHYS_LOCAL: dict[str, str] = {
+    "collectionName": "collectionName",
+    "edgeCollectionName": "edgeCollectionName",
+    "typeField": "typeField",
+    "typeValue": "typeValue",
+    "triplesCollection": "triplesCollection",
+    "subjectColumn": "subjectColumn",
+    "predicateColumn": "predicateColumn",
+    "objectUriColumn": "objectUriColumn",
+    "objectValueColumn": "objectValueColumn",
+    "tenantField": "tenantField",
+    "tenantEntity": "tenantEntity",
+    "style": "mappingStyle",
+}
+
+# Relationship-spec field → ``phys:<local>``. Subset of the entity map —
+# relationships never carry a document ``collectionName``.
+_REL_FIELD_TO_PHYS_LOCAL: dict[str, str] = {
+    "edgeCollectionName": "edgeCollectionName",
+    "typeField": "typeField",
+    "typeValue": "typeValue",
+    "triplesCollection": "triplesCollection",
+    "tenantField": "tenantField",
+    "tenantEntity": "tenantEntity",
+    "style": "mappingStyle",
+}
 
 
-def _mapping_from_dict(d: dict[str, Any] | None) -> SchemaResolver | None:
-    """Adapt a JSON mapping payload to a :class:`SchemaResolver`.
-
-    Returns ``None`` when ``d`` is ``None`` or empty so the caller can
-    short-circuit before touching the graph builder. Today the only
-    recognised key is ``"ttl"`` — a Turtle blob tunnelled through a
-    JSON envelope; future shapes get wired in here without changing
-    the route signatures.
+def _has_phys(graph: Graph, subject: URIRef, phys_local: str) -> bool:
+    """True if *subject* already carries ``phys:<phys_local>`` in any of the
+    accepted physical namespaces (so an inline annotation is never clobbered).
     """
-    if not d:
-        return None
-    ttl = d.get("ttl")
+    for ns in _PHYS_NAMESPACES:
+        if graph.value(subject, ns[phys_local]) is not None:
+            return True
+    return False
+
+
+def _apply_phys_annotations(
+    graph: Graph,
+    subject: URIRef,
+    spec: dict[str, Any],
+    field_map: dict[str, str],
+) -> None:
+    """Copy the analyzer *spec*'s physical fields onto *subject* as
+    ``phys:*`` literals, skipping any the inline ontology already declares.
+    """
+    for field_name, phys_local in field_map.items():
+        value = spec.get(field_name)
+        if value is None or value == "":
+            continue
+        if _has_phys(graph, subject, phys_local):
+            continue
+        graph.add((subject, _SYNTHETIC_PHYS_NS[phys_local], Literal(str(value))))
+
+
+def _enrich_graph_with_bundle(graph: Graph, bundle: MappingBundle) -> None:
+    """Fill missing ``phys:*`` annotations on the inline graph's classes and
+    object properties from the analyzer-discovered *bundle*, matched by local
+    name. Mutates *graph* in place. A no-op when the bundle has no entities.
+    """
+    entities = bundle.entities()
+    if entities:
+        for cls_iri in list(graph.subjects(RDF.type, OWL.Class)):
+            if not isinstance(cls_iri, URIRef):
+                continue
+            spec = entities.get(local_name(cls_iri))
+            if isinstance(spec, dict):
+                _apply_phys_annotations(
+                    graph, cls_iri, spec, _ENTITY_FIELD_TO_PHYS_LOCAL
+                )
+
+    relationships = bundle.relationships()
+    if relationships:
+        for prop_iri in list(graph.subjects(RDF.type, OWL.ObjectProperty)):
+            if not isinstance(prop_iri, URIRef):
+                continue
+            spec = relationships.get(local_name(prop_iri))
+            if isinstance(spec, dict):
+                _apply_phys_annotations(
+                    graph, prop_iri, spec, _REL_FIELD_TO_PHYS_LOCAL
+                )
+
+
+def _graph_from_request(req: Any) -> Graph:
+    """Parse the request's inline ontology into an ``rdflib.Graph``.
+
+    Inline ``ontology_ttl`` wins over a JSON ``mapping={"ttl": …}`` payload
+    (the UI's "edit ontology" affordance overrides a tunnelled mapping for
+    one-off queries). Returns an empty graph when neither is supplied.
+    """
+    ttl = getattr(req, "ontology_ttl", None)
     if isinstance(ttl, str) and ttl.strip():
-        return SchemaResolver.from_turtle(ttl)
-    return None
+        graph = Graph()
+        graph.parse(data=ttl, format="turtle")
+        return graph
+
+    mapping = getattr(req, "mapping", None)
+    if isinstance(mapping, dict) and mapping:
+        inner = mapping.get("ttl")
+        if isinstance(inner, str) and inner.strip():
+            graph = Graph()
+            graph.parse(data=inner, format="turtle")
+            return graph
+
+    return Graph()
 
 
-def _resolver_from_request(req: Any) -> SchemaResolver:
+def _resolver_from_request(
+    req: Any, *, analyzer_bundle: MappingBundle | None = None
+) -> SchemaResolver:
     """Build a :class:`SchemaResolver` from the request envelope.
 
     Accepts any request model carrying an ``ontology_ttl`` (str | None)
@@ -70,17 +200,19 @@ def _resolver_from_request(req: Any) -> SchemaResolver:
     cached mapping for one-off queries without first having to mutate
     the cache.
 
+    When *analyzer_bundle* is supplied (the schema the analyzer discovered
+    for the connected database), its physical mapping is **merged** into the
+    inline ontology by local name: classes/properties the user declared but
+    did not annotate inherit the discovered ``phys:collectionName`` /
+    ``phys:edgeCollectionName`` / RPT columns, eliminating the
+    ``W_SCHEMA_DEFAULT_COLLECTION`` guess. Inline annotations always win.
+
     Falls back to an empty :class:`rdflib.Graph` resolver (which lets
     bare-URI predicates degrade to local-name attributes) when neither
     field is supplied, matching the legacy behaviour of the original
     ``_resolver_from_ttl`` helper that this function replaces.
     """
-    ttl = getattr(req, "ontology_ttl", None)
-    if isinstance(ttl, str) and ttl.strip():
-        return SchemaResolver.from_turtle(ttl)
-    mapping = getattr(req, "mapping", None)
-    if isinstance(mapping, dict) and mapping:
-        resolver = _mapping_from_dict(mapping)
-        if resolver is not None:
-            return resolver
-    return SchemaResolver(ontology=Graph())
+    graph = _graph_from_request(req)
+    if analyzer_bundle is not None:
+        _enrich_graph_with_bundle(graph, analyzer_bundle)
+    return SchemaResolver(ontology=graph)

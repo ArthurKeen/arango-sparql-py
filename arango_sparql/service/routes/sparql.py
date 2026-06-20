@@ -37,6 +37,7 @@ from ..models import (
 from ..observability import log_endpoint_timing
 from ..security import (
     _check_compute_rate_limit,
+    _get_optional_session,
     _get_session,
     _sanitize_error,
     _Session,
@@ -73,16 +74,19 @@ def _materialise_cursor(cursor: Any, cap: int) -> tuple[list[Any], bool]:
     return rows, truncated
 
 
-def _resolver_or_422(req: Any) -> Any:
+def _resolver_or_422(req: Any, *, analyzer_bundle: Any | None = None) -> Any:
     """Build a resolver from ``req``; map malformed-Turtle errors to 422.
 
     Centralised so every route that accepts an inline ontology renders
     the same 422 ``{error, code}`` shape on a parse failure rather than
     bubbling the raw rdflib exception through ``_translate_errors``
     (which would surface as a 500).
+
+    When *analyzer_bundle* is supplied, the discovered physical mapping is
+    merged into the inline ontology (see :func:`_resolver_from_request`).
     """
     try:
-        return _resolver_from_request(req)
+        return _resolver_from_request(req, analyzer_bundle=analyzer_bundle)
     except Exception as exc:
         raise HTTPException(
             status_code=422,
@@ -93,24 +97,59 @@ def _resolver_or_422(req: Any) -> Any:
         ) from exc
 
 
+def _analyzer_bundle_for_session(session: _Session | None) -> Any | None:
+    """Best-effort: the analyzer-discovered mapping bundle for *session*'s DB.
+
+    Reuses the schema route's cache + acquisition path (so the bundle the
+    UI already fetched via ``/schema/introspect`` is a cache hit). Returns
+    ``None`` — meaning "no enrichment" — when there is no session or
+    acquisition fails for any reason. A translate/execute must never fail
+    merely because this optional enrichment was unavailable (e.g. the
+    analyzer extra is not installed, or the DB is unreachable for schema
+    discovery).
+    """
+    if session is None:
+        return None
+    try:
+        # Lazy import: both route modules register on the same ``app`` at
+        # import time; importing at call time avoids any load-order cycle.
+        from .schema import _get_or_acquire
+
+        bundle, _cache_hit = _get_or_acquire(
+            session.db, force=False, strategy="auto"
+        )
+        return bundle
+    except Exception as exc:  # noqa: BLE001 — enrichment is strictly optional
+        logger.debug("analyzer enrichment skipped: %s", exc)
+        return None
+
+
 @app.post("/translate", response_model=TranslateResponse)
 def translate_endpoint(
     req: TranslateRequest,
     request: Request,
     _: None = Depends(_check_compute_rate_limit),
+    session: _Session | None = Depends(_get_optional_session),
 ) -> TranslateResponse:
     """Translate SPARQL to AQL (parse + visit + emit, no DB access).
 
     Honours the per-request ``X-Tenant-Id`` header (PRD §6.5.1) so a
     multi-tenant ontology emits the correct ``FILTER doc.<tenant_field>
     == @tenant`` predicate even when the route does no DB access.
+
+    Works without a session (offline translation). When the caller *is*
+    connected, the analyzer-discovered schema for that database is merged
+    into the inline ontology so a class the user declared but did not
+    annotate still resolves to its discovered ``phys:collectionName``.
     """
     logger.info(
         "translate request: sparql=%r, ontology_ttl_len=%s",
         req.sparql[:80] if req.sparql else "(empty)",
         len(req.ontology_ttl) if req.ontology_ttl else 0,
     )
-    resolver = _resolver_or_422(req)
+    resolver = _resolver_or_422(
+        req, analyzer_bundle=_analyzer_bundle_for_session(session)
+    )
     tenant_id = resolve_tenant_id(request)
     t0 = time.perf_counter()
     try:
@@ -177,8 +216,14 @@ def execute_endpoint(
     PG/LPG ``FOR doc IN @@coll`` loop the visitor emits will carry a
     ``FILTER doc.<tenant_field> == @tenant_id`` predicate when the
     underlying ontology declares ``phys:tenantField``.
+
+    The analyzer-discovered schema for the connected database is merged
+    into the inline ontology (inline annotations win) so an unannotated
+    class resolves to its discovered collection rather than guessing.
     """
-    resolver = _resolver_or_422(req)
+    resolver = _resolver_or_422(
+        req, analyzer_bundle=_analyzer_bundle_for_session(session)
+    )
     tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
@@ -324,7 +369,9 @@ def explain_endpoint(
     plan reflects the tenant-filtered AQL the operator would actually
     run.
     """
-    resolver = _resolver_or_422(req)
+    resolver = _resolver_or_422(
+        req, analyzer_bundle=_analyzer_bundle_for_session(session)
+    )
     tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
@@ -408,7 +455,9 @@ def profile_endpoint(
     the ``X-Tenant-Id`` header (PRD §6.5.1) so the profiled AQL is the
     tenant-scoped query the operator would actually run.
     """
-    resolver = _resolver_or_422(req)
+    resolver = _resolver_or_422(
+        req, analyzer_bundle=_analyzer_bundle_for_session(session)
+    )
     tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:

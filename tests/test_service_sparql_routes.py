@@ -58,7 +58,18 @@ LIMIT 5
 
 @pytest.fixture(autouse=True)
 def _isolate_sessions():
-    """Clear the in-process session table around every test."""
+    """Clear the in-process session table around every test.
+
+    Also resets the process-wide schema cache: now that ``/execute``,
+    ``/explain`` and ``/profile`` merge the analyzer-discovered bundle for
+    the connected DB, a bundle cached by an earlier test (keyed by db name)
+    would otherwise leak into these route tests — whose assertions are
+    derived purely from the inline ontology. Resetting keeps each test
+    deterministic regardless of suite ordering.
+    """
+    from arango_sparql.service.routes.schema import _reset_cache
+
+    _reset_cache()
     _sessions.clear()
     yield
     for s in list(_sessions.values()):
@@ -67,6 +78,7 @@ def _isolate_sessions():
         except Exception:
             pass
     _sessions.clear()
+    _reset_cache()
 
 
 @pytest.fixture
@@ -446,6 +458,206 @@ def test_execute_truncates_at_max_result_docs(
     assert len(body["bindings"]) == 3
     assert body["truncated"] is True
     assert any(w["code"] == "W_RESULT_TRUNCATED" for w in body["warnings"])
+
+
+def _make_aql_execute_error(error_num: int, status_code: int, message: str):
+    """Build a realistic ``AQLQueryExecuteError`` the way python-arango does.
+
+    Mirrors the driver's own construction (``Response`` → parsed
+    ``errorNum``/``errorMessage`` → exception) so the test exercises the
+    same attributes (``error_code``, ``http_code``) the route's error
+    classifier reads, rather than a hand-rolled stub that could drift.
+    """
+    import json
+
+    from arango.exceptions import AQLQueryExecuteError
+    from arango.request import Request as _ArReq
+    from arango.response import Response as _ArResp
+
+    raw = json.dumps(
+        {"error": True, "errorNum": error_num, "errorMessage": message, "code": status_code}
+    )
+    resp = _ArResp(
+        method="post",
+        url="http://localhost:8529/_api/cursor",
+        headers={},
+        status_code=status_code,
+        status_text="Error",
+        raw_body=raw,
+    )
+    resp.error_code = error_num
+    resp.error_message = message
+    return AQLQueryExecuteError(resp, _ArReq(method="post", endpoint="/_api/cursor"))
+
+
+def _patch_aql_execute_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_factory: type[_FakeArangoClient],
+    exc: Exception,
+) -> None:
+    """Make every fake ``aql.execute`` raise ``exc`` for this test.
+
+    Patches the class method so the substitution survives the route
+    layer caching the db reference inside the session at /connect time.
+    """
+
+    def _raising_execute(self: _FakeAql, *args: Any, **kwargs: Any):
+        self.last_aql = args[0] if args else kwargs.get("aql")
+        raise exc
+
+    monkeypatch.setattr(_FakeAql, "execute", _raising_execute)
+    fake_factory.instances.clear()
+
+
+def test_execute_missing_collection_returns_400_not_500(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing-collection AQL execution failure (ArangoDB ERR 1203) is a
+    client/data condition — the route must surface it as HTTP 400 with a
+    structured ``E_AQL_1203`` code, not a 500 server fault. Regression for
+    the demo bug where ``Run`` against an empty database produced a 500 in
+    the browser console.
+    """
+    exc = _make_aql_execute_error(
+        1203, 404, "collection or view not found: Person"
+    )
+    _patch_aql_execute_raises(monkeypatch, fake_client_factory, exc)
+
+    token = _connect_session(client)
+    resp = client.post(
+        "/execute",
+        json={"sparql": SELECT_QUERY, "ontology_ttl": ONTOLOGY_TTL},
+        headers={"X-Arango-Session": token},
+    )
+    assert resp.status_code == 400, resp.text
+    detail = resp.json()["detail"]
+    assert detail["code"] == "E_AQL_1203"
+    assert "collection or view not found" in detail["error"]
+
+
+def test_execute_aql_query_error_returns_400(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/execute-aql`` shares the same boundary helper — an AQL syntax
+    error against the data must also land as 400, not 500."""
+    exc = _make_aql_execute_error(1501, 400, "AQL: syntax error near 'FRO'")
+    _patch_aql_execute_raises(monkeypatch, fake_client_factory, exc)
+
+    token = _connect_session(client)
+    resp = client.post(
+        "/execute-aql",
+        json={"aql": "FRO doc IN @@c RETURN doc", "bind_vars": {"@c": "Person"}},
+        headers={"X-Arango-Session": token},
+    )
+    assert resp.status_code == 400, resp.text
+    assert resp.json()["detail"]["code"] == "E_AQL_1501"
+
+
+def test_execute_merges_analyzer_bundle_no_default_collection_warning(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When connected, /execute merges the analyzer-discovered mapping into
+    the inline ontology: a class declared without phys:collectionName picks
+    up the discovered collection name, and the W_SCHEMA_DEFAULT_COLLECTION
+    advisory does not fire. Regression for the "isn't the analyzer
+    discovering the ontology?" report.
+    """
+    from arango_sparql.service.routes import schema as schema_mod
+    from arango_sparql.translate.mapping import MappingBundle, MappingSource
+
+    bundle = MappingBundle(
+        conceptual_schema={"entities": [], "relationships": []},
+        physical_mapping={
+            "entities": {
+                "Person": {"style": "COLLECTION", "collectionName": "people"}
+            },
+            "relationships": {},
+        },
+        metadata={"warnings": []},
+        source=MappingSource(kind="analyzer", notes="merge route test"),
+    )
+    monkeypatch.setattr(
+        schema_mod, "_get_or_acquire", lambda db, **kw: (bundle, False)
+    )
+
+    # Inline ontology with NO phys:collectionName on :Person.
+    ttl = """
+    @prefix : <http://ex.org/> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+    :Person a owl:Class .
+    :name a owl:DatatypeProperty ; rdfs:domain :Person .
+    """
+    token = _connect_session(client)
+    resp = client.post(
+        "/execute",
+        json={"sparql": SELECT_QUERY, "ontology_ttl": ttl},
+        headers={"X-Arango-Session": token},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # The discovered collection name flows into the AQL bind vars.
+    assert "people" in body["bind_vars"].values(), body["bind_vars"]
+    codes = [w.get("code") for w in body["warnings"]]
+    assert "W_SCHEMA_DEFAULT_COLLECTION" not in codes
+
+
+def test_translate_without_session_does_not_merge(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """/translate works offline (no session): the analyzer is not consulted,
+    so an unannotated class still emits the local-name fallback warning."""
+    from arango_sparql.service.routes import schema as schema_mod
+
+    # If the route *did* try to acquire without a session this would blow up;
+    # asserting it is never called proves the no-session path stays offline.
+    def _boom(*_a: Any, **_k: Any):  # pragma: no cover - must not run
+        raise AssertionError("acquire must not be called without a session")
+
+    monkeypatch.setattr(schema_mod, "_get_or_acquire", _boom)
+
+    ttl = """
+    @prefix : <http://ex.org/> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+    :Person a owl:Class .
+    :name a owl:DatatypeProperty ; rdfs:domain :Person .
+    """
+    resp = client.post(
+        "/translate",
+        json={"sparql": SELECT_QUERY, "ontology_ttl": ttl},
+    )
+    assert resp.status_code == 200, resp.text
+    codes = [w.get("code") for w in resp.json()["warnings"]]
+    assert "W_SCHEMA_DEFAULT_COLLECTION" in codes
+
+
+def test_execute_unexpected_db_error_stays_500(
+    client: TestClient,
+    fake_client_factory: type[_FakeArangoClient],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A genuine infrastructure failure (not an AQL execution error) must
+    still surface as 500 — proves the 400 reclassification is scoped to
+    ``AQLQueryExecuteError`` and doesn't swallow real server faults."""
+    _patch_aql_execute_raises(
+        monkeypatch, fake_client_factory, RuntimeError("connection reset by peer")
+    )
+
+    token = _connect_session(client)
+    resp = client.post(
+        "/execute",
+        json={"sparql": SELECT_QUERY, "ontology_ttl": ONTOLOGY_TTL},
+        headers={"X-Arango-Session": token},
+    )
+    assert resp.status_code == 500, resp.text
 
 
 # ---------------------------------------------------------------------------

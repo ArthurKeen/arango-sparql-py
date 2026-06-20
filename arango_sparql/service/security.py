@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 
 from arango import ArangoClient
 from arango.database import StandardDatabase
+from arango.exceptions import AQLQueryExecuteError
 from fastapi import HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -158,6 +159,36 @@ def _get_session(request: Request) -> _Session:
     return session
 
 
+def _get_optional_session(request: Request) -> _Session | None:
+    """Like :func:`_get_session` but returns ``None`` instead of raising
+    when no valid session is present.
+
+    Used by stateless endpoints (e.g. ``/translate``) that work without a
+    DB connection but can *enrich* their behaviour when the caller happens
+    to be connected — for translate, that means merging the analyzer-
+    discovered schema into the inline ontology. Never raises on a missing
+    or expired token; an expired session is pruned exactly as
+    :func:`_get_session` would, then ``None`` is returned.
+    """
+    _prune_expired()
+    token = request.headers.get("X-Arango-Session", "")
+    if not token:
+        auth = request.headers.get("Authorization", "")
+        if auth.startswith("Bearer "):
+            token = auth[7:]
+    if not token:
+        return None
+    session = _sessions.get(token)
+    if session is None:
+        return None
+    if session.expired:
+        _sessions.pop(token, None)
+        session.client.close()
+        return None
+    session.touch()
+    return session
+
+
 def _require_session_in_public_mode(request: Request) -> _Session | None:
     """Dependency: enforce session auth iff ``ARANGO_SPARQL_PUBLIC_MODE``.
 
@@ -206,6 +237,17 @@ class _TokenBucket:
             return True
         self._tokens[key] = current
         return False
+
+    def reset(self) -> None:
+        """Drop all per-key state so every key starts full again.
+
+        Equivalent to administratively clearing the limiter (e.g. after
+        raising the cap). The test harness calls this between cases so the
+        process-wide bucket can't accumulate across an entire suite run and
+        spuriously 429 unrelated tests.
+        """
+        self._tokens.clear()
+        self._last_refill.clear()
 
 
 _nl_bucket = _TokenBucket(NL_RATE_LIMIT_PER_MINUTE)
@@ -342,11 +384,31 @@ def _translate_errors(prefix: str, status_code: int = 500):
     already produced a richer status code (e.g. 400 / 422) are not masked
     to 500. Use this at every endpoint boundary that runs AQL or otherwise
     touches the DB, to keep the error-surface uniform and sanitised.
+
+    A failed *AQL execution* (``AQLQueryExecuteError``) — missing
+    collection, bad bind variable, a query that cannot run against the
+    current data — is a client/data condition, not a server fault, so it
+    is surfaced as ``400`` with the structured ``{error, code}`` shape the
+    SPARQL-error paths use. The ``code`` carries the ArangoDB numeric
+    error code (e.g. ``E_AQL_1203`` for "collection or view not found") so
+    the HTTP status and the UI banner agree. Genuine infrastructure
+    failures (connection refused, server 5xx) fall through to
+    ``status_code`` (default 500).
     """
     try:
         yield
     except HTTPException:
         raise
+    except AQLQueryExecuteError as e:
+        arango_code = getattr(e, "error_code", None)
+        code = f"E_AQL_{arango_code}" if arango_code else "E_AQL_EXECUTION"
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": f"{prefix}: {_sanitize_error(str(e))}",
+                "code": code,
+            },
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status_code,
