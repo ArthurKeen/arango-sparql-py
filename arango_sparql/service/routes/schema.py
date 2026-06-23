@@ -287,26 +287,42 @@ def _strategy_or_422(value: str) -> Strategy:
     return value  # type: ignore[return-value]
 
 
+def _scoped_cache_key(db_name: str, graph_name: str | None) -> str:
+    """Cache key for *db_name* under an optional named-graph scope.
+
+    Unscoped (``graph_name is None``) keeps the bare ``db_name`` so the
+    full-DB bundle stays addressable by every existing caller. A scoped
+    view gets a distinct ``"<db>::graph::<name>"`` slot so binding /
+    unbinding a graph never serves the wrong bundle from L1.
+    """
+    if not graph_name:
+        return db_name
+    return f"{db_name}::graph::{graph_name}"
+
+
 def _get_or_acquire(
     db: Any,
     *,
     force: bool,
     strategy: Strategy,
     include_owl: bool = False,
+    graph_name: str | None = None,
 ) -> tuple[MappingBundle, bool]:
     """Return ``(bundle, cache_hit)`` for *db*. When *force* is true
     or no fresh entry exists, runs ``acquire_mapping_bundle`` and
     repopulates the cache.
 
-    Cache-key is ``db.name`` — the analyzer's exclude-collections
+    Cache-key is ``db.name`` (plus a ``::graph::<name>`` suffix when a
+    named-graph scope is bound) — the analyzer's exclude-collections
     invariant in :func:`db_shape_fingerprint` already protects us
     against the L2 cache-self-loop case (PRD §6.3.3).
     """
 
     cache = _resolve_schema_cache()
     db_name = getattr(db, "name", "") or ""
+    cache_key = _scoped_cache_key(db_name, graph_name)
     if not force and db_name:
-        entry = cache.get(db_name)
+        entry = cache.get(cache_key)
         if entry is not None:
             return entry.bundle, True
 
@@ -315,9 +331,10 @@ def _get_or_acquire(
         include_owl=include_owl,
         strategy=strategy,
         force_refresh=force,
+        graph_name=graph_name,
     )
     if db_name:
-        cache.put(db_name, bundle)
+        cache.put(cache_key, bundle)
     return bundle, False
 
 
@@ -366,7 +383,10 @@ def schema_introspect(
 
     try:
         bundle, cache_hit = _get_or_acquire(
-            session.db, force=force, strategy=typed_strategy
+            session.db,
+            force=force,
+            strategy=typed_strategy,
+            graph_name=getattr(session, "graph_name", None),
         )
     except AnalyzerNotInstalledError as exc:
         # Explicit ``strategy=analyzer`` on a deployment without the
@@ -452,7 +472,11 @@ def schema_owl(
 
     try:
         bundle, cache_hit = _get_or_acquire(
-            session.db, force=force, strategy=typed_strategy, include_owl=True
+            session.db,
+            force=force,
+            strategy=typed_strategy,
+            include_owl=True,
+            graph_name=getattr(session, "graph_name", None),
         )
     except AnalyzerNotInstalledError as exc:
         log_endpoint_timing(
@@ -799,7 +823,10 @@ def schema_statistics(
     t0 = time.perf_counter()
     try:
         bundle, _hit = _get_or_acquire(
-            session.db, force=False, strategy="auto"
+            session.db,
+            force=False,
+            strategy="auto",
+            graph_name=getattr(session, "graph_name", None),
         )
     except AnalyzerNotInstalledError as exc:
         raise HTTPException(
@@ -1014,7 +1041,10 @@ def schema_force_reacquire(
     t0 = time.perf_counter()
     try:
         bundle, _hit = _get_or_acquire(
-            session.db, force=True, strategy=typed_strategy
+            session.db,
+            force=True,
+            strategy=typed_strategy,
+            graph_name=getattr(session, "graph_name", None),
         )
     except AnalyzerNotInstalledError as exc:
         raise HTTPException(

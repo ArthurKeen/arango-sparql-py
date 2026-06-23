@@ -426,14 +426,76 @@ def test_nl_execute_translation_failure_returns_422_before_db(
 
 
 # ---------------------------------------------------------------------------
+# /nl-samples
+# ---------------------------------------------------------------------------
+
+
+def test_nl_samples_rule_based_without_provider(client: TestClient) -> None:
+    """No LLM provider → 200 with deterministic rule-based suggestions.
+
+    Unlike /nl-translate, suggestions degrade gracefully so the "Ask"
+    dropdown is populated the moment a schema is present.
+    """
+    app.dependency_overrides[_llm_client_factory] = lambda: None
+    try:
+        resp = client.post("/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL})
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["queries"], "rule-based path must yield suggestions"
+        assert any("person" in q.lower() for q in body["queries"])
+        assert body["elapsed_ms"] >= 0.0
+    finally:
+        app.dependency_overrides.pop(_llm_client_factory, None)
+
+
+def test_nl_samples_uses_llm_when_provider_present(
+    client: TestClient, override_llm
+) -> None:
+    sc = override_llm([_llm("Who has a name?\nList every person")])
+    resp = client.post(
+        "/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL, "count": 5}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["queries"] == ["Who has a name?", "List every person"]
+    assert len(sc.calls) == 1
+
+
+def test_nl_samples_use_llm_false_is_rule_based_even_with_provider(
+    client: TestClient, override_llm
+) -> None:
+    sc = override_llm([_llm("Should not be used")])
+    resp = client.post(
+        "/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL, "use_llm": False}
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["queries"]
+    assert "Should not be used" not in body["queries"]
+    # The model must not have been consulted on the rule-based path.
+    assert sc.calls == []
+
+
+def test_nl_samples_empty_ontology_returns_empty_list(client: TestClient) -> None:
+    app.dependency_overrides[_llm_client_factory] = lambda: None
+    try:
+        resp = client.post("/nl-samples", json={})
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["queries"] == []
+    finally:
+        app.dependency_overrides.pop(_llm_client_factory, None)
+
+
+# ---------------------------------------------------------------------------
 # OpenAPI smoke — make sure the routes are wired into the schema
 # ---------------------------------------------------------------------------
 
 
-def test_openapi_includes_all_three_nl_routes(client: TestClient) -> None:
+def test_openapi_includes_all_nl_routes(client: TestClient) -> None:
     resp = client.get("/openapi.json")
     assert resp.status_code == 200
     paths = resp.json()["paths"]
     assert "/nl-translate" in paths
     assert "/nl-explain" in paths
     assert "/nl-execute" in paths
+    assert "/nl-samples" in paths

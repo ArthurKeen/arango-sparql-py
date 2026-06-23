@@ -280,28 +280,63 @@ def get_default_client() -> LLMClient | None:
 
     Resolution order:
 
-    1. ``NL2SPARQL_PROVIDER`` (case-insensitive) selects the client.
-    2. If unset, infers from which model env is present (mirroring the
-       Cypher ``get_llm_provider`` policy).
-    3. Returns ``None`` when both selection and inference fail.
+    1. ``NL2SPARQL_PROVIDER`` (or generic ``LLM_PROVIDER``), case-insensitive,
+       selects the client.
+    2. If unset, infers from which model / API-key env is present (mirroring
+       the ``arango-cypher-py`` ``get_llm_provider`` policy).
+    3. The API key is read from the ``NL2SPARQL_*`` variant first, then falls
+       back to the de-facto-standard ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY``
+       / ``OPENROUTER_API_KEY`` so an environment already configured for the
+       sibling Cypher service enables this pipeline without duplicate keys.
+    4. Returns ``None`` when no usable API key can be resolved.
     """
-    provider = (os.getenv("NL2SPARQL_PROVIDER") or "").strip().lower()
-    api_key = os.getenv("NL2SPARQL_API_KEY", "")
+    provider = (
+        os.getenv("NL2SPARQL_PROVIDER") or os.getenv("LLM_PROVIDER") or ""
+    ).strip().lower()
+    nl_key = os.getenv("NL2SPARQL_API_KEY", "")
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+
     if not provider:
-        if os.getenv("NL2SPARQL_MODEL", "").lower().startswith(("claude", "anthropic/")):
+        model_hint = os.getenv("NL2SPARQL_MODEL", "").lower()
+        if model_hint.startswith(("claude", "anthropic/")):
             provider = "anthropic"
-        elif api_key:
+        elif nl_key or openai_key:
             provider = "openai"
+        elif anthropic_key:
+            provider = "anthropic"
+        elif openrouter_key:
+            provider = "openrouter"
         else:
             return None
-    if not api_key:
-        logger.info("get_default_client: no NL2SPARQL_API_KEY, refusing to construct a client")
-        return None
+
     if provider == "anthropic":
-        return AnthropicClient()
+        api_key = nl_key or anthropic_key
+        if not api_key:
+            logger.info(
+                "get_default_client: no Anthropic API key "
+                "(NL2SPARQL_API_KEY / ANTHROPIC_API_KEY), refusing to construct a client"
+            )
+            return None
+        return AnthropicClient(api_key=api_key)
     if provider == "openrouter":
-        return OpenAICompatibleClient(provider="openrouter")
-    return OpenAICompatibleClient(provider="openai")
+        api_key = nl_key or openrouter_key or openai_key
+        if not api_key:
+            logger.info(
+                "get_default_client: no OpenRouter API key "
+                "(NL2SPARQL_API_KEY / OPENROUTER_API_KEY), refusing to construct a client"
+            )
+            return None
+        return OpenAICompatibleClient(provider="openrouter", api_key=api_key)
+    api_key = nl_key or openai_key
+    if not api_key:
+        logger.info(
+            "get_default_client: no OpenAI API key "
+            "(NL2SPARQL_API_KEY / OPENAI_API_KEY), refusing to construct a client"
+        )
+        return None
+    return OpenAICompatibleClient(provider="openai", api_key=api_key)
 
 
 # ---------------------------------------------------------------------------

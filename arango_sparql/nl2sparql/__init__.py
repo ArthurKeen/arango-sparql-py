@@ -49,6 +49,7 @@ from .models import (
 from .pipeline import NlPipeline
 from .prompt import PromptBuilder, build_explain_messages, extract_sparql_from_response
 from .repair import RepairLoop, RepairOutcome, format_repair_context
+from .samples import suggest_nl_queries
 
 __all__ = [
     "AnthropicClient",
@@ -76,4 +77,5 @@ __all__ = [
     "get_default_client",
     "known_pricing",
     "nl_to_sparql",
+    "suggest_nl_queries",
 ]

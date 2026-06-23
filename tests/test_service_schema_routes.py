@@ -271,6 +271,7 @@ def stub_acquire(monkeypatch: pytest.MonkeyPatch):
         include_owl: bool = False,
         strategy: str = "auto",
         force_refresh: bool = False,
+        graph_name: str | None = None,
         now: Any = None,
     ) -> MappingBundle:
         state["calls"].append(
@@ -279,6 +280,7 @@ def stub_acquire(monkeypatch: pytest.MonkeyPatch):
                 "include_owl": include_owl,
                 "strategy": strategy,
                 "force_refresh": force_refresh,
+                "graph_name": graph_name,
             }
         )
         if state["raise_exc"] is not None:
@@ -351,6 +353,28 @@ def test_introspect_force_bypasses_cache(
     assert resp.json()["cache_hit"] is False
     assert len(stub_acquire["calls"]) == 2
     assert stub_acquire["calls"][1]["force_refresh"] is True
+
+
+def test_introspect_forwards_session_graph_scope(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    """A bound named-graph scope reaches acquisition and gets its own
+    cache slot (so it doesn't collide with the unscoped bundle)."""
+    _sessions[session_token].graph_name = "social"
+    headers = {"X-Arango-Session": session_token}
+    resp = client.get("/schema/introspect", headers=headers)
+    assert resp.status_code == 200
+    assert stub_acquire["calls"][-1]["graph_name"] == "social"
+
+    # An unscoped introspect on the same db must NOT be served the scoped
+    # entry (distinct cache key), so it triggers a fresh acquire.
+    _sessions[session_token].graph_name = None
+    resp2 = client.get("/schema/introspect", headers=headers)
+    assert resp2.status_code == 200
+    assert resp2.json()["cache_hit"] is False
+    assert stub_acquire["calls"][-1]["graph_name"] is None
 
 
 def test_introspect_strategy_invalid_returns_422(

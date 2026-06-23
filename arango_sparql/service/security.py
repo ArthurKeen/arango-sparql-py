@@ -99,14 +99,27 @@ def _max_sessions() -> int:
 
 
 class _Session:
-    __slots__ = ("token", "db", "client", "created_at", "last_used")
+    __slots__ = ("token", "db", "client", "created_at", "last_used", "graph_name")
 
-    def __init__(self, token: str, db: StandardDatabase, client: ArangoClient):
+    def __init__(
+        self,
+        token: str,
+        db: StandardDatabase,
+        client: ArangoClient,
+        graph_name: str | None = None,
+    ):
         self.token = token
         self.db = db
         self.client = client
         self.created_at = time.time()
         self.last_used = time.time()
+        # Active ArangoDB named-graph scope. ``None`` means "all
+        # collections" (the default). When set, schema acquisition is
+        # down-selected to the graph's vertex/edge collections so the
+        # resolver, OWL view, and NL suggestions only see the relevant
+        # slice of a database other programs may share. See ADR — named
+        # graph scoping.
+        self.graph_name = graph_name
 
     def touch(self) -> None:
         self.last_used = time.time()

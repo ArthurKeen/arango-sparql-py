@@ -161,6 +161,92 @@ describe("reducer: history dedup", () => {
   });
 });
 
+describe("reducer: natural-language (Ask) slice", () => {
+  it("NL_START sets generating, records the question, and dedupes history", () => {
+    const first = apply(initialState, {
+      type: "NL_START",
+      question: "  people who know Alice  ",
+    });
+    expect(first.generating).toBe(true);
+    expect(first.nlError).toBeNull();
+    // Question is trimmed for both lastNlQuestion mirror and history.
+    expect(first.lastNlQuestion).toBe("  people who know Alice  ");
+    expect(first.nlHistory).toEqual(["people who know Alice"]);
+
+    const second = apply(first, {
+      type: "NL_START",
+      question: "people who know Alice",
+    });
+    // Re-asking the same question keeps a single, top-most entry.
+    expect(second.nlHistory).toEqual(["people who know Alice"]);
+  });
+
+  it("NL_SUCCESS fills the editor, marks provenance, and records telemetry", () => {
+    const next = apply(
+      initialState,
+      { type: "NL_START", question: "all people" },
+      {
+        type: "NL_SUCCESS",
+        sparql: "SELECT ?p WHERE { ?p a ex:Person }",
+        aql: "FOR p IN persons RETURN p",
+        bindVars: { "@col": "persons" },
+        warnings: [{ message: "defaulted collection" }],
+        latencyMs: 1234,
+        llmCalls: 1,
+        costUsd: 0.0021,
+        repaired: true,
+      },
+    );
+    expect(next.generating).toBe(false);
+    expect(next.sparql).toContain("ex:Person");
+    expect(next.aql).toContain("FOR p");
+    expect(next.bindVars).toEqual({ "@col": "persons" });
+    expect(next.sparqlSource).toBe("nl_pipeline");
+    expect(next.translateMs).toBe(1234);
+    expect(next.warnings).toEqual([{ message: "defaulted collection" }]);
+    expect(next.nlInfo).toEqual({
+      latencyMs: 1234,
+      llmCalls: 1,
+      costUsd: 0.0021,
+      repaired: true,
+    });
+  });
+
+  it("editing the SPARQL after an NL fill resets provenance to user", () => {
+    const filled = apply(
+      initialState,
+      { type: "NL_START", question: "q" },
+      {
+        type: "NL_SUCCESS",
+        sparql: "SELECT ?s WHERE { ?s ?p ?o }",
+        aql: "FOR x IN c RETURN x",
+        bindVars: {},
+        latencyMs: 1,
+        llmCalls: 1,
+        costUsd: 0,
+        repaired: false,
+      },
+    );
+    expect(filled.sparqlSource).toBe("nl_pipeline");
+    const edited = apply(filled, { type: "SET_SPARQL", sparql: "SELECT * {}" });
+    expect(edited.sparqlSource).toBe("user");
+  });
+
+  it("NL_ERROR clears generating and sets a dedicated nlError banner", () => {
+    const next = apply(
+      initialState,
+      { type: "NL_START", question: "q" },
+      { type: "NL_ERROR", error: "503 No NL2SPARQL provider configured" },
+    );
+    expect(next.generating).toBe(false);
+    expect(next.nlError).toContain("503");
+    // The deterministic translate/execute error channel is untouched.
+    expect(next.error).toBeNull();
+    const cleared = apply(next, { type: "CLEAR_NL_ERROR" });
+    expect(cleared.nlError).toBeNull();
+  });
+});
+
 describe("reducer: schema slice", () => {
   it("SCHEMA_REFRESH_START sets refreshing and clears the error", () => {
     const seed: AppState = {

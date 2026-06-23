@@ -123,6 +123,7 @@ def acquire_mapping_bundle(
     include_owl: bool = False,
     strategy: Strategy = "auto",
     force_refresh: bool = False,
+    graph_name: str | None = None,
     now: datetime | None = None,
 ) -> MappingBundle:
     """Acquire a fresh :class:`MappingBundle` for the live database *db*.
@@ -150,6 +151,11 @@ def acquire_mapping_bundle(
         wrapper — this function does not cache, so the flag is a
         no-op here. Documented so downstream callers can pass it
         through unchanged.
+    graph_name:
+        Optional ArangoDB named-graph scope. When set, the fully
+        enriched bundle is down-selected to that graph's vertex/edge
+        collections (see :func:`schema.graph_scope.scope_bundle_to_graph`)
+        before return. ``None`` (default) means "all collections".
     now:
         Injectable clock for the bundle's ``acquisitionTimestamp``
         metadata. Tests pin it; production callers leave ``None``.
@@ -198,6 +204,13 @@ def acquire_mapping_bundle(
     bundle = _apply_edge_endpoint_enrichment(db, bundle, when=when)
     bundle = _normalize_bundle_warnings(bundle)
     bundle = _stamp_acquisition_timestamp(bundle, when=when)
+    # Named-graph down-select (no-op when graph_name is None). Applied
+    # last so the scope sees the fully-enriched bundle (RPT, edge
+    # endpoints, OWL) before filtering. See schema/graph_scope.py.
+    if graph_name:
+        from .graph_scope import scope_bundle_to_graph
+
+        bundle = scope_bundle_to_graph(db, bundle, graph_name)
     return bundle
 
 

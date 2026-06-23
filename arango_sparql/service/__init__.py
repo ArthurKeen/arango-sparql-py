@@ -72,6 +72,7 @@ from .models import (
     _MAX_RESULT_DOCS,
     _MAX_SPARQL_LENGTH,
     _MAX_TURTLE_LENGTH,
+    BindGraphRequest,
     ConnectRequest,
     ConnectResponse,
     ErrorResponse,
@@ -80,6 +81,8 @@ from .models import (
     NlExecuteResponse,
     NlExplainRequest,
     NlExplainResponse,
+    NlSamplesRequest,
+    NlSamplesResponse,
     NlTranslateRequest,
     NlTranslateResponse,
     OwlClassModel,
@@ -186,6 +189,7 @@ from . import routes as _routes  # noqa: F401, E402
 __all__ = [
     "app",
     # Re-exported request/response models
+    "BindGraphRequest",
     "ConnectRequest",
     "ConnectResponse",
     "ErrorResponse",
@@ -194,6 +198,8 @@ __all__ = [
     "NlExecuteResponse",
     "NlExplainRequest",
     "NlExplainResponse",
+    "NlSamplesRequest",
+    "NlSamplesResponse",
     "NlTranslateRequest",
     "NlTranslateResponse",
     "OwlClassModel",

@@ -116,7 +116,10 @@ def _analyzer_bundle_for_session(session: _Session | None) -> Any | None:
         from .schema import _get_or_acquire
 
         bundle, _cache_hit = _get_or_acquire(
-            session.db, force=False, strategy="auto"
+            session.db,
+            force=False,
+            strategy="auto",
+            graph_name=getattr(session, "graph_name", None),
         )
         return bundle
     except Exception as exc:  # noqa: BLE001 — enrichment is strictly optional

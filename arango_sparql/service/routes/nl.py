@@ -32,6 +32,8 @@ from ..models import (
     NlExecuteResponse,
     NlExplainRequest,
     NlExplainResponse,
+    NlSamplesRequest,
+    NlSamplesResponse,
     NlTranslateRequest,
     NlTranslateResponse,
 )
@@ -407,3 +409,42 @@ def nl_execute_endpoint(
         truncated=truncated,
         exec_ms=exec_ms,
     )
+
+
+# ---------------------------------------------------------------------------
+# /nl-samples — schema-derived NL question suggestions (no DB access)
+# ---------------------------------------------------------------------------
+
+
+@app.post("/nl-samples", response_model=NlSamplesResponse)
+def nl_samples_endpoint(
+    req: NlSamplesRequest,
+    _: None = Depends(_check_nl_rate_limit),
+    client: Any = Depends(_llm_client_factory),
+) -> NlSamplesResponse:
+    """Return representative NL questions for the request's OWL/Turtle schema.
+
+    Seeds the UI "Ask" suggestions dropdown. Unlike ``/nl-translate``
+    this route does **not** require a configured LLM provider: when none
+    is available (or ``use_llm`` is false) it falls back to deterministic
+    rule-based generation from the ontology's classes and object
+    properties, so suggestions are available the moment a schema is
+    imported or introspected. No database access.
+    """
+    from ...nl2sparql import suggest_nl_queries
+
+    t0 = time.perf_counter()
+    queries = suggest_nl_queries(
+        req.ontology_ttl,
+        count=req.count,
+        use_llm=req.use_llm,
+        client=client if req.use_llm else None,
+    )
+    elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    log_endpoint_timing(
+        "/nl-samples",
+        elapsed_ms,
+        count=len(queries),
+        use_llm=bool(req.use_llm),
+    )
+    return NlSamplesResponse(queries=queries, elapsed_ms=elapsed_ms)

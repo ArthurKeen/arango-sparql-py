@@ -458,7 +458,10 @@ def _resolver_for_session(session: _Session) -> tuple[SchemaResolver, list[dict[
 
     try:
         bundle, _cache_hit = _get_or_acquire(
-            session.db, force=False, strategy="auto"
+            session.db,
+            force=False,
+            strategy="auto",
+            graph_name=getattr(session, "graph_name", None),
         )
     except HTTPException:
         # The schema route already maps the
@@ -505,7 +508,12 @@ def _bundle_for_session(session: _Session):
     """
 
     try:
-        bundle, _hit = _get_or_acquire(session.db, force=False, strategy="auto")
+        bundle, _hit = _get_or_acquire(
+            session.db,
+            force=False,
+            strategy="auto",
+            graph_name=getattr(session, "graph_name", None),
+        )
         return bundle
     except Exception:
         # A schema acquisition failure on the SD path is a soft

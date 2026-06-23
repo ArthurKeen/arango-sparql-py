@@ -73,6 +73,18 @@ class ConnectResponse(BaseModel):
     databases: list[str]
 
 
+class BindGraphRequest(BaseModel):
+    """Request body for ``POST /session/graph``.
+
+    ``graphName`` is the ArangoDB named graph to scope this session's
+    schema acquisition to. ``null`` (or omitted) clears the scope back to
+    "all collections". camelCase matches the sister project's contract so
+    the shared UI client works against either backend.
+    """
+
+    graphName: str | None = Field(default=None, max_length=_MAX_FIELD_LENGTH)
+
+
 class TranslateRequest(BaseModel):
     sparql: str = Field(..., max_length=_MAX_SPARQL_LENGTH)
     ontology_ttl: str | None = Field(default=None, max_length=_MAX_TURTLE_LENGTH)
@@ -305,6 +317,29 @@ class NlExecuteResponse(NlTranslateResponse):
     bindings: list[dict[str, Any]] = Field(default_factory=list)
     truncated: bool = False
     exec_ms: int = 0
+
+
+class NlSamplesRequest(BaseModel):
+    """Request body for ``POST /nl-samples``.
+
+    Seeds the UI "Ask" suggestions dropdown. ``ontology_ttl`` is the
+    schema source (rule 300 — the SPARQL pipeline grounds everything in
+    Turtle); when absent the route returns an empty list rather than
+    guessing. ``use_llm`` is advisory — the route always has a
+    deterministic rule-based fallback, so suggestions work even with no
+    LLM provider configured.
+    """
+
+    ontology_ttl: str | None = Field(default=None, max_length=_MAX_TURTLE_LENGTH)
+    count: int = Field(default=8, ge=1, le=50)
+    use_llm: bool = True
+
+
+class NlSamplesResponse(BaseModel):
+    """Response body for ``POST /nl-samples``."""
+
+    queries: list[str] = Field(default_factory=list)
+    elapsed_ms: float = 0.0
 
 
 # ---------------------------------------------------------------------------

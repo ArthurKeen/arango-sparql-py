@@ -186,6 +186,35 @@ export async function disconnect(token: string): Promise<void> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// ArangoDB named-graph scoping (GET /graphs, POST /session/graph). Lets the
+// UI restrict schema acquisition to one graph's collections so a shared DB's
+// unrelated collections don't pollute translation / suggestions.
+// ---------------------------------------------------------------------------
+
+export interface GraphInfo {
+  name: string;
+  edgeCollections: string[];
+  vertexCollections: string[];
+  orphanCollections: string[];
+  collectionCount: number;
+}
+
+export async function listGraphs(token: string): Promise<{ graphs: GraphInfo[] }> {
+  return request("/graphs", { headers: authHeaders(token) });
+}
+
+export async function bindGraph(
+  graphName: string | null,
+  token: string,
+): Promise<{ graph_name: string | null; bound: boolean }> {
+  return request("/session/graph", {
+    method: "POST",
+    headers: authHeaders(token),
+    body: JSON.stringify({ graphName }),
+  });
+}
+
 export async function translateSparql(
   req: TranslateRequest,
 ): Promise<TranslateResponse> {
@@ -507,65 +536,41 @@ export async function getSampleQueries(
 }
 
 // ---------------------------------------------------------------------------
-// NL → SPARQL pipeline (placeholder shapes — backend lands separately)
+// NL → SPARQL pipeline (POST /nl-translate). The backend runs the LLM,
+// parses the SPARQL, and feeds it through the deterministic transpiler,
+// so a single call returns BOTH the SPARQL and the ready-to-run AQL.
+// Mirrors arango-cypher-py's nl2Cypher but adapted to the SPARQL
+// pipeline's request/response shapes (see
+// arango_sparql.service.models.NlTranslate{Request,Response}).
 // ---------------------------------------------------------------------------
 
-export interface NL2SparqlResponse {
+export interface NlTranslateResponse {
+  nl: string;
   sparql: string;
-  explanation: string;
-  confidence: number;
-  method: string;
-  elapsed_ms?: number;
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
+  aql: string;
+  bind_vars: Record<string, unknown>;
+  warnings: Array<Record<string, unknown>>;
+  llm_calls: number;
+  cost_usd: number;
+  latency_ms: number;
+  repaired: boolean;
 }
 
-export interface NL2SparqlOptions {
-  useLlm?: boolean;
-  useFewshot?: boolean;
-  sessionToken?: string;
-  retryContext?: string;
+export interface NlTranslateOptions {
+  /** Inline OWL/Turtle schema the LLM should ground its query in. */
+  ontologyTtl?: string;
+  /** Max transpiler-driven repair iterations (backend clamps 0..5). */
+  maxRepairs?: number;
 }
 
 export async function nl2Sparql(
   question: string,
-  ontologyTtl: string | undefined,
-  opts: NL2SparqlOptions | boolean = {},
-): Promise<NL2SparqlResponse> {
-  const options: NL2SparqlOptions =
-    typeof opts === "boolean" ? { useLlm: opts } : opts;
-  const body: Record<string, unknown> = { question };
-  if (ontologyTtl) body.ontology_ttl = ontologyTtl;
-  if (options.useLlm !== undefined) body.use_llm = options.useLlm;
-  if (options.useFewshot !== undefined) body.use_fewshot = options.useFewshot;
-  if (options.sessionToken) body.session_token = options.sessionToken;
-  if (options.retryContext) body.retry_context = options.retryContext;
-  return request("/nl2sparql", {
-    method: "POST",
-    body: JSON.stringify(body),
-  });
-}
-
-export interface NL2AqlResponse {
-  aql: string;
-  bind_vars: Record<string, unknown>;
-  explanation: string;
-  confidence: number;
-  method: string;
-  elapsed_ms?: number;
-  prompt_tokens?: number;
-  completion_tokens?: number;
-  total_tokens?: number;
-}
-
-export async function nl2Aql(
-  question: string,
-  ontologyTtl?: string,
-): Promise<NL2AqlResponse> {
-  const body: Record<string, unknown> = { question };
-  if (ontologyTtl) body.ontology_ttl = ontologyTtl;
-  return request("/nl2aql", {
+  opts: NlTranslateOptions = {},
+): Promise<NlTranslateResponse> {
+  const body: Record<string, unknown> = { nl: question };
+  if (opts.ontologyTtl) body.ontology_ttl = opts.ontologyTtl;
+  if (opts.maxRepairs !== undefined) body.max_repairs = opts.maxRepairs;
+  return request("/nl-translate", {
     method: "POST",
     body: JSON.stringify(body),
   });

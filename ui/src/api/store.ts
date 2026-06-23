@@ -32,6 +32,20 @@ export interface HistoryEntry {
   aqlPreview: string;
 }
 
+// Provenance of the text currently in the SPARQL editor. Drives
+// affordances like "this query came from NL" status lines. Mirrors the
+// Cypher UI's `editorCypherSource`.
+export type SparqlSource = "user" | "nl_pipeline" | "sample";
+
+// Telemetry surfaced in the NL "Ask" bar status line after a successful
+// /nl-translate. Mirrors arango-cypher-py's `nlInfo`.
+export interface NlInfo {
+  latencyMs: number;
+  llmCalls: number;
+  costUsd: number;
+  repaired: boolean;
+}
+
 // Schema-acquisition surface (PRD §6.4 — backed by
 // `arango_sparql.schema.acquire`). Populated by ConnectionDialog
 // after a successful /connect call (auto-introspect) and by the
@@ -105,11 +119,27 @@ export interface AppState {
   execMs: number | null;
   /** Schema-acquisition slice (PRD §6.4 wire shapes). */
   schema: SchemaState;
+  // ---- Natural-language ("Ask") slice ----------------------------------
+  /** True while a /nl-translate call is in flight. */
+  generating: boolean;
+  /** NL-specific error banner (kept separate from the deterministic
+   *  translate/execute `error` so an NL failure doesn't blow away a
+   *  good editor preview, mirroring the Cypher UI's `nlError`). */
+  nlError: string | null;
+  /** Telemetry for the last successful NL translation (status line). */
+  nlInfo: NlInfo | null;
+  /** Where the current editor SPARQL came from (status hinting). */
+  sparqlSource: SparqlSource;
+  /** Most recent NL question (for re-ask / status). */
+  lastNlQuestion: string | null;
+  /** De-duplicated history of NL questions (suggestions + recall). */
+  nlHistory: string[];
 }
 
 const STORAGE_KEY = "sparql-workbench";
 
 const MAX_HISTORY = 50;
+const MAX_NL_HISTORY = 50;
 
 function loadSavedState(): Partial<AppState> {
   try {
@@ -121,6 +151,9 @@ function loadSavedState(): Partial<AppState> {
       ontologyTtl: saved.ontologyTtl ?? "",
       params: saved.params ?? {},
       history: Array.isArray(saved.history) ? saved.history.slice(0, MAX_HISTORY) : [],
+      nlHistory: Array.isArray(saved.nlHistory)
+        ? saved.nlHistory.slice(0, MAX_NL_HISTORY)
+        : [],
     };
   } catch {
     return {};
@@ -136,6 +169,7 @@ function saveState(state: AppState) {
         ontologyTtl: state.ontologyTtl,
         params: state.params,
         history: state.history.slice(0, MAX_HISTORY),
+        nlHistory: state.nlHistory.slice(0, MAX_NL_HISTORY),
       }),
     );
   } catch {
@@ -181,6 +215,12 @@ export const initialState: AppState = {
   translateMs: null,
   execMs: null,
   schema: initialSchemaState,
+  generating: false,
+  nlError: null,
+  nlInfo: null,
+  sparqlSource: "user",
+  lastNlQuestion: null,
+  nlHistory: [],
   ...loadSavedState(),
 };
 
@@ -232,12 +272,36 @@ export type Action =
   | { type: "SCHEMA_REFRESH_ERROR"; error: string }
   | { type: "SCHEMA_STATUS_UPDATED"; status: SchemaCacheStatus }
   | { type: "SCHEMA_CACHE_INVALIDATED" }
-  | { type: "SCHEMA_IMPORT_SUCCESS"; tripleCount: number };
+  | { type: "SCHEMA_IMPORT_SUCCESS"; tripleCount: number }
+  | { type: "NL_START"; question: string }
+  | {
+      type: "NL_SUCCESS";
+      sparql: string;
+      aql: string;
+      bindVars: Record<string, unknown>;
+      warnings?: Array<{ message: string }>;
+      latencyMs: number;
+      llmCalls: number;
+      costUsd: number;
+      repaired: boolean;
+    }
+  | { type: "NL_ERROR"; error: string }
+  | { type: "CLEAR_NL_ERROR" };
+
+// Prepend `value` to `list`, drop any prior duplicate, and cap length.
+function prependUnique(list: string[], value: string, cap: number): string[] {
+  const trimmed = value.trim();
+  if (!trimmed) return list;
+  return [trimmed, ...list.filter((v) => v !== trimmed)].slice(0, cap);
+}
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
     case "SET_SPARQL":
-      return { ...state, sparql: action.sparql };
+      // Hand-edits (and sample/history inserts) reset NL provenance so
+      // the status line doesn't keep claiming the editor text came from
+      // the pipeline once the user has touched it.
+      return { ...state, sparql: action.sparql, sparqlSource: "user" };
     case "SET_ONTOLOGY_TTL":
       return { ...state, ontologyTtl: action.ontologyTtl };
     case "CONNECT_START":
@@ -389,6 +453,36 @@ function reducer(state: AppState, action: Action): AppState {
           lastImportTripleCount: action.tripleCount,
         },
       };
+    case "NL_START":
+      return {
+        ...state,
+        generating: true,
+        nlError: null,
+        lastNlQuestion: action.question,
+        nlHistory: prependUnique(state.nlHistory, action.question, MAX_NL_HISTORY),
+      };
+    case "NL_SUCCESS":
+      return {
+        ...state,
+        generating: false,
+        sparql: action.sparql,
+        aql: action.aql,
+        bindVars: action.bindVars,
+        warnings: action.warnings ?? state.warnings,
+        translateMs: action.latencyMs,
+        sparqlSource: "nl_pipeline",
+        nlError: null,
+        nlInfo: {
+          latencyMs: action.latencyMs,
+          llmCalls: action.llmCalls,
+          costUsd: action.costUsd,
+          repaired: action.repaired,
+        },
+      };
+    case "NL_ERROR":
+      return { ...state, generating: false, nlError: action.error };
+    case "CLEAR_NL_ERROR":
+      return { ...state, nlError: null };
     default:
       return state;
   }
@@ -407,6 +501,7 @@ export function useAppState() {
     "SET_PARAMS",
     "ADD_HISTORY",
     "CLEAR_HISTORY",
+    "NL_START",
   ]);
 
   const persistAndDispatch = useCallback(

@@ -10,27 +10,38 @@ import SampleQueries from "./components/SampleQueries";
 import ClauseOutline from "./components/ClauseOutline";
 import ResultsPanel from "./components/ResultsPanel";
 import SchemaWarningBanner from "./components/SchemaWarningBanner";
+import GraphSelector from "./components/GraphSelector";
 import { useAppState } from "./api/store";
 import {
   translateSparql,
   executeSparql,
+  nl2Sparql,
+  suggestNlQueries,
+  listGraphs,
+  bindGraph,
   isAuthError,
   schemaForceReacquire,
+  type GraphInfo,
 } from "./api/client";
 
 // App.tsx mirrors the layout of arango-cypher-py/ui/src/App.tsx but
 // trimmed to the surface the SPARQL backend actually exposes today:
 //
-//   * /translate — required, serves the editor preview.
-//   * /execute   — requires a connected ArangoDB session.
-//   * /connect   — wired through ConnectionDialog.
+//   * /translate    — required, serves the editor preview.
+//   * /execute      — requires a connected ArangoDB session.
+//   * /connect      — wired through ConnectionDialog.
+//   * /nl-translate — natural-language "Ask" bar (LLM → SPARQL → AQL).
+//                     Returns both the SPARQL and ready-to-run AQL in a
+//                     single call, so "Generate" fills the editor and
+//                     the user runs it with the existing Run button.
 //
 // Endpoints the Cypher UI calls but the SPARQL backend has not yet
-// shipped (NL pipeline, learn corrections, explain/profile, tenant
-// catalogue, schema introspection warnings) are intentionally left
-// out — adding their UI before the backend exists would surface as
-// unconditional 404s and 422s in the browser console. They will land
-// behind their respective backend milestones.
+// shipped (learn corrections, explain/profile, tenant catalogue,
+// per-session named-graph scope) are intentionally left out — adding
+// their UI before the backend exists would surface as unconditional
+// 404s and 422s in the browser console. They land behind their
+// respective backend milestones (graph selection: PRD named-graph
+// phase; NL suggestions: /nl-samples).
 
 export default function App() {
   const [state, dispatch] = useAppState();
@@ -39,6 +50,13 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
+  const [nlInput, setNlInput] = useState("");
+  const [showNlSuggestions, setShowNlSuggestions] = useState(false);
+  const [nlSamples, setNlSamples] = useState<string[]>([]);
+  const [graphs, setGraphs] = useState<GraphInfo[]>([]);
+  const [graphScope, setGraphScope] = useState<string | null>(null);
+  const [graphBusy, setGraphBusy] = useState(false);
+  const [graphError, setGraphError] = useState<string | null>(null);
   const sparqlViewRef = useRef<EditorView | null>(null);
 
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
@@ -65,6 +83,68 @@ export default function App() {
   sparqlRef.current = state.sparql;
   const ontologyRef = useRef(state.ontologyTtl);
   ontologyRef.current = state.ontologyTtl;
+
+  // Schema-derived "Ask" suggestions (POST /nl-samples). Re-fetched only
+  // when the schema source actually changes — keyed on (url, db,
+  // ontology) — so editing an unrelated bit of state doesn't spam the
+  // endpoint. Rule-based on the backend, so this works without an LLM
+  // provider; failures are swallowed (suggestions are best-effort).
+  const lastSampleKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    const ttl = state.ontologyTtl.trim();
+    if (!ttl) {
+      lastSampleKeyRef.current = null;
+      setNlSamples([]);
+      return;
+    }
+    const key = `${state.connection.url}||${state.connection.database}||${ttl.length}:${ttl.slice(0, 256)}`;
+    if (lastSampleKeyRef.current === key) return;
+    lastSampleKeyRef.current = key;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await suggestNlQueries(ttl, 8, true);
+        if (!cancelled) setNlSamples(resp.queries ?? []);
+      } catch {
+        // Best-effort: leave whatever samples we already have.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.ontologyTtl, state.connection.url, state.connection.database]);
+
+  // Load the connected database's named graphs so the scope picker can
+  // offer them. Resets the scope on every (re)connect. Best-effort: a DB
+  // with no graphs yields an empty list and the picker stays hidden.
+  useEffect(() => {
+    const token = state.connection.token;
+    if (!token) {
+      setGraphs([]);
+      setGraphScope(null);
+      setGraphError(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const resp = await listGraphs(token);
+        if (!cancelled) {
+          setGraphs(resp.graphs ?? []);
+          setGraphScope(null);
+          setGraphError(null);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setGraphs([]);
+          setGraphError(err instanceof Error ? err.message : String(err));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [state.connection.token, state.connection.url, state.connection.database]);
   const paramsRef = useRef(state.params);
   paramsRef.current = state.params;
 
@@ -169,6 +249,29 @@ export default function App() {
     handleMaybeAuthError,
   ]);
 
+  // Bind (or clear) the named-graph scope, then re-acquire the schema so
+  // the ontology / mapping / NL suggestions reflect the narrowed set of
+  // collections. `null` clears the scope back to "all collections".
+  const handleSelectGraph = useCallback(
+    async (graphName: string | null) => {
+      const token = state.connection.token;
+      if (!token) return;
+      setGraphBusy(true);
+      setGraphError(null);
+      try {
+        await bindGraph(graphName, token);
+        setGraphScope(graphName);
+        await handleRefreshSchema();
+      } catch (err) {
+        setGraphError(err instanceof Error ? err.message : String(err));
+        handleMaybeAuthError(err);
+      } finally {
+        setGraphBusy(false);
+      }
+    },
+    [state.connection.token, handleRefreshSchema, handleMaybeAuthError],
+  );
+
   const handleExecute = useCallback(async () => {
     if (!state.connection.token) return;
     if (!sparqlRef.current.trim()) return;
@@ -206,6 +309,53 @@ export default function App() {
     handleMaybeAuthError,
   ]);
 
+  // Natural-language "Ask" → /nl-translate. One call returns BOTH the
+  // SPARQL (shown in the editor) and the ready-to-run AQL preview; the
+  // user then hits Run (which executes the generated SPARQL through the
+  // existing /execute path). No DB connection is required to generate.
+  const handleNL = useCallback(async () => {
+    const question = nlInput.trim();
+    if (!question) return;
+    setShowNlSuggestions(false);
+    dispatch({ type: "NL_START", question });
+    try {
+      const resp = await nl2Sparql(question, {
+        ontologyTtl: ontologyRef.current || undefined,
+      });
+      dispatch({
+        type: "NL_SUCCESS",
+        sparql: resp.sparql,
+        aql: resp.aql,
+        bindVars: resp.bind_vars,
+        warnings: (resp.warnings ?? [])
+          .map((w) => ({
+            message: String((w as { message?: unknown }).message ?? ""),
+          }))
+          .filter((w) => w.message.length > 0),
+        latencyMs: resp.latency_ms,
+        llmCalls: resp.llm_calls,
+        costUsd: resp.cost_usd,
+        repaired: resp.repaired,
+      });
+      if (resp.sparql.trim()) {
+        dispatch({
+          type: "ADD_HISTORY",
+          entry: {
+            sparql: resp.sparql,
+            timestamp: Date.now(),
+            aqlPreview: resp.aql.slice(0, 120),
+          },
+        });
+      }
+    } catch (err) {
+      dispatch({
+        type: "NL_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      handleMaybeAuthError(err);
+    }
+  }, [nlInput, dispatch, handleMaybeAuthError]);
+
   const handleJumpToLine = useCallback((line: number) => {
     const view = sparqlViewRef.current;
     if (!view) return;
@@ -218,7 +368,30 @@ export default function App() {
   }, []);
 
   const isConnected = state.connection.status === "connected";
-  const isLoading = state.translating || state.executing;
+  const isLoading = state.translating || state.executing || state.generating;
+  // Ask-bar suggestions: recent questions first, then schema-derived
+  // example queries (POST /nl-samples), de-duplicated case-insensitively
+  // and capped. Tagged with `kind` so the dropdown can label "recent" vs
+  // "example".
+  const nlSuggestions = (() => {
+    const seen = new Set<string>();
+    const merged: Array<{ text: string; kind: "recent" | "example" }> = [];
+    for (const text of state.nlHistory) {
+      const key = text.toLowerCase();
+      if (text.trim() && !seen.has(key)) {
+        seen.add(key);
+        merged.push({ text, kind: "recent" });
+      }
+    }
+    for (const text of nlSamples) {
+      const key = text.toLowerCase();
+      if (text.trim() && !seen.has(key)) {
+        seen.add(key);
+        merged.push({ text, kind: "example" });
+      }
+    }
+    return merged.slice(0, 10);
+  })();
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-gray-100">
@@ -237,6 +410,15 @@ export default function App() {
               }
             }}
           />
+          {isConnected && (
+            <GraphSelector
+              graphs={graphs}
+              selection={graphScope}
+              loading={graphBusy}
+              onSelect={handleSelectGraph}
+              error={graphError}
+            />
+          )}
           {isConnected && (
             <button
               onClick={handleRefreshSchema}
@@ -386,6 +568,107 @@ export default function App() {
         )}
 
         <div className="flex-1 min-w-0 flex flex-col">
+          {/* Natural-language "Ask" bar. Mirrors arango-cypher-py's NL
+              input: type a question, Generate (or Enter) calls
+              /nl-translate, and the returned SPARQL drops into the
+              editor with the AQL preview ready to Run. */}
+          <div className="relative flex items-center gap-2 px-3 py-2 bg-gray-900/70 border-b border-gray-800">
+            <span className="text-xs font-medium text-gray-400 shrink-0">
+              Ask:
+            </span>
+            <div className="relative flex-1 min-w-0">
+              <input
+                type="text"
+                value={nlInput}
+                onChange={(e) => setNlInput(e.target.value)}
+                onFocus={() => setShowNlSuggestions(true)}
+                onBlur={() =>
+                  window.setTimeout(() => setShowNlSuggestions(false), 120)
+                }
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    void handleNL();
+                  } else if (e.key === "Escape") {
+                    setShowNlSuggestions(false);
+                  }
+                }}
+                placeholder={"Describe what you want in plain English\u2026"}
+                aria-label="Natural-language question"
+                className="w-full px-2.5 py-1.5 text-xs rounded bg-gray-800 text-gray-100 placeholder-gray-500 border border-gray-700 focus:border-violet-500 focus:outline-none"
+              />
+              {showNlSuggestions && nlSuggestions.length > 0 && (
+                <ul className="absolute z-20 left-0 right-0 mt-1 max-h-60 overflow-y-auto rounded border border-gray-700 bg-gray-900 shadow-lg">
+                  {nlSuggestions.map((s, i) => (
+                    <li key={`${i}-${s.text}`}>
+                      <button
+                        type="button"
+                        onMouseDown={(e) => {
+                          // onMouseDown (not onClick) so the pick lands
+                          // before the input's onBlur closes the list.
+                          e.preventDefault();
+                          setNlInput(s.text);
+                          setShowNlSuggestions(false);
+                        }}
+                        className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-800"
+                        title={s.text}
+                      >
+                        <span
+                          className={`shrink-0 text-[9px] uppercase tracking-wider ${
+                            s.kind === "recent"
+                              ? "text-gray-500"
+                              : "text-violet-400/70"
+                          }`}
+                        >
+                          {s.kind === "recent" ? "recent" : "example"}
+                        </span>
+                        <span className="truncate">{s.text}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <button
+              onClick={handleNL}
+              disabled={state.generating || !nlInput.trim()}
+              className="px-3 py-1.5 text-xs font-medium rounded bg-violet-600 hover:bg-violet-500 text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+              title="Generate SPARQL from your question (Enter)"
+            >
+              {state.generating ? "Generating\u2026" : "Generate"}
+            </button>
+            {state.generating && (
+              <div className="w-4 h-4 border-2 border-violet-400 border-t-transparent rounded-full animate-spin shrink-0" />
+            )}
+            {!state.generating &&
+              state.nlInfo &&
+              state.sparqlSource === "nl_pipeline" && (
+                <span
+                  className="text-[10px] text-emerald-500/70 tabular-nums shrink-0"
+                  title="Generated from your natural-language question"
+                >
+                  from NL &middot; {state.nlInfo.latencyMs}ms &middot;{" "}
+                  {state.nlInfo.llmCalls} call
+                  {state.nlInfo.llmCalls === 1 ? "" : "s"}
+                  {state.nlInfo.repaired ? " \u00b7 repaired" : ""}
+                </span>
+              )}
+          </div>
+
+          {state.nlError && (
+            <div className="px-3 py-1.5 bg-red-900/30 border-b border-red-800 flex items-center justify-between gap-3">
+              <span className="text-xs text-red-300 flex-1 break-words">
+                {state.nlError}
+              </span>
+              <button
+                onClick={() => dispatch({ type: "CLEAR_NL_ERROR" })}
+                className="text-red-400 hover:text-red-200 text-[11px] shrink-0"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center gap-2 px-3 py-2 bg-gray-900/50 border-b border-gray-800">
             <button
               onClick={handleTranslate}

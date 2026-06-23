@@ -23,7 +23,7 @@ from ..._env import (
     read_arango_username,
 )
 from ..app import _PUBLIC_MODE, _svc_logger, app
-from ..models import ConnectRequest, ConnectResponse
+from ..models import BindGraphRequest, ConnectRequest, ConnectResponse
 from ..observability import log_endpoint_timing
 from ..security import (
     _check_connect_target,
@@ -124,6 +124,106 @@ def disconnect(session: _Session = Depends(_get_session)):
         round((time.perf_counter() - t0) * 1000, 1),
     )
     return {"status": "disconnected"}
+
+
+@app.get("/graphs")
+def list_graphs(session: _Session = Depends(_get_session)):
+    """List the ArangoDB named graphs visible to this session's database.
+
+    Lets the UI offer a graph-scope picker so schema acquisition (and the
+    NL suggestions / OWL view derived from it) can be restricted to the
+    collections of one graph — useful when other applications share the
+    database with collections irrelevant to the queries at hand. A
+    database with no named graphs (or a ``graphs()`` call that fails for a
+    permission-scoped user) returns an empty list rather than erroring;
+    "no graphs" is a normal state the picker hides.
+    """
+    t0 = time.perf_counter()
+    graphs: list[dict[str, object]] = []
+    try:
+        raw = session.db.graphs()
+    except Exception as exc:  # noqa: BLE001 — degrade to "no graphs"
+        _svc_logger.info("graphs() failed for db=%r: %s", getattr(session.db, "name", "?"), exc)
+        raw = []
+
+    for g in raw or []:
+        name = g.get("name") if isinstance(g, dict) else None
+        if not name:
+            continue
+        edge_defs = g.get("edgeDefinitions") or g.get("edge_definitions") or []
+        vertex: set[str] = set()
+        edges: set[str] = set()
+        for ed in edge_defs:
+            if not isinstance(ed, dict):
+                continue
+            coll = ed.get("collection")
+            if coll:
+                edges.add(coll)
+            for v in (ed.get("from") or []):
+                vertex.add(v)
+            for v in (ed.get("to") or []):
+                vertex.add(v)
+        orphans = g.get("orphanCollections") or g.get("orphan_collections") or []
+        for o in orphans:
+            vertex.add(o)
+        graphs.append(
+            {
+                "name": name,
+                "edgeCollections": sorted(edges),
+                "vertexCollections": sorted(vertex),
+                "orphanCollections": sorted(orphans),
+                "collectionCount": len(vertex | edges),
+            }
+        )
+
+    graphs.sort(key=lambda g: str(g["name"]))
+    log_endpoint_timing(
+        "/graphs",
+        round((time.perf_counter() - t0) * 1000, 1),
+        count=len(graphs),
+    )
+    return {"graphs": graphs}
+
+
+@app.post("/session/graph")
+def bind_session_graph(
+    req: BindGraphRequest,
+    session: _Session = Depends(_get_session),
+):
+    """Bind (or clear) the session's ArangoDB named-graph scope.
+
+    ``graphName: null`` clears the scope back to "all collections". A
+    non-null name is validated against the live database so a typo is a
+    clean 404 rather than a silently-empty scoped schema. The bound name
+    is consumed by the schema routes on the next introspect /
+    force-reacquire to down-select the mapping bundle.
+    """
+    t0 = time.perf_counter()
+    graph_name = req.graphName or None
+    if graph_name is not None:
+        try:
+            exists = session.db.has_graph(graph_name)
+        except Exception as exc:  # noqa: BLE001 — treat lookup failure as unknown
+            _svc_logger.info("has_graph(%r) failed: %s", graph_name, exc)
+            exists = False
+        if not exists:
+            log_endpoint_timing(
+                "/session/graph",
+                round((time.perf_counter() - t0) * 1000, 1),
+                status="error",
+                bound=False,
+            )
+            raise HTTPException(
+                status_code=404,
+                detail={"error": "unknown_graph", "graphName": graph_name},
+            )
+    session.graph_name = graph_name
+    log_endpoint_timing(
+        "/session/graph",
+        round((time.perf_counter() - t0) * 1000, 1),
+        bound=graph_name is not None,
+    )
+    return {"graph_name": graph_name, "bound": graph_name is not None}
 
 
 @app.get("/connections")
