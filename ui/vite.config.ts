@@ -4,10 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 
 // `arango_sparql.service` runs on :8001 by default (mirrors the Cypher
 // service). Every endpoint the UI knows how to talk to is proxied so a
-// dev-mode SPA never needs CORS. Endpoints that the SPARQL backend does
-// not implement yet (e.g. `/explain`, `/nl2sparql`) are still proxied so
-// the wire failures surface at the service tier with the right status
-// code instead of a stray 404 from the dev server.
+// dev-mode SPA never needs CORS. Each prefix below is matched against the
+// real backend routes (NL pipeline: `/nl-translate`, `/nl-execute`,
+// `/nl-explain`, `/nl-samples`; named-graph scoping: `/graphs`,
+// `/session/graph`). Any request that isn't proxied falls through to the
+// Vite dev server and 404s, so this list must track the service routes.
 //
 // The target is overridable via `SPARQL_API_TARGET` so the SPARQL
 // service can run on an alternate port when the default :8001 is taken
@@ -25,10 +26,12 @@ const proxiedPaths = [
   "/explain",
   "/aql-profile",
   "/sparql-profile",
-  "/nl2sparql",
-  "/nl2aql",
+  "/nl-translate",
+  "/nl-explain",
+  "/nl-execute",
   "/nl-samples",
-  "/sample-queries",
+  "/graphs",
+  "/session",
   "/schema",
   "/health",
 ];
