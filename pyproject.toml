@@ -21,8 +21,10 @@ Issues = "https://github.com/ArthurKeen/arango-sparql-py/issues"
 [project.optional-dependencies]
 analyzer = [
   # Mirror arango-cypher-py: pin the schema analyzer band so
-  # service installs fail fast on heuristic mappings.
-  "arangodb-schema-analyzer>=0.6.1,<0.7.0",
+  # service installs fail fast on heuristic mappings. 0.9.0 floor: adds
+  # named-graph membership (metadata.graphMembership + per-entry graphs),
+  # graphScope, CSI v1, GraphRAG detection, and gold/metric-history.
+  "arangodb-schema-analyzer>=0.9.0,<0.10.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",
