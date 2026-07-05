@@ -44,7 +44,8 @@ project to `arango-cypher-py`.
 | Testing rules + W3C harness      | `.cursor/rules/200-testing.mdc`                                      |
 | NL→SPARQL pipeline               | `.cursor/rules/300-nl2sparql.mdc`                                    |
 | Frontend UI                      | `.cursor/rules/400-frontend-ui.mdc`                                  |
-| Vision & roadmap                 | `docs/architecture/vision.md`, `docs/architecture/PRD.md`            |
+| Spec, vision, ADRs, roadmap      | `docs/architecture/PRD.md` (single source of truth; vision = App. C, ADRs = App. B) |
+| Work tracking (WP status)        | `docs/architecture/implementation_plan.md` (living plan; PRD = spec, this = status) |
 | SPARQL→AQL porting recipe        | `.cursor/skills/sparql-to-aql/SKILL.md`                              |
 | Architecture template            | `references/arango-cypher-py/`                                       |
 | Translation semantics (legacy)   | `references/arango-sparql/src/lib/`                                  |

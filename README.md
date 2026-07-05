@@ -188,7 +188,7 @@ tests/
   helpers/aql_interp.py # shared in-memory AQL-subset interpreter
 ui/                     # Vite + React + TS frontend
 references/             # symlinks to sibling repos (gitignored, recreated locally)
-docs/architecture/      # PRD (the v1 spec) + vision (inception narrative)
+docs/architecture/      # PRD.md = single source of truth (spec + ADRs + vision); vision.md & decisions/ are stubs
 .cursor/
   rules/                # scoped Cursor rules (000-context, 100-backend, 200-testing, …)
   skills/sparql-to-aql/ # SPARQL→AQL porting recipe (read this first)
@@ -196,12 +196,18 @@ docs/architecture/      # PRD (the v1 spec) + vision (inception narrative)
 
 ## Documentation
 
-- **[`docs/architecture/PRD.md`](docs/architecture/PRD.md)** — the v1
-  spec: HTTP surface, supported physical schema shapes (document, hybrid
-  multi-class, edge traversal, named graphs), conformance targets, release
-  milestones.
-- **[`docs/architecture/vision.md`](docs/architecture/vision.md)** — the
-  inception narrative (the *why*; the PRD covers the *what*).
+- **[`docs/architecture/PRD.md`](docs/architecture/PRD.md)** — the
+  **single source of truth**: HTTP surface, supported physical schema
+  shapes (document, hybrid multi-class, edge traversal, named graphs),
+  NL pipeline, conformance targets, release milestones, plus the folded-in
+  decision records (Appendix B) and the inception narrative (Appendix C).
+- **[`docs/architecture/implementation_plan.md`](docs/architecture/implementation_plan.md)**
+  — the living work-tracking plan (WP status), including the chat-first
+  UI shell migration (WP-UI-SHELL). The PRD is the spec; this is status.
+- **[`docs/architecture/vision.md`](docs/architecture/vision.md)** and
+  **[`docs/architecture/decisions/`](docs/architecture/decisions/)** —
+  redirect stubs that point into the PRD appendices (kept so old links
+  resolve); do not add content there.
 - **[`CONTRIBUTING.md`](CONTRIBUTING.md)** — dev setup, test gates,
   porting recipe pointer.
 - **[`SECURITY.md`](SECURITY.md)** — vulnerability reporting flow.

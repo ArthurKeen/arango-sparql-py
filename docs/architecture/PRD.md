@@ -1,7 +1,9 @@
 # Product Requirements Document — `arango-sparql-py` v1
 
-**Status**: Draft v1 (supersedes the original v0 transpiler-design memo, which
-now lives in [`vision.md`](vision.md) as the inception narrative.)
+**Status**: Draft v1. **Single source of truth** — this document subsumes
+the original v0 transpiler-design memo (now [Appendix C: Inception
+narrative](#appendix-c-inception-narrative)) and the standalone decision
+records (now [Appendix B: Decision records](#appendix-b-decision-records-adrs)).
 
 **Owner**: Arthur Keen
 
@@ -43,6 +45,14 @@ behavioural rules (the rest is architecture description).
 | 17 | [Privacy & data handling](#17-privacy--data-handling)  | ✅ |
 | 18 | [Glossary](#18-glossary)                               |            |
 | A  | [Appendix A: Configuration reference](#appendix-a-configuration-reference) | ✅ |
+| B  | [Appendix B: Decision records (ADRs)](#appendix-b-decision-records-adrs) |            |
+| C  | [Appendix C: Inception narrative](#appendix-c-inception-narrative) |            |
+
+> **Single source of truth.** This document subsumes the former
+> `vision.md` (now Appendix C) and the standalone ADR files under
+> `decisions/` (now Appendix B). Those files remain as one-line stubs
+> that redirect here so existing links keep resolving; all new
+> requirements, decisions, and narrative belong in this PRD.
 
 ---
 
@@ -291,6 +301,8 @@ that already speak our shape.
 | `POST` | `/connect` | open or session | Open an ArangoDB session (URL+credentials → session token); SSRF-guarded |
 | `POST` | `/disconnect` | session | Close the session |
 | `GET`  | `/connect/defaults` | none in dev / session in public mode | Return non-secret env-var defaults the connect dialog should pre-fill |
+| `GET`  | `/graphs` | session | List the connected database's ArangoDB named graphs (topology graphs) available for collection-scope down-select — see §6.8 |
+| `POST` | `/session/graph` | session | Bind (or clear) the active ArangoDB named-graph scope for this session — see §6.8 |
 | `POST` | `/translate` | rate-limited | SPARQL → AQL only (no DB access) |
 | `POST` | `/validate` | rate-limited | SPARQL parse-only validation |
 | `POST` | `/execute` | session + rate-limited | SPARQL → AQL → ArangoDB → bindings |
@@ -300,6 +312,7 @@ that already speak our shape.
 | `POST` | `/nl-translate` | session-optional + NL rate-limited | NL question → SPARQL → AQL |
 | `POST` | `/nl-explain` | session-optional + NL rate-limited | NL question → SPARQL → AQL → human-readable explanation |
 | `POST` | `/nl-execute` | session + NL rate-limited + compute rate-limited | NL question → SPARQL → AQL → bindings |
+| `POST` | `/nl-samples` | session-optional + NL rate-limited | Schema-derived (optionally LLM-authored) example NL questions for the workbench suggestions dropdown — see §7.5 |
 | `GET`  | `/schema/introspect` | session + rate-limited | Live schema acquisition (analyzer or heuristic) — see §6.4 |
 | `GET`  | `/schema/properties` | session + rate-limited | Per-collection inferred property catalog |
 | `GET`  | `/schema/summary` | rate-limited | Conceptual summary derived from a client-supplied mapping body (no DB access) |
@@ -910,6 +923,60 @@ advisories" panel.
 | `W_SCHEMA_DRIFT_STATS` | `/schema/status` detected a counts-fingerprint change since last refresh. Cardinality-aware planning may be stale. |
 | `W_SCHEMA_DRIFT_SHAPE` | `/schema/status` detected a shape-fingerprint change since last refresh. The mapping itself is stale; a re-acquire is recommended. |
 
+### 6.8 ArangoDB named-graph scoping (collection down-select)
+
+> **Disambiguation.** This section is about **ArangoDB named graphs**
+> (topology graphs over edge collections — the database's own concept),
+> *not* RDF/SPARQL named graphs (the `GRAPH <iri>` quad dimension, which
+> this service encodes as a per-document `_graph` attribute — see
+> Appendix B.1 / ADR-0001). The two are orthogonal: the former scopes
+> *which physical collections the schema covers*; the latter scopes
+> *which quads a SPARQL pattern matches*.
+
+A database often holds collections that are irrelevant to the queries a
+user wants to run — fixtures, other applications' data, staging copies.
+ArangoDB named graphs already group the collections that belong together
+topologically, so the service lets a session **down-select the schema to
+a single named graph** before translation, keeping the resolver's IRI →
+collection space (and the NL prompt's schema context) focused.
+
+**Session-scoped, not request-scoped.** The active scope lives on the
+session (`_Session.graph_name`), set via `POST /session/graph`
+(`{ "graphName": "<name>" | null }`) and discoverable via `GET /graphs`.
+Binding `null` (or omitting it) clears the scope back to "all
+collections". Every schema-consuming route (`/schema/*`, `/translate`,
+`/execute`, `/nl-*`) reads `getattr(session, "graph_name", None)` and
+threads it through `acquire_mapping_bundle(..., graph_name=…)`.
+
+**Down-select algorithm** (`arango_sparql/schema/graph_scope.py`,
+`scope_bundle_to_graph`): given an acquired `MappingBundle` and a graph
+name, keep only the entities/relationships whose physical collections
+belong to that graph, then stamp `metadata.graphScope`. Collection
+membership is resolved in two passes, preferring analyzer signal:
+
+1. **Analyzer membership tags** — when the bundle was produced by an
+   analyzer that emits per-entry `physicalMapping[*].graphs` (the
+   `arangodb-schema-analyzer` named-graph integration), membership comes
+   straight from those tags. No live DB round-trip needed.
+2. **Live graph definition** — otherwise the service reads the graph's
+   vertex + edge collections directly from `db.graph(name)` and filters
+   the bundle by collection name.
+
+If the graph cannot be resolved by either path the bundle is returned
+**unscoped** (fail-open to "all collections") rather than erroring — a
+missing/renamed graph degrades to the pre-existing behaviour.
+
+**Cache keying.** Scoped bundles must not collide with the full-database
+bundle in the schema cache. `_get_or_acquire` keys cache entries with
+`_scoped_cache_key(db_name, graph_name)` → `"<db>"` when unscoped,
+`"<db>::graph::<name>"` when scoped, so each scope has its own cache
+slot and drift fingerprint.
+
+**UI.** The workbench surfaces this as a `GraphSelector` pill in the
+header (mirrors `TenantSelector`): "All collections" plus one entry per
+named graph with its vertex/edge counts. Selecting one calls
+`POST /session/graph` then re-acquires the (now scoped) schema (§10.13).
+
 ---
 
 ## 7. NL → SPARQL pipeline
@@ -1075,6 +1142,51 @@ NL evaluation lives under `tests/nl2sparql/eval/` and is gated behind
    (d) length — 1-clause, 2-clause, 3+ clause questions.
 6. **Reports** are gitignored (cost-control); the baseline JSON is
    versioned.
+
+### 7.5 Query suggestions (`/nl-samples`)
+
+The workbench seeds its NL "Ask" box with example questions so a new user
+isn't faced with an empty prompt. `POST /nl-samples`
+(`{ ontology_ttl?, count?, use_llm? }` → `{ queries: string[], elapsed_ms }`)
+generates these from the active schema, implemented in
+`arango_sparql/nl2sparql/samples.py::suggest_nl_queries`.
+
+- **Schema-derived by default (always available).** The rule-based path
+  walks the ontology via `owl_graph_view` (classes, object properties)
+  and instantiates natural-language templates ("list all people", "which
+  documents mention …"). It needs no LLM and no DB, so suggestions work
+  the moment an ontology is loaded.
+- **Optional LLM authoring.** When `use_llm=true` *and* a provider is
+  configured (§7.6), the schema is handed to the LLM with a
+  suggestions-only system prompt; output is cleaned (`_parse_llm_lines`
+  strips list markers/quotes, drops too-short or query-shaped lines) and
+  capped to `count`. Any LLM failure falls back to the rule-based path —
+  the endpoint never errors purely because the LLM is unavailable.
+- **Rate-limited** under the NL tier (§8.3) and **endpoint-timed**
+  (§9.1). The UI refetches when the `(database, ontology)` pair changes
+  and merges results with the user's recent NL history into the dropdown
+  (§10.12).
+
+### 7.6 LLM provider resolution
+
+`get_default_client()` selects a provider/model/key from the environment,
+mirroring the sister `arango-cypher-py` policy so a single `.env` drives
+both services:
+
+1. **Explicit selector** — `NL2SPARQL_PROVIDER` (or generic
+   `LLM_PROVIDER`), one of `openai` / `openrouter` / `anthropic`.
+2. **Inference** when unset — from `NL2SPARQL_MODEL` (a `claude…` model
+   ⇒ Anthropic), else from whichever key is present.
+3. **Key resolution with fallback** — the `NL2SPARQL_API_KEY` variant is
+   tried first, then the **de-facto-standard** `OPENAI_API_KEY` /
+   `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`. This lets an environment
+   already configured for the Cypher service enable this pipeline with no
+   duplicate, prefixed keys.
+4. Returns `None` (⇒ the `/nl-*` routes surface `503
+   E_NL_PROVIDER_UNAVAILABLE`) when no usable key can be resolved. There
+   is deliberately **no** rule-based NL→SPARQL fallback — unlike NL
+   *suggestions* (§7.5), translating a question without an LLM has no
+   safe analogue.
 
 ---
 
@@ -1379,6 +1491,64 @@ modellers, ontology authors) — the third-party-tool compatibility
 matrix in §11 covers the other primary surface (machine SPARQL
 clients).
 
+**Scope.** The workbench is a **debug and demo surface** for the
+translation service — a single operator, one ArangoDB credential per
+browser session. Multi-user auth, server-side per-user state, and
+collaboration are explicitly out of scope; when the connected database is
+multi-tenant the UI *surfaces* the backend tenant scope (§10.6) but is
+not itself an authz boundary.
+
+The canonical layout target is the **chat-first workbench shell** (§10.0),
+adopted from the sister project's `query_workbench_shell_spec.md`. The
+component contracts in §10.2–§10.7 remain in force but are *surfaced
+through* the shell's disclosure levels rather than all being visible at
+once. The phased migration from the legacy split-pane layout to the shell
+is tracked in [`implementation_plan.md`](implementation_plan.md)
+(work-package **WP-UI-SHELL**).
+
+### 10.0 Workbench shell model (chat-first, progressive disclosure)
+
+The workbench is organised as a **conversational shell with progressive
+disclosure** — the same three-level model the sister project ships, so a
+developer who knows one workbench knows both. Power surfaces are hidden by
+default and revealed on demand, not laid out as a permanent wall of
+panels and buttons.
+
+| Level | Surface | Components | Default |
+| --- | --- | --- | --- |
+| **L0 — Conversation** | NL "Ask" composer + results | `ChatComposer` (§10.14) + `ResultsPanel` (§10.5) | **Always visible** |
+| **L1 — Query Inspector** | SPARQL (source) + AQL (target) editors and power actions (Translate / Run / Explain / Profile) | `QueryInspector` (§10.15) wrapping `SparqlEditor` (§10.2) + `AqlEditor` (§10.3) | **Closed** (bottom drawer) |
+| **L2 — Workspace panels** | Ontology/mapping, clause outline, samples, history, preferences | `MappingPanel` (§10.4), `ClauseOutline`, `SampleQueries`, `QueryHistory`, `SettingsMenu` (§10.16) | **Closed** (gear popover + modals) |
+
+**Header** shrinks to **title + `ConnectionDialog` + `GraphSelector` /
+`TenantSelector` (connection context) + gear**. Everything else
+(samples, history, outline, ontology toggle, auto-translate/run toggles,
+NL mode) moves into the `SettingsMenu` gear (§10.16).
+
+**The Send pipeline.** Submitting the composer (Enter) runs one
+orchestrated pipeline; Shift+Enter inserts a newline. A pure helper
+`ui/src/utils/pipeline.ts::planSend(connected)` returns the intent
+`{ translate: true, run: connected }`: the NL question is always
+translated (NL → SPARQL → AQL), and executed only when a session is
+connected. A status strip reports staged progress
+("Generating SPARQL…" → "Transpiling to AQL…" → "Running…") and offers
+cancel while in flight. When disconnected, Send still produces SPARQL +
+AQL and shows an inline "Connect to run" affordance — it never dead-ends.
+
+**Disclosure defaults are session-only.** The inspector and ontology
+panel open from the shell (or auto-open on the relevant error — §10.9)
+and a hard refresh returns to the clean L0 default. Editor pane sizes and
+open/closed state persist within a session (`qi_*` keys) but reset on
+reload.
+
+**Deliberate exception to `ui-architecture.mdc`.** The object-centric
+workspace rule "persistent zones — resizable, never collapsed" does
+**not** apply to this focused query tool: the shell *intentionally* lets
+the editor (L1) and workspace (L2) surfaces collapse to zero, because a
+query workbench benefits from progressive disclosure over an always-on
+three-zone canvas. This exception is scoped to the `/` workbench route
+only.
+
 ### 10.1 Editor stack — versions and dependency contract
 
 The UI pins the same CodeMirror 6 / Lezer family as the sister
@@ -1583,6 +1753,114 @@ slowdown.
 
 Regression > 25 % on any budget fails CI; smaller regressions surface
 as a non-blocking comment on the PR.
+
+### 10.12 NL "Ask" bar & suggestions
+
+A single-line "Ask" bar sits above the SPARQL editor (mirrors the sister
+project's NL affordance). Behaviour:
+
+- **Generate** (button or Enter) calls `POST /nl-translate` with the
+  question and the active `ontology_ttl`; on success it populates both
+  the SPARQL and AQL panes and records provenance in the store
+  (`sparqlSource = "nl_pipeline"`, plus `NlInfo` telemetry: llm_calls,
+  cost_usd, latency_ms, repaired). A spinner + status line reflect the
+  in-flight/last-call state; an error banner shows the structured error
+  (e.g. `503 E_NL_PROVIDER_UNAVAILABLE` when no provider is configured).
+- **Suggestions dropdown** merges the user's recent NL history
+  (persisted in local state, deduped) with schema-derived examples from
+  `/nl-samples` (§7.5), each tagged `recent` or `example`. It refetches
+  examples when the `(database, ontology)` pair changes.
+- Manual edits to the SPARQL pane reset provenance to
+  `sparqlSource = "user"`, so the telemetry never misattributes a
+  hand-written query to the LLM.
+
+### 10.13 Graph selector
+
+A `GraphSelector` pill in the header (styled like `TenantSelector`) lets
+the user scope the workbench to one ArangoDB named graph (§6.8). It lists
+"All collections" plus every graph from `GET /graphs` with vertex/edge
+counts. Selecting an entry calls `POST /session/graph` and then
+re-acquires the now-scoped schema (so the graph view, IRI resolution, and
+NL prompt context all narrow together). Loading and error states are
+rendered inline on the pill; clearing returns to the full-database scope.
+
+### 10.14 Chat composer (`ui/src/components/ChatComposer.tsx`) — L0
+
+The always-visible L0 surface (§10.0). It is the evolution of the flat NL
+"Ask" bar (§10.12) into the primary entry point of the shell:
+
+- Multi-line input; **Enter = Send** the full pipeline (`planSend`,
+  §10.0), **Shift+Enter = newline**. Send is disabled on an empty
+  composer and shows a **cancel** control while a pipeline is in flight.
+- A **status strip** (`role="status"`) reports the staged pipeline
+  progress and, when disconnected, an inline "Connect to run".
+- The suggestions dropdown (recent NL history + `/nl-samples`, §10.12)
+  anchors to the composer; the active tenant/graph scope is shown as an
+  inline context chip.
+- Provenance is recorded exactly as §10.12 specifies
+  (`sparqlSource = "nl_pipeline"`, `NlInfo` telemetry); a manual edit in
+  the inspector resets it to `"user"`.
+
+### 10.15 Query inspector (`ui/src/components/QueryInspector.tsx`) — L1
+
+A **collapsible bottom drawer**, closed by default, that hosts the
+editors and power actions previously always-on in the split-pane layout:
+
+- SPARQL (source, §10.2) and AQL (target, §10.3) editors in a
+  **drag-resizable split**; each pane independently collapsible. Height
+  and split ratio persist within the session (`qi_height`, `qi_split`,
+  `qi_sparql_open`, `qi_aql_open`).
+- Power actions live here, not in the header: **Translate**, **Run**,
+  **Explain**, **Profile**, **Format AQL**, and AQL **edit-and-rerun**
+  via `/execute-aql` reading the live editor document (§10.3).
+- **Auto-opens on error** (toggle in `SettingsMenu`, default on): a
+  translate failure opens it focused on the SPARQL pane; an execution
+  failure opens it on the AQL pane with the offending line highlighted
+  (§10.9).
+
+### 10.16 Settings menu (`ui/src/components/SettingsMenu.tsx`) — L2 gear
+
+A single **gear popover** in the header that consolidates what used to be
+a row of header buttons, keeping the shell decluttered:
+
+- **Panel triggers:** Ontology/mapping (§10.4), Clause outline, Sample
+  queries, Query history, Command palette (`Mod-K`, §10.7).
+- **Behaviour toggles:** auto-translate, auto-run, NL-direct mode,
+  open-inspector-on-error, results table density, and (v1.1) theme.
+- Preferences that affect persistence are stored per the §10.7 keys;
+  purely-visual toggles are session-only.
+
+### 10.17 Schema-catalog readiness UX
+
+Schema acquisition can be slow on first touch (§6.3), so the UI must
+**never show an indefinite spinner** on connect or graph-scope change.
+The connect / introspect flow reflects the catalog's readiness:
+
+- `GET /schema/introspect` may report `status: "pending"` while the
+  analyzer warms; the client polls (`introspectSchemaUntilReady`) instead
+  of blocking, and the store carries `schemaPending` / `schemaAnalyzing`
+  flags.
+- While pending, an **amber banner** shows "Schema is being analyzed"
+  with **Check again** and **Analyze now** (force-reacquire) actions —
+  not a modal, not a spinner that can hang.
+- This is the L0-visible counterpart of the operational states in §10.9
+  and pairs with the `W_SCHEMA_*` advisories in §6.7 / `SchemaWarningBanner`.
+
+### 10.18 Schema-graph scalability
+
+`SchemaGraph` / `CytoscapeSchemaGraph` (§10.4) must stay legible on real
+ontologies (hundreds of classes/properties). Required affordances,
+mirroring the sister project's schema-graph work:
+
+- **Relationship bundling** — object properties sharing the same
+  (domain, range) class pair render as one bundled arc, expandable on
+  click to the individual predicates.
+- **Edge-volume weighting** — arc thickness reflects instance
+  cardinality from analyzer statistics (§6.5) when available.
+- **Search / filter** — a class/property search box highlights and
+  focuses matches; non-matches dim.
+- **Click-to-expand** — clicking a bundle or class reveals its members
+  incrementally rather than rendering the full graph up front.
 
 ---
 
@@ -2509,8 +2787,18 @@ test enforcement, security-testing rows) gate the public release tag.
   session header
 - Sharding: `physicalMapping.shardFamilies` honoured in cross-shard AQL
 
-**UI / Workbench (§10)**
+**UI / Workbench (§10)** — detailed work-package tracking lives in
+[`implementation_plan.md`](implementation_plan.md) (**WP-UI-\***).
 
+- **Chat-first workbench shell (§10.0, WP-UI-SHELL):** `ChatComposer`
+  (L0), collapsible `QueryInspector` (L1), `SettingsMenu` gear (L2), and
+  the `planSend` pipeline helper — the header reduced to
+  title + connection + graph/tenant + gear
+- **Schema-catalog readiness UX (§10.17):** `schemaPending` /
+  `schemaAnalyzing` polling with an amber "being analyzed" banner instead
+  of an indefinite spinner
+- **Schema-graph scalability (§10.18):** relationship bundling, search,
+  edge-volume weighting, click-to-expand
 - SPARQL editor (`SparqlEditor.tsx`) at parity with `arango-cypher-py`'s
   `CypherEditor.tsx` (custom StreamLanguage, schema-aware completion,
   hover docs, clause outline, `Mod-Enter` / `Shift-Enter` /
@@ -3150,14 +3438,26 @@ provisioning.
 | Env var | Default | Required? | Description |
 | --- | --- | --- | --- |
 | `NL2SPARQL_ENABLED` | `true` | no | Master switch — disables the entire `/nl-*` family when `false` |
-| `NL2SPARQL_PROVIDER` | `openai` | no | One of `openai`/`anthropic`/`openrouter` |
-| `NL2SPARQL_MODEL` | `gpt-4o-mini` | no | Model name within the provider |
+| `NL2SPARQL_PROVIDER` | inferred | no | One of `openai`/`anthropic`/`openrouter`. When unset, inferred per §7.6. |
+| `LLM_PROVIDER` | empty | no | Generic provider selector honoured as a fallback when `NL2SPARQL_PROVIDER` is unset (§7.6) |
+| `NL2SPARQL_MODEL` | provider default | no | Model name within the provider (`gpt-4o-mini` for OpenAI, `claude-sonnet-4-5` for Anthropic) |
+| `NL2SPARQL_API_KEY` | empty | no | Provider key override; takes precedence over the standard `*_API_KEY` vars below (§7.6) |
+| `NL2SPARQL_BASE_URL` | provider default | no | Override the provider base URL (vLLM / Ollama / Azure-OpenAI) |
 | `NL_REPAIR_MAX_ATTEMPTS` | `2` | no | Repair-loop ceiling; protects against blowup |
 | `NL_PROMPT_PREFIX_CACHE_BYTES` | `67108864` (64 MiB) | no | Prefix-cache cap |
 | `LLM_HOURLY_BUDGET_USD` | `5.00` | no | Used by alert `SparqlLLMCostBudget` (§9.7) |
-| `OPENAI_API_KEY` | empty | yes when provider=openai | |
-| `ANTHROPIC_API_KEY` | empty | yes when provider=anthropic | |
+| `OPENAI_API_KEY` | empty | yes when provider=openai | Also used to **infer** OpenAI when no provider is set (§7.6) |
+| `ANTHROPIC_API_KEY` | empty | yes when provider=anthropic | Also used to infer Anthropic when no provider is set (§7.6) |
 | `OPENROUTER_API_KEY` | empty | yes when provider=openrouter | |
+
+**Key precedence (§7.6).** For the selected provider the key is read from
+`NL2SPARQL_API_KEY` first, then the matching standard variable
+(`OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENROUTER_API_KEY`). This is
+why none of the standard keys is unconditionally required — an
+environment configured for the sibling Cypher service enables this
+pipeline as-is. When no usable key resolves, `/nl-*` return `503
+E_NL_PROVIDER_UNAVAILABLE` while the rest of the service (translate,
+execute, schema, rule-based `/nl-samples`) keeps working.
 
 ### A.7 Observability
 
@@ -3200,6 +3500,296 @@ provisioning.
 
 ---
 
+## Appendix B. Decision records (ADRs)
+
+Architecture Decision Records folded in from the former
+`docs/architecture/decisions/*.md` files (which now redirect here). Each
+records a net-new design decision the modern Python service owns — i.e.
+one with no legacy-Foxx behaviour to port. Where an ADR and the main body
+disagree, the main body wins; ADRs are the rationale of record.
+
+### B.1 ADR-0001 — Named graphs encoded as a per-document `_graph` attribute
+
+- **Status:** Accepted — **Date:** 2026-05-20 — **Owner:** arango-sparql-py
+- **Related code:** `arango_sparql/translate/visitor.py::visit_Graph`,
+  `arango_sparql/translate/resolver.py::SchemaResolver.graph_field`
+
+> This is about **RDF/SPARQL named graphs** (the `GRAPH` quad dimension),
+> distinct from the **ArangoDB named graphs** used for schema down-select
+> in §6.8.
+
+#### Context
+
+SPARQL 1.1 datasets are *quads* — `(subject, predicate, object, graph)` —
+and the `GRAPH <iri> { … }` / `GRAPH ?g { … }` constructs scope triple
+patterns to (or surface) the named-graph component.
+
+The legacy Foxx service `arango-sparql` has **zero** named-graph support
+(no `GRAPH` handling in `pgt-translator.js` or `rpt-translator.js`).
+There is no porting recipe to consult; this is a net-new design decision.
+
+ArangoDB does not have a native "named graph per document" notion —
+"named graphs" in ArangoDB refer to *topology graphs* over edge
+collections, not to RDF named graphs. So we pick how to encode the graph
+dimension ourselves, and it has to work across all three storage layouts:
+
+- **PG (Property Graph)** — one collection per RDF class; subjects are
+  documents, attributes are object values.
+- **LPG (Labeled Property Graph)** — PG plus explicit edge collections
+  for object-properties; topology is first-class.
+- **RPT (RDF Predicate Translator)** — one edge/row collection per
+  predicate; triples are first-class documents.
+
+#### Decision
+
+Encode RDF named graphs as a **per-document `_graph` attribute** on every
+document in every collection that participates in SPARQL translation.
+
+- `_graph: <iri>` means "this triple/document is in named graph `<iri>`".
+- `_graph: null` (or absent) means "default graph".
+- The attribute name is configurable via `SchemaResolver.graph_field`
+  (default `"_graph"`).
+
+`visit_Graph` is **layout-agnostic**: it pushes a graph scope onto
+`_BindingState`, and every triple emission consults the active scope to
+add `FILTER doc._graph == @g` (constant IRI) or `LET ?g = doc._graph`
+(variable IRI). Whether `doc` came from a PG class collection, an LPG
+edge collection, or an RPT predicate collection is irrelevant — the
+resolver handled that upstream.
+
+#### Considered alternatives
+
+- **B — Per-collection graph membership** (tag each collection with a
+  `graph_iri`). *Rejected:* only works for PG; `GRAPH ?g` would explode
+  into an O(N graphs) UNION; real ETL ingests multiple graphs into one
+  collection; and — decisively — Strategy A leaves B accessible later as
+  a resolver-side optimisation, whereas B → A would require migrating
+  every document. Pick the choice that doesn't foreclose its alternative.
+- **C — Stub `visit_Graph` and defer.** *Rejected:* zero W3C coverage
+  bump, blocks cascading `subquery`/`property-path`/`exists` work, and
+  the decision is cheaply reversible so there's no benefit to deferring.
+
+#### Consequences
+
+- **Positive:** one `visit_Graph` serves PG/LPG/RPT (new layouts inherit
+  it free); `(S,P,O,G)` maps 1:1 to how quad-stores physically encode
+  quads; ~11 XFAIL W3C tests become reachable (≈ +4.4 pp); a single
+  collection can host docs from any number of named graphs; `_graph` is a
+  plain indexable string attribute.
+- **Negative:** one extra `FILTER doc._graph == @g` per triple in a
+  `GRAPH` scope (mitigate by indexing `_graph`); default-graph
+  strict-vs-lax is a spec-deferred dataset choice — v0.9 defaults to
+  **lax** (`default_graph_includes_named=True`) to avoid churning goldens
+  and to keep legacy data queryable, with a knob to flip to strict; any
+  ingestion path that omits `_graph` produces default-graph docs (by
+  design).
+- **Neutral:** no legacy behaviour to migrate; W3C live-execution tests
+  need fixtures that populate `_graph` (the translation-only harness does
+  not).
+
+#### Implementation notes & references
+
+- `SchemaResolver` gains `graph_field: str = "_graph"` and
+  `default_graph_includes_named: bool`. `_BindingState` gains a
+  `graph_scope` stack (`visit_Graph` pushes/pops). Each FOR-emitting
+  visitor consults the active scope. A future
+  `should_filter_graph(collection, graph_iri)` is the seam for Strategy B.
+- SPARQL 1.1 §8.3 "Querying the Dataset"; W3C DAWG cases impacted:
+  `subquery/sq01-sq05`, `subquery/sq07`, `property-path/pp06`, `pp07`,
+  `pp34`, `pp35`, `exists/exists02`; see §6.6.
+
+### B.2 ADR-0002 — Cross-subject `OPTIONAL` (LeftJoin) emitter
+
+- **Status:** **Partially resolved.** Problem 2 (OPTIONAL-rebind inside
+  MINUS) **shipped** 2026-06-02. Problem 1 **Option A** (RPT-native
+  cross-subject OPTIONAL) **shipped** 2026-06-02 — golden-pinned and
+  pyoxigraph-cross-validated (`tests/cross/test_optional_crosssubject_cross.py`).
+  Problem 1 **Options B/C** remain **deferred to post-v1.0** (travel with
+  the SPARQL-federation slice; see §3.1 slice-priority table).
+- **Date:** 2026-05-28 (resolutions 2026-06-02) — **Owner:** arango-sparql-py
+- **Related code:** `visitor.py::visit_LeftJoin`,
+  `translate/optional_crosssubject.py` (shipped Option A emitter),
+  `translate/variable_predicates.py`, `resolver.py::SchemaResolver`
+
+#### Context — two problems sharing one visitor
+
+Four W3C DAWG query-eval tests remained XFAIL behind `visit_LeftJoin`'s
+two defensive rejections, splitting into two semantically distinct
+problems:
+
+- **Problem 1 — cross-subject OPTIONAL** (`csv-tsv-res/tsv02`,
+  `json-res/jsonres02`): `SELECT * WHERE { ?s ?p ?o OPTIONAL { ?o ?p2 ?o2 } }`.
+  The OPTIONAL's subject `?o` is bound by the required side only as a
+  *value* (not a doc the translator opened a `FOR` over), and the body
+  uses a *variable predicate* `?p2`.
+- **Problem 2 — OPTIONAL re-binds an already-bound variable, inside
+  MINUS** (`negation/full-minuend`, `negation/part-minuend`): an OPTIONAL
+  mentions a variable already in scope, which per §18.2.5.2 acts as a
+  *conditional add* (compatibility test), not a fresh binding.
+
+**Decisive insight — difficulty is storage-model-dependent.** The "which
+collection does `?o` range over?" question (what makes Problem 1 hard)
+only exists in flattened document models:
+
+| Model | Cross-subject OPTIONAL hard? | Why |
+|---|---|---|
+| **RPT** | **No — trivial & spec-correct** | `?o ?p2 ?o2` is a plain left-join scan over the triples collection; `?p2` is just the predicate column. RPT *is* a triple table. |
+| **PG** | **Yes — genuinely ambiguous** | `?o` is a URI with no class annotation; must find which collection holds `_uri == ?o`, then fan `?p2` over `ATTRIBUTES(doc)`. |
+| **LPG** | **Mostly like PG** | Same `_uri → collection` problem; discriminator only helps if `?o`'s type is known (it isn't). |
+| **Default `Document`** | **Tractable but lossy** | One collection, so "which collection" collapses — but the variable predicate inherits the carve-out (`?p2` binds the attribute *name*, not the IRI), so it translates but is a live-execution XFAIL. |
+
+This is why the W3C number (≈ 100 % on the flattened `Document` model)
+and the "right" design pull apart: closing `tsv02`/`jsonres02` *in the
+harness* means the lossy Document/PG emulation (Option B), but the clean
+spec-faithful implementation is the RPT one (Option A) — which the
+harness never exercises.
+
+#### Options (Problem 1)
+
+- **Option A — RPT-native left-join only (SHIPPED 2026-06-02).** Emit the
+  standard left-join-via-subquery idiom against the triples collection:
+
+  ```aql
+  LET _opt = (FOR t IN @@triples
+              FILTER t.<subject_uri> == <o_expr>
+              RETURN { p2: t.<predicate>, o2: t.<object_value> })
+  FOR _row IN (LENGTH(_opt) > 0 ? _opt : [null])
+    // bind ?p2 = _row.p2, ?o2 = _row.o2 (both null when no match)
+  ```
+
+  Spec-correct including the variable predicate; multi-row OPTIONAL
+  preserved; reversible (B/C addable later). Moves the W3C harness number
+  by **0** (harness is Document/PG, not RPT) — a pure correctness
+  investment. `visit_LeftJoin` detects the RPT cross-subject case
+  (single-triple body, no inner FILTER, subject in `var_to_expr` but not
+  `var_to_doc_alias`, `var_to_rpt_class` non-empty) and routes to
+  `optional_crosssubject.py`; everything else still raises a structured
+  rejection. Verified by byte-for-byte goldens plus pyoxigraph binding
+  parity (fan-out, single-match, no-match→null-pad).
+- **Option B — Default/single-collection emulation (the W3C-moving
+  option).** Correlated subquery over the default collection on
+  `doc._uri == <o_expr>`, fan `?p2` over `ATTRIBUTES(doc)`,
+  `[null]`-pad. Closes `tsv02`/`jsonres02` (+0.8 pp) **but** inherits the
+  variable-predicate carve-out, so those become live-execution XFAILs —
+  it moves the gap rather than closing it. *Deferred.*
+- **Option C — Full multi-model with `_uri → collection` resolution.**
+  Correct across all models, but largest scope (new resolver index +
+  UNION-cost story) — disproportionate for two tests. *Deferred.*
+
+#### Problem 2 — RESOLVED (2026-06-02)
+
+Model-independent. The fix: an OPTIONAL object variable that is already
+bound emits a *conditional equality* rather than rejecting. Two parts:
+
+1. **Conditional add (§18.2.5.2).** `_BindingState.optional_rebind_sink`
+   switches `visit_LeftJoin` out of "reject re-bind" mode inside a MINUS
+   probe; each re-binding optional triple emits a compatibility FILTER
+   `(<inner> == null || <outer> == null || <inner> == <outer>)` and
+   records `(var, inner_value, outer_bound)` — no fresh binding.
+2. **Disjoint-domain exemption (§8.3.4).** A MINUS inner row only removes
+   an outer row when they share ≥ 1 bound variable; `_translate_probe`
+   adds an overlap guard when every shared variable is bound by an
+   optional (omitted when a required inner triple already FILTERs
+   equality). Verified with goldens plus pyoxigraph parity on real W3C
+   data, executed by the AQL-subset interpreter (`LET = LENGTH((…))`).
+
+#### Decision & consequences
+
+Problem 2 was taken first (model-independent, no lossiness, no
+collection-resolution dependency). Problem 1 Option A followed because
+the interpreter's correlated-subquery capability generalised to the
+row-list + `[null]`-pad shape, removing Option A's "ships untested
+end-to-end" blocker. Options B/C stay deferred with federation: closing
+`tsv02`/`jsonres02` in the harness requires the lossy emulation, the §3.1
+coverage bar is already cleared by 71 pp, and the ratio sub-clause can
+only be fixed by shipping federation regardless. Net: W3C query-eval
+coverage moved 95.7 % → 96.4 % (Problem 2); Option A moves it by 0;
+remaining `visit_LeftJoin` branches keep raising structured
+`UnsupportedSparqlError`s (never silently-wrong AQL).
+
+**References:** SPARQL 1.1 §18.2.5.2, §17.4.1; W3C DAWG `csv-tsv-res/tsv02`,
+`json-res/jsonres02`, `negation/full-minuend`, `negation/part-minuend`;
+`mapping.py` `EntityStyle`/`RelationshipStyle`; Appendix B.1 (per-document
+`_graph` precedent); §3.1 slice-priority table.
+
+---
+
+## Appendix C. Inception narrative
+
+> Folded in from the former `vision.md` (which now redirects here). This
+> is the original v0 design memo that motivated the project — the *why*
+> and the high-level technical bets. Where it and the main PRD body
+> disagree, the body wins; this is kept as the historical record because
+> it explains decisions the PRD takes for granted.
+
+Transitioning `arango-sparql` from a Foxx service to a Python-based
+microservice (`arango-sparql-py`) while adopting the patterns established
+in `arango-cypher-py` is a logical, strategic move: a standalone service
+can leverage rich Python ecosystems for both the Semantic Web
+(RDF/SPARQL) and AI (the NL capabilities).
+
+#### C.1 Core transpiler: parsing and AST (SPARQL → AQL)
+
+`arango-cypher-py` used ANTLR4 to parse Cypher. For SPARQL we have a
+massive Python advantage: **`rdflib`** ships a complete, compliant SPARQL
+1.1 parser. Instead of porting `src/lib/sparql-parser.js` and managing a
+grammar/AST, pass SPARQL strings to
+`rdflib.plugins.sparql.parser.parseQuery()`, which returns a reliable AST
+(Algebra). A Python transpiler then walks this AST and uses an AQL query
+builder (porting the JS `src/lib/aql-query-builder.js`) to emit AQL.
+
+#### C.2 Utilizing `arango-schema-mapper`
+
+The OWL schema bridges the user's conceptual graph and the physical
+ArangoDB schema — an even more natural fit for SPARQL, which inherently
+queries RDF/OWL. Strategy: (1) have `arango-schema-mapper` generate the
+OWL ontology of the ArangoDB schema; (2) load it into an `rdflib.Graph`
+at startup; (3) during transpilation, resolve query URIs against that
+in-memory ontology to find the physical collection/property. The OWL
+ontology replaces the legacy hardcoded `rpt-translator.js` /
+`pgt-translator.js` mapping configs, making the transpiler schema-aware.
+
+#### C.3 Natural language to SPARQL (NL2SPARQL)
+
+`arango_cypher/nl2cypher/` is the template for `arango_sparql/nl2sparql/`.
+Provide the LLM with the OWL ontology (LLMs read Turtle well) and instruct
+it to *"Generate a SPARQL 1.1 query based on the following RDF/OWL schema.
+Return only the SPARQL."* Keep the few-shot prompting and evaluation
+pipelines, adapted to compare expected vs. generated SPARQL.
+
+#### C.4 Rigorous testing & reference databases
+
+The SPARQL TCK equivalent is the **W3C SPARQL 1.1 Evaluation Test Suite**
+(DAWG) — hundreds of queries, input RDF, and expected bindings — run via a
+harness analogous to the Cypher TCK runner. For the reference store, use
+**Oxigraph** (`pyoxigraph`): embedded, strictly W3C-compliant, fast, no
+separate container; Apache Jena Fuseki is the server-based alternative.
+
+#### C.5 UI and frontend
+
+The React/Vite/TypeScript `ui/` is highly reusable. Swap the Cypher
+syntax highlighter for SPARQL (CodeMirror's
+`@codemirror/legacy-modes/mode/sparql`). For graph visualization, RDF is
+all triples (properties are nodes too), so add a UI toggle that
+"collapses" literal nodes into properties on the subject node to keep the
+Cytoscape graph readable.
+
+#### C.6 Suggested execution plan
+
+1. **Scaffold** — clone `arango-cypher-py`, rename to `arango_sparql`,
+   rip out `_antlr`, replace with `rdflib`.
+2. **Translate API** — port `aql-query-builder.js` to Python; build the
+   AST walker over `rdflib` parser output.
+3. **Integrate mapper** — feed the OWL representation into the translator
+   context so URIs resolve dynamically.
+4. **Test suite** — add Oxigraph; download the W3C suite; write the
+   `tests/w3c/` runner comparing Oxigraph vs. ArangoDB output.
+5. **NL2SPARQL** — adapt the LLM prompts to emit SPARQL from Turtle.
+6. **UI** — adapt the frontend for SPARQL syntax and RDF-style rendering.
+
+---
+
 *Last updated alongside the PRD-rewrite commit on `main` (post `v0.1.0`
-tag). When this document drifts from the code, the code wins — open a PR
-to re-sync.*
+tag) — consolidated `vision.md` (Appendix C) and the `decisions/` ADRs
+(Appendix B) into this single PRD. When this document drifts from the
+code, the code wins — open a PR to re-sync.*
