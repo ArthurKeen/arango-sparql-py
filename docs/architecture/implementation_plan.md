@@ -39,7 +39,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-UI-6 | UI | Results table/JSON/graph + literal-collapse toggle | §10.5 | ✅ Done |
 | WP-UI-7 | UI | Query history + sample queries | §10.7 | ✅ Done |
 | WP-UI-PROXY | UI | Dev vite proxy for `/mapping` + `/sample-queries` | §A.9 | ✅ Done |
-| WP-UI-SHELL | UI | Chat-first workbench shell (Phase 0–4) | §10.0 | 🟡 In progress (Phase 0–2 done) |
+| WP-UI-SHELL | UI | Chat-first workbench shell (Phase 0–4) | §10.0 | 🟡 In progress (Phase 0–3 done; Phase 4 optional) |
 | WP-UI-CAT | UI | Schema-catalog readiness UX (pending/analyzing) | §10.17 | ⬜ Planned |
 | WP-UI-GRAPH | UI | Schema-graph scalability (bundling/search/weight/expand) | §10.18 | ⬜ Planned |
 | WP-UI-EDITOR | UI | SPARQL completion + hover + PrefixManager + explain/profile keymap | §10.2 | ⬜ Planned |
@@ -109,12 +109,17 @@ coverage for the new pure logic and a green `cd ui && npm run build`.
   pane; execute error → AQL pane w/ line highlight.
 - **Verify:** inspector open/close + persistence unit tests.
 
-### Phase 3 — per-result affordance chips + lazy-mount
+### Phase 3 — per-result affordance chips + lazy-mount ✅ Done
 
-- Chips under each result: `SPARQL · AQL · Explain · Profile · Graph ·
-  Edit` that open the inspector focused on that surface.
-- Lazy-mount heavy tabs (Cytoscape graph, large tables) only when
-  selected (feeds §10.11 perf budgets).
+- **Status:** shipped. `ui/src/components/ResultAffordances.tsx` renders a
+  chip bar above the results; `ui/src/utils/affordances.ts` holds the
+  pure enable/active logic (`resultAffordances`) with tests (46 UI tests
+  green). Chips: **View SPARQL** / **View AQL** (open the L1 inspector
+  focused on a pane) and **Graph** (switch the results tab). Explain /
+  Profile chips deferred to WP-UI-EXPLAIN — not shipping chips that 404.
+- **Lazy-mount:** already satisfied — `ResultsPanel` mounts
+  `CytoscapeGraph` only when the Graph tab is active (`GraphView`), and
+  Table/JSON render conditionally. No eager mount of heavy tabs.
 
 ### Phase 4 — multi-turn transcript (optional)
 

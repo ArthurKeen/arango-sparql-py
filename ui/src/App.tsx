@@ -14,6 +14,7 @@ import GraphSelector from "./components/GraphSelector";
 import ChatComposer from "./components/ChatComposer";
 import QueryInspector from "./components/QueryInspector";
 import SettingsMenu from "./components/SettingsMenu";
+import ResultAffordances from "./components/ResultAffordances";
 import { useAppState } from "./api/store";
 import {
   translateSparql,
@@ -32,6 +33,7 @@ import {
   stageLabel,
   isBusy as pipelineBusy,
 } from "./utils/pipeline";
+import { resultAffordances, type AffordanceId } from "./utils/affordances";
 
 // App.tsx implements the chat-first "Query Workbench Shell" (PRD §10.0),
 // mirroring `references/arango-cypher-py/ui/src/App.tsx`:
@@ -451,6 +453,34 @@ export default function App() {
     setAqlPaneOpen((v) => (v && !sparqlPaneOpen ? v : !v));
   }, [sparqlPaneOpen]);
 
+  // Per-result affordance chips (Phase 3): jump to a power surface
+  // without a permanent toolbar. "View SPARQL"/"View AQL" reveal the L1
+  // inspector focused on a pane; "Graph" switches the results tab.
+  const handleAffordance = useCallback(
+    (id: AffordanceId) => {
+      if (id === "graph") {
+        dispatch({ type: "SET_RESULT_TAB", tab: "graph" });
+        return;
+      }
+      setShowInspector(true);
+      if (id === "sparql") {
+        setSparqlPaneOpen(true);
+        requestAnimationFrame(() => sparqlViewRef.current?.focus());
+      } else {
+        setAqlPaneOpen(true);
+      }
+    },
+    [dispatch],
+  );
+
+  const affordances = resultAffordances({
+    hasResults: state.results !== null,
+    sparqlPresent: state.sparql.trim().length > 0,
+    aqlPresent: state.aql.trim().length > 0,
+    inspectorOpen: showInspector,
+    activeTab: state.activeResultTab,
+  });
+
   // Ask-bar suggestions: recent questions first, then schema-derived
   // examples (POST /nl-samples), de-duplicated case-insensitively.
   const nlSuggestions = (() => {
@@ -731,6 +761,9 @@ export default function App() {
               </button>
             </div>
           )}
+
+          {/* L0 — per-result affordance chips (Phase 3) */}
+          <ResultAffordances affordances={affordances} onSelect={handleAffordance} />
 
           {/* L0 — results are the primary surface and fill the space */}
           <div className="flex-1 min-h-0">
