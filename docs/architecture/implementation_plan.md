@@ -38,8 +38,8 @@ of that project's chat-first "Query Workbench Shell"
 | WP-UI-5 | UI | Schema introspect on connect + warning banner + refresh | §10.6 | ✅ Done |
 | WP-UI-6 | UI | Results table/JSON/graph + literal-collapse toggle | §10.5 | ✅ Done |
 | WP-UI-7 | UI | Query history + sample queries | §10.7 | ✅ Done |
-| WP-UI-PROXY | UI | Dev vite proxy for `/mapping` + `/sample-queries` | §A.9 | ⬜ Planned |
-| WP-UI-SHELL | UI | Chat-first workbench shell (Phase 0–4) | §10.0 | ⬜ Planned |
+| WP-UI-PROXY | UI | Dev vite proxy for `/mapping` + `/sample-queries` | §A.9 | ✅ Done |
+| WP-UI-SHELL | UI | Chat-first workbench shell (Phase 0–4) | §10.0 | 🟡 In progress (Phase 0–2 done) |
 | WP-UI-CAT | UI | Schema-catalog readiness UX (pending/analyzing) | §10.17 | ⬜ Planned |
 | WP-UI-GRAPH | UI | Schema-graph scalability (bundling/search/weight/expand) | §10.18 | ⬜ Planned |
 | WP-UI-EDITOR | UI | SPARQL completion + hover + PrefixManager + explain/profile keymap | §10.2 | ⬜ Planned |
@@ -60,8 +60,12 @@ canonical layout. Ships in phases so the workbench keeps working at every
 checkpoint (per `incremental-over-atomic`). Each phase lands with vitest
 coverage for the new pure logic and a green `cd ui && npm run build`.
 
-### Phase 0 — `SettingsMenu` (gear consolidation)
+### Phase 0 — `SettingsMenu` (gear consolidation) ✅ Done
 
+- **Status:** shipped. Header reduced to title + connection + graph +
+  refresh-schema + gear; Samples/History/Outline/Ontology + open-on-error
+  moved into the gear. SPARQL deviation: NL-mode and auto-translate/
+  auto-run toggles omitted (single NL path; Send covers translate+run).
 - **New:** `ui/src/components/SettingsMenu.tsx` — gear popover.
 - **Move into it:** Samples, History, Outline, Ontology toggle, and the
   auto-translate / auto-run / NL-mode / open-inspector-on-error toggles
@@ -71,8 +75,12 @@ coverage for the new pure logic and a green `cd ui && npm run build`.
 - **Verify:** reducer/toggle unit tests; header renders only the four
   allowed controls.
 
-### Phase 1 — `ChatComposer` + `utils/pipeline.ts` (L0)
+### Phase 1 — `ChatComposer` + `utils/pipeline.ts` (L0) ✅ Done
 
+- **Status:** shipped. `handleSend` runs `planSend` (NL generate → run
+  when connected); `runNL` syncs `sparqlRef` so a chained Send → Run
+  reads the fresh query. Status strip + disconnected chip wired. 39 UI
+  tests green (5 new in `pipeline.test.ts`).
 - **New:** `ui/src/components/ChatComposer.tsx` (§10.14) and
   `ui/src/utils/pipeline.ts` exporting `planSend(connected)` →
   `{ translate, run }`, plus `currentStage` / `stageLabel` / `isBusy`
@@ -84,8 +92,13 @@ coverage for the new pure logic and a green `cd ui && npm run build`.
 - **Verify:** `pipeline.test.ts` for `planSend` / stage helpers;
   reducer provenance already covered by `store.test.ts`.
 
-### Phase 2 — `QueryInspector` (L1 drawer)
+### Phase 2 — `QueryInspector` (L1 drawer) ✅ Done
 
+- **Status:** shipped with Translate/Run + per-pane collapse + drag
+  resize/split; persists `qi_height`/`qi_split`/`qi_sparql_open`/
+  `qi_aql_open`/`qi_auto_open_error`; auto-opens on error. Explain/
+  Profile buttons + AQL edit-and-rerun deferred to WP-UI-EXPLAIN /
+  WP-UI-AQL (no affordances that 404).
 - **New:** `ui/src/components/QueryInspector.tsx` (§10.15) — collapsible
   bottom drawer hosting `SparqlEditor` + `AqlEditor` in a drag-resizable
   split; power actions (Translate / Run / Explain / Profile / Format /
@@ -113,12 +126,11 @@ coverage for the new pure logic and a green `cd ui && npm run build`.
 
 ## Standalone UI work packages
 
-### WP-UI-PROXY — dev proxy gap (quick win)
+### WP-UI-PROXY — dev proxy gap (quick win) ✅
 
-`ui/vite.config.ts` does not proxy `/mapping` or `/sample-queries`, so
-dev-mode OWL import/export and API sample queries 404. Add both prefixes
-to `proxiedPaths`. **Verify:** `curl :5173/mapping/export-owl` reaches
-the backend.
+`ui/vite.config.ts` did not proxy `/mapping` or `/sample-queries`, so
+dev-mode OWL import/export and API sample queries 404'd. **Done:** both
+prefixes added to `proxiedPaths`; `npm run build` green.
 
 ### WP-UI-CAT — schema-catalog readiness UX (§10.17)
 
