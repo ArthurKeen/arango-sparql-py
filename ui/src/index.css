@@ -1,11 +1,80 @@
 @import "tailwindcss";
 
+/* Theme (WP-UI-THEME, PRD §10.8).
+ *
+ * The app's chrome is styled with literal Tailwind gray utilities
+ * (`bg-gray-950`, `text-gray-100`, …). Tailwind v4 compiles those to
+ * `var(--color-gray-NNN)`, so we retheme the *entire* app to light by
+ * overriding an INVERTED gray ramp under `html.light` — no per-component
+ * rewrite. CodeMirror follows the same switch via the `--cm-*` palette
+ * consumed by `components/theme.ts`. Accent colours (indigo/emerald/…)
+ * are intentionally left untouched in both themes. */
+
 :root {
+  color-scheme: dark;
+
   --color-brand: #6366f1;
   --color-brand-hover: #818cf8;
   --color-surface: #111827;
   --color-surface-alt: #1f2937;
   --color-border: #374151;
+
+  /* CodeMirror palette (dark) — see components/theme.ts */
+  --cm-bg: #111827;
+  --cm-fg: #e5e7eb;
+  --cm-keyword: #c084fc;
+  --cm-string: #86efac;
+  --cm-number: #fbbf24;
+  --cm-function: #60a5fa;
+  --cm-variable: #e5e7eb;
+  --cm-variable-special: #f472b6;
+  --cm-type: #2dd4bf;
+  --cm-comment: #6b7280;
+  --cm-operator: #94a3b8;
+  --cm-bracket: #d1d5db;
+  --cm-punctuation: #9ca3af;
+  --cm-panel: #1f2937;
+  --cm-border: #374151;
+  --cm-gutter-fg: #6b7280;
+}
+
+html.light {
+  color-scheme: light;
+
+  /* Inverted gray ramp: gray-950 (app bg) → light, gray-100 (text) → dark. */
+  --color-gray-50: #030712;
+  --color-gray-100: #111827;
+  --color-gray-200: #1f2937;
+  --color-gray-300: #374151;
+  --color-gray-400: #4b5563;
+  --color-gray-500: #6b7280;
+  --color-gray-600: #9ca3af;
+  --color-gray-700: #d1d5db;
+  --color-gray-800: #e5e7eb;
+  --color-gray-900: #f3f4f6;
+  --color-gray-950: #f9fafb;
+
+  --color-surface: #ffffff;
+  --color-surface-alt: #f3f4f6;
+  --color-border: #d1d5db;
+
+  /* CodeMirror palette (light) */
+  --cm-bg: #ffffff;
+  --cm-fg: #1f2937;
+  --cm-keyword: #7c3aed;
+  --cm-string: #047857;
+  --cm-number: #b45309;
+  --cm-function: #2563eb;
+  --cm-variable: #1f2937;
+  --cm-variable-special: #be185d;
+  --cm-type: #0f766e;
+  --cm-comment: #6b7280;
+  --cm-operator: #475569;
+  --cm-bracket: #374151;
+  --cm-punctuation: #6b7280;
+  --cm-panel: #f3f4f6;
+  --cm-border: #d1d5db;
+  --cm-gutter-fg: #9ca3af;
 }
 
 body {
@@ -19,17 +88,17 @@ body {
     sans-serif;
 }
 
-/* CodeMirror overrides for dark theme */
+/* CodeMirror surface overrides (theme-driven via CSS variables) */
 .cm-editor {
   height: 100%;
   font-size: 14px;
-  background: var(--color-surface) !important;
+  background: var(--cm-bg) !important;
 }
 
 .cm-editor .cm-gutters {
-  background: var(--color-surface) !important;
-  border-right: 1px solid var(--color-border) !important;
-  color: #6b7280 !important;
+  background: var(--cm-bg) !important;
+  border-right: 1px solid var(--cm-border) !important;
+  color: var(--cm-gutter-fg) !important;
 }
 
 .cm-editor .cm-activeLineGutter {
@@ -45,9 +114,23 @@ body {
 }
 
 .cm-editor .cm-cursor {
-  border-left-color: #e5e7eb !important;
+  border-left-color: var(--cm-fg) !important;
 }
 
 .cm-editor.cm-focused {
   outline: none !important;
+}
+
+/* Reduced motion (PRD §10.10): honour the OS preference by neutralising
+ * animations and transitions app-wide, incl. the Cytoscape/CodeMirror
+ * surfaces that would otherwise pulse/slide. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

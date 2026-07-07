@@ -280,7 +280,7 @@ export default function ConnectionDialog({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="bg-gray-800 rounded-lg shadow-2xl p-6 w-full max-w-md border border-gray-700">
-        <h2 className="text-lg font-semibold mb-4 text-white">
+        <h2 className="text-lg font-semibold mb-4 text-gray-100">
           Connect to ArangoDB
         </h2>
 
@@ -297,7 +297,7 @@ export default function ConnectionDialog({
               value={form.url}
               onChange={(e) => setForm({ ...form, url: e.target.value })}
               placeholder="http://localhost:8529 or https://cloud.arangodb.com"
-              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-gray-100 focus:border-indigo-500 focus:outline-none"
             />
           </label>
           <label>
@@ -305,7 +305,7 @@ export default function ConnectionDialog({
             <input
               value={form.database}
               onChange={(e) => setForm({ ...form, database: e.target.value })}
-              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-gray-100 focus:border-indigo-500 focus:outline-none"
             />
           </label>
           <label>
@@ -313,7 +313,7 @@ export default function ConnectionDialog({
             <input
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
-              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-gray-100 focus:border-indigo-500 focus:outline-none"
             />
           </label>
           <label>
@@ -323,7 +323,7 @@ export default function ConnectionDialog({
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               onKeyDown={(e) => e.key === "Enter" && handleConnect()}
-              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-white focus:border-indigo-500 focus:outline-none"
+              className="w-full px-3 py-2 rounded bg-gray-900 border border-gray-600 text-sm text-gray-100 focus:border-indigo-500 focus:outline-none"
             />
           </label>
         </div>

@@ -132,7 +132,7 @@ export default function ChatComposer({
               <button
                 key={`${i}-${q}`}
                 type="button"
-                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700 hover:text-white truncate transition-colors"
+                className="w-full text-left px-2.5 py-1.5 text-xs text-gray-300 hover:bg-gray-700 hover:text-gray-100 truncate transition-colors"
                 title={q}
                 onMouseDown={(e) => {
                   // onMouseDown (not onClick) so the pick lands before the

@@ -49,7 +49,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-UI-TENANT | UI | Mount `TenantSelector` when multitenancy detected | §10.6 | ⛔ Blocked (no tenant-catalogue / `/session/tenant` route) |
 | WP-UI-CORR | UI | Cross-pane SPARQL↔AQL correspondence wired via translator source map | §10.2 | ⛔ Blocked (translator emits no source map) |
 | WP-UI-A11Y | UI | a11y + i18n + Playwright + Lighthouse budgets | §10.10, §10.11 | ⬜ Planned (v1.1) |
-| WP-UI-THEME | UI | Light theme | §10.8 | ⬜ Planned (v1.1) |
+| WP-UI-THEME | UI | Light theme | §10.8 | ✅ Done |
 
 ---
 
@@ -309,6 +309,28 @@ catalogue; bind via a session route mirroring `/session/graph`.
 Planned: replace the heuristic `utils/correspondenceMap.ts` with
 translator source-map metadata and wire hover-sync between the SPARQL and
 AQL panes in `App.tsx`.
+
+### WP-UI-THEME — light theme (§10.8) ✅ Done
+
+- **Status:** shipped. Dark stays the default; a system/dark/light toggle
+  lives in the gear menu (**Appearance → Theme**).
+- **Mechanism:** the app chrome uses literal Tailwind gray utilities, and
+  Tailwind v4 compiles those to `var(--color-gray-NNN)`. So `index.css`
+  retones the *entire* app by overriding an **inverted** gray ramp under
+  `html.light` (gray-950 app-bg → light, gray-100 text → dark) — no
+  per-component rewrite. CodeMirror follows the same switch: `theme.ts`
+  now reads a `--cm-*` palette defined per-theme in `index.css`. Accent
+  colours (indigo/emerald/…) are unchanged in both themes. The handful of
+  literal `text-white` used as page text/inputs/headings were moved to
+  `text-gray-100` so they invert; `text-white` on coloured buttons stays.
+- **State:** `hooks/useTheme.ts` resolves mode → theme (honours
+  `prefers-color-scheme` in system mode, live-updates on OS change),
+  toggles `html.light`/`.dark` + `color-scheme`, persists to
+  `localStorage["sparql_theme"]`. Pure `utils/theme.ts`
+  (`resolveTheme` / `nextMode` / `parseThemeMode`) has 6 tests.
+- **Reduced motion:** `@media (prefers-reduced-motion: reduce)` neutralises
+  animations/transitions app-wide (covers §10.10's reduced-motion row).
+- **Verify:** 113 UI tests green; build clean.
 
 ### WP-UI-A11Y — accessibility, i18n, and perf CI (§10.10, §10.11)
 

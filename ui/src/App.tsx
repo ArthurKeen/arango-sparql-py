@@ -20,6 +20,7 @@ import PrefixManager from "./components/PrefixManager";
 import type { Command } from "./utils/commandPalette";
 import { setSparqlSchemaContext } from "./lang/sparqlComplete";
 import { physicalMappingOf } from "./utils/mappingWire";
+import { useTheme } from "./hooks/useTheme";
 import { useAppState } from "./api/store";
 import {
   translateSparql,
@@ -91,6 +92,7 @@ export default function App() {
   const [autoOpenOnError, setAutoOpenOnError] = useState(() =>
     loadBool("qi_auto_open_error", true),
   );
+  const theme = useTheme();
   const [nlInput, setNlInput] = useState("");
   const [nlSamples, setNlSamples] = useState<string[]>([]);
   const [graphs, setGraphs] = useState<GraphInfo[]>([]);
@@ -877,7 +879,7 @@ export default function App() {
     <div className="h-screen flex flex-col bg-gray-950 text-gray-100">
       <header className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold text-white tracking-tight">
+          <h1 className="text-sm font-semibold text-gray-100 tracking-tight">
             Arango SPARQL
           </h1>
           <span className="text-gray-600 text-xs">|</span>
@@ -938,6 +940,8 @@ export default function App() {
             historyCount={state.history.length}
             autoOpenOnError={autoOpenOnError}
             onToggleAutoOpenOnError={() => setAutoOpenOnError((v) => !v)}
+            themeMode={theme.mode}
+            onCycleTheme={theme.cycle}
           />
         </div>
       </header>

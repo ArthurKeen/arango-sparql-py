@@ -162,7 +162,7 @@ function NodeInspector({
             className="w-3 h-3 rounded-full shrink-0"
             style={{ backgroundColor: node.color || "#6366f1" }}
           />
-          <span className="text-sm font-semibold text-white truncate">
+          <span className="text-sm font-semibold text-gray-100 truncate">
             {node.label}
           </span>
         </div>
