@@ -300,6 +300,7 @@ export default function CytoscapeSchemaGraph({ classes, properties, counts }: Pr
             </span>
             <button
               onClick={() => setSelection(null)}
+              aria-label="Close details"
               className="text-gray-500 hover:text-gray-300 text-sm leading-none"
             >
               &times;

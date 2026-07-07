@@ -21,6 +21,7 @@ import type { Command } from "./utils/commandPalette";
 import { setSparqlSchemaContext } from "./lang/sparqlComplete";
 import { physicalMappingOf } from "./utils/mappingWire";
 import { useTheme } from "./hooks/useTheme";
+import { t } from "./i18n";
 import { useAppState } from "./api/store";
 import {
   translateSparql,
@@ -580,6 +581,20 @@ export default function App() {
   const busy = pipelineBusy(pipelineFlags);
   const stage = currentStage(pipelineFlags);
 
+  // Screen-reader status announcement (PRD §10.10 aria-live row): a single
+  // polite message reflecting the current pipeline stage or the latest
+  // error so non-visual users hear progress/failures without polling the UI.
+  const statusAnnouncement = useMemo(() => {
+    if (state.error) return t("status.error", { message: state.error });
+    if (state.nlError) return t("status.error", { message: state.nlError });
+    if (stage === "generating") return t("status.thinking");
+    if (stage === "transpiling") return t("status.translating");
+    if (stage === "running") return t("status.executing");
+    if (state.explaining) return t("status.explaining");
+    if (state.profiling) return t("status.profiling");
+    return "";
+  }, [state.error, state.nlError, stage, state.explaining, state.profiling]);
+
   // Reveal the inspector when a query fails so the user can see/fix the
   // offending SPARQL or AQL (toggleable via the gear, default on).
   useEffect(() => {
@@ -877,10 +892,13 @@ export default function App() {
 
   return (
     <div className="h-screen flex flex-col bg-gray-950 text-gray-100">
+      <div role="status" aria-live="polite" className="sr-only">
+        {statusAnnouncement}
+      </div>
       <header className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold text-gray-100 tracking-tight">
-            Arango SPARQL
+            {t("app.title")}
           </h1>
           <span className="text-gray-600 text-xs">|</span>
           <ConnectionDialog

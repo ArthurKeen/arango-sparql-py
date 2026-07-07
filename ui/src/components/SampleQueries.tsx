@@ -135,6 +135,7 @@ export default function SampleQueries({ onSelect, onClose }: Props) {
           <h2 className="text-sm font-semibold text-gray-100">Sample SPARQL Queries</h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="text-gray-400 hover:text-gray-200 text-lg leading-none"
           >
             &times;

@@ -48,7 +48,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-UI-PALETTE | UI | Command palette (`Mod-K`) | §10.7 | ✅ Done |
 | WP-UI-TENANT | UI | Mount `TenantSelector` when multitenancy detected | §10.6 | ⛔ Blocked (no tenant-catalogue / `/session/tenant` route) |
 | WP-UI-CORR | UI | Cross-pane SPARQL↔AQL correspondence wired via translator source map | §10.2 | ⛔ Blocked (translator emits no source map) |
-| WP-UI-A11Y | UI | a11y + i18n + Playwright + Lighthouse budgets | §10.10, §10.11 | ⬜ Planned (v1.1) |
+| WP-UI-A11Y | UI | a11y + i18n + Playwright + Lighthouse budgets | §10.10, §10.11 | 🟡 Partial (app-code a11y + i18n scaffold done; Playwright/Lighthouse CI deferred) |
 | WP-UI-THEME | UI | Light theme | §10.8 | ✅ Done |
 
 ---
@@ -332,11 +332,34 @@ AQL panes in `App.tsx`.
   animations/transitions app-wide (covers §10.10's reduced-motion row).
 - **Verify:** 113 UI tests green; build clean.
 
-### WP-UI-A11Y — accessibility, i18n, and perf CI (§10.10, §10.11)
+### WP-UI-A11Y — accessibility, i18n, and perf CI (§10.10, §10.11) 🟡 Partial
 
-`ui/src/i18n/en.ts` + `t()` indirection; Playwright + axe-core suites;
-`ui/lighthouse.json` + bundle-size gate; `prefers-reduced-motion`.
-Targeted for v1.1 alongside WP-UI-THEME (light theme).
+**Done (app-code a11y + i18n scaffold):**
+
+- **i18n indirection:** `ui/src/i18n/en.ts` (message catalogue) + `t()`
+  (`ui/src/i18n/index.ts`, `{name}` interpolation, key-fallback). No
+  translations ship — the indirection exists so future locales need no
+  refactor. Wired into the header + status announcements as a proof;
+  broader migration is incremental. 5 tests in `i18n.test.ts`.
+- **Advisory CI check:** `ui/scripts/check-i18n.mjs` (`npm run check:i18n`)
+  reports remaining hardcoded JSX strings (81 across 22 files today).
+  Advisory-only (`EXIT_ON_FIND=false`) until migration completes, then
+  flip to the CI gate §10.10 specifies.
+- **Screen-reader status:** a single `role="status" aria-live="polite"`
+  region in `App` announces pipeline stage + errors.
+- **aria-labels:** icon-only controls carry labels (audited — gear, chat
+  send, palette, inspector/ontology hide, result actions already had
+  them; added `Close` labels to the `×` buttons in `SampleQueries` and
+  the schema-graph detail panel).
+- **Reduced motion:** shipped in WP-UI-THEME
+  (`@media (prefers-reduced-motion: reduce)`).
+
+**Deferred (test/CI infra, needs a harness this repo doesn't have yet):**
+
+- Playwright + axe-core suites (`a11y_keyboard`/`contrast`/`aria`/`forms`),
+  `tests/playwright/perf_*`, `ui/lighthouse.json` + bundle-size gate. These
+  require standing up Playwright + a CI perf runner; tracked as a
+  follow-up rather than stubbed.
 
 ---
 
