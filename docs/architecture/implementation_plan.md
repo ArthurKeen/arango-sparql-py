@@ -39,7 +39,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-UI-6 | UI | Results table/JSON/graph + literal-collapse toggle | §10.5 | ✅ Done |
 | WP-UI-7 | UI | Query history + sample queries | §10.7 | ✅ Done |
 | WP-UI-PROXY | UI | Dev vite proxy for `/mapping` + `/sample-queries` | §A.9 | ✅ Done |
-| WP-UI-SHELL | UI | Chat-first workbench shell (Phase 0–4) | §10.0 | 🟡 In progress (Phase 0–3 done; Phase 4 optional) |
+| WP-UI-SHELL | UI | Chat-first workbench shell (Phase 0–4) | §10.0 | ✅ Done (Phase 0–4) |
 | WP-UI-CAT | UI | Schema-catalog readiness UX (pending/analyzing) | §10.17 | ⛔ Blocked (needs backend async introspect) |
 | WP-UI-GRAPH | UI | Schema-graph scalability (bundling/search/weight/expand) | §10.18 | ✅ Done |
 | WP-UI-EDITOR | UI | SPARQL completion + hover + PrefixManager + explain/profile keymap | §10.2 | ✅ Done |
@@ -122,11 +122,24 @@ coverage for the new pure logic and a green `cd ui && npm run build`.
   `CytoscapeGraph` only when the Graph tab is active (`GraphView`), and
   Table/JSON render conditionally. No eager mount of heavy tabs.
 
-### Phase 4 — multi-turn transcript (optional)
+### Phase 4 — multi-turn transcript ✅ Done
 
-- Promote the single active query to a scrollable transcript of
-  question → answer turns. Deferred unless demand emerges (matches the
-  sister project's current partial state).
+- **Status:** shipped as an **opt-in** panel so the single-active-query
+  default is preserved. Toggle via the gear menu (**Panels →
+  Conversation**), persisted to `localStorage["show_transcript"]`.
+- **Model:** pure `ui/src/utils/transcript.ts` (`TranscriptTurn`,
+  `appendTurn` with a 50-turn cap, `turnStatusLabel`) — 4 tests. Store
+  gains a session-scoped `transcript: TranscriptTurn[]` with
+  `ADD_TRANSCRIPT_TURN` / `CLEAR_TRANSCRIPT` (not persisted across reloads,
+  matching a conversation's session scope).
+- **Capture:** every Send appends a turn (question → generated SPARQL +
+  ok/failed status), recorded regardless of panel visibility so toggling
+  it on reveals prior turns.
+- **UI:** `Transcript.tsx` renders a compact scrollable list (newest at the
+  bottom, auto-scrolled); clicking a turn reloads its SPARQL into the
+  editor; empty state + Clear action. Failed turns are non-clickable with a
+  red status dot.
+- **Verify:** 122 UI tests green; build clean.
 
 ---
 

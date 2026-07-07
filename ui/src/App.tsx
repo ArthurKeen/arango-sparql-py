@@ -12,6 +12,7 @@ import ResultsPanel from "./components/ResultsPanel";
 import SchemaWarningBanner from "./components/SchemaWarningBanner";
 import GraphSelector from "./components/GraphSelector";
 import ChatComposer from "./components/ChatComposer";
+import Transcript from "./components/Transcript";
 import QueryInspector from "./components/QueryInspector";
 import SettingsMenu from "./components/SettingsMenu";
 import ResultAffordances from "./components/ResultAffordances";
@@ -82,6 +83,9 @@ export default function App() {
   const [showSamples, setShowSamples] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
+  const [showTranscript, setShowTranscript] = useState(() =>
+    loadBool("show_transcript", false),
+  );
   // L1 inspector — closed by default; per-pane visibility persists.
   const [showInspector, setShowInspector] = useState(false);
   const [sparqlPaneOpen, setSparqlPaneOpen] = useState(() =>
@@ -111,6 +115,9 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("qi_auto_open_error", String(autoOpenOnError));
   }, [autoOpenOnError]);
+  useEffect(() => {
+    localStorage.setItem("show_transcript", String(showTranscript));
+  }, [showTranscript]);
 
   const dragRef = useRef<{ startX: number; startW: number } | null>(null);
   useEffect(() => {
@@ -556,10 +563,31 @@ export default function App() {
     if (!question) return;
     const intent = planSend(state.connection.status === "connected");
     const generated = await runNL(question);
+    // Record the turn (WP-UI-SHELL Phase 4). Kept regardless of the
+    // transcript panel's visibility so toggling it on reveals prior turns.
+    dispatch({
+      type: "ADD_TRANSCRIPT_TURN",
+      turn: {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        question,
+        sparql: generated,
+        ok: !!(generated && generated.trim()),
+        timestamp: Date.now(),
+      },
+    });
     if (generated && generated.trim() && intent.run) {
       await handleExecute();
     }
-  }, [nlInput, state.connection.status, runNL, handleExecute]);
+  }, [nlInput, state.connection.status, runNL, handleExecute, dispatch]);
+
+  // Reload an earlier turn's SPARQL into the editor.
+  const handleSelectTurn = useCallback(
+    (sparql: string) => {
+      dispatch({ type: "SET_SPARQL", sparql });
+      sparqlRef.current = sparql;
+    },
+    [dispatch],
+  );
 
   const handleJumpToLine = useCallback((line: number) => {
     const view = sparqlViewRef.current;
@@ -952,6 +980,8 @@ export default function App() {
             onToggleMapping={() => setShowMapping((v) => !v)}
             showOutline={showOutline}
             onToggleOutline={() => setShowOutline((v) => !v)}
+            showTranscript={showTranscript}
+            onToggleTranscript={() => setShowTranscript((v) => !v)}
             onOpenSamples={() => setShowSamples(true)}
             onOpenHistory={() => setShowHistory(true)}
             onOpenPalette={() => setShowPalette(true)}
@@ -1026,7 +1056,16 @@ export default function App() {
         )}
 
         <div className="flex-1 min-w-0 flex flex-col">
-          {/* L0 — chat composer (NL "Ask") */}
+          {/* L0 — multi-turn transcript (opt-in) + chat composer (NL "Ask") */}
+          {showTranscript && (
+            <div className="px-3 pt-2">
+              <Transcript
+                turns={state.transcript}
+                onSelect={handleSelectTurn}
+                onClear={() => dispatch({ type: "CLEAR_TRANSCRIPT" })}
+              />
+            </div>
+          )}
           <ChatComposer
             value={nlInput}
             onChange={setNlInput}

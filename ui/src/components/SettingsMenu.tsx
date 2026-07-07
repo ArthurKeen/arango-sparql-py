@@ -15,6 +15,8 @@ export interface SettingsMenuProps {
   onToggleMapping: () => void;
   showOutline: boolean;
   onToggleOutline: () => void;
+  showTranscript: boolean;
+  onToggleTranscript: () => void;
   onOpenSamples: () => void;
   onOpenHistory: () => void;
   onOpenPalette: () => void;
@@ -182,6 +184,12 @@ export default function SettingsMenu(props: SettingsMenuProps) {
             description="Jump to SPARQL clauses"
             active={props.showOutline}
             onClick={props.onToggleOutline}
+          />
+          <ToggleRow
+            label="Conversation"
+            description="Multi-turn transcript of your questions"
+            active={props.showTranscript}
+            onClick={props.onToggleTranscript}
           />
           <ActionRow label="Sample queries" onClick={runItem(props.onOpenSamples)} />
           <ActionRow

@@ -1,4 +1,5 @@
 import { useCallback, useReducer } from "react";
+import { appendTurn, type TranscriptTurn } from "../utils/transcript";
 
 // `arango-sparql-py` UI store. Mirrors
 // `references/arango-cypher-py/ui/src/api/store.ts` but trimmed to the
@@ -142,6 +143,8 @@ export interface AppState {
   lastNlQuestion: string | null;
   /** De-duplicated history of NL questions (suggestions + recall). */
   nlHistory: string[];
+  /** Session-scoped multi-turn transcript (WP-UI-SHELL Phase 4). */
+  transcript: TranscriptTurn[];
 }
 
 const STORAGE_KEY = "sparql-workbench";
@@ -233,6 +236,7 @@ export const initialState: AppState = {
   sparqlSource: "user",
   lastNlQuestion: null,
   nlHistory: [],
+  transcript: [],
   ...loadSavedState(),
 };
 
@@ -295,6 +299,8 @@ export type Action =
   | { type: "SET_PARAMS"; params: Record<string, unknown> }
   | { type: "ADD_HISTORY"; entry: HistoryEntry }
   | { type: "CLEAR_HISTORY" }
+  | { type: "ADD_TRANSCRIPT_TURN"; turn: TranscriptTurn }
+  | { type: "CLEAR_TRANSCRIPT" }
   | { type: "SCHEMA_REFRESH_START" }
   | {
       type: "SCHEMA_LOADED";
@@ -473,6 +479,10 @@ function reducer(state: AppState, action: Action): AppState {
     }
     case "CLEAR_HISTORY":
       return { ...state, history: [] };
+    case "ADD_TRANSCRIPT_TURN":
+      return { ...state, transcript: appendTurn(state.transcript, action.turn) };
+    case "CLEAR_TRANSCRIPT":
+      return { ...state, transcript: [] };
     case "SCHEMA_REFRESH_START":
       return {
         ...state,
