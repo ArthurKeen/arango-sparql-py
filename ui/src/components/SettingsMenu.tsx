@@ -16,10 +16,17 @@ export interface SettingsMenuProps {
   onToggleOutline: () => void;
   onOpenSamples: () => void;
   onOpenHistory: () => void;
+  onOpenPalette: () => void;
   historyCount: number;
   autoOpenOnError: boolean;
   onToggleAutoOpenOnError: () => void;
 }
+
+// Show the Mod-K accelerator with the platform-correct modifier glyph.
+const PALETTE_HINT =
+  typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)
+    ? "⌘K"
+    : "Ctrl K";
 
 function GearIcon() {
   return (
@@ -178,6 +185,11 @@ export default function SettingsMenu(props: SettingsMenuProps) {
             label="Query history"
             badge={props.historyCount > 0 ? props.historyCount : ""}
             onClick={runItem(props.onOpenHistory)}
+          />
+          <ActionRow
+            label="Command palette"
+            badge={PALETTE_HINT}
+            onClick={runItem(props.onOpenPalette)}
           />
 
           <div className="my-1 border-t border-gray-800" />

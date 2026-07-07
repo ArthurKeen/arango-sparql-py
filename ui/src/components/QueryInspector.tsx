@@ -6,9 +6,9 @@ import { useEffect, useRef, useState } from "react";
 // drag-movable, each side is individually collapsible, and the drawer
 // height is drag-resizable; all layout choices persist to localStorage.
 // Mirrors `references/arango-cypher-py/ui/src/components/
-// QueryInspector.tsx`. Explain/Profile buttons land with WP-UI-EXPLAIN
-// once the results panel renders plan trees — omitted here rather than
-// shipping affordances that 404.
+// QueryInspector.tsx`. Translate / Run / Explain / Profile power actions
+// live here (WP-UI-EXPLAIN); Explain and Profile require a live session
+// (they hit ArangoDB) so they are gated on `isConnected`.
 
 export interface QueryInspectorProps {
   open: boolean;
@@ -17,8 +17,12 @@ export interface QueryInspectorProps {
   // Power actions (relocated from the old editor toolbar).
   onTranslate: () => void;
   onRun: () => void;
+  onExplain: () => void;
+  onProfile: () => void;
   translating: boolean;
   executing: boolean;
+  explaining: boolean;
+  profiling: boolean;
   busy: boolean;
   isConnected: boolean;
   sparqlEmpty: boolean;
@@ -156,6 +160,22 @@ export default function QueryInspector(props: QueryInspectorProps) {
           title="Run (Shift+Enter)"
         >
           {props.executing ? "Running\u2026" : "Run"}
+        </button>
+        <button
+          onClick={props.onExplain}
+          disabled={props.busy || !props.isConnected || props.sparqlEmpty}
+          className={`${actionBtn} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+          title="Transpile and fetch the AQL execution plan (no rows)"
+        >
+          {props.explaining ? "Explaining\u2026" : "Explain"}
+        </button>
+        <button
+          onClick={props.onProfile}
+          disabled={props.busy || !props.isConnected || props.sparqlEmpty}
+          className={`${actionBtn} bg-gray-700 hover:bg-gray-600 text-gray-100`}
+          title="Run with per-stage profiling (rows + timings)"
+        >
+          {props.profiling ? "Profiling\u2026" : "Profile"}
         </button>
         {props.busy && (
           <div className="ml-1 w-4 h-4 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />

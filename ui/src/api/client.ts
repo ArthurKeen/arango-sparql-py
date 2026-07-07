@@ -7,11 +7,11 @@
 //   * /translate → { sparql, ontology_ttl, params }
 //   * /execute   → { sparql, ontology_ttl, params, database }
 //
-// Endpoints that the SPARQL backend has not yet implemented (e.g.
-// /connect, /validate, /schema/owl, /nl2sparql, /explain) are still
-// declared here so the surface mirrors the Cypher UI 1:1 — failures
-// surface as standard HTTP errors at runtime instead of 404s on the
-// dev-server proxy.
+// Contract note (client↔models audit): every function below maps to a
+// live backend route EXCEPT `getSampleQueries` (`/sample-queries`), which
+// is documented in PRD §A.9 but not yet implemented server-side. Its
+// caller (`SampleQueries.tsx`) degrades gracefully to the built-in static
+// samples, so the missing route is a swallowed 404 rather than a failure.
 
 export interface ConnectRequest {
   url: string;
@@ -67,25 +67,39 @@ export interface SparqlExecuteResponse {
   elapsed_ms?: number;
 }
 
+// Mirrors `ValidateResponse` in `arango_sparql/service/models.py`: the
+// parse-only result uses `valid` (not `ok`), plus non-fatal `warnings`.
 export interface ValidateResponse {
-  ok: boolean;
+  valid: boolean;
   errors: Array<{ message: string; code?: string }>;
+  warnings: Array<{ message?: string; code?: string }>;
 }
 
+// Mirrors `SparqlExplainResponse` in `arango_sparql/service/models.py`.
+// `plan` is ArangoDB's raw explain output ({nodes, rules, collections,
+// variables, estimatedCost, ...}) surfaced verbatim.
 export interface ExplainResponse {
+  sparql: string;
   aql: string;
   bind_vars: Record<string, unknown>;
-  plan: unknown;
-  translate_ms?: number;
+  plan: Record<string, unknown>;
+  warnings: Array<{ message?: string; code?: string }>;
+  translate_ms?: number | null;
 }
 
+// Mirrors `SparqlProfileResponse` in `arango_sparql/service/models.py`.
+// `profile` is ArangoDB's `cursor.profile()` blob ({plan, stats, profile,
+// warnings, ...}); `bindings` are the materialised rows (capped server-side).
 export interface ProfileResponse {
+  sparql: string;
   aql: string;
   bind_vars: Record<string, unknown>;
-  results: unknown[];
-  statistics: Record<string, unknown>;
-  profile: unknown;
-  translate_ms?: number;
+  bindings: Array<Record<string, unknown>>;
+  truncated: boolean;
+  profile: Record<string, unknown>;
+  warnings: Array<{ message?: string; code?: string }>;
+  translate_ms?: number | null;
+  exec_ms?: number | null;
 }
 
 function authHeaders(token: string): Record<string, string> {
@@ -259,8 +273,11 @@ export async function executeAql(
   });
 }
 
+// POST /explain — translate SPARQL → AQL, then return the AQL execution
+// plan from `db.aql.explain()` (no rows materialised). Requires a session
+// (same payload/guards as /execute); honours X-Tenant-Id.
 export async function explainSparql(
-  req: TranslateRequest,
+  req: SparqlExecuteRequest,
   token: string,
 ): Promise<ExplainResponse> {
   return request("/explain", {
@@ -270,11 +287,14 @@ export async function explainSparql(
   });
 }
 
+// POST /profile — translate SPARQL → AQL and execute with `profile=2`,
+// returning per-stage timings + the materialised rows. Requires a
+// session; honours X-Tenant-Id.
 export async function profileSparql(
-  req: TranslateRequest,
+  req: SparqlExecuteRequest,
   token: string,
 ): Promise<ProfileResponse> {
-  return request("/aql-profile", {
+  return request("/profile", {
     method: "POST",
     body: JSON.stringify(req),
     headers: authHeaders(token),
@@ -285,12 +305,10 @@ export async function profileSparql(
 // OWL schema (from `arango-schema-mapper`)
 // ---------------------------------------------------------------------------
 
-// Returned by `/schema/owl` (not yet implemented on the SPARQL
-// backend — see `.cursor/rules/400-frontend-ui.mdc`). The shape
-// matches the Turtle ontology that `arango-schema-mapper` produces:
-// a list of OWL classes + properties keyed by IRI. SchemaGraph.tsx
-// renders this as a Cytoscape graph; until the endpoint exists we
-// fall back to an empty placeholder.
+// Returned by `GET /schema/owl` (live — `schema.py::schema_owl`, requires
+// a session). The shape matches the Turtle ontology that
+// `arango-schema-mapper` produces: a list of OWL classes + properties
+// keyed by IRI. SchemaGraph.tsx renders this as a Cytoscape graph.
 export interface OwlClass {
   iri: string;
   localName: string;
@@ -318,6 +336,24 @@ export async function getOwlSchema(
   token?: string,
 ): Promise<OwlSchemaResponse> {
   return request("/schema/owl", {
+    headers: token ? authHeaders(token) : undefined,
+  });
+}
+
+// Mirrors `SchemaStatisticsResponse` in models.py. `statistics` is the
+// analyzer's free-form `metadata.statistics` block (cardinality / degree /
+// selectivity per relationship); `available` is false for heuristic-only
+// bundles. Used by the schema graph to weight arcs by instance volume.
+export interface SchemaStatisticsResponse {
+  statistics: Record<string, unknown>;
+  available: boolean;
+  last_acquired_at?: string | null;
+}
+
+export async function getSchemaStatistics(
+  token?: string,
+): Promise<SchemaStatisticsResponse> {
+  return request("/schema/statistics", {
     headers: token ? authHeaders(token) : undefined,
   });
 }
@@ -396,9 +432,12 @@ export async function schemaStatus(
   });
 }
 
+// Mirrors `SchemaInvalidateCacheResponse`: `db_name` (not `database`) and
+// the L2 `persistent_dropped` stub flag.
 export interface SchemaInvalidateResponse {
   invalidated: boolean;
-  database?: string;
+  db_name?: string;
+  persistent_dropped?: boolean;
 }
 
 export async function schemaInvalidateCache(

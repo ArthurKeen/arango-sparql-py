@@ -146,6 +146,102 @@ describe("reducer: translate / execute lifecycle", () => {
   });
 });
 
+describe("reducer: explain / profile lifecycle", () => {
+  it("EXPLAIN_SUCCESS stores the plan, updates AQL, and switches to the explain tab", () => {
+    const next = apply(
+      initialState,
+      { type: "EXPLAIN_START" },
+      {
+        type: "EXPLAIN_SUCCESS",
+        plan: { nodes: [{ type: "SingletonNode" }], estimatedCost: 42 },
+        aql: "FOR x IN c RETURN x",
+        bindVars: { "@c": "col" },
+        warnings: [{ message: "unmapped predicate" }],
+        translateMs: 9,
+      },
+    );
+    expect(next.explaining).toBe(false);
+    expect(next.explainPlan).toEqual({
+      nodes: [{ type: "SingletonNode" }],
+      estimatedCost: 42,
+    });
+    expect(next.aql).toBe("FOR x IN c RETURN x");
+    expect(next.bindVars).toEqual({ "@c": "col" });
+    expect(next.translateMs).toBe(9);
+    expect(next.warnings).toEqual([{ message: "unmapped predicate" }]);
+    expect(next.activeResultTab).toBe("explain");
+    // Explain does not materialise rows.
+    expect(next.results).toBeNull();
+  });
+
+  it("EXPLAIN_START clears any stale plan and error", () => {
+    const seed: AppState = {
+      ...initialState,
+      explainPlan: { stale: true },
+      error: "boom",
+    };
+    const next = apply(seed, { type: "EXPLAIN_START" });
+    expect(next.explaining).toBe(true);
+    expect(next.explainPlan).toBeNull();
+    expect(next.error).toBeNull();
+  });
+
+  it("EXPLAIN_ERROR clears the explaining flag and records the error", () => {
+    const next = apply(
+      initialState,
+      { type: "EXPLAIN_START" },
+      { type: "EXPLAIN_ERROR", error: "AQL EXPLAIN failed" },
+    );
+    expect(next.explaining).toBe(false);
+    expect(next.error).toBe("AQL EXPLAIN failed");
+  });
+
+  it("PROFILE_SUCCESS stores the profile, the rows, and switches to the profile tab", () => {
+    const next = apply(
+      initialState,
+      { type: "PROFILE_START" },
+      {
+        type: "PROFILE_SUCCESS",
+        profile: { executing: 0.0031, optimizing: 0.0002 },
+        results: [{ s: "ex:a" }, { s: "ex:b" }],
+        aql: "FOR x IN c RETURN x",
+        bindVars: {},
+        translateMs: 3,
+        execMs: 5,
+      },
+    );
+    expect(next.profiling).toBe(false);
+    expect(next.profileData).toEqual({ executing: 0.0031, optimizing: 0.0002 });
+    // Profile also populates the Table/JSON/Graph rows.
+    expect(next.results).toHaveLength(2);
+    expect(next.execMs).toBe(5);
+    expect(next.translateMs).toBe(3);
+    expect(next.activeResultTab).toBe("profile");
+  });
+
+  it("PROFILE_ERROR clears the profiling flag and records the error", () => {
+    const next = apply(
+      initialState,
+      { type: "PROFILE_START" },
+      { type: "PROFILE_ERROR", error: "AQL profiled execution failed" },
+    );
+    expect(next.profiling).toBe(false);
+    expect(next.error).toBe("AQL profiled execution failed");
+  });
+
+  it("DISCONNECT drops any explain/profile payloads", () => {
+    const seed: AppState = {
+      ...initialState,
+      connection: { ...initialState.connection, status: "connected", token: "t" },
+      explainPlan: { nodes: [] },
+      profileData: { executing: 0.01 },
+    };
+    const next = apply(seed, { type: "DISCONNECT" });
+    expect(next.explainPlan).toBeNull();
+    expect(next.profileData).toBeNull();
+  });
+});
+
 describe("reducer: history dedup", () => {
   it("ADD_HISTORY moves an existing entry to the top instead of duplicating", () => {
     const first = apply(initialState, {

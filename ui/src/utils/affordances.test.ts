@@ -18,6 +18,7 @@ const INPUTS = (over: Partial<AffordanceInputs> = {}): AffordanceInputs => ({
   aqlPresent: false,
   inspectorOpen: false,
   activeTab: "table",
+  connected: false,
   ...over,
 });
 
@@ -25,9 +26,15 @@ const byId = (list: ReturnType<typeof resultAffordances>, id: string) =>
   list.find((a) => a.id === id)!;
 
 describe("resultAffordances", () => {
-  it("always returns the SPARQL/AQL/Graph triad", () => {
+  it("returns the SPARQL/AQL/Graph/Explain/Profile set", () => {
     const list = resultAffordances(INPUTS());
-    expect(list.map((a) => a.id)).toEqual(["sparql", "aql", "graph"]);
+    expect(list.map((a) => a.id)).toEqual([
+      "sparql",
+      "aql",
+      "graph",
+      "explain",
+      "profile",
+    ]);
   });
 
   it("disables every chip when nothing is available", () => {
@@ -65,6 +72,36 @@ describe("resultAffordances", () => {
     expect(byId(resultAffordances(INPUTS()), "graph").active).toBe(false);
     expect(
       byId(resultAffordances(INPUTS({ activeTab: "graph" })), "graph").active,
+    ).toBe(true);
+  });
+
+  it("gates Explain/Profile on both a connection and SPARQL", () => {
+    // No connection: disabled even with SPARQL present.
+    const offline = resultAffordances(INPUTS({ sparqlPresent: true }));
+    expect(byId(offline, "explain").enabled).toBe(false);
+    expect(byId(offline, "profile").enabled).toBe(false);
+
+    // Connected but no SPARQL: still disabled.
+    const noQuery = resultAffordances(INPUTS({ connected: true }));
+    expect(byId(noQuery, "explain").enabled).toBe(false);
+    expect(byId(noQuery, "profile").enabled).toBe(false);
+
+    // Both: enabled.
+    const ready = resultAffordances(
+      INPUTS({ connected: true, sparqlPresent: true }),
+    );
+    expect(byId(ready, "explain").enabled).toBe(true);
+    expect(byId(ready, "profile").enabled).toBe(true);
+  });
+
+  it("marks Explain/Profile chips active on their tabs", () => {
+    expect(
+      byId(resultAffordances(INPUTS({ activeTab: "explain" })), "explain")
+        .active,
+    ).toBe(true);
+    expect(
+      byId(resultAffordances(INPUTS({ activeTab: "profile" })), "profile")
+        .active,
     ).toBe(true);
   });
 });

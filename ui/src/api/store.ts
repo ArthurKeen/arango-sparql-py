@@ -24,7 +24,7 @@ export interface ConnectionState {
   error: string | null;
 }
 
-export type ResultTab = "table" | "json" | "graph";
+export type ResultTab = "table" | "json" | "graph" | "explain" | "profile";
 
 export interface HistoryEntry {
   sparql: string;
@@ -114,6 +114,14 @@ export interface AppState {
   error: string | null;
   translating: boolean;
   executing: boolean;
+  /** True while a /explain call is in flight. */
+  explaining: boolean;
+  /** True while a /profile call is in flight. */
+  profiling: boolean;
+  /** Raw ArangoDB explain plan from the last /explain (null until run). */
+  explainPlan: Record<string, unknown> | null;
+  /** Raw ArangoDB profile blob from the last /profile (null until run). */
+  profileData: Record<string, unknown> | null;
   history: HistoryEntry[];
   translateMs: number | null;
   execMs: number | null;
@@ -211,6 +219,10 @@ export const initialState: AppState = {
   error: null,
   translating: false,
   executing: false,
+  explaining: false,
+  profiling: false,
+  explainPlan: null,
+  profileData: null,
   history: [],
   translateMs: null,
   execMs: null,
@@ -256,6 +268,28 @@ export type Action =
   | { type: "EXECUTE_START" }
   | { type: "EXECUTE_SUCCESS"; results: unknown[]; warnings?: Array<{ message: string }>; execMs?: number | null }
   | { type: "EXECUTE_ERROR"; error: string }
+  | { type: "EXPLAIN_START" }
+  | {
+      type: "EXPLAIN_SUCCESS";
+      plan: Record<string, unknown>;
+      aql: string;
+      bindVars: Record<string, unknown>;
+      warnings?: Array<{ message: string }>;
+      translateMs?: number | null;
+    }
+  | { type: "EXPLAIN_ERROR"; error: string }
+  | { type: "PROFILE_START" }
+  | {
+      type: "PROFILE_SUCCESS";
+      profile: Record<string, unknown>;
+      results: unknown[];
+      aql: string;
+      bindVars: Record<string, unknown>;
+      warnings?: Array<{ message: string }>;
+      translateMs?: number | null;
+      execMs?: number | null;
+    }
+  | { type: "PROFILE_ERROR"; error: string }
   | { type: "SET_RESULT_TAB"; tab: ResultTab }
   | { type: "CLEAR_ERROR" }
   | { type: "SET_PARAMS"; params: Record<string, unknown> }
@@ -350,6 +384,10 @@ function reducer(state: AppState, action: Action): AppState {
           error: null,
         },
         results: null,
+        // Explain/profile are session-scoped (they hit a live DB); drop
+        // them so a reconnect doesn't show the previous session's plan.
+        explainPlan: null,
+        profileData: null,
         // Clear the schema slice so a reconnect to a different DB
         // doesn't render the previous DB's mapping for one frame
         // before the new /schema/introspect lands.
@@ -384,6 +422,42 @@ function reducer(state: AppState, action: Action): AppState {
       };
     case "EXECUTE_ERROR":
       return { ...state, executing: false, error: action.error };
+    case "EXPLAIN_START":
+      return { ...state, explaining: true, error: null, explainPlan: null };
+    case "EXPLAIN_SUCCESS":
+      return {
+        ...state,
+        explaining: false,
+        explainPlan: action.plan,
+        aql: action.aql,
+        bindVars: action.bindVars,
+        warnings: action.warnings ?? state.warnings,
+        translateMs:
+          action.translateMs !== undefined ? action.translateMs : state.translateMs,
+        activeResultTab: "explain",
+        error: null,
+      };
+    case "EXPLAIN_ERROR":
+      return { ...state, explaining: false, error: action.error };
+    case "PROFILE_START":
+      return { ...state, profiling: true, error: null, profileData: null };
+    case "PROFILE_SUCCESS":
+      return {
+        ...state,
+        profiling: false,
+        profileData: action.profile,
+        results: action.results,
+        aql: action.aql,
+        bindVars: action.bindVars,
+        warnings: action.warnings ?? state.warnings,
+        translateMs:
+          action.translateMs !== undefined ? action.translateMs : state.translateMs,
+        execMs: action.execMs ?? null,
+        activeResultTab: "profile",
+        error: null,
+      };
+    case "PROFILE_ERROR":
+      return { ...state, profiling: false, error: action.error };
     case "SET_RESULT_TAB":
       return { ...state, activeResultTab: action.tab };
     case "CLEAR_ERROR":

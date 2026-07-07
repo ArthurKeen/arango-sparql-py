@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { EditorView } from "@codemirror/view";
 import ConnectionDialog from "./components/ConnectionDialog";
 import SparqlEditor from "./components/SparqlEditor";
@@ -15,10 +15,18 @@ import ChatComposer from "./components/ChatComposer";
 import QueryInspector from "./components/QueryInspector";
 import SettingsMenu from "./components/SettingsMenu";
 import ResultAffordances from "./components/ResultAffordances";
+import CommandPalette from "./components/CommandPalette";
+import PrefixManager from "./components/PrefixManager";
+import type { Command } from "./utils/commandPalette";
+import { setSparqlSchemaContext } from "./lang/sparqlComplete";
+import { physicalMappingOf } from "./utils/mappingWire";
 import { useAppState } from "./api/store";
 import {
   translateSparql,
   executeSparql,
+  executeAql,
+  explainSparql,
+  profileSparql,
   nl2Sparql,
   suggestNlQueries,
   listGraphs,
@@ -49,9 +57,9 @@ import { resultAffordances, type AffordanceId } from "./utils/affordances";
 //   * /translate    — inspector "Translate" for hand-written SPARQL
 //   * /execute      — Send's run step + inspector "Run" (needs a session)
 //   * /connect, /graphs, /session/graph, /schema/force-reacquire, /nl-samples
-//
-// Explain/Profile actions in the inspector land with WP-UI-EXPLAIN once
-// the results panel renders plan trees.
+//   * /explain, /profile — inspector "Explain"/"Profile" + result chips
+//     (WP-UI-EXPLAIN); both need a live session and render as conditional
+//     tabs in the results panel.
 
 function loadBool(key: string, fallback: boolean): boolean {
   try {
@@ -71,6 +79,7 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false);
   const [showSamples, setShowSamples] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
   // L1 inspector — closed by default; per-pane visibility persists.
   const [showInspector, setShowInspector] = useState(false);
   const [sparqlPaneOpen, setSparqlPaneOpen] = useState(() =>
@@ -350,6 +359,138 @@ export default function App() {
     handleMaybeAuthError,
   ]);
 
+  // Run the live AQL document directly via /execute-aql (WP-UI-AQL).
+  // Bypasses the SPARQL→AQL step so the user can hand-edit the transpiled
+  // AQL and re-run it. Reuses the EXECUTE_* channel; the current bind
+  // vars ride along unchanged.
+  const handleRunAql = useCallback(
+    async (aql: string) => {
+      if (!state.connection.token) return;
+      if (!aql.trim()) return;
+      dispatch({ type: "EXECUTE_START" });
+      try {
+        const resp = await executeAql(aql, state.bindVars, state.connection.token);
+        dispatch({
+          type: "EXECUTE_SUCCESS",
+          results: resp.results,
+          warnings: resp.warnings,
+          execMs: resp.exec_ms ?? null,
+        });
+      } catch (err) {
+        dispatch({
+          type: "EXECUTE_ERROR",
+          error: err instanceof Error ? err.message : String(err),
+        });
+        handleMaybeAuthError(err);
+      }
+    },
+    [dispatch, state.connection.token, state.bindVars, handleMaybeAuthError],
+  );
+
+  // Map backend warning dicts ({message?, code?}) to the UI's
+  // {message} shape, dropping empty ones. Shared by explain/profile.
+  const toWarnings = useCallback(
+    (raw: Array<{ message?: string; code?: string }> | undefined) =>
+      (raw ?? [])
+        .map((w) => ({ message: String(w.message ?? "") }))
+        .filter((w) => w.message.length > 0),
+    [],
+  );
+
+  // WP-UI-EDITOR: feed the SPARQL editor's completion source the live
+  // schema — class local names from the mapping's entities, predicate
+  // local names from relationships + all property names. Mirrors the way
+  // AqlEditor consumes `physicalMapping` for `var.property` completion.
+  useEffect(() => {
+    const pm = physicalMappingOf(state.schema.mapping);
+    if (!pm) {
+      setSparqlSchemaContext(null);
+      return;
+    }
+    const classes = Object.keys(pm.entities);
+    const properties = new Set<string>(Object.keys(pm.relationships));
+    const collectProps = (holder: unknown) => {
+      const props = (holder as { properties?: unknown } | null)?.properties;
+      if (props && typeof props === "object") {
+        for (const k of Object.keys(props as Record<string, unknown>)) {
+          properties.add(k);
+        }
+      }
+    };
+    Object.values(pm.entities).forEach(collectProps);
+    Object.values(pm.relationships).forEach(collectProps);
+    setSparqlSchemaContext({ classes, properties: [...properties] });
+  }, [state.schema.mapping]);
+
+  // POST /explain — transpile + fetch the AQL execution plan (no rows).
+  // Surfaces as the "Explain" result tab.
+  const handleExplain = useCallback(async () => {
+    if (!state.connection.token) return;
+    if (!sparqlRef.current.trim()) return;
+    dispatch({ type: "EXPLAIN_START" });
+    try {
+      const resp = await explainSparql(buildRequest(), state.connection.token);
+      dispatch({
+        type: "EXPLAIN_SUCCESS",
+        plan: resp.plan ?? {},
+        aql: resp.aql,
+        bindVars: resp.bind_vars ?? {},
+        warnings: toWarnings(resp.warnings),
+        translateMs: resp.translate_ms ?? null,
+      });
+      addToHistory(resp.aql);
+    } catch (err) {
+      dispatch({
+        type: "EXPLAIN_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      handleMaybeAuthError(err);
+    }
+  }, [
+    dispatch,
+    buildRequest,
+    addToHistory,
+    toWarnings,
+    state.connection.token,
+    handleMaybeAuthError,
+  ]);
+
+  // POST /profile — transpile + execute with profile=2, returning rows +
+  // per-stage timings. Surfaces as the "Profile" result tab; the rows
+  // also populate the Table/JSON/Graph tabs.
+  const handleProfile = useCallback(async () => {
+    if (!state.connection.token) return;
+    if (!sparqlRef.current.trim()) return;
+    dispatch({ type: "PROFILE_START" });
+    try {
+      const resp = await profileSparql(buildRequest(), state.connection.token);
+      dispatch({
+        type: "PROFILE_SUCCESS",
+        profile: resp.profile ?? {},
+        results: resp.bindings ?? [],
+        aql: resp.aql,
+        bindVars: resp.bind_vars ?? {},
+        warnings: toWarnings(resp.warnings),
+        translateMs: resp.translate_ms ?? null,
+        execMs: resp.exec_ms ?? null,
+      });
+      addToHistory(resp.aql);
+    } catch (err) {
+      dispatch({
+        type: "PROFILE_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+      handleMaybeAuthError(err);
+    }
+  }, [
+    dispatch,
+    buildRequest,
+    addToHistory,
+    toWarnings,
+    state.connection.token,
+    handleMaybeAuthError,
+  ]);
+
   // Natural-language generate step. One /nl-translate call returns BOTH
   // the SPARQL (shown in the editor) and the ready-to-run AQL preview.
   // Returns the generated SPARQL on success (and updates `sparqlRef`
@@ -453,13 +594,22 @@ export default function App() {
     setAqlPaneOpen((v) => (v && !sparqlPaneOpen ? v : !v));
   }, [sparqlPaneOpen]);
 
-  // Per-result affordance chips (Phase 3): jump to a power surface
-  // without a permanent toolbar. "View SPARQL"/"View AQL" reveal the L1
-  // inspector focused on a pane; "Graph" switches the results tab.
+  // Per-result affordance chips: jump to a power surface without a
+  // permanent toolbar. "View SPARQL"/"View AQL" reveal the L1 inspector
+  // focused on a pane; "Graph" switches the results tab; "Explain"/
+  // "Profile" run the corresponding backend call (WP-UI-EXPLAIN).
   const handleAffordance = useCallback(
     (id: AffordanceId) => {
       if (id === "graph") {
         dispatch({ type: "SET_RESULT_TAB", tab: "graph" });
+        return;
+      }
+      if (id === "explain") {
+        void handleExplain();
+        return;
+      }
+      if (id === "profile") {
+        void handleProfile();
         return;
       }
       setShowInspector(true);
@@ -470,7 +620,7 @@ export default function App() {
         setAqlPaneOpen(true);
       }
     },
-    [dispatch],
+    [dispatch, handleExplain, handleProfile],
   );
 
   const affordances = resultAffordances({
@@ -479,7 +629,147 @@ export default function App() {
     aqlPresent: state.aql.trim().length > 0,
     inspectorOpen: showInspector,
     activeTab: state.activeResultTab,
+    connected: isConnected,
   });
+
+  // The inspector's power actions are disabled while any of the pipeline
+  // *or* explain/profile calls are in flight.
+  const inspectorBusy = busy || state.explaining || state.profiling;
+
+  // Command palette (Mod-K, §10.7). Toggling here mirrors every action
+  // reachable from the gear menu — per ui-architecture.mdc rule 19 the
+  // palette accelerates rather than replaces the menu.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        setShowPalette((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const commands = useMemo<Command[]>(() => {
+    const hasSparql = state.sparql.trim().length > 0;
+    return [
+      {
+        id: "translate",
+        title: "Translate to AQL",
+        section: "Query",
+        keywords: "transpile sparql aql",
+        enabled: hasSparql,
+        run: () => void handleTranslate(),
+      },
+      {
+        id: "run",
+        title: "Run query",
+        section: "Query",
+        keywords: "execute",
+        enabled: isConnected && hasSparql,
+        run: () => void handleExecute(),
+      },
+      {
+        id: "explain",
+        title: "Explain query",
+        section: "Query",
+        keywords: "plan execution cost",
+        enabled: isConnected && hasSparql,
+        run: () => void handleExplain(),
+      },
+      {
+        id: "profile",
+        title: "Profile query",
+        section: "Query",
+        keywords: "timing performance stages",
+        enabled: isConnected && hasSparql,
+        run: () => void handleProfile(),
+      },
+      {
+        id: "inspector",
+        title: showInspector ? "Hide query inspector" : "Show query inspector",
+        section: "Panels",
+        keywords: "sparql aql editor drawer",
+        enabled: true,
+        run: () => setShowInspector((v) => !v),
+      },
+      {
+        id: "ontology",
+        title: showMapping ? "Hide ontology panel" : "Show ontology panel",
+        section: "Panels",
+        keywords: "mapping turtle owl schema",
+        enabled: true,
+        run: () => setShowMapping((v) => !v),
+      },
+      {
+        id: "outline",
+        title: showOutline ? "Hide clause outline" : "Show clause outline",
+        section: "Panels",
+        keywords: "clauses sparql",
+        enabled: true,
+        run: () => setShowOutline((v) => !v),
+      },
+      {
+        id: "samples",
+        title: "Open sample queries",
+        section: "Panels",
+        keywords: "examples",
+        enabled: true,
+        run: () => setShowSamples(true),
+      },
+      {
+        id: "history",
+        title: "Open query history",
+        section: "Panels",
+        keywords: "recent",
+        enabled: state.history.length > 0,
+        run: () => setShowHistory(true),
+      },
+      {
+        id: "tab-table",
+        title: "Show results: Table",
+        section: "View",
+        enabled: true,
+        run: () => dispatch({ type: "SET_RESULT_TAB", tab: "table" }),
+      },
+      {
+        id: "tab-json",
+        title: "Show results: JSON",
+        section: "View",
+        enabled: true,
+        run: () => dispatch({ type: "SET_RESULT_TAB", tab: "json" }),
+      },
+      {
+        id: "tab-graph",
+        title: "Show results: Graph",
+        section: "View",
+        enabled: true,
+        run: () => dispatch({ type: "SET_RESULT_TAB", tab: "graph" }),
+      },
+      {
+        id: "refresh",
+        title: "Refresh schema",
+        section: "Schema",
+        keywords: "reacquire introspect mapping",
+        enabled: isConnected && !state.schema.refreshing,
+        run: () => void handleRefreshSchema(),
+      },
+    ];
+  }, [
+    state.sparql,
+    state.history.length,
+    state.schema.refreshing,
+    isConnected,
+    showInspector,
+    showMapping,
+    showOutline,
+    handleTranslate,
+    handleExecute,
+    handleExplain,
+    handleProfile,
+    handleRefreshSchema,
+    dispatch,
+  ]);
 
   // Ask-bar suggestions: recent questions first, then schema-derived
   // examples (POST /nl-samples), de-duplicated case-insensitively.
@@ -498,10 +788,15 @@ export default function App() {
 
   const sparqlPane = (
     <div className="flex flex-col h-full min-h-0">
-      <div className="px-3 py-1.5 bg-gray-900/30 border-b border-gray-800">
+      <div className="px-3 py-1.5 bg-gray-900/30 border-b border-gray-800 flex items-center gap-2">
         <span className="text-xs font-medium text-gray-400 uppercase tracking-wide">
           SPARQL
         </span>
+        <div className="flex-1" />
+        <PrefixManager
+          value={state.sparql}
+          onChange={(v) => dispatch({ type: "SET_SPARQL", sparql: v })}
+        />
       </div>
       <div className="flex-1 min-h-0 flex">
         <div className="flex-1 min-w-0">
@@ -510,6 +805,8 @@ export default function App() {
             onChange={(v) => dispatch({ type: "SET_SPARQL", sparql: v })}
             onTranslate={handleTranslate}
             onExecute={handleExecute}
+            onExplain={handleExplain}
+            onProfile={handleProfile}
             viewRef={sparqlViewRef}
           />
         </div>
@@ -563,7 +860,15 @@ export default function App() {
         </div>
       )}
       <div className="flex-1 min-h-0">
-        <AqlEditor value={state.aql} bindVars={state.bindVars} error={null} />
+        <AqlEditor
+          value={state.aql}
+          bindVars={state.bindVars}
+          error={null}
+          mapping={state.schema.mapping ?? undefined}
+          onRun={handleRunAql}
+          running={state.executing}
+          canRun={isConnected}
+        />
       </div>
     </div>
   );
@@ -629,6 +934,7 @@ export default function App() {
             onToggleOutline={() => setShowOutline((v) => !v)}
             onOpenSamples={() => setShowSamples(true)}
             onOpenHistory={() => setShowHistory(true)}
+            onOpenPalette={() => setShowPalette(true)}
             historyCount={state.history.length}
             autoOpenOnError={autoOpenOnError}
             onToggleAutoOpenOnError={() => setAutoOpenOnError((v) => !v)}
@@ -773,6 +1079,8 @@ export default function App() {
               activeTab={state.activeResultTab}
               dispatch={dispatch}
               execMs={state.execMs}
+              explainPlan={state.explainPlan}
+              profileData={state.profileData}
             />
           </div>
 
@@ -782,9 +1090,13 @@ export default function App() {
             onToggle={() => setShowInspector((v) => !v)}
             onTranslate={handleTranslate}
             onRun={handleExecute}
+            onExplain={handleExplain}
+            onProfile={handleProfile}
             translating={state.translating}
             executing={state.executing}
-            busy={busy}
+            explaining={state.explaining}
+            profiling={state.profiling}
+            busy={inspectorBusy}
             isConnected={isConnected}
             sparqlEmpty={!state.sparql.trim()}
             sparqlOpen={sparqlPaneOpen}
@@ -812,6 +1124,12 @@ export default function App() {
           onClose={() => setShowSamples(false)}
         />
       )}
+
+      <CommandPalette
+        open={showPalette}
+        onClose={() => setShowPalette(false)}
+        commands={commands}
+      />
     </div>
   );
 }

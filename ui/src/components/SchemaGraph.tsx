@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { getOwlSchema, type OwlClass, type OwlProperty } from "../api/client";
+import {
+  getOwlSchema,
+  getSchemaStatistics,
+  type OwlClass,
+  type OwlProperty,
+} from "../api/client";
 import { owlSchemaFromTurtle } from "../api/owlFromTurtle";
+import { extractRelationshipCounts } from "../utils/schemaGraph";
 import CytoscapeSchemaGraph from "./CytoscapeSchemaGraph";
 
 // Schema graph viewer for the SPARQL UI.
@@ -29,6 +35,7 @@ interface Props {
 export default function SchemaGraph({ ontologyTtl }: Props) {
   const [serverClasses, setServerClasses] = useState<OwlClass[]>([]);
   const [serverProperties, setServerProperties] = useState<OwlProperty[]>([]);
+  const [serverCounts, setServerCounts] = useState<Record<string, number>>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -80,6 +87,20 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
+    // Best-effort edge-volume weighting (PRD §10.18): the analyzer's
+    // statistics block is optional (heuristic bundles have none) and the
+    // route may 401 without a session, so any failure just leaves arcs
+    // unweighted rather than surfacing an error.
+    getSchemaStatistics()
+      .then((resp) => {
+        if (cancelled) return;
+        setServerCounts(extractRelationshipCounts(resp.statistics));
+      })
+      .catch(() => {
+        if (!cancelled) setServerCounts({});
+      });
+
     return () => {
       cancelled = true;
     };
@@ -107,6 +128,7 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
       <CytoscapeSchemaGraph
         classes={serverClasses}
         properties={serverProperties}
+        counts={serverCounts}
       />
     );
   }

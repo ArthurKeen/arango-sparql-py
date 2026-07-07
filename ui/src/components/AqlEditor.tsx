@@ -22,6 +22,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { oneDark } from "./theme";
 import { aql, setAqlSchemaContext, type AqlSchemaContext } from "../lang/aql";
+import { physicalMappingOf } from "../utils/mappingWire";
 
 const setAqlHighlightEffect = StateEffect.define<number[]>();
 
@@ -59,6 +60,16 @@ interface Props {
   onFormat?: () => void;
   highlightLines?: number[];
   onHoverLine?: (line: number | null) => void;
+  /**
+   * Run the live editor document directly via `/execute-aql` (WP-UI-AQL).
+   * Enables hand-editing the transpiled AQL and re-running it, bypassing
+   * the SPARQL→AQL step. Receives the current editor contents.
+   */
+  onRun?: (aql: string) => void;
+  /** An /execute-aql call is in flight (disables Run, shows spinner). */
+  running?: boolean;
+  /** A live DB session exists — Run needs one. */
+  canRun?: boolean;
 }
 
 const AQL_CLAUSE_RE = /^(FOR|LET|FILTER|RETURN|SORT|LIMIT|COLLECT|INSERT|UPDATE|REPLACE|REMOVE|UPSERT|WINDOW|SEARCH|PRUNE)\b/i;
@@ -133,10 +144,14 @@ function formatAql(src: string): string {
   return lines.join("\n");
 }
 
-export default function AqlEditor({ value, bindVars, error, onModified, mapping, highlightLines, onHoverLine }: Props) {
+export default function AqlEditor({ value, bindVars, error, onModified, mapping, highlightLines, onHoverLine, onRun, running, canRun }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [showBindVars, setShowBindVars] = useState(false);
+  // True once the user hand-edits away from the transpiled AQL; reset
+  // whenever a fresh transpile pushes a new `value` (see the value-sync
+  // effect below). Drives the "edited" badge + Reset affordance.
+  const [modified, setModified] = useState(false);
   const transpilerValueRef = useRef(value);
   const onModifiedRef = useRef(onModified);
   onModifiedRef.current = onModified;
@@ -148,18 +163,14 @@ export default function AqlEditor({ value, bindVars, error, onModified, mapping,
   }, [value]);
 
   useEffect(() => {
-    if (!mapping) {
-      setAqlSchemaContext(null);
-      return;
-    }
-    const pm = (mapping as Record<string, unknown>).physical_mapping as Record<string, unknown> | undefined;
+    const pm = physicalMappingOf(mapping);
     if (!pm) {
       setAqlSchemaContext(null);
       return;
     }
     const ctx: AqlSchemaContext = {
-      entities: (pm.entities || {}) as AqlSchemaContext["entities"],
-      relationships: (pm.relationships || {}) as AqlSchemaContext["relationships"],
+      entities: pm.entities as AqlSchemaContext["entities"],
+      relationships: pm.relationships as AqlSchemaContext["relationships"],
       bindVars,
     };
     setAqlSchemaContext(ctx);
@@ -168,7 +179,9 @@ export default function AqlEditor({ value, bindVars, error, onModified, mapping,
   const handleDocChange = useCallback((update: { state: { doc: { toString: () => string } } }) => {
     const edited = update.state.doc.toString();
     const original = transpilerValueRef.current;
-    onModifiedRef.current?.(edited !== original, edited);
+    const isModified = edited !== original;
+    setModified(isModified);
+    onModifiedRef.current?.(isModified, edited);
   }, []);
 
   useEffect(() => {
@@ -263,6 +276,8 @@ export default function AqlEditor({ value, bindVars, error, onModified, mapping,
         changes: { from: 0, to: current.length, insert: value },
       });
     }
+    // A new transpiled `value` is the authoritative document again.
+    setModified(false);
   }, [value]);
 
   useEffect(() => {
@@ -283,6 +298,31 @@ export default function AqlEditor({ value, bindVars, error, onModified, mapping,
     }
   }, []);
 
+  // Run the live editor document (may include hand-edits) via
+  // `/execute-aql`, bypassing the SPARQL→AQL step.
+  const handleRun = useCallback(() => {
+    const view = viewRef.current;
+    if (!view || !onRun) return;
+    onRun(view.state.doc.toString());
+  }, [onRun]);
+
+  // Discard hand-edits and restore the last transpiled AQL.
+  const handleReset = useCallback(() => {
+    const view = viewRef.current;
+    if (!view) return;
+    const current = view.state.doc.toString();
+    if (current !== transpilerValueRef.current) {
+      view.dispatch({
+        changes: {
+          from: 0,
+          to: current.length,
+          insert: transpilerValueRef.current,
+        },
+      });
+    }
+    setModified(false);
+  }, []);
+
   const hasBindVars = Object.keys(bindVars).length > 0;
 
   return (
@@ -299,6 +339,37 @@ export default function AqlEditor({ value, bindVars, error, onModified, mapping,
             </svg>
             Format
           </button>
+          {onRun && (
+            <button
+              onClick={handleRun}
+              disabled={!canRun || running}
+              className="px-2 py-0.5 text-[10px] font-medium rounded bg-emerald-700 hover:bg-emerald-600 text-emerald-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1"
+              title={
+                canRun
+                  ? "Run this AQL directly (POST /execute-aql) \u2014 includes any hand-edits"
+                  : "Connect to a database to run AQL"
+              }
+            >
+              {running ? "Running\u2026" : "Run AQL"}
+            </button>
+          )}
+          {modified && (
+            <>
+              <span
+                className="px-1.5 py-0.5 text-[9px] uppercase tracking-wide rounded bg-amber-900/40 text-amber-300 border border-amber-800/40"
+                title="The AQL has been hand-edited away from the transpiled query"
+              >
+                edited
+              </span>
+              <button
+                onClick={handleReset}
+                className="px-2 py-0.5 text-[10px] font-medium rounded bg-gray-800 hover:bg-gray-700 text-gray-400 hover:text-gray-200 transition-colors"
+                title="Discard edits and restore the transpiled AQL"
+              >
+                Reset
+              </button>
+            </>
+          )}
         </div>
       )}
       {error ? (

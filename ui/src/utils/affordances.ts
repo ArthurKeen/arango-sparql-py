@@ -3,12 +3,13 @@
 // chips under each answer instead of a permanent toolbar. Keeping the
 // enable/active derivation pure makes it testable without a DOM harness.
 //
-// SPARQL set: View SPARQL, View AQL, Graph. Explain / Profile chips land
-// with WP-UI-EXPLAIN once the results panel renders plan trees.
+// SPARQL set: View SPARQL, View AQL, Graph, Explain, Profile. Explain /
+// Profile hit a live DB, so they are gated on an active connection
+// (WP-UI-EXPLAIN).
 
 import type { ResultTab } from "../api/store";
 
-export type AffordanceId = "sparql" | "aql" | "graph";
+export type AffordanceId = "sparql" | "aql" | "graph" | "explain" | "profile";
 
 export interface Affordance {
   id: AffordanceId;
@@ -31,6 +32,8 @@ export interface AffordanceInputs {
   inspectorOpen: boolean;
   /** The active results tab (so the Graph chip reads as active). */
   activeTab: ResultTab;
+  /** A live DB session exists (Explain/Profile require one). */
+  connected: boolean;
 }
 
 export function resultAffordances(i: AffordanceInputs): Affordance[] {
@@ -55,6 +58,24 @@ export function resultAffordances(i: AffordanceInputs): Affordance[] {
       enabled: i.hasResults,
       active: i.activeTab === "graph",
       title: "Render the result bindings as a graph",
+    },
+    {
+      id: "explain",
+      label: "Explain",
+      enabled: i.connected && i.sparqlPresent,
+      active: i.activeTab === "explain",
+      title: i.connected
+        ? "Fetch the AQL execution plan for this query"
+        : "Connect to a database to explain",
+    },
+    {
+      id: "profile",
+      label: "Profile",
+      enabled: i.connected && i.sparqlPresent,
+      active: i.activeTab === "profile",
+      title: i.connected
+        ? "Run with per-stage profiling"
+        : "Connect to a database to profile",
     },
   ];
 }

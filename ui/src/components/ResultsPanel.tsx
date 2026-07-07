@@ -15,6 +15,10 @@ interface Props {
   activeTab: ResultTab;
   dispatch: (action: Action) => void;
   execMs?: number | null;
+  /** Raw ArangoDB explain plan (WP-UI-EXPLAIN). Tab shows when non-null. */
+  explainPlan?: Record<string, unknown> | null;
+  /** Raw ArangoDB profile blob (WP-UI-EXPLAIN). Tab shows when non-null. */
+  profileData?: Record<string, unknown> | null;
 }
 
 const ALWAYS_TABS: { id: ResultTab; label: string }[] = [
@@ -252,6 +256,202 @@ function GraphView({ data }: { data: unknown[] }) {
   );
 }
 
+function asNumber(v: unknown): number | null {
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function RawJson({ label, data }: { label: string; data: unknown }) {
+  return (
+    <details className="mt-3 group">
+      <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-gray-500 hover:text-gray-300 select-none">
+        {label}
+      </summary>
+      <pre className="mt-1 p-2 text-[11px] text-gray-400 font-mono bg-gray-900/60 rounded overflow-auto max-h-64 whitespace-pre-wrap">
+        {JSON.stringify(data, null, 2)}
+      </pre>
+    </details>
+  );
+}
+
+// Renders the raw ArangoDB explain plan (`db.aql.explain()` output):
+// a cost/row summary, the plan nodes with a relative-cost bar so the
+// hotspot is obvious, the applied optimizer rules, and a raw-JSON escape
+// hatch. Every field is read defensively — ArangoDB's plan shape is not
+// pinned by the backend (models.py surfaces it verbatim).
+function ExplainView({ plan }: { plan: Record<string, unknown> }) {
+  const nodes = Array.isArray(plan.nodes)
+    ? (plan.nodes as Array<Record<string, unknown>>)
+    : [];
+  const rules = Array.isArray(plan.rules) ? (plan.rules as unknown[]) : [];
+  const collections = Array.isArray(plan.collections)
+    ? (plan.collections as Array<Record<string, unknown>>)
+    : [];
+  const estCost = asNumber(plan.estimatedCost);
+  const estItems = asNumber(plan.estimatedNrItems);
+  const maxCost = nodes.reduce(
+    (m, n) => Math.max(m, asNumber(n.estimatedCost) ?? 0),
+    0,
+  );
+
+  return (
+    <div className="p-3 overflow-auto h-full text-sm">
+      <div className="flex flex-wrap gap-2 mb-3">
+        {estCost != null && (
+          <span className="px-2 py-1 rounded bg-gray-800 text-[11px] text-gray-300">
+            est. cost{" "}
+            <span className="text-indigo-300 tabular-nums">
+              {estCost.toLocaleString()}
+            </span>
+          </span>
+        )}
+        {estItems != null && (
+          <span className="px-2 py-1 rounded bg-gray-800 text-[11px] text-gray-300">
+            est. rows{" "}
+            <span className="text-indigo-300 tabular-nums">
+              {estItems.toLocaleString()}
+            </span>
+          </span>
+        )}
+        <span className="px-2 py-1 rounded bg-gray-800 text-[11px] text-gray-300">
+          {nodes.length} node{nodes.length === 1 ? "" : "s"}
+        </span>
+        {collections.length > 0 && (
+          <span
+            className="px-2 py-1 rounded bg-gray-800 text-[11px] text-gray-300"
+            title={collections
+              .map((c) => String(c.name ?? ""))
+              .filter(Boolean)
+              .join(", ")}
+          >
+            {collections.length} collection{collections.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
+      {nodes.length > 0 && (
+        <table className="w-full text-left mb-2">
+          <thead className="text-[10px] uppercase text-gray-500">
+            <tr>
+              <th className="py-1 pr-2 font-medium">#</th>
+              <th className="py-1 pr-2 font-medium">Node</th>
+              <th className="py-1 pr-2 font-medium text-right">est. rows</th>
+              <th className="py-1 pr-2 font-medium text-right w-1/3">est. cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {nodes.map((n, i) => {
+              const cost = asNumber(n.estimatedCost) ?? 0;
+              const pct = maxCost > 0 ? (cost / maxCost) * 100 : 0;
+              const hot = maxCost > 0 && cost >= maxCost * 0.99 && cost > 0;
+              return (
+                <tr key={i} className="border-t border-gray-800/60">
+                  <td className="py-1 pr-2 text-gray-600 font-mono text-xs">
+                    {asNumber(n.id) ?? i}
+                  </td>
+                  <td className="py-1 pr-2 text-gray-300 font-mono text-xs">
+                    {String(n.type ?? "?")}
+                  </td>
+                  <td className="py-1 pr-2 text-right text-gray-400 font-mono text-xs tabular-nums">
+                    {(asNumber(n.estimatedNrItems) ?? 0).toLocaleString()}
+                  </td>
+                  <td className="py-1 pr-2">
+                    <div className="flex items-center gap-2 justify-end">
+                      <div className="flex-1 h-1.5 bg-gray-800 rounded overflow-hidden">
+                        <div
+                          className={hot ? "h-full bg-amber-500/70" : "h-full bg-indigo-500/50"}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-gray-400 font-mono tabular-nums w-16 text-right">
+                        {cost.toLocaleString()}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      {rules.length > 0 && (
+        <div className="mt-2">
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
+            Optimizer rules ({rules.length})
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {rules.map((r, i) => (
+              <span
+                key={i}
+                className="px-1.5 py-0.5 text-[10px] rounded bg-gray-800 text-gray-400 font-mono"
+              >
+                {String(r)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <RawJson label="Raw explain plan" data={plan} />
+    </div>
+  );
+}
+
+// Renders the ArangoDB profile blob (`cursor.profile()`): per-stage
+// timings (seconds → ms) with a relative bar highlighting the slow stage.
+// Non-numeric entries fall through to the raw-JSON view.
+function ProfileView({ profile }: { profile: Record<string, unknown> }) {
+  const timings = Object.entries(profile).filter(
+    ([, v]) => asNumber(v) != null,
+  ) as Array<[string, number]>;
+  const total = timings.reduce((s, [, v]) => s + v, 0);
+  const max = timings.reduce((m, [, v]) => Math.max(m, v), 0);
+
+  return (
+    <div className="p-3 overflow-auto h-full text-sm">
+      {timings.length > 0 ? (
+        <>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="px-2 py-1 rounded bg-gray-800 text-[11px] text-gray-300">
+              total{" "}
+              <span className="text-sky-300 tabular-nums">
+                {(total * 1000).toFixed(1)}ms
+              </span>
+            </span>
+          </div>
+          <div className="space-y-1">
+            {timings.map(([stage, secs]) => {
+              const pct = max > 0 ? (secs / max) * 100 : 0;
+              const hot = max > 0 && secs >= max * 0.99 && secs > 0;
+              return (
+                <div key={stage} className="flex items-center gap-2">
+                  <span className="w-40 shrink-0 text-xs text-gray-400 font-mono truncate">
+                    {stage}
+                  </span>
+                  <div className="flex-1 h-2 bg-gray-800 rounded overflow-hidden">
+                    <div
+                      className={hot ? "h-full bg-amber-500/70" : "h-full bg-sky-500/50"}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <span className="w-20 text-right text-xs text-gray-400 font-mono tabular-nums">
+                    {(secs * 1000).toFixed(2)}ms
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <p className="text-gray-500 text-sm mb-2">
+          No per-stage timings in the profile payload.
+        </p>
+      )}
+      <RawJson label="Raw profile" data={profile} />
+    </div>
+  );
+}
+
 function WarningsBanner({ warnings }: { warnings: Array<{ message: string }> }) {
   if (warnings.length === 0) return null;
   return (
@@ -318,6 +518,8 @@ export default function ResultsPanel({
   activeTab,
   dispatch,
   execMs,
+  explainPlan,
+  profileData,
 }: Props) {
   const handleExportJson = useCallback(() => {
     if (!results) return;
@@ -333,7 +535,13 @@ export default function ResultsPanel({
     downloadBlob(toCsv(results), "results.csv", "text/csv");
   }, [results]);
 
-  const tabs = ALWAYS_TABS;
+  // Explain / Profile tabs are conditional — they only appear once the
+  // corresponding call has produced a payload (PRD §10.5).
+  const tabs: { id: ResultTab; label: string }[] = [
+    ...ALWAYS_TABS,
+    ...(explainPlan ? [{ id: "explain" as ResultTab, label: "Explain" }] : []),
+    ...(profileData ? [{ id: "profile" as ResultTab, label: "Profile" }] : []),
+  ];
 
   return (
     <div className="h-full flex flex-col">
@@ -382,7 +590,11 @@ export default function ResultsPanel({
       <WarningsBanner warnings={warnings} />
 
       <div className="flex-1 min-h-0 overflow-auto">
-        {results === null ? (
+        {activeTab === "explain" && explainPlan ? (
+          <ExplainView plan={explainPlan} />
+        ) : activeTab === "profile" && profileData ? (
+          <ProfileView profile={profileData} />
+        ) : results === null ? (
           <div className="flex items-center justify-center h-full">
             <p className="text-gray-600 text-sm">
               Run a query to see results here.

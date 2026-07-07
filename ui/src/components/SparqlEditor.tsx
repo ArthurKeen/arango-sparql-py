@@ -7,19 +7,43 @@ import {
   lineNumbers,
   highlightActiveLine,
   highlightActiveLineGutter,
+  hoverTooltip,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { bracketMatching, foldGutter, foldKeymap } from "@codemirror/language";
-import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
+import {
+  autocompletion,
+  completionKeymap,
+  closeBrackets,
+  closeBracketsKeymap,
+} from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { oneDark } from "./theme";
 import { sparql } from "../lang/sparql";
+import { sparqlCompletionSource, sparqlHoverInfo } from "../lang/sparqlComplete";
 
 // Mirror of `references/arango-cypher-py/ui/src/components/CypherEditor.tsx`,
 // re-pointed at the legacy SPARQL CodeMirror mode (see `lang/sparql.ts`).
-// SPARQL completion + hover land in a follow-up task — until then this
-// editor only carries syntax highlighting + the SPARQL ↔ AQL line
-// correspondence highlighter.
+// WP-UI-EDITOR: schema/prefix-aware completion, CURIE hover tooltips, and
+// explain/profile keymaps ride on top of the syntax highlighting + the
+// SPARQL ↔ AQL line-correspondence highlighter.
+
+// Hover tooltip that expands the CURIE under the cursor to its full IRI.
+const sparqlCurieHover = hoverTooltip((view, pos) => {
+  const info = sparqlHoverInfo(view.state.doc.toString(), pos);
+  if (!info) return null;
+  return {
+    pos: info.from,
+    end: info.to,
+    above: true,
+    create() {
+      const dom = document.createElement("div");
+      dom.className = "cm-curie-tooltip";
+      dom.textContent = info.iri;
+      return { dom };
+    },
+  };
+});
 
 const setHighlightEffect = StateEffect.define<number[]>();
 
@@ -54,6 +78,8 @@ interface Props {
   onChange: (value: string) => void;
   onTranslate: () => void;
   onExecute: () => void;
+  onExplain?: () => void;
+  onProfile?: () => void;
   viewRef?: React.MutableRefObject<EditorView | null>;
   highlightLines?: number[];
   onHoverLine?: (line: number | null) => void;
@@ -64,14 +90,16 @@ export default function SparqlEditor({
   onChange,
   onTranslate,
   onExecute,
+  onExplain,
+  onProfile,
   viewRef: externalViewRef,
   highlightLines,
   onHoverLine,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const callbacksRef = useRef({ onChange, onTranslate, onExecute });
-  callbacksRef.current = { onChange, onTranslate, onExecute };
+  const callbacksRef = useRef({ onChange, onTranslate, onExecute, onExplain, onProfile });
+  callbacksRef.current = { onChange, onTranslate, onExecute, onExplain, onProfile };
 
   const onHoverLineRef = useRef(onHoverLine);
   onHoverLineRef.current = onHoverLine;
@@ -102,6 +130,14 @@ export default function SparqlEditor({
         key: "Shift-Enter",
         run: () => { callbacksRef.current.onExecute(); return true; },
       },
+      {
+        key: "Mod-Shift-e",
+        run: () => { callbacksRef.current.onExplain?.(); return true; },
+      },
+      {
+        key: "Mod-Shift-p",
+        run: () => { callbacksRef.current.onProfile?.(); return true; },
+      },
     ]);
 
     const state = EditorState.create({
@@ -117,9 +153,12 @@ export default function SparqlEditor({
         closeBrackets(),
         highlightSelectionMatches({ highlightWordAroundCursor: true, minSelectionLength: 1 }),
         sparql(),
+        autocompletion({ override: [sparqlCompletionSource] }),
+        sparqlCurieHover,
         oneDark,
         keymap.of([
           ...closeBracketsKeymap,
+          ...completionKeymap,
           ...defaultKeymap,
           ...searchKeymap,
           ...historyKeymap,
@@ -136,6 +175,17 @@ export default function SparqlEditor({
           ".cm-scroller": { overflow: "auto" },
           ".cm-correspondence-highlight": {
             backgroundColor: "rgba(59, 130, 246, 0.1)",
+          },
+          ".cm-curie-tooltip": {
+            padding: "2px 8px",
+            fontFamily: "monospace",
+            fontSize: "11px",
+            color: "#93c5fd",
+            backgroundColor: "#0b1220",
+            border: "1px solid #1e293b",
+            borderRadius: "4px",
+            maxWidth: "480px",
+            wordBreak: "break-all",
           },
         }),
       ],
