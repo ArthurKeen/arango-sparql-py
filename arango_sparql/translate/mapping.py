@@ -141,7 +141,14 @@ RelationshipStyle = Literal["DEDICATED_COLLECTION", "GENERIC_WITH_TYPE", "RPT_ED
 # How the mapping was obtained. Consumed by the UI's "schema source"
 # badge and by the request-level guard that decides whether to refuse
 # heuristic mappings (PRD §6.3.4 ``ARANGO_SPARQL_ALLOW_HEURISTIC``).
-MappingSourceKind = Literal["analyzer", "heuristic", "manual", "imported_owl"]
+#
+# * ``imported_csi`` — pushed in as a forward CSI v1 interchange document
+#   produced by a schema-mapping tool (e.g. r2g). Trusted like
+#   ``imported_owl`` / ``analyzer`` (deterministic, schema-derived), not
+#   refused by the heuristic guard. See :mod:`arango_sparql.translate.csi`.
+MappingSourceKind = Literal[
+    "analyzer", "heuristic", "manual", "imported_owl", "imported_csi"
+]
 
 
 # ---------------------------------------------------------------------------
@@ -256,7 +263,13 @@ _SPEC_FIELD_ALIASES: dict[str, str] = {
     "to_entity": "toEntity",
 }
 
-_VALID_SOURCE_KINDS = {"analyzer", "heuristic", "manual", "imported_owl"}
+_VALID_SOURCE_KINDS = {
+    "analyzer",
+    "heuristic",
+    "manual",
+    "imported_owl",
+    "imported_csi",
+}
 
 
 def _normalise_top_level(d: dict[str, Any]) -> dict[str, Any]:
