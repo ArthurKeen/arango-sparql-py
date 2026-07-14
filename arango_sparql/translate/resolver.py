@@ -12,10 +12,13 @@ attaches three annotation properties under the ``phys:`` namespace:
 - ``phys:typeField`` / ``phys:typeValue`` for hybrid (multi-class)
   collections — used to emit ``FILTER doc.<typeField> == <typeValue>``.
 
-The resolver normalizes both spellings of the physical IRI seen in the
-wild (``arango.solutions/phys#`` and the legacy
-``arango-schema-mapper/phys#``) so callers do not have to care which
-mapper version produced the ontology.
+The resolver normalizes every spelling of the physical IRI seen in the
+wild so callers do not have to care which mapper version produced the
+ontology. The canonical spelling is the one the analyzers actually emit
+by default (``arango-schema-analyzer``'s
+``DEFAULT_OWL_PHYSICAL_IRI = http://arangodb.com/schema/physical#``);
+the older ``arango.solutions/phys#`` and ``arango-schema-mapper/phys#``
+spellings are accepted for back-compat.
 
 Visitors call into this resolver rather than touching the ontology
 graph directly so the lookup surface stays narrow and cacheable.
@@ -35,10 +38,14 @@ from ..errors import SchemaResolutionError
 if TYPE_CHECKING:
     from .mapping import MappingBundle
 
-# Both physical-IRI spellings the mapper has shipped historically. We
-# accept either so an ontology produced by an older mapper still
-# resolves.
+# Every physical-IRI spelling seen in the wild. The FIRST entry is the
+# canonical one the analyzers emit by default (``arango-schema-analyzer``
+# ``DEFAULT_OWL_PHYSICAL_IRI``); it must lead so the synthesizer (which
+# uses ``_PHYS_NAMESPACES[0]``) aligns with real analyzer output. The
+# remaining spellings are accepted so ontologies from older mappers still
+# resolve.
 _PHYS_NAMESPACES = (
+    Namespace("http://arangodb.com/schema/physical#"),
     Namespace("https://arango.solutions/phys#"),
     Namespace("https://arango-schema-mapper.example.org/phys#"),
 )

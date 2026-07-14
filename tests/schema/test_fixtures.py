@@ -431,10 +431,14 @@ def test_multitenant_fixture_resolver_carries_tenant_annotations() -> None:
 
     from rdflib import Literal, URIRef
 
+    from arango_sparql.translate.resolver import _SYNTHETIC_PHYS_NS
+
     bundle = mapping_from_wire_dict(_load_fixture("multitenant"))
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     person_iri = URIRef(_synthetic_iri("Person"))
-    phys = URIRef("https://arango.solutions/phys#")
+    # The synthesizer emits under the canonical physical namespace (the one
+    # the analyzers use); track it rather than hard-coding a spelling.
+    phys = URIRef(str(_SYNTHETIC_PHYS_NS))
     tenant_field_pred = URIRef(str(phys) + "tenantField")
     tenant_entity_pred = URIRef(str(phys) + "tenantEntity")
 
