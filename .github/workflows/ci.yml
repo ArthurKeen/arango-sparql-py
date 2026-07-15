@@ -54,3 +54,17 @@ jobs:
       #                     not per-PR (separate workflow lands later)
       #   * eval          — NL eval harness; gated on RUN_EVAL=1
       - run: pytest -m "not integration and not w3c and not eval" --tb=short -q
+
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,nl,service]"
+      # Runs the RUN_EVAL-gated NL->SPARQL eval marker (the `test` job above
+      # deliberately excludes it). The `scripted` config baked into
+      # baseline.json makes zero network calls, so this job needs no LLM
+      # API key or secret.
+      - run: RUN_EVAL=1 pytest -m eval --tb=short -q
