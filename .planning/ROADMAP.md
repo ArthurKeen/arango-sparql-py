@@ -129,7 +129,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 06-02-PLAN.md — Implement runner.py (run/write_report/judge) + test_eval.py gate + baseline.json [NL-EVAL-01, NL-EVAL-02]
+- [x] 06-02-PLAN.md — Implement runner.py (run/write_report/judge) + test_eval.py gate + baseline.json [NL-EVAL-01, NL-EVAL-02]
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
@@ -182,6 +182,6 @@ be sequenced by priority — the user's directive puts NL→SPARQL first.
 | 3. Operational/security/privacy parity | shipped | Complete | pre-GSD (mature) |
 | 4. Interop & performance verification | 0/TBD | Not started | - |
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
-| 6. NL→SPARQL eval harness + corpus | 1/3 | In Progress|  |
+| 6. NL→SPARQL eval harness + corpus | 2/3 | In Progress|  |
 | 7. NL→SPARQL few-shot index | 0/TBD | Not started | - |
 | 8. Public release readiness | 0/TBD | Not started | - |
