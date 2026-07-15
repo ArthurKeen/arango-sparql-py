@@ -1,0 +1,73 @@
+# Seed corpus for the NL -> SPARQL eval harness (tests/nl2sparql/eval/runner.py).
+#
+# Shape mirrors tests/translate/bgp_select.yml: a shared `ontology:` Turtle
+# block-literal (SchemaResolver.from_turtle must resolve it via the
+# phys:collectionName idiom) plus a `cases:` list. Unlike the translate
+# goldens, each case here carries a natural-language `nl` question (fed to
+# NlPipeline.run()) and a gold `expected` SPARQL query (the judge's target),
+# with an optional `scripted` field for what the no-network `scripted`
+# provider config should return.
+#
+# This file is checked into VCS as trusted repo data — no credentials belong here.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+  :name a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:string .
+  :age  a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:integer .
+
+  :Order a owl:Class ;
+    phys:collectionName "Orders" ;
+    phys:typeField "kind" ;
+    phys:typeValue "order" .
+
+cases:
+  - name: people-with-names
+    nl: "List all people along with their names."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n . }
+
+  - name: person-named-alice
+    nl: "Which person is named Alice?"
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :name "Alice" . }
+
+  - name: people-aged-30
+    nl: "Find the people who are 30 years old."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age 30 . }
+
+  - name: distinct-names-limit
+    nl: "List up to 5 distinct names of people."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT DISTINCT ?n WHERE { ?s a :Person ; :name ?n . } LIMIT 5
+
+  - name: orders-list
+    nl: "Find all orders."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?o WHERE { ?o a :Order . }
+
+  # Deliberate near-miss (RESEARCH Pitfall 5): the scripted response the
+  # ScriptedLLMClient returns for this case is valid SPARQL but drops the
+  # `?a`/`:age` binding the gold `expected` requires, so the canonical
+  # rdflib-algebra judge fails it. This keeps the scripted config's
+  # pass-rate intentionally below 1.0 so baseline.json is a meaningful,
+  # non-trivial regression gate rather than a proof of nothing.
+  - name: deliberate-near-miss
+    nl: "Find all people along with their names and ages."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?a WHERE { ?s a :Person ; :name ?n ; :age ?a . }
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n . }
