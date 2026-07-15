@@ -1,0 +1,18 @@
+{
+  "generated_at": "2026-07-15T23:05:00Z",
+  "configs": {
+    "scripted": {
+      "pass_rate": 0.8333333333333334,
+      "passed": 5,
+      "total": 6,
+      "cases": {
+        "people-with-names": true,
+        "person-named-alice": true,
+        "people-aged-30": true,
+        "distinct-names-limit": true,
+        "orders-list": true,
+        "deliberate-near-miss": false
+      }
+    }
+  }
+}
