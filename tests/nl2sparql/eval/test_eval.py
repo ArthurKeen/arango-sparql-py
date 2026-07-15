@@ -20,8 +20,14 @@ from tests.nl2sparql.eval.runner import EVAL_DIR, run
 
 pytestmark = pytest.mark.eval
 
+# `not os.getenv("RUN_EVAL")` is falsy for RUN_EVAL=0 (a non-empty string is
+# truthy in Python), so a caller intending "eval off" via RUN_EVAL=0 would
+# silently get "eval on" instead. Treat "", "0", "false", "no"
+# (case-insensitive) as off.
+_RUN_EVAL = os.getenv("RUN_EVAL", "").strip().lower() not in ("", "0", "false", "no")
 
-@pytest.mark.skipif(not os.getenv("RUN_EVAL"), reason="set RUN_EVAL=1 to run the NL eval gate")
+
+@pytest.mark.skipif(not _RUN_EVAL, reason="set RUN_EVAL=1 to run the NL eval gate")
 def test_scripted_pass_rate_meets_baseline() -> None:
     report = run("scripted")
     baseline = json.loads((EVAL_DIR / "baseline.json").read_text())["configs"]["scripted"]
