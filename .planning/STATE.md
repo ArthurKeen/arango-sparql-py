@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-15T22:26:22.690Z"
-last_activity: 2026-07-15 -- Phase 6 planning complete
+last_updated: "2026-07-15T23:00:07.696Z"
+last_activity: 2026-07-15
 progress:
   total_phases: 8
   completed_phases: 0
   total_plans: 3
-  completed_plans: 0
+  completed_plans: 1
   percent: 0
 ---
 
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 6 — NL→SPARQL eval harness + seed corpus (first active phase)
+**Current focus:** Phase 06 — nl-sparql-eval-harness-seed-corpus
 
 ## Current Position
 
-Phase: 6 of 8 (NL→SPARQL eval harness + seed corpus) — first ACTIVE phase
-Plan: 0 of TBD in current phase
+Phase: 06 (nl-sparql-eval-harness-seed-corpus) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-07-15 -- Phase 6 planning complete
+Last activity: 2026-07-15
 
-Progress: [███░░░░░░░] 38% (3 of 8 phases complete, pre-GSD)
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -51,6 +51,7 @@ Progress: [███░░░░░░░] 38% (3 of 8 phases complete, pre-GSD)
 - Trend: n/a (bootstrap)
 
 *Updated after each plan completion*
+| Phase 06 P01 | 6min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - DEC-0001: Named graphs → per-document `_graph` attribute (Accepted, NOT locked)
 - DEC-0002: Cross-subject OPTIONAL LeftJoin — Option A shipped, B/C deferred (Partially resolved, NOT locked)
 - Establish NL eval BEFORE tuning (Phase 6 sequenced first); port harness + few-shot from `arango-cypher` sister repo
+- [Phase 06]: corpus.yml reuses bgp_select.yml's ontology prefix header (phys:collectionName) so SchemaResolver.from_turtle resolves without modification
+- [Phase 06]: Deliberate near-miss case drops the age binding in its scripted response vs. gold, keeping the scripted pass-rate intentionally below 1.0
+- [Phase 06]: configs.yml documents openai-gpt4o-mini as the real-provider sweep shape; CI enforces the scripted config only
 
 ### Pending Todos
 
@@ -82,6 +86,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15
+Last session: 2026-07-15T22:58:49.833Z
 Stopped at: Bootstrapped PROJECT / REQUIREMENTS / ROADMAP / STATE from ingest intel; Phase 6 ready to plan.
 Resume file: None

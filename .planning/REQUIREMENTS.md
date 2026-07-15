@@ -44,7 +44,7 @@
 ### NL→SPARQL Quality (ACTIVE workstream)
 
 - [ ] **NL-EVAL-01**: NL→SPARQL eval harness implemented — `tests/nl2sparql/eval/runner.py::run()` + `write_report()` (currently `NotImplementedError`) execute each corpus entry against each configured provider and emit JSON+Markdown reports; eval marker wired into CI. — acceptance: eval marker green in CI with a scripted provider
-- [ ] **NL-EVAL-02**: Seed corpus authored — `corpus.yml` + `configs.yml` created, `baseline.json` checked in as the regression gate; **NL→SPARQL pass-rate becomes a tracked metric**. — acceptance: `baseline.json` present; harness reports a numeric pass-rate
+- [x] **NL-EVAL-02**: Seed corpus authored — `corpus.yml` + `configs.yml` created, `baseline.json` checked in as the regression gate; **NL→SPARQL pass-rate becomes a tracked metric**. — acceptance: `baseline.json` present; harness reports a numeric pass-rate
 - [ ] **NL-FEW-01**: `arango_sparql/nl2sparql/fewshot.py` — BM25 few-shot index over the curated corpus (≤ 3 shots per rule-300) feeding the wired-but-empty `PromptBuilder.few_shot_examples` seam. — acceptance: few-shot examples appear in built prompts; unit tests pass
 - [ ] **NL-FEW-02**: Measurable accuracy lift — few-shot run shows a **positive NL→SPARQL pass-rate delta over `baseline.json`** via the Phase 6 harness. — acceptance: eval report delta > 0
 
