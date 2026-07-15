@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from rdflib.plugins.sparql.parserutils import CompValue
 
 from arango_sparql.errors import SparqlParseError
 from arango_sparql.nl2sparql import (
@@ -115,9 +116,47 @@ def _client_for(config: dict[str, Any], case: dict[str, Any]) -> LLMClient:
 # ---------------------------------------------------------------------------
 
 
+def _stable_repr(node: Any) -> str:
+    """Return a repr of *node* that is stable across ``PYTHONHASHSEED`` runs.
+
+    rdflib's translated algebra embeds raw Python ``set``/``frozenset``
+    objects (e.g. every ``BGP``/``Project`` node's ``_vars``) and, for
+    ``SELECT *`` queries specifically, a ``Project.PV`` field built via
+    ``list(a_set)`` inside ``rdflib.plugins.sparql.algebra`` — see
+    ``arango_sparql/translate/parser.py``'s docstring for the identical
+    footgun the transpiler proper works around via ``explicit_projection``.
+    Plain ``repr()`` of the algebra is therefore not safe to compare across
+    interpreter processes (different ``PYTHONHASHSEED`` -> different set
+    iteration order for the *same* logical set of variables).
+
+    This walks the (``CompValue`` / ``dict`` / ``list`` / ``tuple`` /
+    ``set``) tree and canonicalizes any set-derived structure (raw sets,
+    and the specific ``PV`` key which is list-shaped but set-derived) to a
+    sorted tuple before falling back to the builtin ``repr()`` for leaves.
+    Explicitly-ordered structures (e.g. ``BGP.triples``) are left alone —
+    only unordered/set-derived data is canonicalized.
+    """
+    if isinstance(node, CompValue):
+        inner = ", ".join(
+            f"{key!r}: {_stable_repr(sorted(value, key=str) if key == 'PV' and isinstance(value, list) else value)}"
+            for key, value in node.items()
+        )
+        return f"{node.name}_{{{inner}}}"
+    if isinstance(node, (set, frozenset)):
+        return "{" + ", ".join(_stable_repr(v) for v in sorted(node, key=str)) + "}"
+    if isinstance(node, dict):
+        inner = ", ".join(f"{k!r}: {_stable_repr(v)}" for k, v in node.items())
+        return f"{{{inner}}}"
+    if isinstance(node, list):
+        return "[" + ", ".join(_stable_repr(v) for v in node) + "]"
+    if isinstance(node, tuple):
+        return "(" + ", ".join(_stable_repr(v) for v in node) + ")"
+    return repr(node)
+
+
 def _canonical(sparql: str) -> str | None:
     try:
-        return repr(parse_sparql(sparql).algebra)
+        return _stable_repr(parse_sparql(sparql).algebra)
     except SparqlParseError:
         return None
 
