@@ -31,6 +31,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-BE-GRAPHSCOPE | Backend | Named-graph down-select: `/graphs`, `/session/graph`, scoped cache key | §6.8 | ✅ Done |
 | WP-BE-LLMKEY | Backend | LLM provider resolution w/ standard-key fallback | §7.6 | ✅ Done |
 | WP-BE-400 | Backend | `AQLQueryExecuteError` → `400` (not `500`) | §5.1 | ✅ Done |
+| WP-BE-EVALGATE | Backend | Evaluation-correctness gate (CDF M5 WP-C1): variable-predicate `?p`→IRI mapping (`SchemaResolver.attribute_uri_map`), AQL-runtime fixes (`NOT_NULL` for `COALESCE`, `STRENDS` lowering — no `ENDS_WITH` in AQL, `GROUP_CONCAT` via `PUSH` + projection-time `CONCAT_SEPARATOR`, `xsd:decimal` bind coercion), `EXPECTED_LIVE_PASSES` hard gate in the W3C live harness, per-PR `integration` CI job + nightly W3C workflow | §6.6, §13.5 | ✅ Done |
 | WP-UI-1 | UI | NL "Ask" bar + provenance/telemetry | §10.12 | ✅ Done |
 | WP-UI-2 | UI | Schema-derived / optional-LLM query suggestions (`/nl-samples`) | §7.5, §10.12 | ✅ Done |
 | WP-UI-3 | UI | Graph selector (named-graph scope pill) | §10.13 | ✅ Done |
