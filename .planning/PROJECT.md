@@ -31,13 +31,13 @@ improvable** so the natural-language layer can be tuned with confidence.
 - ✓ STRIDE threat-model mitigations + privacy (no-bodies-in-logs, JSON log envelope) — Phase 3
 - ✓ Config-appendix normativity gate — Phase 3
 - ✓ NL→SPARQL pipeline machinery (NlPipeline, PromptBuilder, RepairLoop, providers, cost/models) — pre-existing, feeds Phases 6–7
+- ✓ NL→SPARQL eval harness + seed corpus; checked-in `baseline.json` regression gate; scripted pass-rate now a tracked metric (0.833, 5/6) — Phase 6
 
 ### Active
 
 <!-- Current scope. Building toward these. NL workstream is the immediate goal. -->
 
-- [ ] **NL→SPARQL eval harness + seed corpus** (Phase 6 — FIRST ACTIVE): make NL translation quality measurable; check in `baseline.json` as the regression gate
-- [ ] **NL→SPARQL few-shot index** (Phase 7): BM25 few-shot (≤3 shots) feeding `PromptBuilder.few_shot_examples`; prove pass-rate lift via the harness
+- [ ] **NL→SPARQL few-shot index** (Phase 7 — NEXT): BM25 few-shot (≤3 shots) feeding `PromptBuilder.few_shot_examples`; prove pass-rate lift via the harness
 - [ ] **Interoperability & performance verification** (Phase 4): Foxx roundtrip, third-party tool compat, ontoextract roundtrip, perf SLOs (Docker/live-gated)
 - [ ] **UI workbench parity completion** (Phase 5): Playwright/a11y CI harness + 3 backend-blocked WPs (UI-CAT, UI-TENANT, UI-CORR)
 - [ ] **Public release readiness** (Phase 8): repo public, green CI matrix, license/docs/runbook, SBOM on v1.0 tag
@@ -95,8 +95,8 @@ improvable** so the natural-language layer can be tuned with confidence.
 |----------|-----------|---------|
 | DEC-0001: Named graphs → per-document `_graph` attribute (Accepted 2026-05-20, **not locked**) | Layout-agnostic across PG/LPG/RPT; A→B stays possible, avoids O(N) UNION explosion of per-collection membership | ⚠️ Revisit — ~+4.4pp W3C reachable; default-graph defaults to lax |
 | DEC-0002: Cross-subject OPTIONAL (LeftJoin) emitter (Partially resolved 2026-06-02, **not locked**) | RPT-native left-join (Option A) shipped + OPTIONAL-rebind-in-MINUS resolved; Options B/C deferred with federation slice | ⚠️ Revisit — moved W3C 95.7%→96.4%; remaining branches raise structured `UnsupportedSparqlError` |
-| Establish NL eval before tuning (Phase 6 first) | Cannot improve NL quality without a measurable, checked-in baseline gate | — Pending |
-| Port eval harness + few-shot from `arango-cypher` sister repo | Proven at 93–100%; parity keeps cross-repo telemetry aligned | — Pending |
+| Establish NL eval before tuning (Phase 6 first) | Cannot improve NL quality without a measurable, checked-in baseline gate | ✓ Delivered (Phase 6) — `baseline.json` gate, scripted pass-rate 0.833 (5/6), rdflib canonical-algebra judge, CI `eval` job |
+| Port eval harness + few-shot from `arango-cypher` sister repo | Proven at 93–100%; parity keeps cross-repo telemetry aligned | ⚠️ Adapted, not ported — `references/` symlinks are unreachable on this machine; Phase 6 harness was built grounded in this repo's own shipped code (docstring = spec) |
 
 ---
-*Last updated: 2026-07-15 after new-project-from-ingest bootstrap*
+*Last updated: 2026-07-15 after Phase 6 completion (NL→SPARQL eval harness + seed corpus)*

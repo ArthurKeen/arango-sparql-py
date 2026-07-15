@@ -90,8 +90,8 @@ Deferred to future release. Tracked but not in the current roadmap.
 | REQ-ontoextract-integration | Phase 4 | Pending |
 | REQ-performance-slos | Phase 4 | Pending |
 | REQ-ui-parity | Phase 5 | Pending |
-| NL-EVAL-01 | Phase 6 | Pending (ACTIVE) |
-| NL-EVAL-02 | Phase 6 | Pending (ACTIVE) |
+| NL-EVAL-01 | Phase 6 | Complete |
+| NL-EVAL-02 | Phase 6 | Complete |
 | NL-FEW-01 | Phase 7 | Pending |
 | NL-FEW-02 | Phase 7 | Pending |
 | REQ-public-release-readiness | Phase 8 | Pending |
