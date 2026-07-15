@@ -46,6 +46,7 @@ dev = [
   "pytest>=8.0.0",
   "pytest-cov>=5.0.0",
   "ruff>=0.6.0",
+  "mypy>=1.11",
   "httpx>=0.24.0",
   "PyYAML>=6.0.0",
   # pyoxigraph is the W3C-compliant reference triplestore for
@@ -67,6 +68,17 @@ markers = [
   "cross: cross-validates transpiled AQL bindings against pyoxigraph as the W3C reference store",
   "eval: NL->SPARQL evaluation harness; slow, gated behind RUN_EVAL=1",
 ]
+
+# Static typing starts where the correctness risk is highest — the
+# translate package (parser → visitor → builder → resolver). Widen the
+# `files` list as other packages are annotated; do not turn on
+# `strict` until visitor.py's algebra boundary has real types.
+[tool.mypy]
+files = ["arango_sparql/translate"]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
 
 [tool.ruff]
 line-length = 110

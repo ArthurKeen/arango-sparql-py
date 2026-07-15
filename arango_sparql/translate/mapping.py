@@ -320,7 +320,9 @@ def _normalise_spec(spec: Any, *, label: str, where: str) -> dict[str, Any]:
         if is_relationship and k in {"collectionName", "collection_name"}:
             canonical = "edgeCollectionName"
         else:
-            canonical = _SPEC_FIELD_ALIASES.get(k, k)
+            # ``k`` arrives as ``Any`` (the spec dict is caller JSON);
+            # pin it to ``str`` so the alias lookup types cleanly.
+            canonical = _SPEC_FIELD_ALIASES.get(str(k), str(k))
         if canonical in out:
             raise MappingError(
                 f"physicalMapping.{where}[{label!r}] has duplicate "
@@ -421,6 +423,7 @@ def mapping_from_wire_dict(d: dict[str, Any] | None) -> MappingBundle:
         )
 
     physical_raw = top.get("physical_mapping")
+    physical: dict[str, Any]
     if physical_raw is None or physical_raw == {}:
         physical = {"entities": {}, "relationships": {}}
     else:

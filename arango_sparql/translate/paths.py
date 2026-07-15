@@ -241,7 +241,10 @@ def _emit_mul_path(
     ``N`` is :attr:`SchemaResolver.property_path_max_depth` (default
     :data:`PROPERTY_PATH_MAX_DEPTH`). Paths longer than ``N`` are not matched.
     """
-    mod = predicate.mod
+    # Widen to ``str`` up front: the fold loop below re-assigns from
+    # ``_combine_mul_modifiers`` (plain ``str``), which a narrower
+    # rdflib ``Literal['*','+','?']`` inference would reject.
+    mod: str = predicate.mod
     if mod not in ("*", "+", "?"):
         raise UnsupportedSparqlError(
             f"property path modifier {mod!r} is not supported"
@@ -288,18 +291,29 @@ def _emit_mul_path(
     else:  # mod == "*"
         min_len, max_len = 0, max_depth
 
+    # Small named factories rather than lambdas-with-defaults: mypy
+    # cannot infer a lambda whose extra parameters exist only to bind
+    # loop state, and the factory spells out the closure explicitly.
+    def _zero_hop_driver(s: Any, o: Any) -> Callable[[AlgebraVisitor], None]:
+        def drive(v: AlgebraVisitor) -> None:
+            _emit_zero_hop_path(v, s, o)
+
+        return drive
+
+    def _expanded_arm_driver(
+        s: Any, p: Any, o: Any
+    ) -> Callable[[AlgebraVisitor], None]:
+        def drive(v: AlgebraVisitor) -> None:
+            _emit_expanded_path_arm(v, s, p, o)
+
+        return drive
+
     arm_drivers: list[Callable[[AlgebraVisitor], None]] = []
     if min_len == 0:
-        arm_drivers.append(
-            lambda v, s=subject, o=obj: _emit_zero_hop_path(v, s, o)
-        )
+        arm_drivers.append(_zero_hop_driver(subject, obj))
     for length in range(max(1, min_len), max_len + 1):
         expanded = _repeat_inner_path(inner, length)
-        arm_drivers.append(
-            lambda v, s=subject, p=expanded, o=obj: _emit_expanded_path_arm(
-                v, s, p, o
-            )
-        )
+        arm_drivers.append(_expanded_arm_driver(subject, expanded, obj))
 
     if len(arm_drivers) == 1:
         arm_drivers[0](visitor)
@@ -393,9 +407,19 @@ def _emit_negated_path(
     # per predicate IRI that isn't in the ontology — that's the
     # right behaviour: a permissive resolver falls back to the
     # local-name attribute, so an unknown ``ex:p1`` still becomes
-    # ``"p1"`` in the negated set.
+    # ``"p1"`` in the negated set. A non-IRI arm (``!(^:p)`` — a
+    # nested inverse path inside the negated set) has no attribute
+    # to negate; refuse explicitly rather than crash in the resolver.
+    negated_iris: list[URIRef] = []
+    for arm in predicate.args:
+        if not isinstance(arm, URIRef):
+            raise UnsupportedSparqlError(
+                f"negated property path arm {arm!r} is not a plain IRI "
+                f"(nested path forms inside '!(...)' are not supported)"
+            )
+        negated_iris.append(arm)
     negated_attrs = sorted(
-        {visitor.resolver.resolve_property(arm).attribute for arm in predicate.args}
+        {visitor.resolver.resolve_property(iri).attribute for iri in negated_iris}
     )
 
     # ---- Open the subject FOR -------------------------------------
