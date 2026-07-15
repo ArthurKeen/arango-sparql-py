@@ -27,7 +27,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: Operational, security & privacy parity** - Session/CORS/SSRF/redaction/STRIDE/log-envelope/config-gate (COMPLETE, pre-GSD)
 - [ ] **Phase 4: Interoperability & performance verification** - Foxx roundtrip, third-party tools, ontoextract, perf SLOs
 - [ ] **Phase 5: UI workbench parity completion** - Playwright/a11y CI harness + 3 backend-blocked WPs
-- [ ] **Phase 6: NL→SPARQL eval harness + seed corpus** - Make NL quality measurable; check in `baseline.json` gate (FIRST ACTIVE)
+- [x] **Phase 6: NL→SPARQL eval harness + seed corpus** - Make NL quality measurable; check in `baseline.json` gate (FIRST ACTIVE) (completed 2026-07-15)
 - [ ] **Phase 7: NL→SPARQL few-shot index** - BM25 ≤3-shot index feeding PromptBuilder; prove pass-rate lift
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
@@ -133,7 +133,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 06-03-PLAN.md — Add CI eval job + verify W3C coverage ≥ 96.4% no-regression guard [NL-EVAL-01]
+- [x] 06-03-PLAN.md — Add CI eval job + verify W3C coverage ≥ 96.4% no-regression guard [NL-EVAL-01]
 
 **Status**: Planned — FIRST ACTIVE
 
@@ -182,6 +182,6 @@ be sequenced by priority — the user's directive puts NL→SPARQL first.
 | 3. Operational/security/privacy parity | shipped | Complete | pre-GSD (mature) |
 | 4. Interop & performance verification | 0/TBD | Not started | - |
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
-| 6. NL→SPARQL eval harness + corpus | 2/3 | In Progress|  |
+| 6. NL→SPARQL eval harness + corpus | 3/3 | Complete   | 2026-07-15 |
 | 7. NL→SPARQL few-shot index | 0/TBD | Not started | - |
 | 8. Public release readiness | 0/TBD | Not started | - |

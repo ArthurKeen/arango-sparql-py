@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-07-15T23:09:43.692Z"
+status: verifying
+last_updated: "2026-07-15T23:14:56.231Z"
 last_activity: 2026-07-15
 progress:
   total_phases: 8
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 2
-  percent: 0
+  completed_plans: 3
+  percent: 13
 ---
 
 # Project State
@@ -26,10 +26,10 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 
 Phase: 06 (nl-sparql-eval-harness-seed-corpus) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-15
 
-Progress: [███████░░░] 67%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -53,6 +53,7 @@ Progress: [███████░░░] 67%
 *Updated after each plan completion*
 | Phase 06 P01 | 6min | 2 tasks | 3 files |
 | Phase 06 P02 | 8min | 2 tasks | 3 files |
+| Phase 06 P03 | 6min | 2 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -69,6 +70,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06]: baseline.json authored from the actual run('scripted') output (5/6 pass, pass_rate=0.8333) rather than an aspirational number
 - [Phase 06]: Per-case regression in test_eval.py is a hard gate, not informational only
 - [Phase 06]: CI wiring (.github/workflows/ci.yml new eval job) deferred — out of 06-02's file scope
+- [Phase 06]: CI eval job installs .[dev,nl,service] and runs RUN_EVAL=1 pytest -m eval; existing test job marker exclusion left unchanged
+- [Phase 06]: W3C DAWG query-eval coverage confirmed unchanged at 96.4% (244/253); zero transpiler files touched by Phase 6
 
 ### Pending Todos
 
@@ -90,6 +93,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T23:09:43.685Z
-Stopped at: Completed 06-02-PLAN.md
+Last session: 2026-07-15T23:14:56.224Z
+Stopped at: Completed 06-03-PLAN.md — Phase 06 all plans complete, ready for verification
 Resume file: None
