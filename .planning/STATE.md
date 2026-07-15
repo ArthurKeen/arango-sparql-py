@@ -1,12 +1,16 @@
 ---
-gsd_state_version: '1.0'  # placeholder; syncStateFrontmatter overwrites on first state.* call
-status: planning
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: executing
+last_updated: "2026-07-15T22:26:22.690Z"
+last_activity: 2026-07-15 -- Phase 6 planning complete
 progress:
   total_phases: 8
-  completed_phases: 3
-  total_plans: 0
+  completed_phases: 0
+  total_plans: 3
   completed_plans: 0
-  percent: 38
+  percent: 0
 ---
 
 # Project State
@@ -22,14 +26,15 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 
 Phase: 6 of 8 (NL→SPARQL eval harness + seed corpus) — first ACTIVE phase
 Plan: 0 of TBD in current phase
-Status: Ready to plan
-Last activity: 2026-07-15 — new-project-from-ingest bootstrap; Phases 1–3 marked Complete (mature repo)
+Status: Ready to execute
+Last activity: 2026-07-15 -- Phase 6 planning complete
 
 Progress: [███░░░░░░░] 38% (3 of 8 phases complete, pre-GSD)
 
 ## Performance Metrics
 
 **Velocity:**
+
 - Total plans completed: 0 (Phases 1–3 shipped pre-GSD, outside GSD tracking)
 - Average duration: n/a
 - Total execution time: n/a
@@ -41,6 +46,7 @@ Progress: [███░░░░░░░] 38% (3 of 8 phases complete, pre-GSD)
 | 1–3 | shipped pre-GSD | - | - |
 
 **Recent Trend:**
+
 - Last 5 plans: n/a
 - Trend: n/a (bootstrap)
 
