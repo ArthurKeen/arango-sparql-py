@@ -48,3 +48,17 @@ def test_scripted_pass_rate_meets_baseline() -> None:
                 f"case {name!r} regressed: previously passing per baseline.json, "
                 f"now {live_by_name.get(name)!r}"
             )
+
+    # New-case gate: a case added to corpus.yml that isn't yet tracked in
+    # baseline.json can't hide a regression behind aggregate dilution (the
+    # per-case loop above only ever iterates *known* baseline cases). Every
+    # untracked case must pass before it's added to the corpus, forcing the
+    # author to consciously add it to baseline.json once green.
+    corpus_names = {c.name for c in report.cases}
+    baseline_names = set(baseline["cases"])
+    new_names = corpus_names - baseline_names
+    for name in new_names:
+        assert live_by_name.get(name) is True, (
+            f"new case {name!r} must pass before it's added to baseline.json "
+            f"(got {live_by_name.get(name)!r})"
+        )
