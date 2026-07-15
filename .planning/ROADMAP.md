@@ -182,6 +182,6 @@ be sequenced by priority — the user's directive puts NL→SPARQL first.
 | 3. Operational/security/privacy parity | shipped | Complete | pre-GSD (mature) |
 | 4. Interop & performance verification | 0/TBD | Not started | - |
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
-| 6. NL→SPARQL eval harness + corpus | 3/3 | Complete   | 2026-07-15 |
+| 6. NL→SPARQL eval harness + corpus | 3/3 | Complete    | 2026-07-15 |
 | 7. NL→SPARQL few-shot index | 0/TBD | Not started | - |
 | 8. Public release readiness | 0/TBD | Not started | - |
