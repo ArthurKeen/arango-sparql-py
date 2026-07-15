@@ -103,8 +103,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. The harness reports a numeric **NL→SPARQL pass-rate** (JSON + Markdown) — the PRIMARY quality metric now exists
   4. `baseline.json` is checked in and enforced as the regression gate
   5. W3C DAWG query-eval coverage remains ≥ 96.4% (no transpiler regression)
-**Plans**: TBD
-**Status**: Not started — FIRST ACTIVE
+**Plans**: 3 plans
+Plans:
+- [ ] 06-01-PLAN.md — Author corpus.yml + configs.yml seed data (incl. deliberate near-miss) [NL-EVAL-02]
+- [ ] 06-02-PLAN.md — Implement runner.py (run/write_report/judge) + test_eval.py gate + baseline.json [NL-EVAL-01, NL-EVAL-02]
+- [ ] 06-03-PLAN.md — Add CI eval job + verify W3C coverage ≥ 96.4% no-regression guard [NL-EVAL-01]
+**Status**: Planned — FIRST ACTIVE
 
 ### Phase 7: NL→SPARQL few-shot index
 **Goal**: Add BM25 few-shot retrieval feeding the PromptBuilder seam and prove it lifts NL→SPARQL pass-rate against the Phase 6 baseline.
@@ -145,6 +149,6 @@ be sequenced by priority — the user's directive puts NL→SPARQL first.
 | 3. Operational/security/privacy parity | shipped | Complete | pre-GSD (mature) |
 | 4. Interop & performance verification | 0/TBD | Not started | - |
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
-| 6. NL→SPARQL eval harness + corpus | 0/TBD | Not started (ACTIVE) | - |
+| 6. NL→SPARQL eval harness + corpus | 0/3 | Planned (ACTIVE) | - |
 | 7. NL→SPARQL few-shot index | 0/TBD | Not started | - |
 | 8. Public release readiness | 0/TBD | Not started | - |
