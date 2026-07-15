@@ -132,6 +132,13 @@ def _judge_canonical(expected: str, outcome: Any) -> bool:
     return canonical_expected is not None and canonical_expected == canonical_actual
 
 
+def _canon_row(row: dict[str, str]) -> tuple[tuple[str, str], ...]:
+    """Canonicalize a single binding row so key-insertion order (and
+    therefore SELECT-projection column order) doesn't affect equality —
+    only the (variable, value) pairs it actually contains do."""
+    return tuple(sorted(row.items()))
+
+
 def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> bool:
     """Optional execution-equivalence tier — only used when a case carries
     a `data:` Turtle fixture. Lazy-imports `tests.helpers.oxi` so pyoxigraph
@@ -143,7 +150,9 @@ def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> bool:
     store = load_store_from_string(data_ttl)
     expected_bindings = oxi_bindings(store, expected)
     actual_bindings = oxi_bindings(store, outcome.sparql)
-    return sorted(map(str, expected_bindings)) == sorted(map(str, actual_bindings))
+    return sorted(map(_canon_row, expected_bindings)) == sorted(
+        map(_canon_row, actual_bindings)
+    )
 
 
 def _judge(judge_name: str, case: dict[str, Any], outcome: Any) -> bool:
