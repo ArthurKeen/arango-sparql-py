@@ -1,0 +1,30 @@
+# Provider/judge configs consumed by tests/nl2sparql/eval/runner.py::run(config_name).
+#
+# Each entry under `configs:` selects an LLMClient (arango_sparql/nl2sparql/client.py)
+# via `provider.type`, a judge strategy, and the pipeline's `max_repairs` bound.
+#
+# `provider.type` values map 1:1 onto the runner's client factory branches:
+#   scripted          -> ScriptedLLMClient (no network; the CI default)
+#   openai|openrouter -> OpenAICompatibleClient
+#   anthropic         -> AnthropicClient
+#
+# Real-provider credentials are NEVER stored here — they are read from the
+# NL2SPARQL_* environment variables (see arango_sparql/nl2sparql/client.py) only
+# when a non-scripted config is actually run. This file is checked into VCS as
+# trusted repo data; it holds no credentials.
+
+configs:
+  # The CI default: no network, deterministic, gates baseline.json.
+  scripted:
+    provider:
+      type: scripted
+    judge: canonical
+    max_repairs: 2
+
+  # Documents the real-provider sweep shape. Not run in CI — nightly/manual only.
+  openai-gpt4o-mini:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
