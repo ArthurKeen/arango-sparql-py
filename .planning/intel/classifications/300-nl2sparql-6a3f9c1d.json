@@ -1,0 +1,27 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/.cursor/rules/300-nl2sparql.mdc",
+  "type": "SPEC",
+  "confidence": "medium",
+  "manifest_override": false,
+  "title": "NL→SPARQL rules",
+  "summary": "Implementation spec for the NL-to-SPARQL pipeline: module layout, Turtle-based prompt construction, result dataclass, caching, and multitenancy guardrails.",
+  "scope": [
+    "nl2sparql pipeline",
+    "LLMProvider (OpenAI/Anthropic/Scripted)",
+    "BM25 few-shot index",
+    "tenant guardrail / tenant scope",
+    "entity resolution hook",
+    "AQL emission (_aql.py)",
+    "NL2SparqlResult dataclass",
+    "OWL/Turtle schema context",
+    "nl_corrections.db (SQLite)"
+  ],
+  "cross_refs": [
+    "arango_cypher/nl2cypher/",
+    "arango_sparql/nl2sparql/**/*.py",
+    "tests/nl2sparql/**/*.py"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": "Cursor .mdc rule file, not a conventional SPEC doc, but content is purely implementation contracts (data model fields, module structure, forbidden behaviors) → SPEC. Medium confidence due to non-standard file format/location rather than a dedicated spec path."
+}

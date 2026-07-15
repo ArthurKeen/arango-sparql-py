@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/docs/architecture/decisions/0001-named-graphs-per-document.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "ADR-0001: Named graphs encoded as a per-document `_graph` attribute",
+  "summary": "Decision on encoding RDF named graphs as a per-document `_graph` attribute; content moved into the consolidated PRD.",
+  "scope": ["named graphs", "_graph attribute", "document model", "RDF/SPARQL storage"],
+  "cross_refs": ["../PRD.md#b1-adr-0001--named-graphs-encoded-as-a-per-document-_graph-attribute", "../PRD.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Manifest declared type ADR (authoritative). File is a redirect stub — full content consolidated into PRD.md Appendix B.1; no Accepted status present in stub, so locked=false."
+}

@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/docs/architecture/implementation_plan.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Implementation plan — arango-sparql-py",
+  "summary": "Living work-tracking document listing work packages, their status, touched files, and test signal for the arango-sparql-py SPARQL query workbench.",
+  "scope": ["work-package tracking", "UI query workbench shell", "SPARQL editor", "AQL edit-and-rerun", "schema-graph visualization", "command palette", "theming", "accessibility/i18n", "client↔models audit"],
+  "cross_refs": ["PRD.md", "references/arango-cypher-py/docs/query_workbench_shell_spec.md", "references/arango-cypher-py/ui/", "docs/implementation_plan.md", ".cursor/rules/ui-architecture.mdc", ".cursor/rules/400-frontend-ui.mdc"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Self-classifies as 'the plan' (status source of truth) explicitly distinct from PRD.md ('the spec'); pure status/work-tracking with no decisions, user stories, or API contracts — classified DOC."
+}

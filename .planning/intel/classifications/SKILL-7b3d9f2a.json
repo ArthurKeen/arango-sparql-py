@@ -1,0 +1,37 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/.cursor/skills/sparql-to-aql/SKILL.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "SPARQL → AQL Porting",
+  "summary": "Deterministic step-by-step recipe for porting SPARQL constructs from the legacy arango-sparql Foxx service into Python rdflib Algebra visitors and a parameterized AQL builder.",
+  "scope": [
+    "SPARQL to AQL translation",
+    "rdflib Algebra visitor",
+    "AQL query builder",
+    "legacy arango-sparql Foxx translators",
+    "golden tests",
+    "pyoxigraph cross-validation"
+  ],
+  "cross_refs": [
+    "references/arango-sparql/src/lib/aql-translator.js",
+    "references/arango-sparql/src/lib/pgt-translator.js",
+    "references/arango-sparql/src/lib/rpt-translator.js",
+    "references/arango-sparql/src/lib/filter-translator.js",
+    "references/arango-sparql/src/lib/triple-constructor.js",
+    "references/arango-sparql/src/lib/aql-query-builder.js",
+    "references/arango-sparql/src/lib/uri-resolver.js",
+    "references/arango-sparql/src/lib/uri-hasher.js",
+    "arango_sparql/translate/parser.py",
+    "arango_sparql/translate/visitor.py",
+    "arango_sparql/translate/builder.py",
+    "arango_sparql/translate/resolver.py",
+    "arango_sparql/translate/errors.py",
+    ".cursor/rules/100-backend-python.mdc",
+    "tests/translate/test_translate_optional_goldens.py",
+    "tests/translate/optional.yml"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

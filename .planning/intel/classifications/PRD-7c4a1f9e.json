@@ -1,0 +1,29 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/docs/architecture/PRD.md",
+  "type": "PRD",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "Product Requirements Document — arango-sparql-py v1",
+  "summary": "Requirements for a standalone Python microservice that transpiles SPARQL 1.1 to ArangoDB AQL and exposes a W3C-conformant SPARQL endpoint.",
+  "scope": [
+    "arango-sparql-py service",
+    "SPARQL 1.1 to AQL translator",
+    "W3C SPARQL 1.1 Protocol endpoint",
+    "physical schema models (PG/LPG/RPT/hybrid)",
+    "OWL mapping vocabulary and schema acquisition",
+    "nl2sparql pipeline",
+    "multitenancy and security",
+    "observability and SLOs",
+    "workbench UI",
+    "third-party tool compatibility",
+    "cross-project integration (arango-ontoextract, arangodb-schema-analyzer)"
+  ],
+  "cross_refs": [
+    "vision.md",
+    "decisions/",
+    "../../tests/w3c/COVERAGE_REPORT.md"
+  ],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

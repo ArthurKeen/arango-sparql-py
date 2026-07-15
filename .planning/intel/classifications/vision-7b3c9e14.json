@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/docs/architecture/vision.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "Vision — arango-sparql-py inception narrative",
+  "summary": "Redirect stub: the inception narrative has been consolidated into PRD.md (Appendix C); kept only so existing links keep resolving.",
+  "scope": ["arango-sparql-py", "inception narrative", "vision"],
+  "cross_refs": ["PRD.md", "PRD.md#appendix-c-inception-narrative"],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}

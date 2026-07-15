@@ -1,0 +1,13 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/docs/architecture/decisions/0002-cross-subject-optional-leftjoin.md",
+  "type": "ADR",
+  "confidence": "high",
+  "manifest_override": true,
+  "title": "ADR-0002: Cross-subject `OPTIONAL` (LeftJoin) emitter",
+  "summary": "Stub ADR for the cross-subject OPTIONAL/LeftJoin emitter decision; content consolidated into PRD.md Appendix B.2.",
+  "scope": ["cross-subject OPTIONAL", "LeftJoin emitter", "SPARQL query translation"],
+  "cross_refs": ["../PRD.md#b2-adr-0002--cross-subject-optional-leftjoin-emitter", "../PRD.md"],
+  "locked": false,
+  "precedence": null,
+  "notes": "Type set from MANIFEST_TYPE=ADR. File is a redirect stub with no Status field; actual decision content lives in PRD.md Appendix B.2. locked=false because no 'Accepted' status is present in this stub."
+}

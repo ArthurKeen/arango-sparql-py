@@ -1,0 +1,19 @@
+{
+  "source_path": "/Users/plosiewicz/dev/arango-sparql-py/tests/w3c/COVERAGE_REPORT.md",
+  "type": "DOC",
+  "confidence": "high",
+  "manifest_override": false,
+  "title": "W3C SPARQL 1.1 DAWG coverage — measured",
+  "summary": "A measured test-coverage report for the arango-sparql transpiler against the W3C SPARQL 1.1 DAWG suite, with headline pass rates and XFAIL breakdowns.",
+  "scope": [
+    "W3C SPARQL 1.1 DAWG test suite",
+    "arango-sparql transpiler",
+    "SPARQL-to-AQL translation coverage",
+    "syntax and query-evaluation tests",
+    "XFAIL bucketing"
+  ],
+  "cross_refs": [],
+  "locked": false,
+  "precedence": null,
+  "notes": ""
+}
