@@ -65,7 +65,7 @@ cases:
       FOR doc3 IN @@c1__triples
       FILTER doc3.predicate == @_p3_pred
       FILTER doc3.subject_uri == doc1.subject_uri
-      RETURN { p: doc2._uri, c: doc1.subject_uri, n: COALESCE(doc3.object_uri, doc3.object_value) }
+      RETURN { p: doc2._uri, c: doc1.subject_uri, n: NOT_NULL(doc3.object_uri, doc3.object_value) }
     expected_bind_vars:
       "@c1__triples": "_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -94,7 +94,7 @@ cases:
       FOR doc3 IN @@c1__triples
       FILTER doc3.predicate == @_p4_pred
       FILTER doc3.subject_uri == doc1.subject_uri
-      RETURN { o: doc2._uri, a: doc1.subject_uri, msg: COALESCE(doc3.object_uri, doc3.object_value) }
+      RETURN { o: doc2._uri, a: doc1.subject_uri, msg: NOT_NULL(doc3.object_uri, doc3.object_value) }
     expected_bind_vars:
       "@c1__triples": "_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

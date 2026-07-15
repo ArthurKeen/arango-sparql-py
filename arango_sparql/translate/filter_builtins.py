@@ -103,10 +103,14 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
             f"{visitor._translate_expr(expr.arg2)})"
         )
     if name == "Builtin_STRENDS":
-        return (
-            f"ENDS_WITH({visitor._translate_expr(expr.arg1)}, "
-            f"{visitor._translate_expr(expr.arg2)})"
-        )
+        # AQL has STARTS_WITH but no ENDS_WITH builtin (live execution
+        # fails with ERR 1540 "unknown function"); compare the string's
+        # suffix of the needle's length instead. The needle expression
+        # is emitted twice, so hoist anything non-trivial through a
+        # LET upstream if this ever shows up in a hot path.
+        haystack = visitor._translate_expr(expr.arg1)
+        needle = visitor._translate_expr(expr.arg2)
+        return f"(RIGHT({haystack}, LENGTH({needle})) == {needle})"
     if name == "Builtin_isLiteral" or name == "Builtin_isLITERAL":
         # SPARQL 1.1 §17.4.2.1. rdflib's algebra translator emits the
         # uppercase ``Builtin_isLITERAL`` for source text spelled
@@ -497,14 +501,15 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         return _timezone_duration_expr(f"TO_STRING({arg})")
     if name == "Builtin_COALESCE":
         # ``COALESCE(a, b, c, …)`` — SPARQL §17.4.1.3 returns
-        # the first arg whose evaluation doesn't raise. AQL's
-        # ``COALESCE`` returns the first non-null arg, which
-        # is the same contract once we treat unbound → null
-        # (the convention everywhere else in the visitor).
-        # rdflib stores variadic args as a list on ``.arg``
-        # (same shape as ``Builtin_CONCAT``).
+        # the first arg whose evaluation doesn't raise. AQL spells
+        # this ``NOT_NULL`` (there is no AQL ``COALESCE`` — live
+        # execution fails with ERR 1540 "unknown function"); it
+        # returns the first non-null arg, which is the same contract
+        # once we treat unbound → null (the convention everywhere
+        # else in the visitor). rdflib stores variadic args as a
+        # list on ``.arg`` (same shape as ``Builtin_CONCAT``).
         args = [visitor._translate_expr(a) for a in expr.arg]
-        return f"COALESCE({', '.join(args)})"
+        return f"NOT_NULL({', '.join(args)})"
 
     raise UnsupportedSparqlError(
         f"FILTER expression node {name!r} is not yet supported (see "

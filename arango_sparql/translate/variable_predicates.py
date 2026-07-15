@@ -70,41 +70,32 @@ def emit_variable_predicate_triple(
     so the fan-out collapses to a plain FOR + per-column
     projection. ``?p`` binds to the predicate column directly
     (no FILTER) and ``?o`` to the standard
-    ``COALESCE(object_uri, object_value)`` expression. Mirrors
+    ``NOT_NULL(object_uri, object_value)`` expression. Mirrors
     :meth:`AlgebraVisitor._emit_rpt_property_triple` minus the
     predicate equality FILTER. This emission is W3C-spec-correct.
 
-    **PG / LPG / default-collection subject** — we don't have
-    per-class attribute→IRI mapping yet (PRD §6.6 follow-up
-    slice), so the cleanest emission is::
+    **PG / LPG / default-collection subject** — an ``ATTRIBUTES()``
+    fan-out over the subject document::
 
         FOR k1 IN ATTRIBUTES(<subject_alias>, true)
         FILTER k1 NOT IN [<sys attrs>]
-        -- ?p bound to k1
+        LET p1 = @attr_uris[k1]      -- when the ontology declares
+        FILTER p1 != null            -- datatype properties
+        -- ?p bound to p1 (predicate IRI)
         -- ?o bound to <subject_alias>[k1]
 
     which iterates every attribute on the subject document and
-    produces one binding row per non-system attribute. The
-    important carve-out: ``?p`` binds to the attribute **name**
-    (a string like ``"name"``), **not** the predicate IRI. The
-    SPARQL spec requires ``?p`` to be an IRI, so live-execution
-    cross-validation against a W3C-conformant triplestore will
-    diverge for queries that rely on the IRI shape (notably the
-    27 aggregate / BIND / projection-alias W3C tests this slice
-    moves into the "translates" bucket). The translation-only
-    harness counts these as passes (which is the v1 §3.1 success
-    criterion), and the affected short_ids are listed in
-    ``tests/w3c/test_w3c_live_execution.py::SKIP_REASONS`` as
-    live-execution XFAILs.
-
-    Lifting the carve-out is tracked as the "attribute-name to
-    predicate-URI" follow-up slice: extend
-    :class:`SchemaResolver` with a per-class ``attribute_to_uri``
-    dict, emit a ``LET p1 = @_attrmap[k1]`` bound to that dict,
-    and FILTER rows where ``p1 != null``. That work is deferred
-    because the W3C corpus uses an empty resolver — the +10.3 pp
-    bump this slice produces is entirely from the unbound-subject
-    path.
+    produces one binding row per non-system attribute. When the
+    resolver's :meth:`SchemaResolver.attribute_uri_map` is non-empty
+    (the ontology declares ``owl:DatatypeProperty`` terms), ``?p``
+    binds to the **predicate IRI** via the bound reverse map, which
+    is the W3C-spec-correct shape; attributes with no declared
+    property are filtered out. CARVE-OUT (empty-ontology fallback
+    only): with no declared datatype properties there is nothing to
+    map through, so ``?p`` binds to the attribute **name** (a string
+    like ``"name"``) — live-execution cross-validation against a
+    W3C-conformant triplestore diverges for queries that rely on
+    the IRI shape (PRD §6.6 Variable-predicates row).
 
     Object binding still goes through the standard
     ``var_to_expr`` machinery, so a ``?o`` that already appears
@@ -141,7 +132,7 @@ def _emit_rpt_branch(
     Opens a fresh FOR over the triples table, joins on the subject
     URI captured in ``var_to_expr``, and projects the predicate
     column directly. Object follows the standard RPT object
-    dispatch (Variable → COALESCE, URI → OR-filter across both
+    dispatch (Variable → NOT_NULL, URI → OR-filter across both
     columns, Literal → object_value).
 
     This branch is the W3C-spec-correct half of the slice — the
@@ -169,10 +160,10 @@ def _emit_rpt_branch(
     visitor._record_var_expr(
         predicate, f"{triples_alias}.{rpt_class.predicate_column}"
     )
-    # ``?o`` follows the same COALESCE shape as
+    # ``?o`` follows the same NOT_NULL shape as
     # _emit_rpt_property_triple's Variable branch.
     coalesce_expr = (
-        f"COALESCE({triples_alias}.{rpt_class.object_uri_column}, "
+        f"NOT_NULL({triples_alias}.{rpt_class.object_uri_column}, "
         f"{triples_alias}.{rpt_class.object_value_column})"
     )
     if isinstance(obj, Variable):
@@ -247,10 +238,24 @@ def _emit_attributes_branch(
     )
     sys_bind = visitor.builder.bind(skip_list, hint="sys_attrs")
     visitor.builder.filter_raw(f"{key_alias} NOT IN {sys_bind}")
-    # ``?p`` binds to the iteration key. CARVE-OUT: this is the
-    # attribute NAME (a string), not the predicate IRI. See the
-    # module docstring and PRD §6.6 row.
-    visitor._record_var_expr(predicate, key_alias)
+    attr_uri_map = visitor.resolver.attribute_uri_map()
+    if attr_uri_map:
+        # Ontology-declared datatype properties give us the reverse
+        # attribute→IRI index, so ``?p`` binds to the predicate IRI
+        # the spec requires. Attributes with no declared property are
+        # filtered out — SPARQL's open-world answer for a value the
+        # dataset cannot express as a triple with an IRI predicate.
+        map_bind = visitor.builder.bind(attr_uri_map, hint="attr_uris")
+        pred_alias = visitor.builder.fresh_alias(prefix="p")
+        visitor.builder.let(pred_alias, f"{map_bind}[{key_alias}]")
+        visitor.builder.filter_raw(f"{pred_alias} != null")
+        visitor._record_var_expr(predicate, pred_alias)
+    else:
+        # ``?p`` binds to the iteration key. CARVE-OUT: this is the
+        # attribute NAME (a string), not the predicate IRI — reached
+        # only when the ontology declares no datatype properties at
+        # all. See the module docstring and PRD §6.6 row.
+        visitor._record_var_expr(predicate, key_alias)
     # ``?o`` binds to the attribute value at this key. Same
     # var_to_expr-aware logic the visitor's Case 2 object
     # branch uses, so a ``?o`` that's also bound by another

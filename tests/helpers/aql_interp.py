@@ -123,21 +123,35 @@ def _starts_with(s: Any, prefix: str) -> bool:
     return s is not None and str(s).startswith(prefix)
 
 
-def _ends_with(s: Any, suffix: str) -> bool:
-    return s is not None and str(s).endswith(suffix)
+def _right(s: Any, n: Any) -> str | None:
+    """AQL ``RIGHT(value, n)`` — the rightmost *n* characters.
+
+    Emitted by the STRENDS lowering (``RIGHT(x, LENGTH(y)) == y`` —
+    AQL has no ``ENDS_WITH`` builtin, and this interpreter must only
+    implement functions the real server has, or cross-validation
+    passes AQL that a live ArangoDB rejects).
+    """
+    if s is None or n is None:
+        return None
+    count = int(n)
+    if count <= 0:
+        return ""
+    text = str(s)
+    return text[-count:]
 
 
 def _to_string(v: Any) -> str | None:
     return None if v is None else str(v)
 
 
-def _coalesce(*args: Any) -> Any:
-    """AQL ``COALESCE`` — first non-null argument, else null.
+def _not_null(*args: Any) -> Any:
+    """AQL ``NOT_NULL`` — first non-null argument, else null.
 
-    The RPT translator emits ``COALESCE(t.object_uri, t.object_value)``
+    The RPT translator emits ``NOT_NULL(t.object_uri, t.object_value)``
     everywhere it reads a triple's object, because in a triples table a
     given object is stored in exactly one of the two columns (URI vs
-    literal) and the other is null.
+    literal) and the other is null. (AQL has no ``COALESCE`` — this is
+    its spelling of the same operation.)
     """
     for a in args:
         if a is not None:
@@ -153,9 +167,9 @@ _AQL_BUILTINS: dict[str, Any] = {
     "REGEX_TEST": _regex_test,
     "CONTAINS": _contains,
     "STARTS_WITH": _starts_with,
-    "ENDS_WITH": _ends_with,
+    "RIGHT": _right,
     "TO_STRING": _to_string,
-    "COALESCE": _coalesce,
+    "NOT_NULL": _not_null,
     # ``HAS(doc, "attr")`` — predicate-existence guard the visitor
     # emits for every variable-object BGP triple (``?s :p ?o``).
     # SPARQL §18.5 semantics: a required triple ``(s, p, o)`` only
@@ -179,7 +193,7 @@ def _split_top_level_commas(s: str) -> list[str]:
 
     Used to tear apart COLLECT key lists, AGGREGATE function lists, and
     RETURN projection bodies where a function argument may itself
-    contain commas (``COALESCE(t.object_uri, t.object_value)``). Naive
+    contain commas (``NOT_NULL(t.object_uri, t.object_value)``). Naive
     ``s.split(",")`` would mis-split those.
     """
     out: list[str] = []
@@ -333,7 +347,7 @@ def _split_sort_keys(clause: str) -> list[tuple[str, str]]:
 
     Top-level-comma splitting (not a naive ``split(",")``) so a sort key
     that is itself a function call with comma-separated arguments —
-    ``COALESCE(t.object_uri, t.object_value) DESC`` under the RPT model
+    ``NOT_NULL(t.object_uri, t.object_value) DESC`` under the RPT model
     — is kept whole. The trailing whitespace-delimited token is the
     direction; everything before it is the (possibly parenthesised)
     expression.
@@ -489,7 +503,7 @@ def run_aql_subset(
             return_distinct = bool(m.group(1))
             # Projection values can be bare doc attributes
             # (``doc1.name``), LET aliases (``bv1``), or full
-            # expressions (``COALESCE(doc2.object_uri,
+            # expressions (``NOT_NULL(doc2.object_uri,
             # doc2.object_value)`` under RPT). Split on top-level
             # commas so a function-call value's internal comma does not
             # tear the pair apart, then partition each pair on its

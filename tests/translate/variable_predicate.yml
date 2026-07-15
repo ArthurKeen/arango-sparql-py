@@ -35,6 +35,36 @@ ontology: ""
 cases:
   # ---- Default-collection (the W3C bucket) -----------------------------
 
+  - name: bare_spo_with_declared_datatype_properties
+    # PRD §6.6 carve-out LIFT: when the ontology declares
+    # ``owl:DatatypeProperty`` terms, the resolver's reverse
+    # attribute→IRI map is bound (``@_p2_attr_uris``) and ``?p``
+    # binds to the mapped predicate IRI via a LET, with unmapped
+    # attributes filtered out. This is the W3C-spec-correct shape;
+    # the bare attribute-name binding below survives only as the
+    # empty-ontology fallback.
+    ontology: |
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      <http://ex.org/name> a owl:DatatypeProperty .
+      <http://ex.org/age> a owl:DatatypeProperty .
+    sparql: |
+      SELECT ?s ?p ?o WHERE { ?s ?p ?o }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Document
+      FOR k2 IN ATTRIBUTES(doc1, true)
+      FILTER k2 NOT IN @_p1_sys_attrs
+      LET p3 = @_p2_attr_uris[k2]
+      FILTER p3 != null
+      RETURN { s: doc1._uri, p: p3, o: doc1[k2] }
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "_p1_sys_attrs":
+        - "_graph"
+        - "_uri"
+      "_p2_attr_uris":
+        age: "http://ex.org/age"
+        name: "http://ex.org/name"
+
   - name: bare_spo_default_collection
     # The shape that 46 of 47 variable-predicate W3C tests use.
     # ATTRIBUTES(doc, true) drops ArangoDB system attrs; the

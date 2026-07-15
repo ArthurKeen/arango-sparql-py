@@ -12,6 +12,7 @@ builder stays SPARQL-agnostic; everything SPARQL-specific lives here.
 
 from __future__ import annotations
 
+import decimal
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -532,7 +533,7 @@ class AlgebraVisitor:
         alias = self.builder.fresh_alias(prefix="d")
         coll_ref = self.builder.bind_collection(rpt_class.collection)
         coalesce = (
-            f"COALESCE({alias}.{rpt_class.object_uri_column}, "
+            f"NOT_NULL({alias}.{rpt_class.object_uri_column}, "
             f"{alias}.{rpt_class.object_value_column})"
         )
         return (
@@ -939,15 +940,26 @@ class AlgebraVisitor:
                 # SPARQL GROUP_CONCAT defaults to a single-space
                 # separator; the user can override via ``SEPARATOR=…``,
                 # which rdflib stores as an rdflib ``Literal`` on
-                # ``agg.separator``. AQL's CONCAT_SEPARATOR takes the
-                # separator first, then the value list. Push the
-                # separator through ``_term_to_python`` so it goes into
-                # the bind-vars dict as a plain string (rdflib Literals
-                # don't JSON-encode cleanly).
+                # ``agg.separator``. Push the separator through
+                # ``_term_to_python`` so it goes into the bind-vars
+                # dict as a plain string (rdflib Literals don't
+                # JSON-encode cleanly).
+                #
+                # ``CONCAT_SEPARATOR`` is NOT a legal ``COLLECT
+                # AGGREGATE`` function (ArangoDB ERR 1574 "invalid
+                # aggregate expression" at runtime) — the AGGREGATE
+                # clause accepts only the fixed builtin set. So we
+                # aggregate the group's values with ``PUSH`` (``UNIQUE``
+                # under DISTINCT) and apply CONCAT_SEPARATOR wherever
+                # the aggregate variable is *read* (projection / HAVING),
+                # via the var_to_expr rebinding below.
                 raw_sep = agg.get("separator", " ")
                 separator = _term_to_python(raw_sep) if raw_sep is not None else " "
                 sep_bind = self.builder.bind(separator, hint="sep")
-                aggregates.append((agg_alias, f"CONCAT_SEPARATOR({sep_bind}, {arg_expr})"))
+                collect_func = "UNIQUE" if distinct else "PUSH"
+                aggregates.append((agg_alias, f"{collect_func}({arg_expr})"))
+                self.state.var_to_expr[agg_var] = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
+                continue
             else:
                 if distinct:
                     # SUM / AVG / MIN / MAX with DISTINCT: AQL doesn't
@@ -1639,7 +1651,7 @@ class AlgebraVisitor:
         legacy ``rpt-translator.js`` shape:
 
         * Variable object → bind to
-          ``COALESCE(t.object_uri, t.object_value)`` so the same var
+          ``NOT_NULL(t.object_uri, t.object_value)`` so the same var
           can later be joined against either a URI or a literal
           column from another triple.
         * IRI object → equality FILTER on either ``object_uri`` or
@@ -1672,7 +1684,7 @@ class AlgebraVisitor:
             self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
         # OBJECT — variable / IRI / literal each take a different shape.
         coalesce_expr = (
-            f"COALESCE({triples_alias}.{rpt_class.object_uri_column}, "
+            f"NOT_NULL({triples_alias}.{rpt_class.object_uri_column}, "
             f"{triples_alias}.{rpt_class.object_value_column})"
         )
         if isinstance(obj, Variable):
@@ -1921,7 +1933,7 @@ class AlgebraVisitor:
                 #   * ``FILTER(expr)`` — row is excluded (§18.5).
                 #   * ``BIND(expr AS ?v)`` — row is kept, ``?v`` is left
                 #     unbound on this row (§18.6).
-                #   * ``COALESCE(a, b, …)`` — skip to the next argument
+                #   * ``NOT_NULL(a, b, …)`` — skip to the next argument
                 #     (§17.4.1.3).
                 #   * Most other builtins (DATATYPE, arithmetic, …) —
                 #     propagate the error so the enclosing assignment
@@ -1929,7 +1941,7 @@ class AlgebraVisitor:
                 #
                 # AQL's ``null`` follows the same error-propagation
                 # semantics by construction: ``null == X`` → ``null``,
-                # ``null + 1`` → ``null``, ``COALESCE(null, x)`` → ``x``,
+                # ``null + 1`` → ``null``, ``NOT_NULL(null, x)`` → ``x``,
                 # and ``FILTER null`` excludes the row. So emitting the
                 # literal ``null`` here gives every spec-correct
                 # downstream behaviour for free — no per-operator
@@ -1943,7 +1955,7 @@ class AlgebraVisitor:
                 # disambiguation a silent ``null`` would deny them.
                 # The translation itself does NOT raise — that would
                 # block W3C-conformant queries like
-                # ``COALESCE(?z, -3)`` from translating.
+                # ``NOT_NULL(?z, -3)`` from translating.
                 self.builder.warn(
                     code="W_UNBOUND_VARIABLE_IN_EXPR",
                     message=(
@@ -2179,7 +2191,16 @@ def _term_to_python(term: Any) -> Any:
     type rather than as their lexical form.
     """
     if isinstance(term, Literal):
-        return term.toPython()
+        value = term.toPython()
+        # ``xsd:decimal`` round-trips through rdflib as
+        # ``decimal.Decimal``, which neither ``json`` nor python-arango
+        # can serialize as a bind value (live-execution failure:
+        # "Object of type Decimal is not JSON serializable"). AQL has
+        # no decimal type anyway — degrade to float, the same precision
+        # ArangoDB stores.
+        if isinstance(value, decimal.Decimal):
+            return float(value)
+        return value
     if isinstance(term, URIRef):
         return str(term)
     return term

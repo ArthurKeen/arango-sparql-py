@@ -11,7 +11,7 @@
 #   * property triple ``?s :p ?o`` (?s already RPT-bound) → fresh
 #     FOR over the same triples table, FILTER ``predicate ==
 #     <predIRI>`` and ``subject_uri == <prior expr>``, bind ``?o``
-#     to ``COALESCE(object_uri, object_value)`` (variable) /
+#     to ``NOT_NULL(object_uri, object_value)`` (variable) /
 #     ``object_value`` (literal) / OR-match across both URI &
 #     value columns (IRI).
 #   * column overrides via ``phys:subjectColumn`` /
@@ -57,7 +57,7 @@ cases:
       FOR doc2 IN @@c1__triples
       FILTER doc2.predicate == @_p3_pred
       FILTER doc2.subject_uri == doc1.subject_uri
-      RETURN { s: doc1.subject_uri, n: COALESCE(doc2.object_uri, doc2.object_value) }
+      RETURN { s: doc1.subject_uri, n: NOT_NULL(doc2.object_uri, doc2.object_value) }
     expected_bind_vars:
       "@c1__triples": "_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -135,7 +135,7 @@ cases:
       FOR doc2 IN @@c1_rdf_triples
       FILTER doc2.p == @_p3_pred
       FILTER doc2.s == doc1.s
-      RETURN { s: doc1.s, n: COALESCE(doc2.o_uri, doc2.o_val) }
+      RETURN { s: doc1.s, n: NOT_NULL(doc2.o_uri, doc2.o_val) }
     expected_bind_vars:
       "@c1_rdf_triples": "rdf_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

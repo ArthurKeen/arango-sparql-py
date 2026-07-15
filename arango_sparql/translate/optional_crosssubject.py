@@ -28,7 +28,7 @@ Emitted shape (the ADR's Option A idiom)::
       FOR <t> IN @@<triples>
       FILTER <t>.<subject_col> == <o_expr>
       [FILTER <t>.<predicate_col> == @<pred>]   -- fixed-predicate only
-      RETURN { f0: <t>.<predicate_col>, f1: COALESCE(<obj_uri>, <obj_val>) }
+      RETURN { f0: <t>.<predicate_col>, f1: NOT_NULL(<obj_uri>, <obj_val>) }
     )
     FOR <row> IN (LENGTH(<opt>) > 0 ? <opt> : [null])
       -- ?p2 = <row>.f0, ?o2 = <row>.f1  (both null when no triple matched)
@@ -143,7 +143,7 @@ def emit_rpt_cross_subject_optional(
             "cross-subject OPTIONAL predicate must be a variable or an IRI"
         )
     object_expr = (
-        f"COALESCE({triples_alias}.{rpt_class.object_uri_column}, "
+        f"NOT_NULL({triples_alias}.{rpt_class.object_uri_column}, "
         f"{triples_alias}.{rpt_class.object_value_column})"
     )
     new_bindings.append((str(obj), object_expr))

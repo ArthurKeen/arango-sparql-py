@@ -10,7 +10,7 @@ two emission shapes that need a populated resolver to exercise:
 
 * **RPT-bound subject** — the W3C-spec-correct branch. Triples-table
   scan with the predicate column projected as ``?p`` directly and
-  the standard ``COALESCE(object_uri, object_value)`` shape for
+  the standard ``NOT_NULL(object_uri, object_value)`` shape for
   ``?o``. Different enough from the YAML cases that pinning the
   exact AQL inline keeps the diff easy to read.
 * **PG-class-bound subject** — same ATTRIBUTES fan-out as the
@@ -48,7 +48,10 @@ def _load_supported() -> list[tuple[str, str, str, str, dict]]:
         out.append(
             (
                 case["name"],
-                ttl,
+                # Cases that exercise the attribute→IRI reverse map
+                # need declared datatype properties; a per-case
+                # ``ontology`` overrides the file-level default.
+                case.get("ontology", ttl),
                 case["sparql"],
                 case["expected_aql"].rstrip("\n"),
                 case["expected_bind_vars"],
@@ -165,7 +168,7 @@ def test_variable_predicate_rpt_bound_subject() -> None:
     """``?s a :Triples . ?s ?p ?o`` (RPT subject) emits the
     W3C-spec-correct shape — the triples table has a ``predicate``
     column so ``?p`` binds to it directly and ``?o`` binds to the
-    standard ``COALESCE(object_uri, object_value)`` expression.
+    standard ``NOT_NULL(object_uri, object_value)`` expression.
 
     Distinct from the ATTRIBUTES branch in three ways: there's no
     ATTRIBUTES iteration, no ``NOT IN [_uri]`` filter, and the
@@ -188,7 +191,7 @@ def test_variable_predicate_rpt_bound_subject() -> None:
         "FOR doc2 IN @@c1__triples\n"
         "FILTER doc2.subject_uri == doc1.subject_uri\n"
         "RETURN { s: doc1.subject_uri, p: doc2.predicate, "
-        "o: COALESCE(doc2.object_uri, doc2.object_value) }"
+        "o: NOT_NULL(doc2.object_uri, doc2.object_value) }"
     ), result.aql
     assert result.bind_vars == {
         "@c1__triples": "_triples",

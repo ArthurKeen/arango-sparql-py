@@ -167,6 +167,7 @@ def _collect_subjects(
 ) -> tuple[
     dict[str, dict[str, Any]],
     dict[str, set[str]],
+    set[str],
     int,
 ]:
     """Walk every file in *paths* and return:
@@ -175,6 +176,10 @@ def _collect_subjects(
       the subject's IRI;
     * ``types[subject_iri]`` — the set of class IRIs declared via
       ``rdf:type`` for that subject;
+    * ``datatype_predicates`` — every predicate IRI we flattened into
+      a literal attribute, so the ontology can declare it as an
+      ``owl:DatatypeProperty`` (the resolver's ``attribute_uri_map``
+      needs the declarations to bind ``?p`` to IRIs — PRD §6.6);
     * the count of object-property triples we skipped (logged for
       operator visibility, returned so callers can surface it as a
       warning).
@@ -183,6 +188,7 @@ def _collect_subjects(
 
     docs: dict[str, dict[str, Any]] = {}
     types: dict[str, set[str]] = {}
+    datatype_predicates: set[str] = set()
     skipped_obj_triples = 0
 
     for path in paths:
@@ -218,6 +224,7 @@ def _collect_subjects(
                 value = _literal_to_python(obj)
                 doc = docs.setdefault(subj_iri, {"_uri": subj_iri})
                 _set_attr(doc, attr, value)
+                datatype_predicates.add(pred_iri)
                 continue
 
             if isinstance(obj, oxi.NamedNode):
@@ -239,7 +246,7 @@ def _collect_subjects(
     for subj_iri in types:
         docs.setdefault(subj_iri, {"_uri": subj_iri})
 
-    return docs, types, skipped_obj_triples
+    return docs, types, datatype_predicates, skipped_obj_triples
 
 
 def _safe_collection_name(prefix: str, suffix: str) -> str | None:
@@ -312,7 +319,7 @@ def load_w3c_data_to_arango(
         # rather than failing later in the AQL builder.
         raise ValueError(f"collection_prefix {collection_prefix!r} is not a valid AQL identifier prefix")
 
-    docs_by_subject, types_by_subject, skipped = _collect_subjects(data_paths)
+    docs_by_subject, types_by_subject, datatype_predicates, skipped = _collect_subjects(data_paths)
 
     default_coll = _safe_collection_name(collection_prefix, "Document")
     if default_coll is None:
@@ -348,7 +355,7 @@ def load_w3c_data_to_arango(
             per_class.insert_many(members)
         collection_map[class_iri] = coll_name
 
-    ontology_ttl = _build_ontology_ttl(collection_map)
+    ontology_ttl = _build_ontology_ttl(collection_map, datatype_predicates)
     if skipped:
         logger.info(
             "loader: skipped %d object-property/bnode triples for prefix %s "
@@ -359,7 +366,10 @@ def load_w3c_data_to_arango(
     return ontology_ttl, collection_map
 
 
-def _build_ontology_ttl(collection_map: dict[str, str]) -> str:
+def _build_ontology_ttl(
+    collection_map: dict[str, str],
+    datatype_predicates: set[str] | None = None,
+) -> str:
     """Render the minimal OWL TTL the schema resolver needs.
 
     The output uses the canonical ``arango.solutions/phys#`` namespace
@@ -367,6 +377,13 @@ def _build_ontology_ttl(collection_map: dict[str, str]) -> str:
     annotation. Every entry mirrors the shape
     ``arango-schema-mapper`` would emit, so the same ontology format
     that drives production also drives the test harness.
+
+    Every predicate the loader flattened into a literal attribute is
+    declared as an ``owl:DatatypeProperty`` — a real analyzer ontology
+    declares its properties too, and the resolver's
+    ``attribute_uri_map`` needs the declarations so variable-predicate
+    queries bind ``?p`` to the predicate IRI instead of the attribute
+    name (PRD §6.6 carve-out lift).
     """
     lines = [
         "@prefix owl: <http://www.w3.org/2002/07/owl#> .",
@@ -381,6 +398,8 @@ def _build_ontology_ttl(collection_map: dict[str, str]) -> str:
         # inside double quotes; class IRIs come straight from the
         # data file and must be wrapped in angle brackets.
         lines.append(f'<{class_iri}> a owl:Class ; phys:collectionName "{coll}" .')
+    for pred_iri in sorted(datatype_predicates or ()):
+        lines.append(f"<{pred_iri}> a owl:DatatypeProperty .")
     lines.append("")
     return "\n".join(lines)
 

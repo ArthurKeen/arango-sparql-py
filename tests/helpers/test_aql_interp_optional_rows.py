@@ -6,7 +6,7 @@ The cross-subject OPTIONAL emitter lowers to::
     LET <opt> = (
       FOR doc2 IN @@coll
       FILTER doc2.subject_uri == <outer>
-      RETURN { f0: doc2.predicate, f1: COALESCE(...) }
+      RETURN { f0: doc2.predicate, f1: NOT_NULL(...) }
     )
     FOR <row> IN (LENGTH(<opt>) > 0 ? <opt> : [null])
       RETURN { ... <row>.f0 ... <row>.f1 ... }
@@ -37,7 +37,7 @@ _AQL = (
     "LET optsub2 = (\n"
     "  FOR doc2 IN @@c2\n"
     "  FILTER doc2.subject_uri == doc1.ref\n"
-    "  RETURN {f0: doc2.predicate, f1: COALESCE(doc2.object_uri, doc2.object_value)}\n"
+    "  RETURN {f0: doc2.predicate, f1: NOT_NULL(doc2.object_uri, doc2.object_value)}\n"
     ")\n"
     "FOR optrow3 IN (LENGTH(optsub2) > 0 ? optsub2 : [null])\n"
     "RETURN { s: doc1._uri, p2: optrow3.f0, o2: optrow3.f1 }"

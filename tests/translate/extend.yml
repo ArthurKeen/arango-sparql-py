@@ -148,7 +148,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
-      LET bv2 = COALESCE(null, (-@_p1))
+      LET bv2 = NOT_NULL(null, (-@_p1))
       RETURN { n: doc1.name, d: bv2 }
     expected_bind_vars:
       "@c1_Person": "Person"

@@ -264,6 +264,9 @@ class SchemaResolver:
 
     _class_cache: dict[str, ResolvedClass] = field(default_factory=dict)
     _property_cache: dict[str, ResolvedProperty] = field(default_factory=dict)
+    _attribute_uri_map: dict[str, str] | None = field(default=None)
+    """Lazily-built reverse property index for
+    :meth:`attribute_uri_map`; ``None`` until first use."""
     _shard_family_by_collection: dict[str, tuple[str, ...]] = field(
         default_factory=dict
     )
@@ -571,6 +574,60 @@ class SchemaResolver:
         )
         self._property_cache[key] = resolved
         return resolved
+
+    # ------------------------------------------------------------------
+    # Reverse property index (attribute name → predicate IRI)
+    # ------------------------------------------------------------------
+    def attribute_uri_map(self) -> dict[str, str]:
+        """Return ``physical attribute name → predicate IRI`` for every
+        declared ``owl:DatatypeProperty``.
+
+        This is the inverse of :meth:`resolve_property`'s
+        IRI → attribute direction, and exists for the variable-predicate
+        emitter (PRD §6.6): an ``ATTRIBUTES()`` fan-out can only bind
+        ``?p`` to a spec-correct IRI when the ontology tells us which
+        IRI a document attribute came from. Only datatype properties
+        participate — object properties live in edge collections, not
+        document attributes, so they can never surface from an
+        ``ATTRIBUTES()`` iteration.
+
+        Keys are sorted at build time so the bound map is deterministic
+        across runs (golden stability). When two declared properties
+        share a local name the lexically-smallest IRI wins and a
+        ``W_SCHEMA_AMBIGUOUS_ATTRIBUTE`` advisory is recorded — the
+        flattened document model genuinely cannot distinguish the two.
+        Empty when the ontology declares no datatype properties, which
+        callers treat as "mapping unavailable" (the emitter falls back
+        to the attribute-name carve-out rather than filtering every
+        row out).
+        """
+        if self._attribute_uri_map is not None:
+            return self._attribute_uri_map
+        mapping: dict[str, str] = {}
+        # ``key=str`` both satisfies the rdflib ``Node`` sort typing and
+        # makes the collision rule explicit: lexically-smallest IRI wins.
+        for subject in sorted(
+            set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str
+        ):
+            if not isinstance(subject, URIRef):
+                continue
+            attribute = local_name(subject)
+            existing = mapping.get(attribute)
+            if existing is not None:
+                self._warn_schema(
+                    code="W_SCHEMA_AMBIGUOUS_ATTRIBUTE",
+                    message=(
+                        f"datatype properties {existing!r} and {str(subject)!r} "
+                        f"share the physical attribute name {attribute!r}; "
+                        f"variable-predicate results bind ?p to {existing!r}"
+                    ),
+                    iri=str(subject),
+                    attribute=attribute,
+                )
+                continue
+            mapping[attribute] = str(subject)
+        self._attribute_uri_map = mapping
+        return mapping
 
     # ------------------------------------------------------------------
     # Helpers
