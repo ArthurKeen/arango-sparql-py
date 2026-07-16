@@ -19,6 +19,14 @@ Decisions as implemented:
    the seeds constrain the query inside ArangoDB. Values travel as a
    bind variable; IRIs are validated and literals escaped before the
    text splice.
+
+   *Fabric alignment (confirmed by the CDF side, 2026-07-16):* this
+   is exactly the **bind-join** mechanism CC-11/FR-13 (resource
+   guardrails & admission control) specifies — the planner ships the
+   small side's canonical keys into the Arango leg so the join
+   constraint executes inside the database instead of hauling the
+   large side across the wire. The M5 plan records this leg's
+   guardrails story as satisfied by this contract.
 4. **`as_of`** = executor-stamped; `PartitionProvenance.as_of` is
    `None` at translate time.
 
