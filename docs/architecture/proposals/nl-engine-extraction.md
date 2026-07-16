@@ -1,9 +1,25 @@
 # Proposal: extract a shared NL→query engine (`arango-query-core` NL layer)
 
-Status: **Draft** (2026-07-15). Extends the `arango-query-core` shared-substrate
-direction already acknowledged in PRD §12.3 and the v1.1 roadmap
-("`arango-query-core` first stable release (consumed by both
-`-cypher-py` and `-sparql-py`)").
+Status: **Accepted — step 1 shipped** (2026-07-16). Extends the
+`arango-query-core` shared-substrate direction already acknowledged in
+PRD §12.3 and the v1.1 roadmap ("`arango-query-core` first stable
+release (consumed by both `-cypher-py` and `-sparql-py`)").
+
+Step 1 of the sequencing landed at `~/code/arango-query-core`
+(local repo, initial commit; PJ coordinated — he picks up after this
+lands): the existing `arango_query_core` package (mapping / OWL
+round-trip / aql / exec, seeded verbatim from arango-cypher-py
+@ 5a1392b with its five test modules) plus the new
+`arango_query_core.nl` engine — providers (verbatim), few-shot
+retrieval generalized to `(question, query)` pairs with legacy corpus
+keys accepted, the `QueryLanguageAdapter` five-seam protocol, and the
+generate→validate→repair loop. Zero hard dependencies (`owl` / `nl`
+extras); ruff + mypy + pytest gate CI. Decisions confirmed with
+Arthur 2026-07-16: adapters stay in their transpiler repos (no
+separate nl2cypher/nl2sparql repos); PyPI publication when the seam
+API survives the nl2cypher re-point; distribution name stays
+`arango-query-core` (conceptual-model identity signaled at the
+subpackage level, not the name). Steps 2–4 below remain.
 
 ## Problem — three engines are about to exist
 
