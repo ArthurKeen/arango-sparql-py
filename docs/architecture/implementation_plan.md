@@ -32,6 +32,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-BE-LLMKEY | Backend | LLM provider resolution w/ standard-key fallback | §7.6 | ✅ Done |
 | WP-BE-400 | Backend | `AQLQueryExecuteError` → `400` (not `500`) | §5.1 | ✅ Done |
 | WP-BE-EVALGATE | Backend | Evaluation-correctness gate (CDF M5 WP-C1): variable-predicate `?p`→IRI mapping (`SchemaResolver.attribute_uri_map`), AQL-runtime fixes (`NOT_NULL` for `COALESCE`, `STRENDS` lowering — no `ENDS_WITH` in AQL, `GROUP_CONCAT` via `PUSH` + projection-time `CONCAT_SEPARATOR`, `xsd:decimal` bind coercion), `EXPECTED_LIVE_PASSES` hard gate in the W3C live harness, per-PR `integration` CI job + nightly W3C workflow | §6.6, §13.5 | ✅ Done |
+| WP-BE-PARTITION | Backend | Federation entry point (CDF M5 WP-C2): `translate_partition` — sub-SELECT partition wire shape, subject-IRI canonical-key columns via visitor `extra_projection`, seed-binding pushdown as a trailing `VALUES` clause (rdflib terms + SPARQL-JSON binding dicts, injection-safe serialization), `PartitionProvenance` per-leg stamp (`as_of` executor-owned). Contract + decisions in `docs/architecture/proposals/federation-entry-point.md` | proposals/federation-entry-point.md | ✅ Done |
 | WP-UI-1 | UI | NL "Ask" bar + provenance/telemetry | §10.12 | ✅ Done |
 | WP-UI-2 | UI | Schema-derived / optional-LLM query suggestions (`/nl-samples`) | §7.5, §10.12 | ✅ Done |
 | WP-UI-3 | UI | Graph selector (named-graph scope pill) | §10.13 | ✅ Done |

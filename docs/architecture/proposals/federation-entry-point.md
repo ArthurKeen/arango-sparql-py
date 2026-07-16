@@ -1,6 +1,32 @@
 # Proposal: federation entry point + canonical-key contract (CDF M5 WP-C2)
 
-Status: **Draft for co-design with the contextual-data-fabric M5 planner** (2026-07-15)
+Status: **Accepted & implemented** (2026-07-15) — shipped as
+`arango_sparql.partition.translate_partition` (re-exported from
+`arango_sparql.api`). The four open questions were resolved per the
+recommendations below; the M5 planner can still renegotiate any of
+them before pinning (CC-9), since the contract has one consumer today.
+
+Decisions as implemented:
+
+1. **Wire shape** = sub-SELECT string (shape 1). The algebra fast
+   path (shape 2) is deferred until a measured need.
+2. **Canonical key** = subject IRI, projected as the variable's own
+   result column (`canonical_key_columns[var] == var`); no
+   `phys:canonicalKeyField` annotation exists.
+3. **Seed pushdown** = supported now: `seed_bindings` rows (rdflib
+   terms or SPARQL-JSON binding dicts) are appended as a trailing
+   `VALUES` clause — grammar-legal after the solution modifiers — so
+   the seeds constrain the query inside ArangoDB. Values travel as a
+   bind variable; IRIs are validated and literals escaped before the
+   text splice.
+4. **`as_of`** = executor-stamped; `PartitionProvenance.as_of` is
+   `None` at translate time.
+
+Test signal: `tests/translate/test_translate_partition.py` (contract
+unit tests incl. hostile-seed escaping) and
+`tests/cross/test_partition_cross.py` (pyoxigraph parity for a seeded
+partition, plus a two-leg federation test asserting
+partition + pushdown + engine-join == whole-query evaluation).
 
 ## Why
 

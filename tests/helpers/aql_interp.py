@@ -68,6 +68,12 @@ _SUBQUERY_PAREN_END_RE = re.compile(r"^\)\s*$")
 # ``_FOR_RE`` (collection bind) and ``_FOR_TRAVERSAL_RE`` (OUTBOUND) by
 # the parenthesised expression source; checked after both.
 _FOR_INLINE_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\(.+\))\s*$")
+# FOR over a list-valued bind variable — the SPARQL VALUES shape the
+# visitor emits via ``builder.for_values`` (``FOR row1 IN @_p1_values``)
+# and the federation entry point's seed-binding pushdown reuses.
+# Checked after ``_FOR_RE`` (which requires the double-@ collection
+# form) and before ``_FOR_INLINE_RE``.
+_FOR_VALUES_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+@(_\w+)\s*$")
 _LIMIT_RE = re.compile(r"LIMIT\s+(?:(\d+)\s*,\s*)?(\d+)")
 _SORT_RE = re.compile(r"SORT\s+(.+)$")
 # COLLECT clause patterns the visitor emits today:
@@ -89,11 +95,11 @@ _WITH_RE = re.compile(r"^WITH\b")
 # cross-subject OPTIONAL FOR-inline loop (or ``null`` for the padded
 # no-match row). All are accessed as ``<alias>.<attr>`` and rewritten to
 # the flat ``<alias>__<attr>`` namespace key.
-_DOC_ATTR_RE = re.compile(r"\b((?:doc|v|e|optrow)\d+)\.(\w+)\b")
+_DOC_ATTR_RE = re.compile(r"\b((?:doc|v|e|optrow|row)\d+)\.(\w+)\b")
 # Post-rewrite namespace identifier shape — used by the eval namespace
 # default-dict to recognise a missing-doc-attribute lookup as a
 # null-binding (AQL parity) rather than a programmer error.
-_DOC_ATTR_NAMESPACE_RE = re.compile(r"^(?:doc|v|e|optrow)\d+__\w+$")
+_DOC_ATTR_NAMESPACE_RE = re.compile(r"^(?:doc|v|e|optrow|row)\d+__\w+$")
 _BIND_RE = re.compile(r"@(_\w+)")
 # C-style ternary the visitor emits inside OPTIONAL+FILTER LETs and the
 # cross-subject OPTIONAL FOR-inline source:
@@ -475,6 +481,11 @@ def run_aql_subset(
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, coll_var = m.groups()
             pre_collect_plan.append(("FOR", alias, bind_vars[f"@{coll_var}"]))
+        elif m := _FOR_VALUES_RE.match(line):
+            if seen_collect:  # pragma: no cover
+                raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
+            alias, values_var = m.groups()
+            pre_collect_plan.append(("FOR_VALUES", alias, bind_vars[values_var]))
         elif m := _FOR_INLINE_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
@@ -544,6 +555,13 @@ def run_aql_subset(
             assert collection is not None
             for doc in docs.get(collection, []):
                 run_plan(idx + 1, {**env, alias: doc}, let_env)
+        elif kind == "FOR_VALUES":
+            # ``FOR <alias> IN @_pN_values`` — SPARQL VALUES rows (or
+            # the federation entry point's seed bindings) bound as a
+            # list of row dicts. Iterate them like a tiny collection.
+            alias = a
+            for row in b or []:
+                run_plan(idx + 1, {**env, alias: row}, let_env)
         elif kind == "FOR_INLINE":
             # ``FOR <alias> IN (<expr>)`` — the expr evaluates to a list
             # (the ``[null]``-padded OPTIONAL subquery result). Iterate

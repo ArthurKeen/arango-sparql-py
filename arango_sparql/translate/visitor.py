@@ -189,6 +189,19 @@ class AlgebraVisitor:
     (no class declares ``tenant_field``) ignore this field entirely.
     See PRD §6.5.1."""
 
+    extra_projection: list[str] | None = None
+    """Variable names the caller needs in the RETURN object even when
+    the partition's own SELECT list omits them — the federation entry
+    point (:func:`arango_sparql.partition.translate_partition`) uses
+    this to project canonical-key variables so the M5 engine can join
+    legs without the planner rewriting the partition's projection.
+    Appended after (and deduplicated against) the query's own
+    projection; each var must be bound by the pattern or
+    ``AqlEmitError`` is raised, exactly like a projected var. Post-
+    COLLECT scoping caveat: a var that is neither a GROUP BY key nor
+    an aggregate result is out of scope after a COLLECT, same as it
+    would be if the user projected it themselves."""
+
     state: _BindingState = field(default_factory=_BindingState)
 
     # ------------------------------------------------------------------
@@ -2083,6 +2096,13 @@ class AlgebraVisitor:
             keys = list(self.state.var_to_expr.keys())
         else:
             keys = [str(v) for v in self.state.projection_vars]
+        # Caller-requested extras (canonical-key vars from the
+        # federation entry point) append after the query's own list so
+        # the partition's declared column order is preserved.
+        for extra in self.extra_projection or ():
+            name = extra.lstrip("?")
+            if name not in keys:
+                keys.append(name)
         mapping: list[tuple[str, str]] = []
         for key in keys:
             expr = self.state.var_to_expr.get(key)
