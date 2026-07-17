@@ -19,7 +19,7 @@ Arthur 2026-07-16: adapters stay in their transpiler repos (no
 separate nl2cypher/nl2sparql repos); PyPI publication when the seam
 API survives the nl2cypher re-point; distribution name stays
 `arango-query-core` (conceptual-model identity signaled at the
-subpackage level, not the name). Steps 2–4 below remain.
+subpackage level, not the name). Step 3 also shipped (2026-07-17): `arango_sparql.nl2sparql` now runs on the shared engine via `SparqlLanguageAdapter` (adapter.py — five seams over parse+translate validation), a 22-example seed corpus (`corpora/base.yml`), and a real `nl_to_sparql` entry point; the service routes keep `NlPipeline` until step 2 settles the seam API. Steps 2 (nl2cypher re-point, PJ) and 4 (PyPI + fabric pin) remain.
 
 ## Problem — three engines are about to exist
 
