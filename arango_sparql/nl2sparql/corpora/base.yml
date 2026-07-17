@@ -1,0 +1,171 @@
+# Seed few-shot corpus for NL→SPARQL (arango_query_core.nl format).
+#
+# Style guidance, not schema knowledge: examples use a generic
+# conceptual vocabulary (ex:Person / ex:Organization / ex:Project) so
+# retrieval teaches SPARQL *shape* — the real ontology arrives via the
+# system prompt's Turtle block, never from here. Every query sticks to
+# the feature surface the deterministic translator supports today
+# (BGP / FILTER / OPTIONAL / UNION / MINUS / aggregates / ORDER /
+# LIMIT / VALUES / BIND / DISTINCT / ASK), so a retrieved example
+# never teaches the LLM a construct that validate() would then reject.
+version: 1
+examples:
+  - question: "Find a person by exact name"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?p WHERE { ?p a ex:Person ; ex:name "Tom Hanks" }
+
+  - question: "List every person's name"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE { ?p a ex:Person ; ex:name ?name }
+
+  - question: "People older than 40"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name ?age WHERE {
+        ?p a ex:Person ; ex:name ?name ; ex:age ?age
+        FILTER(?age > 40)
+      }
+
+  - question: "People whose name starts with a prefix"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE {
+        ?p a ex:Person ; ex:name ?name
+        FILTER(STRSTARTS(?name, "Al"))
+      }
+
+  - question: "People whose email contains a domain"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE {
+        ?p a ex:Person ; ex:name ?name ; ex:email ?email
+        FILTER(CONTAINS(?email, "@example.com"))
+      }
+
+  - question: "Case-insensitive name search"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE {
+        ?p a ex:Person ; ex:name ?name
+        FILTER(REGEX(?name, "smith", "i"))
+      }
+
+  - question: "Everyone with their email when they have one"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name ?email WHERE {
+        ?p a ex:Person ; ex:name ?name
+        OPTIONAL { ?p ex:email ?email }
+      }
+
+  - question: "People missing an email address"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE {
+        ?p a ex:Person ; ex:name ?name
+        FILTER NOT EXISTS { ?p ex:email ?email }
+      }
+
+  - question: "People who are not managers"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE {
+        ?p a ex:Person ; ex:name ?name
+        MINUS { ?p ex:role "manager" }
+      }
+
+  - question: "Names of both people and organizations"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name WHERE {
+        { ?x a ex:Person ; ex:name ?name }
+        UNION
+        { ?x a ex:Organization ; ex:name ?name }
+      }
+
+  - question: "How many people are there?"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT (COUNT(?p) AS ?count) WHERE { ?p a ex:Person }
+
+  - question: "How many people per department?"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?dept (COUNT(?p) AS ?count) WHERE {
+        ?p a ex:Person ; ex:dept ?dept
+      } GROUP BY ?dept
+
+  - question: "Average age per department, highest first"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?dept (AVG(?age) AS ?avgAge) WHERE {
+        ?p a ex:Person ; ex:dept ?dept ; ex:age ?age
+      } GROUP BY ?dept
+      ORDER BY DESC(?avgAge)
+
+  - question: "The five youngest people"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name ?age WHERE {
+        ?p a ex:Person ; ex:name ?name ; ex:age ?age
+      } ORDER BY ASC(?age) LIMIT 5
+
+  - question: "Distinct departments"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT DISTINCT ?dept WHERE { ?p a ex:Person ; ex:dept ?dept }
+
+  - question: "People in a fixed set of departments"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name ?dept WHERE {
+        ?p a ex:Person ; ex:name ?name ; ex:dept ?dept
+        VALUES ?dept { "eng" "ops" }
+      }
+
+  - question: "Full name from first and last name"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?full WHERE {
+        ?p a ex:Person ; ex:firstName ?first ; ex:lastName ?last
+        BIND(CONCAT(?first, " ", ?last) AS ?full)
+      }
+
+  - question: "Is there anyone named Alice?"
+    query: |
+      PREFIX ex: <http://example.org/>
+      ASK { ?p a ex:Person ; ex:name "Alice" }
+
+  - question: "Projects and the names of the people who own them"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?title ?ownerName WHERE {
+        ?prj a ex:Project ; ex:title ?title ; ex:owner ?person .
+        ?person ex:name ?ownerName
+      }
+
+  - question: "Organizations founded after 2010 with their sector"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?name ?sector WHERE {
+        ?o a ex:Organization ; ex:name ?name ; ex:founded ?year ; ex:sector ?sector
+        FILTER(?year > 2010)
+      }
+
+  - question: "Departments with more than ten people"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?dept (COUNT(?p) AS ?count) WHERE {
+        ?p a ex:Person ; ex:dept ?dept
+      } GROUP BY ?dept
+      HAVING (COUNT(?p) > 10)
+
+  - question: "Everything known about a specific person"
+    query: |
+      PREFIX ex: <http://example.org/>
+      SELECT ?property ?value WHERE {
+        ?p a ex:Person ; ex:name "Alice" .
+        ?p ?property ?value
+      }

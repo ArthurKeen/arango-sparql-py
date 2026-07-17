@@ -41,6 +41,10 @@ nl = [
   "anthropic>=0.20.0",
   "rank_bm25>=0.2.2",
   "PyYAML>=6.0.0",
+  # Shared NL engine + adapter seams (PRD §12.3 / nl-engine-extraction
+  # proposal). Git-pinned to an exact commit until the first PyPI
+  # release; bump deliberately (CC-9: consumers re-run goldens on bump).
+  "arango-query-core @ git+https://github.com/ArthurKeen/arango-query-core@d9af7b299980afde16a03d57c2bc439013caf694",
 ]
 dev = [
   "pytest>=8.0.0",
