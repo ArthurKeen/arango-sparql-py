@@ -18,6 +18,11 @@ Homepage = "https://github.com/ArthurKeen/arango-sparql-py"
 Repository = "https://github.com/ArthurKeen/arango-sparql-py"
 Issues = "https://github.com/ArthurKeen/arango-sparql-py/issues"
 
+[tool.hatch.metadata]
+# The nl extra git-pins arango-query-core (deliberate, CC-9); hatchling
+# requires this flag for direct references.
+allow-direct-references = true
+
 [project.optional-dependencies]
 analyzer = [
   # Mirror arango-cypher-py: pin the schema analyzer band so
