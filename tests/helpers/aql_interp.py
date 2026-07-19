@@ -176,6 +176,12 @@ _AQL_BUILTINS: dict[str, Any] = {
     "RIGHT": _right,
     "TO_STRING": _to_string,
     "NOT_NULL": _not_null,
+    # One-level list flatten used by the multi-valued fan-out emission
+    # (``FOR v IN FLATTEN([attr])`` and ``@v IN FLATTEN([attr])``):
+    # a list attribute yields its elements, a scalar yields ``[scalar]``.
+    "FLATTEN": lambda v: (
+        [x for e in v for x in (e if isinstance(e, list) else [e])] if isinstance(v, list) else [v]
+    ),
     # ``HAS(doc, "attr")`` — predicate-existence guard the visitor
     # emits for every variable-object BGP triple (``?s :p ?o``).
     # SPARQL §18.5 semantics: a required triple ``(s, p, o)`` only
@@ -336,6 +342,11 @@ def _eval_expr(
     py = _BIND_RE.sub(lambda m: m.group(1), py)
     py = py.replace("&&", " and ").replace("||", " or ")
     py = re.sub(r"!(?=\()", " not ", py)
+    # AQL membership operators (uppercase keywords) → Python's. Emitted
+    # by the fan-out membership filter (``@v IN attr`` / value joins)
+    # and the variable-predicate system-attribute skip (``k NOT IN @s``).
+    py = re.sub(r"\bNOT IN\b", " not in ", py)
+    py = re.sub(r"\bIN\b", " in ", py)
     return eval(py, {"__builtins__": {}}, namespace)  # noqa: S307 - test-only
 
 

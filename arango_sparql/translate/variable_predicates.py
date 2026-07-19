@@ -259,21 +259,32 @@ def _emit_attributes_branch(
     # ``?o`` binds to the attribute value at this key. Same
     # var_to_expr-aware logic the visitor's Case 2 object
     # branch uses, so a ``?o`` that's also bound by another
-    # triple gets the equality-FILTER join.
+    # triple gets the equality-FILTER join. Under
+    # ``fan_out_list_values`` a list-valued attribute is N triples:
+    # unbound ``?o`` fans out per element, and comparisons become
+    # membership tests (mirrors Case 2 exactly).
     value_expr = f"{subject_alias}[{key_alias}]"
     if isinstance(obj, Variable):
         o_name = str(obj)
         existing = visitor.state.var_to_expr.get(o_name)
         if existing is None:
-            visitor._record_var_expr(obj, value_expr)
+            if visitor.resolver.fan_out_list_values:
+                value_alias = visitor.builder.fresh_alias(prefix="lv")
+                visitor.builder.for_inline(value_alias, visitor._fan_out_source(value_expr))
+                visitor._record_var_expr(obj, value_alias)
+            else:
+                visitor._record_var_expr(obj, value_expr)
         elif existing != value_expr:
-            visitor.builder.filter_raw(f"{value_expr} == {existing}")
+            visitor.builder.filter_raw(visitor._value_match_expr(value_expr, existing))
         return
     if isinstance(obj, (Literal, URIRef)):
         from .visitor import _term_to_python
 
         obj_bind = visitor.builder.bind(_term_to_python(obj), hint="obj")
-        visitor.builder.filter_eq(value_expr, obj_bind)
+        if visitor.resolver.fan_out_list_values:
+            visitor.builder.filter_raw(visitor._value_match_expr(value_expr, obj_bind))
+        else:
+            visitor.builder.filter_eq(value_expr, obj_bind)
         return
     raise UnsupportedSparqlError(
         f"variable-predicate triple object term type "

@@ -24,7 +24,12 @@ analyzer = [
   # service installs fail fast on heuristic mappings. 0.9.0 floor: adds
   # named-graph membership (metadata.graphMembership + per-entry graphs),
   # graphScope, CSI v1, GraphRAG detection, and gold/metric-history.
-  "arangodb-schema-analyzer>=0.9.0,<0.10.0",
+  # The ``[anthropic]`` extra pulls the Anthropic client SDK so the
+  # analyzer runs its LLM-backed classification. Without a client SDK it
+  # silently degrades to deterministic baseline inference, which
+  # misclassifies LABEL-style / hybrid collections (see
+  # arango_sparql/schema/acquire.py::_resolve_analyzer_provider).
+  "arangodb-schema-analyzer[anthropic]>=0.9.0,<0.10.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",

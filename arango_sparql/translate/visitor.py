@@ -1347,7 +1347,17 @@ class AlgebraVisitor:
                 self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
-                    self._record_var_expr(o, attr_path)
+                    if self.resolver.fan_out_list_values:
+                        # RDF multi-valued semantics: a list-valued
+                        # attribute is N triples, so ``?o`` must bind
+                        # once per element. Scalars wrap into a
+                        # one-element list so the loop is uniform
+                        # (see SchemaResolver.fan_out_list_values).
+                        value_alias = self.builder.fresh_alias(prefix="lv")
+                        self.builder.for_inline(value_alias, self._fan_out_source(attr_path))
+                        self._record_var_expr(o, value_alias)
+                    else:
+                        self._record_var_expr(o, attr_path)
                 elif existing != attr_path:
                     # The variable is already bound by an earlier
                     # triple to a different AQL expression — turn the
@@ -1356,12 +1366,18 @@ class AlgebraVisitor:
                     # This is what makes multi-subject BGPs and ``Join``
                     # nodes correct: without the FILTER the engine
                     # would happily return the full Cartesian product.
-                    self.builder.filter_raw(f"{attr_path} == {existing}")
+                    # Under fan-out semantics the join is a membership
+                    # test: the bound value must be ONE OF the
+                    # attribute's values.
+                    self.builder.filter_raw(self._value_match_expr(attr_path, existing))
                 # else: the same expression is already bound — the
                 # triple just re-states what we already knew, no-op.
             elif isinstance(o, (Literal, URIRef)):
                 bind = self.builder.bind(_term_to_python(o), hint=prop.attribute)
-                self.builder.filter_eq(attr_path, bind)
+                if self.resolver.fan_out_list_values:
+                    self.builder.filter_raw(self._value_match_expr(attr_path, bind))
+                else:
+                    self.builder.filter_eq(attr_path, bind)
             else:
                 raise UnsupportedSparqlError(
                     f"object term type {type(o).__name__!r} is not supported in triple {triple!r}"
@@ -1901,6 +1917,27 @@ class AlgebraVisitor:
         if existing_alias == alias:
             return
         self.builder.filter_raw(f"{alias}._uri == {existing_alias}._uri")
+
+    def _value_match_expr(self, attr_path: str, value_expr: str) -> str:
+        """Equality between an attribute read and a value expression.
+
+        Plain ``==`` normally. Under ``fan_out_list_values`` a
+        list-valued attribute represents multiple triples, so the
+        match is a membership test over ``FLATTEN([attr])`` — which
+        is ``[v1, v2, …]`` for a list attribute and ``[scalar]`` for
+        a scalar, so one ``IN`` covers both cases (verified against a
+        live ArangoDB). ``FLATTEN`` (vs. an ``IS_LIST`` ternary) keeps
+        the emission free of the conditional the fan-out FOR also
+        avoids."""
+        if self.resolver.fan_out_list_values:
+            return f"{value_expr} IN FLATTEN([{attr_path}])"
+        return f"{attr_path} == {value_expr}"
+
+    def _fan_out_source(self, attr_path: str) -> str:
+        """The list a fan-out FOR iterates for *attr_path*:
+        ``FLATTEN([attr])`` — the attribute's elements when it is a
+        list, or a one-element ``[scalar]`` otherwise."""
+        return f"FLATTEN([{attr_path}])"
 
     def _record_var_expr(self, var: Variable, expr: str) -> None:
         # First binding wins, matching legacy semantics: a variable that

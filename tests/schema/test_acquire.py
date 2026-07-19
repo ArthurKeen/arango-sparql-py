@@ -247,8 +247,20 @@ def _make_analyzer_mock(
             )
 
     class FakeAnalyzer:
-        def __init__(self) -> None:
-            pass
+        # Mirror the real ``AgenticSchemaAnalyzer`` constructor, which the
+        # acquire layer now calls with ``llm_provider`` / ``model`` so the
+        # analyzer runs its LLM-backed classification (see
+        # acquire.py::_resolve_analyzer_provider). Accept and record the
+        # kwargs so tests can assert on them if needed.
+        def __init__(
+            self,
+            *,
+            llm_provider: str | None = None,
+            model: str | None = None,
+            **_kwargs: Any,
+        ) -> None:
+            self.llm_provider = llm_provider
+            self.model = model
 
         def analyze_physical_schema(self, _db: Any) -> _AnalysisResult:
             return _AnalysisResult()

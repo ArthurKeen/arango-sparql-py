@@ -323,7 +323,10 @@ def _get_or_acquire(
     cache_key = _scoped_cache_key(db_name, graph_name)
     if not force and db_name:
         entry = cache.get(cache_key)
-        if entry is not None:
+        # Re-acquire on an OWL request the cached bundle can't satisfy: the
+        # cache key doesn't encode ``include_owl``, so a bundle first cached
+        # without OWL would otherwise starve the UI's ontology auto-fill.
+        if entry is not None and not (include_owl and entry.bundle.owl_turtle is None):
             return entry.bundle, True
 
     bundle = acquire_mapping_bundle(
@@ -370,12 +373,18 @@ def _enforce_force_reacquire_policy() -> None:
 def schema_introspect(
     force: bool = False,
     strategy: str = "auto",
+    include_owl: bool = False,
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SchemaIntrospectResponse:
     """Live schema acquisition. Respects the L1 cache unless
     ``force=true``. ``strategy`` ∈ ``{auto, analyzer, heuristic}``;
     invalid values are 422.
+
+    When ``include_owl=true`` the acquired mapping carries its inline
+    OWL/Turtle in ``mapping.owlTurtle`` so the UI can auto-populate the
+    ontology editor on connect — without it, callers would have to hand
+    the ontology back in on every ``/translate``.
     """
 
     typed_strategy = _strategy_or_422(strategy)
@@ -386,6 +395,7 @@ def schema_introspect(
             session.db,
             force=force,
             strategy=typed_strategy,
+            include_owl=include_owl,
             graph_name=getattr(session, "graph_name", None),
         )
     except AnalyzerNotInstalledError as exc:

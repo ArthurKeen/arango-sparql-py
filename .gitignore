@@ -73,3 +73,7 @@ tests/w3c/data/
 references/arango-cypher-py
 references/arango-sparql
 references/arango-schema-mapper
+
+# Dark-factory drift mode (personal agent infrastructure; see AGENTS.md)
+.prd-drift-queue/
+.claude/

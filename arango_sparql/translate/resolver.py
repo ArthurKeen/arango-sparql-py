@@ -205,6 +205,29 @@ class SchemaResolver:
     """Maximum repetitions when lowering ``:p+`` / ``:p*`` / ``:p?``; see
     :mod:`arango_sparql.translate.paths`."""
 
+    fan_out_list_values: bool = False
+    """Treat a list-valued document attribute as MULTIPLE triples
+    (one per element), per RDF semantics for multi-valued predicates.
+
+    The flattened document model stores ``:s :p 1, 2`` as
+    ``{p: [1, 2]}`` — a single attribute. With this knob **off**
+    (default), ``?s :p ?o`` binds ``?o`` to the whole list: one row,
+    which is right for schemas whose arrays are genuinely atomic
+    values (tags stored as an array on purpose) and keeps the emitted
+    AQL free of per-read fan-out loops. With the knob **on**, every
+    datatype attribute read emits
+    ``FOR v IN (IS_LIST(attr) ? attr : [attr])`` and constant/join
+    comparisons become membership tests — restoring SPARQL's
+    one-row-per-value semantics for RDF-loaded data. The W3C
+    live-execution harness turns this on because its loader is
+    exactly such an RDF flattener (ADR-0002-adjacent; PRD §6.6).
+
+    Scope note: applies to required BGP reads and variable-predicate
+    fan-outs. OPTIONAL's conditional-binding path keeps scalar
+    semantics for now (a multi-valued OPTIONAL needs the subquery
+    emitter) — a list-valued attribute under OPTIONAL still binds
+    the list."""
+
     permissive_class_resolution: bool = False
     """When ``True``, an unknown class IRI degrades to
     :attr:`default_collection` + a ``W_SCHEMA_UNMAPPED_CLASS`` warning,
@@ -317,6 +340,7 @@ class SchemaResolver:
         graph_field: str = "_graph",
         default_graph_includes_named: bool = True,
         permissive_class_resolution: bool = False,
+        fan_out_list_values: bool = False,
     ) -> SchemaResolver:
         """Convenience constructor — parse *ttl* into a fresh ``rdflib.Graph``.
 
@@ -337,6 +361,7 @@ class SchemaResolver:
             graph_field=graph_field,
             default_graph_includes_named=default_graph_includes_named,
             permissive_class_resolution=permissive_class_resolution,
+            fan_out_list_values=fan_out_list_values,
         )
 
     @classmethod
@@ -560,7 +585,11 @@ class SchemaResolver:
                 mapping_style = "DEDICATED_COLLECTION"
         domain_iri = self._first_object(ref, RDFS.domain)
         range_iri = self._first_object(ref, RDFS.range)
-        attribute = local_name(ref)
+        # ``phys:attributeName`` maps an OWL-style conceptual property name to
+        # its stored document field (CDF CC-12: ``accountId`` → ``account_id``).
+        # Absent the annotation, the local name doubles as the attribute —
+        # the long-standing behavior for identity-named mappings.
+        attribute = self._physical_string(ref, "attributeName") or local_name(ref)
         resolved = ResolvedProperty(
             iri=key,
             attribute=attribute,
@@ -772,6 +801,28 @@ def _synthesize_graph_from_bundle(bundle: MappingBundle) -> Graph:
             if value is None:
                 continue
             g.add((iri, _SYNTHETIC_PHYS_NS[phys_local], Literal(str(value))))
+
+        # Per-property conceptual→physical mapping (CDF CC-12): CSI producers
+        # emit OWL-style conceptual property names (``accountId``) with the
+        # stored field recorded under ``properties.<name>.field``
+        # (``account_id``). Declare each as an ``owl:DatatypeProperty`` with a
+        # ``phys:attributeName`` annotation so :meth:`resolve_property` reads
+        # the stored name instead of degrading to the IRI local name.
+        prop_map = spec.get("properties")
+        if isinstance(prop_map, dict):
+            for prop_name, prop_spec in prop_map.items():
+                if not isinstance(prop_name, str) or not prop_name:
+                    continue
+                p_iri = _synthetic_iri(prop_name)
+                g.add((p_iri, RDF.type, OWL.DatatypeProperty))
+                g.add((p_iri, RDFS.domain, iri))
+                field = (
+                    prop_spec.get("field") if isinstance(prop_spec, dict) else None
+                )
+                if isinstance(field, str) and field and field != prop_name:
+                    g.add(
+                        (p_iri, _SYNTHETIC_PHYS_NS["attributeName"], Literal(field))
+                    )
 
     for rtype, spec in bundle.relationships().items():
         if not isinstance(rtype, str) or not rtype:
