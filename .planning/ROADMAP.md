@@ -137,15 +137,40 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 **Status**: Planned — FIRST ACTIVE
 
+### Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine (INSERTED)
+
+**Goal:** Re-point the `nl2sparql` adapter off its private generate→validate→repair loop and onto the shared `arango_query_core.nl.NLQueryEngine`, implemented as a `SparqlAdapter` satisfying the 5-seam `QueryLanguageAdapter` protocol. **Behavior-preserving refactor** — the prerequisite that makes engine-side SOTA (few-shot/dense retrieval, etc.) reachable from SPARQL and inherited by Cypher.
+**Requirements**: None new — behavior-preserving; gated by the Phase 6 baseline (no NL-EVAL-01/02 regression).
+**Depends on:** Phase 6 (needs the eval harness + baseline.json to prove behavior is preserved).
+**Success Criteria** (what must be TRUE):
+
+  1. `nl2sparql` exposes a `SparqlAdapter` implementing `arango_query_core.nl.seams.QueryLanguageAdapter` (all 5 seams: grammar prompt, few-shot index [None for now], validate=deterministic transpile, repair_hint, guardrails); `NlPipeline.run()` drives `NLQueryEngine` instead of its own `PromptBuilder`→`LLMClient`→`RepairLoop` loop
+  2. `arango-query-core` is a real dependency (the `nl` extra pin in `pyproject.toml` resolves it; editable/PyPI per the 0.2.0 plan) and imports cleanly
+  3. Scripted eval pass-rate is **UNCHANGED at 0.833 (5/6)** with identical per-case verdicts vs `baseline.json` — `RUN_EVAL=1 pytest -m eval` stays green
+  4. `NLResult` is mapped back to `PipelineOutcome` preserving the public shape (`sparql`, `aql`, `bind_vars`, `warnings`, `latency_ms`, `repaired`) — re-translate the final query once to recover `aql`/`bind_vars` the `validate()` seam discards
+  5. W3C DAWG query-eval coverage remains ≥ 96.4% (deterministic transpiler untouched); existing non-eval suite stays green
+  6. The `/nl-explain` path and cost/audit (`LLMCallRecord`) behavior are preserved, or any deviation is explicitly documented
+
+**Plans**: 3 plans
+**Status**: Planned
+
+Plans:
+**Wave 1** *(parallel — no file overlap)*
+- [ ] 06.1-01-PLAN.md — Formalize arango-query-core as a real dependency in the pyproject `nl` extra + clean-import guard
+- [ ] 06.1-02-PLAN.md — Provider bridge (LLMClient→LLMProvider, per-call LLMCallRecord) + SparqlAdapter (5 seams); reproduces baseline verdicts
+
+**Wave 2** *(blocked on Wave 1)*
+- [ ] 06.1-03-PLAN.md — Re-point NlPipeline.run() onto NLQueryEngine + NLResult→PipelineOutcome mapping (re-translate for aql/bind_vars) + cost/audit doc + behavior-preservation gate
+
 ### Phase 7: NL→SPARQL few-shot index
 
-**Goal**: Add BM25 few-shot retrieval feeding the PromptBuilder seam and prove it lifts NL→SPARQL pass-rate against the Phase 6 baseline.
-**Depends on**: Phase 6 (needs the harness + baseline to prove the lift)
+**Goal**: Populate + wire the shared engine's few-shot seam (`arango_query_core.nl.FewShotIndex`, reached via the re-pointed `SparqlAdapter.few_shot_index()`) with a curated SPARQL exemplar corpus, and prove it lifts NL→SPARQL pass-rate against the Phase 6 baseline. (Engine-side change — Cypher inherits the retrieval upgrade.)
+**Depends on**: Phase 06.1 (needs `nl2sparql` running on the shared engine so few-shot lands engine-side and reaches SPARQL) + Phase 6 (baseline to prove the lift)
 **Requirements**: NL-FEW-01, NL-FEW-02
 **Success Criteria** (what must be TRUE):
 
-  1. `arango_sparql/nl2sparql/fewshot.py` exists: BM25 index over the curated corpus, ≤ 3 shots per query (rule-300 budget)
-  2. Retrieved examples populate the wired-but-empty `PromptBuilder.few_shot_examples` seam and appear in built prompts
+  1. A curated SPARQL exemplar corpus is authored and loaded via `arango_query_core.nl.FewShotIndex.from_corpus_files`; `SparqlAdapter.few_shot_index()` returns it (≤ 3 shots per query, rule-300 budget)
+  2. Retrieved examples appear in the engine-built prompt's `## Examples` section (the `NLQueryEngine` few-shot path), not the standalone `PromptBuilder`
   3. A few-shot eval run shows a **positive pass-rate delta over `baseline.json`** via the Phase 6 harness
   4. W3C DAWG query-eval coverage remains ≥ 96.4% (no transpiler regression)
 
