@@ -178,8 +178,20 @@ Plans:
   4. The harder corpus + live baseline are reproducible from documented steps; CI still runs key-free on the scripted config
   5. W3C DAWG query-eval coverage remains ≥ 96.4% (deterministic transpiler untouched)
 
-**Plans**: TBD (run /gsd-plan-phase 06.2 to break down)
-**Status**: Not started — NEXT ACTIVE
+**Plans**: 4 plans
+
+Plans:
+**Wave 1** *(parallel — no file overlap)*
+- [ ] 06.2-01-PLAN.md — Harness capabilities: CorpusCase/BaselineConfig load-time gate + inverted expect_refusal judge branch [NL-EVAL-03, NL-EVAL-04]
+- [ ] 06.2-02-PLAN.md — Author positive difficulty classes (OPTIONAL, aggregation, property-path, multi-hop) + ontology extension + transpilability guard [NL-EVAL-03]
+
+**Wave 2** *(blocked on Wave 1)*
+- [ ] 06.2-03-PLAN.md — Author negative/unsupported expect_refusal cases + retain near-miss + regenerate scripted baseline.json + headroom-invariant test [NL-EVAL-03]
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 06.2-04-PLAN.md — Live-model baseline: reproducibility runbook + credentials-gated openai-gpt4o-mini companion (human-run sweep) + no-network structural test [NL-EVAL-04]
+
+**Status**: Planned — NEXT ACTIVE
 
 ### Phase 7: NL→SPARQL dense few-shot retrieval
 
