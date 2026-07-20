@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-07-20T21:40:03.665Z"
+status: planning
+last_updated: "2026-07-20T22:41:00.209Z"
 last_activity: 2026-07-20 -- Phase 06.1 planning complete
 progress:
-  total_phases: 9
-  completed_phases: 1
+  total_phases: 10
+  completed_phases: 2
   total_plans: 6
-  completed_plans: 3
-  percent: 11
+  completed_plans: 6
+  percent: 20
 ---
 
 # Project State
@@ -20,13 +20,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 7 — nl→sparql few shot index
+**Current focus:** Phase 06.2 — NL→SPARQL harder corpus + genuine live-model baseline
 
 ## Current Position
 
-Phase: 7
+Phase: 06.2
 Plan: Not started
-Status: Ready to execute
+Status: Not started — ready to plan
 Last activity: 2026-07-20 -- Phase 06.1 planning complete
 
 Progress: [██████████] 100%
@@ -61,6 +61,7 @@ Progress: [██████████] 100%
 ### Roadmap Evolution
 
 - Phase 06.1 inserted after Phase 6: Re-point nl2sparql onto arango-query-core shared engine (prerequisite for engine-side SOTA) (URGENT)
+- Phase 06.2 inserted after Phase 6: harder corpus + genuine live-model baseline (unblocks measurable few-shot lift) (URGENT)
 
 ### Decisions
 

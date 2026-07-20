@@ -41,6 +41,11 @@ nl = [
   "anthropic>=0.20.0",
   "rank_bm25>=0.2.2",
   "PyYAML>=6.0.0",
+  # Shared conceptual-model + NL substrate (NLQueryEngine, seam protocols) that
+  # the nl2sparql pipeline drives. First-party sibling repo, not yet on PyPI, so
+  # pinned to a specific git rev (deterministic — never a floating branch).
+  # Migrates to a PyPI version pin at the 0.2.0 milestone (2026-07-20 lane notes).
+  "arango-query-core @ git+https://github.com/arango-solutions/arango-query-core.git@c5b6026c344cfa994c442181b797f5400919d70c",
 ]
 dev = [
   "pytest>=8.0.0",
@@ -87,6 +92,13 @@ ignore = [
 [build-system]
 requires = ["hatchling>=1.21.0"]
 build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+# The `nl` extra pins arango-query-core via a direct git reference (it is not
+# yet on PyPI — see the comment on that entry). Hatchling refuses direct
+# references in project metadata unless this is opted into explicitly.
+# Remove when arango-query-core migrates to a PyPI version pin at 0.2.0.
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["arango_sparql"]

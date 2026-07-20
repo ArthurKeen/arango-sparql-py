@@ -1,30 +1,54 @@
 """End-to-end NL → SPARQL → AQL orchestration.
 
-Wires :class:`~arango_sparql.nl2sparql.prompt.PromptBuilder` →
-:class:`~arango_sparql.nl2sparql.client.LLMClient` →
-:class:`~arango_sparql.nl2sparql.repair.RepairLoop` →
-:func:`arango_sparql.api.translate` into a single ``run()`` call that
+Drives the shared, language-agnostic
+:class:`arango_query_core.nl.engine.NLQueryEngine` (the generate → validate →
+repair loop) through two injected seams —
+:class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge` and
+:class:`~arango_sparql.nl2sparql.engine_adapter.SparqlAdapter` — then maps the
+engine's ``NLResult`` back onto the public
+:class:`~arango_sparql.nl2sparql.models.PipelineOutcome`. This is consumed by
 the FastAPI route layer (``/nl-translate``, ``/nl-execute``) and the
-``/nl-explain`` second-pass call consume.
+``/nl-explain`` second-pass call.
 
 Pipeline contract:
 
-1. Build the prompt from the inbound NL question + ontology Turtle.
-2. Call the LLM once to get a candidate SPARQL string.
-3. Translate that SPARQL through the deterministic transpiler.
-4. If translation raises :class:`~arango_sparql.errors.SparqlError`,
-   feed the error back to the LLM and retry — up to ``max_repairs``
-   times.
-5. Return a :class:`~arango_sparql.nl2sparql.models.PipelineOutcome`
-   with the final SPARQL, AQL, bind vars, warnings, per-call
-   ``LLMCallRecord`` audit trail, total wall-clock latency, and a
-   ``repaired`` flag.
+1. Construct the bridge (LLMClient → engine ``LLMProvider``) and the
+   ``SparqlAdapter`` (the five language seams), built with the pipeline's OWN
+   ``self.resolver`` so ``validate()`` and the final re-translate share one
+   schema even for mapping-JSON / analyzer-enriched requests.
+2. Let ``NLQueryEngine.generate`` run the generate → validate → repair loop,
+   bounded by ``self.repair_loop.max_repairs``.
+3. The engine only knows "valid / not" (the ``validate`` seam discards the
+   ``TranslateResult``), so on success re-translate the final query ONCE to
+   recover ``aql`` / ``bind_vars`` / translator warnings.
+4. Return a :class:`~arango_sparql.nl2sparql.models.PipelineOutcome` with the
+   final SPARQL, AQL, bind vars, warnings, per-call ``LLMCallRecord`` audit
+   trail (recorded by the bridge), total wall-clock latency, and a ``repaired``
+   flag.
 
-The pipeline never raises on translation failure — it returns the
-outcome with empty AQL, ``repaired=True``, and a warning entry whose
-``code`` is the underlying error code. The route layer surfaces a
-422 in that case; the model surface mirrors the success path so a
-client renderer doesn't need a second branch.
+Cost / audit accounting (ROADMAP Success Criterion 6): the engine's
+``NLResult`` carries only token *totals*, so this pipeline uses
+option **(b)** from ``06.1-RESEARCH.md`` — the ``EngineProviderBridge`` records
+one ``LLMCallRecord`` per provider call (provider, model, tokens, cost),
+reconstructing the exact per-call audit trail the standalone loop produced.
+
+Fence extraction is kept faithful to the standalone pipeline: the
+``EngineProviderBridge`` runs each completion through
+``extract_sparql_from_response`` before handing it to the engine, so the
+engine's stricter, prefix-sensitive ``_strip_code_fence`` sees already-clean
+SPARQL and is a no-op. The one remaining, accepted, non-gating deviation is the
+engine's retry-prompt WORDING (it builds its own "your previous query was
+rejected" turn rather than reusing ``_REPAIR_USER_SUFFIX``); the repair *hint*
+still carries the exact ``[CODE] msg`` + SPARQL-1.1 text via
+``format_repair_context``. Both are identical on the scripted eval corpus (the
+CI gate); only the retry template could shift *live-model* output, which is why
+the live-provider sweep is non-gating.
+
+The pipeline never raises on translation failure — it returns the outcome with
+empty AQL and a ``W_NL_TRANSLATION_FAILED`` warning. Because the final
+re-translate additionally applies ``params`` (unlike the params-blind
+``validate()`` seam), it is guarded so a params-driven ``SparqlError`` OR a
+reserved-bind-name ``ValueError`` degrades gracefully rather than crashing.
 """
 
 from __future__ import annotations
@@ -34,12 +58,15 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from arango_query_core.nl.engine import NLQueryEngine
+
 from ..api import TranslateResult
 from ..api import translate as _translate
 from ..errors import SparqlError
 from ..translate.resolver import SchemaResolver
 from .client import LLMClient
 from .cost import estimate_llm_cost_usd
+from .engine_adapter import EngineProviderBridge, SparqlAdapter
 from .models import LLMCallRecord, LLMResponse, PipelineOutcome
 from .prompt import PromptBuilder, build_explain_messages, extract_sparql_from_response
 from .repair import RepairLoop
@@ -96,103 +123,106 @@ class NlPipeline:
         *,
         params: dict[str, Any] | None = None,
     ) -> PipelineOutcome:
-        """Translate ``nl`` → SPARQL → AQL with a bounded repair loop."""
-        builder = PromptBuilder(ontology_ttl=self.ontology_ttl)
-        records: list[LLMCallRecord] = []
-        warnings: list[dict[str, Any]] = []
+        """Translate ``nl`` → SPARQL → AQL by driving the shared engine.
+
+        The private PromptBuilder → LLMClient → RepairLoop loop is replaced by
+        :class:`arango_query_core.nl.engine.NLQueryEngine`, wired with the
+        ``EngineProviderBridge`` (per-call audit records) and a ``SparqlAdapter``
+        built with the pipeline's OWN ``self.resolver`` (so ``validate()`` and
+        the final re-translate use the same schema). The engine's ``NLResult``
+        is mapped back to the public ``PipelineOutcome`` shape.
+        """
+        bridge = EngineProviderBridge(self.client)
+        adapter = SparqlAdapter(resolver=self.resolver, ontology_ttl=self.ontology_ttl)
+        engine = NLQueryEngine(
+            provider=bridge,
+            adapter=adapter,
+            few_shot_k=0,
+            max_retries=self.repair_loop.max_repairs,
+        )
         t0 = time.perf_counter()
 
-        first = self._call_llm(builder, nl, repair_context="")
-        records.append(first.record)
-        if first.record.error:
+        try:
+            result = engine.generate(nl, schema_context="")
+        except Exception as exc:
+            # A genuine transport failure is recorded by the bridge and
+            # re-raised (so the engine loop doesn't validate an empty string).
+            reason = bridge.records[-1].error if bridge.records else f"{type(exc).__name__}: {exc}"
             return self._failure_outcome(
                 nl=nl,
-                sparql=first.sparql,
-                records=records,
-                warnings=warnings,
+                sparql="",
+                records=list(bridge.records),
+                warnings=[],
                 t0=t0,
                 repaired=False,
-                reason=first.record.error,
+                reason=reason or "LLM transport failure",
             )
 
-        translate_result: TranslateResult | None = None
-        translate_error: SparqlError | None = None
+        repaired = result.retries > 0
 
-        try:
-            translate_result = _translate(first.sparql, resolver=self.resolver, params=params)
-        except SparqlError as exc:
-            translate_error = exc
-
-        if translate_result is not None:
-            return self._success_outcome(
+        if not result.ok:
+            return self._failure_outcome(
                 nl=nl,
-                sparql=first.sparql,
-                translate_result=translate_result,
-                records=records,
-                warnings=warnings,
+                sparql=result.query,
+                records=list(bridge.records),
+                warnings=[],
                 t0=t0,
-                repaired=False,
+                repaired=repaired,
+                reason=result.error or "translation failed",
             )
 
-        # First attempt failed translation — drive the repair loop. The
-        # loop calls back into ``self._call_llm`` for each retry; we
-        # accumulate the records out-of-band so a successful repair
-        # still preserves the failed first attempt in the audit trail.
-        repair_records: list[LLMCallRecord] = []
+        # The ``validate`` seam only reports valid/not and discards the
+        # TranslateResult (RESEARCH work-item 1). Re-translate the final query
+        # ONCE (deterministic, cheap) to recover aql/bind_vars/warnings. This
+        # pass ALSO applies ``params`` — which the params-blind ``validate()``
+        # seam omitted — so it is guarded: a params-driven SparqlError, or a
+        # reserved-bind-name ValueError the builder raises at compose time, must
+        # degrade to a graceful W_NL_TRANSLATION_FAILED outcome, never crash
+        # out of run() (preserving the pipeline's never-raise contract).
+        try:
+            translate_result: TranslateResult = _translate(
+                result.query, resolver=self.resolver, params=params
+            )
+        except SparqlError as exc:
+            return self._failure_outcome(
+                nl=nl,
+                sparql=result.query,
+                records=list(bridge.records),
+                warnings=[],
+                t0=t0,
+                repaired=repaired,
+                reason=str(exc),
+            )
+        except ValueError as exc:
+            return self._failure_outcome(
+                nl=nl,
+                sparql=result.query,
+                records=list(bridge.records),
+                warnings=[],
+                t0=t0,
+                repaired=repaired,
+                reason=str(exc),
+            )
 
-        def _generator(repair_msg: str) -> str:
-            local = PromptBuilder(ontology_ttl=self.ontology_ttl, repair_context=repair_msg)
-            attempt = self._call_llm(local, nl, repair_context=repair_msg)
-            repair_records.append(attempt.record)
-            return attempt.sparql
-
-        def _translator(sparql: str) -> Any:
-            nonlocal translate_result
-            translate_result = _translate(sparql, resolver=self.resolver, params=params)
-            return translate_result
-
-        # Seed the loop with the *first* failure — repair starts from
-        # there, not from the original happy-path SPARQL, so the
-        # ``RepairLoop`` invariants line up.
-        outcome = self.repair_loop.run(
-            first_sparql=first.sparql,
-            translator=_translator,
-            generator=_generator,
-        )
-        # Reset translate_result so the failure path doesn't accidentally
-        # reuse a value from a previous, unrelated attempt.
-        if not outcome.succeeded:
-            translate_result = None
-        records.extend(repair_records)
-
-        if outcome.succeeded and translate_result is not None:
+        warnings: list[dict[str, Any]] = []
+        if repaired:
             warnings.append(
                 {
                     "code": "W_NL_REPAIRED",
                     "message": (
-                        f"NL → SPARQL translation succeeded after {outcome.attempts} repair attempt(s) "
-                        f"(first error: {translate_error.code if translate_error else 'unknown'})."
+                        f"NL → SPARQL translation succeeded after {result.retries} "
+                        f"repair attempt(s)."
                     ),
                 }
             )
-            return self._success_outcome(
-                nl=nl,
-                sparql=outcome.sparql,
-                translate_result=translate_result,
-                records=records,
-                warnings=warnings,
-                t0=t0,
-                repaired=True,
-            )
-
-        return self._failure_outcome(
+        return self._success_outcome(
             nl=nl,
-            sparql=outcome.sparql,
-            records=records,
+            sparql=result.query,
+            translate_result=translate_result,
+            records=list(bridge.records),
             warnings=warnings,
             t0=t0,
-            repaired=outcome.attempts > 0,
-            reason=str(outcome.last_error or translate_error or "translation failed"),
+            repaired=repaired,
         )
 
     def explain(

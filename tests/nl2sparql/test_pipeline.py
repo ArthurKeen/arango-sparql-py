@@ -227,6 +227,61 @@ class TestLlmTransportFailure:
 
 
 # ---------------------------------------------------------------------------
+# Engine re-point regression guards (Phase 06.1)
+# ---------------------------------------------------------------------------
+
+# Mapping-shaped ontology: physical collection name differs from the class
+# local name, so AQL over a populated resolver mentions "PhysWidgets".
+MAPPING_ONTOLOGY = """
+@prefix : <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phys: <https://arango.solutions/phys#> .
+
+:Widget a owl:Class ; phys:collectionName "PhysWidgets" .
+""".strip()
+
+WIDGET_SPARQL = "PREFIX : <http://ex.org/>\nSELECT ?s WHERE { ?s a :Widget }"
+
+
+class TestEngineRepointRegressions:
+    def test_mapping_only_resolver_parity(self) -> None:
+        """A mapping-JSON / analyzer-enriched request populates the resolver
+        while ``ontology_ttl`` is "". The engine's validate() seam AND the final
+        re-translate must both use the pipeline's own resolver — so the AQL
+        reflects the mapped physical collection, not an empty-graph fallback."""
+        populated = SchemaResolver.from_turtle(MAPPING_ONTOLOGY)
+        client = ScriptedLLMClient([_llm_response(_wrap(WIDGET_SPARQL))], latency_ms=0)
+        pipeline = NlPipeline(client=client, resolver=populated, ontology_ttl="", max_repairs=2)
+
+        outcome = pipeline.run("find widgets")
+
+        assert outcome.aql, "expected a success outcome over the populated resolver"
+        assert "PhysWidgets" in outcome.aql
+        assert outcome.llm_calls == 1
+
+    def test_params_conflict_degrades_gracefully(self) -> None:
+        """The final re-translate applies ``params`` (unlike the params-blind
+        validate() seam). A reserved bind-var name makes the builder raise at
+        compose time; run() must catch it and return a graceful failure outcome
+        rather than crashing."""
+        # Control: without the conflicting param the same run succeeds.
+        control_client = ScriptedLLMClient([_llm_response(_wrap(GOOD_SPARQL))], latency_ms=0)
+        control = NlPipeline(client=control_client, resolver=_resolver(), ontology_ttl=ONTOLOGY)
+        control_outcome = control.run("people with names")
+        assert control_outcome.aql, "control (no params) must succeed"
+
+        # Conflicting param: a reserved (builder-generated) bind name.
+        client = ScriptedLLMClient([_llm_response(_wrap(GOOD_SPARQL))], latency_ms=0)
+        pipeline = NlPipeline(client=client, resolver=_resolver(), ontology_ttl=ONTOLOGY)
+        outcome = pipeline.run("people with names", params={"_p0": 1})
+
+        assert outcome.aql == ""
+        assert outcome.llm_calls >= 1
+        codes = {w.get("code") for w in outcome.warnings}
+        assert "W_NL_TRANSLATION_FAILED" in codes
+
+
+# ---------------------------------------------------------------------------
 # explain()
 # ---------------------------------------------------------------------------
 

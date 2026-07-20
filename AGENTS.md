@@ -66,6 +66,17 @@ project to `arango-cypher-py`.
 5. **Surface unsupported SPARQL early.** Raise `UnsupportedSparqlError`
    with a clear message and a stable error code; never emit silently
    wrong AQL.
+6. **Search shared memory before planning.** Before `gsd-plan-phase`
+   (or during `gsd-discuss-phase`), run `/pattern-search` on the phase
+   goal to surface team-verified solutions from the sibling repos
+   (`arango-cypher-py`, legacy `arango-sparql`). Treat hits as *inputs*
+   to planning — never a replacement for GSD's own researcher/planner.
+7. **Save verified patterns after review.** After `gsd-code-review`
+   passes and `gsd-extract-learnings` runs, promote only the
+   cross-repo-reusable, verified subset via `/pattern-save` (translation
+   recipes, `pyoxigraph` cross-validation gotchas, `UnsupportedSparqlError`
+   conventions). Never save unverified guesses or project-only trivia.
+   Requires the shared-memory MCP to be live.
 
 ## Off-limits
 

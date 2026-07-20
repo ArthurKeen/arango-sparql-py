@@ -8,8 +8,9 @@ shell already ship (W3C DAWG query-eval coverage at 96.4%). Phases 1–3 are the
 marked **Complete** (shipped pre-GSD) and are held as a **no-regression gate** rather
 than re-planned. The active journey targets the user's actual goal — making the
 NL→SPARQL layer's quality **measurable then improvable**: Phase 6 stands up the eval
-harness + seed corpus + checked-in `baseline.json`, Phase 7 adds the BM25 few-shot
-index and proves an accuracy lift against that baseline. Phases 4, 5, and 8 close out
+harness + seed corpus + checked-in `baseline.json`, Phase 06.2 hardens that corpus and
+captures a genuine live-model baseline, and Phase 7 adds **dense few-shot retrieval**
+and proves an accuracy lift against that baseline. Phases 4, 5, and 8 close out
 interop/perf verification, UI parity, and public release. Throughout, W3C query-eval
 coverage must never drop below 96.4%.
 
@@ -28,7 +29,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 4: Interoperability & performance verification** - Foxx roundtrip, third-party tools, ontoextract, perf SLOs
 - [ ] **Phase 5: UI workbench parity completion** - Playwright/a11y CI harness + 3 backend-blocked WPs
 - [x] **Phase 6: NL→SPARQL eval harness + seed corpus** - Make NL quality measurable; check in `baseline.json` gate (FIRST ACTIVE) (completed 2026-07-15)
-- [ ] **Phase 7: NL→SPARQL few-shot index** - BM25 ≤3-shot index feeding PromptBuilder; prove pass-rate lift
+- [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
+- [ ] **Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline** - Grow corpus to real difficulty + capture a live-model baseline so a few-shot lift is measurable (INSERTED) (NEXT ACTIVE)
+- [ ] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
 ## Phase Details
@@ -162,16 +165,32 @@ Plans:
 **Wave 2** *(blocked on Wave 1)*
 - [ ] 06.1-03-PLAN.md — Re-point NlPipeline.run() onto NLQueryEngine + NLResult→PipelineOutcome mapping (re-translate for aql/bind_vars) + cost/audit doc + behavior-preservation gate
 
-### Phase 7: NL→SPARQL few-shot index
+### Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline (INSERTED)
 
-**Goal**: Populate + wire the shared engine's few-shot seam (`arango_query_core.nl.FewShotIndex`, reached via the re-pointed `SparqlAdapter.few_shot_index()`) with a curated SPARQL exemplar corpus, and prove it lifts NL→SPARQL pass-rate against the Phase 6 baseline. (Engine-side change — Cypher inherits the retrieval upgrade.)
-**Depends on**: Phase 06.1 (needs `nl2sparql` running on the shared engine so few-shot lands engine-side and reaches SPARQL) + Phase 6 (baseline to prove the lift)
+**Goal**: Make a few-shot lift *measurable* before building few-shot. Replace the 6 toy single-BGP scripted cases with a real-difficulty NL→SPARQL corpus (OPTIONAL, aggregation, property paths, multi-hop, and negative/unsupported cases, each with a gold SPARQL judged by canonical algebra), then capture a **genuine live-model baseline** by running the `openai` real-provider config against it. Today the corpus is scripted-only with 5/6 passing and a deliberate near-miss — there is no headroom for few-shot to demonstrably move, so Phase 7's "prove a lift" is unmeasurable without this. (This is the "real baseline" half of BRIEF §5.1; the re-point half already shipped in Phase 06.1.)
+**Depends on**: Phase 06.1 (nl2sparql on the shared engine) + Phase 6 (the eval harness + judge)
+**Requirements**: NL-EVAL-03, NL-EVAL-04
+**Success Criteria** (what must be TRUE):
+
+  1. `corpus.yml` grows beyond single-BGP toys to include OPTIONAL, aggregation, property-path, multi-hop, and negative/unsupported cases — each with a gold SPARQL and canonical-algebra judging (never string match)
+  2. The corpus has genuine headroom: the scripted baseline pass-rate is meaningfully < 1.0 with room for a measurable few-shot lift (not a near-ceiling toy set)
+  3. A **live-model baseline** is captured by running the `openai` config (`RUN_EVAL=1` + provider key) and checked in as a credentials-gated companion to `baseline.json`; **no secrets committed**; scripted stays the no-network CI default
+  4. The harder corpus + live baseline are reproducible from documented steps; CI still runs key-free on the scripted config
+  5. W3C DAWG query-eval coverage remains ≥ 96.4% (deterministic transpiler untouched)
+
+**Plans**: TBD (run /gsd-plan-phase 06.2 to break down)
+**Status**: Not started — NEXT ACTIVE
+
+### Phase 7: NL→SPARQL dense few-shot retrieval
+
+**Goal**: Wire the shared engine's few-shot seam (`arango_query_core.nl.FewShotIndex`, reached via the re-pointed `SparqlAdapter.few_shot_index()`) with **dense/embedding retrieval** (sentence-transformer index) over the curated corpus, and prove it lifts NL→SPARQL pass-rate against the Phase 06.2 **live-model** baseline. Dense retrieval is the SOTA-survey's #1 win (up to +21 F1, highest evidence-per-cost); BM25 is the fallback/ablation. (Engine-side change — Cypher inherits the retrieval upgrade.)
+**Depends on**: Phase 06.2 (needs the harder corpus + genuine live-model baseline to prove a lift against) + Phase 06.1 (nl2sparql running on the shared engine so few-shot lands engine-side)
 **Requirements**: NL-FEW-01, NL-FEW-02
 **Success Criteria** (what must be TRUE):
 
-  1. A curated SPARQL exemplar corpus is authored and loaded via `arango_query_core.nl.FewShotIndex.from_corpus_files`; `SparqlAdapter.few_shot_index()` returns it (≤ 3 shots per query, rule-300 budget)
+  1. A dense/embedding few-shot retriever is loaded via `arango_query_core.nl.FewShotIndex` and returned by `SparqlAdapter.few_shot_index()` (≤ 3 shots per query, rule-300 budget); BM25 available as an ablation baseline
   2. Retrieved examples appear in the engine-built prompt's `## Examples` section (the `NLQueryEngine` few-shot path), not the standalone `PromptBuilder`
-  3. A few-shot eval run shows a **positive pass-rate delta over `baseline.json`** via the Phase 6 harness
+  3. A dense few-shot eval run shows a **positive pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness
   4. W3C DAWG query-eval coverage remains ≥ 96.4% (no transpiler regression)
 
 **Plans**: TBD
@@ -195,10 +214,12 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8.
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 06.1 → 06.2 → 7 → 8.
 Phases 1–3 are already Complete. The active workstream begins at **Phase 6**
 (NL→SPARQL). Phases 4, 5, and 6 have no hard inter-dependency on each other and may
-be sequenced by priority — the user's directive puts NL→SPARQL first.
+be sequenced by priority — the user's directive puts NL→SPARQL first. The NL→SPARQL
+arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live baseline)
+→ 7 (dense few-shot lift).
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
@@ -208,5 +229,7 @@ be sequenced by priority — the user's directive puts NL→SPARQL first.
 | 4. Interop & performance verification | 0/TBD | Not started | - |
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
 | 6. NL→SPARQL eval harness + corpus | 3/3 | Complete    | 2026-07-15 |
-| 7. NL→SPARQL few-shot index | 0/TBD | Not started | - |
+| 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
+| 06.2. NL→SPARQL harder corpus + live baseline | 0/TBD | Not started (NEXT) | - |
+| 7. NL→SPARQL dense few-shot retrieval | 0/TBD | Not started | - |
 | 8. Public release readiness | 0/TBD | Not started | - |
