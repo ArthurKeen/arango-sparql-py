@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from pydantic import BaseModel, Field, model_validator
 from rdflib.plugins.sparql.parserutils import CompValue
 
 from arango_sparql.errors import SparqlParseError
@@ -59,12 +60,84 @@ class Report:
 
 
 # ---------------------------------------------------------------------------
+# Load-time schema gate — CorpusCase / BaselineConfig (AI-SPEC §4b)
+# ---------------------------------------------------------------------------
+#
+# A malformed/unparseable positive gold must FAIL the corpus load loudly
+# rather than be silently dropped — a skipped case is a hidden coverage hole
+# (AI-SPEC Critical Failure Mode 2). Pydantic gives us the load-time gate;
+# the ``_gold_must_parse`` validator runs the deterministic SPARQL parser on
+# every positive gold so a bad gold surfaces as a ``ValidationError`` the
+# instant the corpus is read.
+
+
+class CorpusCase(BaseModel):
+    """One eval corpus entry (mirrors the ``corpus.yml`` case shape).
+
+    Positive cases carry a gold ``expected`` SPARQL query the judge targets.
+    Negative cases (``expect_refusal: true``) carry a human-readable rationale
+    in ``expected`` instead — the honest-refusal convention scores them by the
+    inverted signal (no transpilable AQL == PASS), so the gold-must-parse
+    validator MUST skip them (AI-SPEC §5 "Scoring negatives").
+    """
+
+    name: str = Field(min_length=1)
+    nl: str = Field(min_length=1)
+    expected: str = Field(min_length=1)
+    scripted: str | None = None
+    ontology: str | None = None
+    params: dict[str, object] | None = None
+    data: str | None = None
+    # The negatives marker. Pinned exact key — both the corpus and the
+    # ``_judge`` inverted branch key on it.
+    expect_refusal: bool = False
+
+    @model_validator(mode="after")
+    def _gold_must_parse(self) -> CorpusCase:
+        # Only positive cases hold gold SPARQL. For refusal cases ``expected``
+        # is a rationale string and must NOT be parsed as gold.
+        if not self.expect_refusal:
+            try:
+                parse_sparql(self.expected)
+            except SparqlParseError as exc:  # re-raise as pydantic ValueError
+                raise ValueError(
+                    f"gold `expected` SPARQL for case {self.name!r} does not parse: {exc}"
+                ) from exc
+        return self
+
+
+class BaselineConfig(BaseModel):
+    """One config's checked-in regression gate (a ``baseline.json`` entry).
+
+    The scripted gate needs only ``pass_rate``/``passed``/``total``/``cases``.
+    The optional live-reproducibility fields (``model``, ``temperature``,
+    ``corpus_sha``) let Plan 04 fold a live-model run into ``baseline.json``
+    without re-touching ``runner.py``.
+    """
+
+    pass_rate: float = Field(ge=0.0, le=1.0)
+    passed: int = Field(ge=0)
+    total: int = Field(ge=1)
+    cases: dict[str, bool]
+    model: str | None = None
+    temperature: float | None = None
+    corpus_sha: str | None = None
+
+
+# ---------------------------------------------------------------------------
 # Loaders — trusted checked-in YAML, always via yaml's safe_load only.
 # ---------------------------------------------------------------------------
 
 
 def _load_corpus() -> dict[str, Any]:
-    return yaml.safe_load(CORPUS_PATH.read_text())
+    corpus = yaml.safe_load(CORPUS_PATH.read_text())
+    # Gate every case at load time — a malformed gold fails the load loudly
+    # (raises ``ValidationError``) instead of being silently skipped. The
+    # validated model is discarded; ``run()`` keeps its existing ``case[...]``
+    # dict access unchanged (this is a gate, not a data-flow rewrite).
+    for case in corpus.get("cases", []):
+        CorpusCase(**case)
+    return corpus
 
 
 def _load_configs() -> dict[str, Any]:
