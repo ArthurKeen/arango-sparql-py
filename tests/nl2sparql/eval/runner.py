@@ -268,6 +268,14 @@ def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> bool:
 
 
 def _judge(judge_name: str, case: dict[str, Any], outcome: Any) -> bool:
+    if case.get("expect_refusal"):
+        # Inverted refusal signal (AI-SPEC §5 "Scoring negatives"): a negative
+        # case PASSES iff the pipeline produced NO transpilable AQL. The
+        # pipeline surfaces refusal as ``outcome.aql == ""`` + a
+        # ``W_NL_TRANSLATION_FAILED`` warning (it never raises), so ``aql`` is
+        # the authoritative signal — mirroring ``_judge_canonical``'s empty-AQL
+        # check, but inverted. A non-empty AQL over invented terms FAILS.
+        return not outcome.aql
     if judge_name == "execution" and case.get("data"):
         return _judge_execution(case["expected"], outcome, case["data"])
     return _judge_canonical(case["expected"], outcome)
