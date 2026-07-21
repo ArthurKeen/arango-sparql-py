@@ -26,7 +26,7 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 
 Phase: 06.2 (nl-to-sparql-harder-corpus-and-genuine-live-model-baseline) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
+Status: PAUSED at checkpoint:human-action (Task 2 — credentialed live sweep). Autonomous tasks (README runbook, no-network structural test) done + committed; awaiting human-run live numbers to fold into baseline.json.
 Last activity: 2026-07-21
 
 Progress: [█████████░] 90%
@@ -91,6 +91,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06.2]: [Phase 06.2-03]: 3 expect_refusal negatives — 2 malformed-SPARQL drift-proof triggers + unsupported !(^:knows); all refuse to empty AQL, PASS inverted judge
 - [Phase 06.2]: [Phase 06.2-03]: baseline.json regenerated from true run('scripted') — 0.96 (24/25), all 25 cases tracked, near-miss=false, nested schema preserved
 - [Phase 06.2]: [Phase 06.2-03]: 0<pass_rate<1 is a SENTINEL; real guard is per-case deliberate-near-miss passed is False (AI-SPEC SC2)
+- [Phase 06.2-04]: README.md live-baseline runbook documents the key-gated sweep (NL2SPARQL_API_KEY, not OPENAI_API_KEY — Pitfall 1), corpus_sha capture, and the MANUAL human-reviewed fold-in into baseline.json (never auto-regenerated in CI — Pitfall 2)
+- [Phase 06.2-04]: no-network structural test validates the openai-gpt4o-mini companion via BaselineConfig (model/temperature==0.1/corpus_sha + 0<pass_rate<1 headroom) and SKIPS key-free until the entry is folded in; a static guard asserts the CI gate only ever runs("scripted")
 
 ### Pending Todos
 
@@ -98,6 +100,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Blockers/Concerns
 
+- [Phase 06.2-04] AWAITING HUMAN CHECKPOINT (Task 2, checkpoint:human-action): the credentialed live `openai-gpt4o-mini` sweep needs a real `NL2SPARQL_API_KEY` the agent must never hold. Human runs `RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini'); write_report(r); print('pass_rate', r.pass_rate); [print(c.name, c.passed) for c in r.cases]"` + `git log -1 --format=%h -- tests/nl2sparql/eval/corpus.yml`, confirms headroom (pass_rate < 1.0), and pastes back aggregate + per-case verdicts + corpus_sha. Then the continuation folds them into baseline.json (Task 3 fold-in) and writes 06.2-04-SUMMARY.md.
 - [Phase 5] WP-UI-CAT / WP-UI-TENANT / WP-UI-CORR are backend-blocked (need async introspect, tenant catalogue, translator source-map).
 - [Gate] W3C DAWG query-eval coverage must stay ≥ 96.4% throughout the NL workstream (Phases 6–7).
 - [Dep] Upstream hard dependency `arangodb-schema-analyzer` pinned ≥0.6.1,<0.7.0.
@@ -112,6 +115,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T02:18:37.153Z
-Stopped at: Completed 06.2-02-PLAN.md — positive difficulty classes (OPTIONAL/aggregation/property-path/multi-hop) landed; Plan 03 next (expect_refusal negatives + baseline.json regen)
-Resume file: None
+Last session: 2026-07-21T02:24:00.000Z
+Stopped at: 06.2-04-PLAN.md PAUSED at Task 2 checkpoint:human-action — autonomous tasks done (README runbook 0ac2126, no-network structural test 1e0084f); awaiting human live-sweep numbers to fold into baseline.json (Task 3) + write SUMMARY.
+Resume file: .planning/phases/06.2-nl-to-sparql-harder-corpus-and-genuine-live-model-baseline/06.2-04-PLAN.md
