@@ -1,0 +1,237 @@
+# Curated few-shot bank for the NL -> SPARQL dense/BM25 retrievers
+# (arango_query_core.nl.fewshot.FewShotIndex.from_corpus_files).
+#
+# AUTHORING RULE (Phase 7 Plan 02, B2): every example below was authored from
+# an INDEPENDENT difficulty-class spec (basic BGP, OPTIONAL, aggregation,
+# property-path, multi-hop) with tests/nl2sparql/eval/corpus.yml CLOSED — the
+# author did not open corpus.yml's `nl`/`expected` cases to hand-tune bank
+# items to sit just outside them. tests/nl2sparql/eval/test_fewshot_bank_disjoint.py
+# is the after-the-fact leakage gate (three-way disjointness + a cosine
+# similarity ceiling); a collision there is a signal to re-author an item,
+# never to nudge a literal.
+#
+# The `ontology:` block below is BYTE-IDENTICAL to corpus.yml's (same
+# conceptual :Person/:name/:age/:email/:placed/:knows/:Order schema) so the
+# bank exercises the same difficulty classes without maintaining a second
+# schema. test_fewshot_bank_disjoint.py::test_bank_ontology_matches_corpus
+# asserts this parity so the duplicated Turtle block cannot silently drift.
+#
+# Shape matches `FewShotIndex.from_corpus_files`'s expected corpus-file format
+# (arango_query_core/nl/fewshot.py docstring): `version:` + `examples:` list
+# of `{question, query}` pairs (the canonical keys — NOT the legacy
+# `nl`/`expected` or `cypher`/`sparql`/`aql` spellings).
+#
+# This file is checked into VCS as trusted repo data — no credentials belong
+# here. It is injected verbatim into LLM few-shot prompts (trusted-repo-data
+# tier, same as corpus.yml).
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+  :name a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:string .
+  :age  a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:integer .
+
+  # OPTIONAL-class term: a conditional datatype attribute on :Person. Not
+  # every person carries one, so `OPTIONAL { ?s :email ?e }` exercises the
+  # LeftJoin "unbound-when-absent" cardinality. Same phys idiom as :name/:age
+  # (a bare owl:DatatypeProperty resolves to the local-name attribute
+  # "email"), so it transpiles without any extra mapping.
+  :email a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:string .
+
+  # Aggregation-per-key / multi-hop term: a Person -> Order object property
+  # backed by a dedicated edge collection ("placed"), the DEDICATED_COLLECTION
+  # idiom from tests/translate/edge_traversal.yml. An owl:ObjectProperty MUST
+  # carry phys:edgeCollectionName or the visitor raises SchemaResolutionError
+  # (PRD §6.2) — a bare object property is NOT an attribute join. This mapping
+  # lets `?p :placed ?o` emit an OUTBOUND traversal so orders can be counted
+  # per person and multi-triple BGPs can span the Person->Order hop.
+  :placed a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Order ;
+    phys:edgeCollectionName "placed" .
+
+  # Property-path term: a Person -> Person social relation backed by a
+  # dedicated "knows" edge collection (same edge_traversal.yml idiom as
+  # :placed). Being a real graph edge makes it the textbook property-path
+  # subject, so `:knows+` (transitive), `:knows*` (reflexive-transitive),
+  # `^:knows` (inverse), `:knows|:placed` (alternative) and `!:knows`
+  # (forward-negated) all transpile to non-empty AQL.
+  :knows a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Person ;
+    phys:edgeCollectionName "knows" .
+
+  :Order a owl:Class ;
+    phys:collectionName "Orders" ;
+    phys:typeField "kind" ;
+    phys:typeValue "order" .
+
+version: 1
+examples:
+  # =====================================================================
+  # Difficulty class: basic BGP (5 examples)
+  # =====================================================================
+
+  - question: "Which people are older than 25?"
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person ; :age ?a . FILTER(?a > 25) }
+
+  - question: "Find people whose name starts with the letter B."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n . FILTER(STRSTARTS(?n, "B")) }
+
+  - question: "List the email addresses of people who have one, sorted alphabetically."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?email WHERE { ?s a :Person ; :email ?email . } ORDER BY ?email
+
+  - question: "Is there at least one order in the system?"
+    query: |
+      PREFIX : <http://ex.org/>
+      ASK { ?o a :Order }
+
+  - question: "Show the first three people along with their names."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s a :Person ; :name ?n . } LIMIT 3
+
+  # =====================================================================
+  # Difficulty class: OPTIONAL cardinality (4 examples)
+  # =====================================================================
+
+  - question: "List each person's name, together with their age if it's on file and their email if it's on file."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?a ?email WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :age ?a }
+        OPTIONAL { ?s :email ?email }
+      }
+
+  - question: "For each person, show their name and the name of someone they know, when they know anyone."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?fname WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :knows ?f . ?f :name ?fname }
+      }
+
+  - question: "List each person's name and age, together with their email address if one is on file."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?a ?email WHERE {
+        ?s a :Person ; :name ?n ; :age ?a .
+        OPTIONAL { ?s :email ?email }
+      }
+
+  - question: "List each person's name, and their age when it is recorded and they are over 18."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?a WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :age ?a . FILTER(?a > 18) }
+      }
+
+  # =====================================================================
+  # Difficulty class: aggregation / GROUP BY (4 examples)
+  # =====================================================================
+
+  - question: "How many distinct people have placed at least one order?"
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(DISTINCT ?s) AS ?c) WHERE { ?s a :Person ; :placed ?o }
+
+  - question: "What are the youngest and oldest recorded ages among all people?"
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT (MIN(?a) AS ?lo) (MAX(?a) AS ?hi) WHERE { ?s a :Person ; :age ?a }
+
+  - question: "For each person, count both how many people they know and how many orders they've placed."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s (COUNT(?f) AS ?friends) (COUNT(?o) AS ?orders) WHERE {
+        ?s a :Person ; :knows ?f ; :placed ?o .
+      } GROUP BY ?s
+
+  - question: "Which people have placed more than one order, and how many did each place?"
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s (COUNT(?o) AS ?c) WHERE {
+        ?s a :Person ; :placed ?o .
+      } GROUP BY ?s HAVING (COUNT(?o) > 1)
+
+  # =====================================================================
+  # Difficulty class: property paths (6 examples)
+  # =====================================================================
+
+  - question: "For each person, list the people known by someone they know."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?fof WHERE { ?s a :Person ; :knows/:knows ?fof . }
+
+  - question: "For each order, find the person who placed it."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?o ?s WHERE { ?o ^:placed ?s }
+
+  - question: "Find everyone reachable through one or more acquaintance links who has also placed an order, together with that order."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?d ?o WHERE { ?s :knows+ ?d . ?d :placed ?o }
+
+  - question: "For each person, list either their name or their email address."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?v WHERE { ?s (:name|:email) ?v }
+
+  - question: "For each person, list every related value that is neither their name nor their age."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !(:name|:age) ?o }
+
+  - question: "For each person, list their name and everyone reachable through any chain of acquaintances, including themself."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?d WHERE { ?s :name ?n . ?s :knows* ?d }
+
+  # =====================================================================
+  # Difficulty class: multi-hop explicit-join chain (4 examples)
+  # =====================================================================
+
+  - question: "Find the orders placed by the acquaintances of the people each person knows."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?o WHERE {
+        ?a a :Person ; :knows ?b .
+        ?b :knows ?c .
+        ?c :placed ?o .
+      }
+
+  - question: "For each person, list their own name together with the name of a friend of a friend."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?aname ?cname WHERE {
+        ?a a :Person ; :name ?aname ; :knows ?b .
+        ?b :knows ?c .
+        ?c :name ?cname .
+      }
+
+  - question: "For each person, count how many orders were placed by the people they know."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a (COUNT(?o) AS ?c) WHERE {
+        ?a a :Person ; :knows ?b .
+        ?b :placed ?o .
+      } GROUP BY ?a
+
+  - question: "For each person, list the name of someone they know, and the name of that acquaintance's own acquaintance, when one exists."
+    query: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?bname ?cname WHERE {
+        ?a a :Person ; :knows ?b .
+        ?b :name ?bname .
+        OPTIONAL { ?b :knows ?c . ?c :name ?cname }
+      }
