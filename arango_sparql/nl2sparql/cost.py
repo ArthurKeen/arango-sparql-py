@@ -6,9 +6,15 @@ package so the pipeline (and its tests) can compute USD without
 importing the service layer.
 
 Pricing is in USD per 1k tokens, manually maintained from the
-provider pricing pages — last refreshed 2026-05-03 against:
+provider pricing pages — last refreshed 2026-07-21 against:
 
-* OpenAI:    https://openai.com/pricing
+* OpenAI:    https://openai.com/pricing (gpt-5/gpt-5-mini rows added
+  Phase 7 07-04 Task 1 — RESEARCH Pitfall 4 fixed; the exact figures
+  could not be re-verified live this session (openai.com's pricing
+  page is behind a Cloudflare interactive challenge from this sandboxed
+  environment) so they are sourced from the standard published gpt-5
+  launch pricing and should be spot-checked against the live page before
+  the Task 4 credentialed sweep is treated as cost-authoritative).
 * Anthropic: https://www.anthropic.com/pricing
 * OpenRouter: pass-through; we don't price these (the OpenRouter
   markup is small and per-model, not worth tracking here — log
@@ -31,6 +37,9 @@ _PRICING_PER_1K_TOKENS: dict[tuple[str, str], tuple[float, float]] = {
     ("openai", "gpt-4.1"): (0.0030, 0.012),
     ("openai", "gpt-4.1-mini"): (0.00040, 0.0016),
     ("openai", "o1-mini"): (0.0030, 0.012),
+    # gpt-5-family (Phase 7 07-04 Task 1 — RESEARCH Pitfall 4):
+    ("openai", "gpt-5"): (0.00125, 0.010),
+    ("openai", "gpt-5-mini"): (0.00025, 0.002),
     ("anthropic", "claude-3-5-sonnet-20241022"): (0.003, 0.015),
     ("anthropic", "claude-3-5-sonnet-latest"): (0.003, 0.015),
     ("anthropic", "claude-3-5-haiku-20241022"): (0.0008, 0.004),

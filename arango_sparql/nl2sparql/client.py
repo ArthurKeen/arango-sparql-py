@@ -42,6 +42,30 @@ logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
+# Reasoning-model family detection (RESEARCH Pitfall 2)
+# ---------------------------------------------------------------------------
+#
+# OpenAI's gpt-5/o1/o3/o4 "reasoning" model family rejects any explicit
+# ``temperature`` value other than the implicit default with an HTTP 400 —
+# unlike gpt-4o-mini/gpt-4o/etc, which accept arbitrary temperature. This
+# predicate lets ``OpenAICompatibleClient.generate()`` omit ``temperature``
+# for those models only, so the Phase 7 gpt-5-family eval arms don't hard-fail
+# at the first LLM call.
+
+_REASONING_MODEL_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+
+
+def _is_reasoning_model(model: str) -> bool:
+    """Return ``True`` when *model* belongs to OpenAI's reasoning family.
+
+    Case-insensitive prefix match against ``_REASONING_MODEL_PREFIXES`` —
+    covers bare aliases (``gpt-5``, ``gpt-5-mini``, ``o1-mini``) and dated
+    snapshots (``gpt-5-2025-08-07``) alike.
+    """
+    return model.lower().startswith(_REASONING_MODEL_PREFIXES)
+
+
+# ---------------------------------------------------------------------------
 # Protocol — duck-typed contract every concrete client implements
 # ---------------------------------------------------------------------------
 
@@ -156,11 +180,13 @@ class OpenAICompatibleClient(_BaseHttpClient):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        body = {
-            "model": self.model,
-            "messages": messages,
-            "temperature": self.temperature,
-        }
+        body: dict[str, Any] = {"model": self.model, "messages": messages}
+        # gpt-5/o1/o3/o4-family reasoning models 400 on any explicit
+        # temperature value — omit it for them (RESEARCH Pitfall 2); every
+        # other OpenAI-compatible model keeps the existing temperature=0.1
+        # default unchanged.
+        if not _is_reasoning_model(self.model):
+            body["temperature"] = self.temperature
         data = self._post_json("/chat/completions", body, headers=headers)
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
