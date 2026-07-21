@@ -211,7 +211,7 @@ Plans:
 Plans:
 **Wave 1** *(parallel — no file overlap)*
 - [x] 07-01-PLAN.md — Engine-side DenseRetriever + mode= dispatch + .retriever property + memoized index factory [NL-FEW-01]
-- [ ] 07-02-PLAN.md — Curated disjoint few-shot bank (fewshot_bank.yml) + D-02 two-way disjointness gate [NL-FEW-01]
+- [x] 07-02-PLAN.md — Curated disjoint few-shot bank (fewshot_bank.yml) + D-02 two-way disjointness gate [NL-FEW-01]
 
 **Wave 2** *(blocked on Wave 1)*
 - [ ] 07-03-PLAN.md — Flip SparqlAdapter.few_shot_index() -> populated index (mode=auto) + NlPipeline few_shot_k=3 + SC2 engine-prompt gate [NL-FEW-01]
@@ -254,5 +254,5 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 6. NL→SPARQL eval harness + corpus | 3/3 | Complete    | 2026-07-15 |
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
 | 06.2. NL→SPARQL harder corpus + live baseline | 4/4 | Complete    | 2026-07-21 |
-| 7. NL→SPARQL dense few-shot retrieval | 1/4 | In Progress|  |
+| 7. NL→SPARQL dense few-shot retrieval | 2/4 | In Progress|  |
 | 8. Public release readiness | 0/TBD | Not started | - |

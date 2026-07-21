@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-21T17:48:24.982Z"
+last_updated: "2026-07-21T18:04:46.568Z"
 last_activity: 2026-07-21
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 14
-  completed_plans: 11
+  completed_plans: 12
   percent: 30
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 ## Current Position
 
 Phase: 07 (nl-sparql-dense-few-shot-retrieval) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-07-21
 
-Progress: [████████░░] 79%
+Progress: [█████████░] 86%
 
 ## Performance Metrics
 
@@ -60,6 +60,7 @@ Progress: [████████░░] 79%
 | Phase 06.2 P02 | ~15min | 3 tasks | 2 files |
 | Phase 06.2 P03 | 10min | 3 tasks | 3 files |
 | Phase 07 P01 | 7min | 3 tasks | 4 files |
+| Phase 07 P02 | 10min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -98,6 +99,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07-01]: DenseRetriever pinned to sentence-transformers/all-MiniLM-L6-v2 @ 7dbbc90392e2f80f3d3c277d6e90027e55de9125 (verified present on huggingface.co, matched RESEARCH candidate exactly)
 - [Phase 07-01]: cached_few_shot_index() lives engine-side in arango_query_core.nl.fewshot (not adapter-side) so Cypher's future adapter shares the same memoized model cache
 - [Phase 07-01]: arango-query-core bumped to commit a5a42cdc89184ebbc9896198071a4ea8f0b7aa20 (pushed to origin/main) — Plan 03 must bump arango-sparql-py's pyproject.toml git pin to this SHA
+- [Phase 07-02]: 07-02: _skeleton() blanks both literal values AND quoted URIRef('...') tokens (not literal-only), verified empirically against all 22 corpus skeletons before finalizing the bank
+- [Phase 07-02]: 07-02: 23-example fewshot_bank.yml (5 basic BGP, 4 OPTIONAL, 4 aggregation, 6 property-path, 4 multi-hop) authored with corpus.yml closed, ontology shared verbatim
+- [Phase 07-02]: 07-02: NL-FEW-01 not marked complete yet (spans plans 01-03 per 07-01 precedent); seam-wiring lands in 07-03
 
 ### Pending Todos
 
@@ -120,6 +124,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T17:48:24.977Z
-Stopped at: Completed 07-01-PLAN.md
+Last session: 2026-07-21T18:04:46.562Z
+Stopped at: Completed 07-02-PLAN.md
 Resume file: None
