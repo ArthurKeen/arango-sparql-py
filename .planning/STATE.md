@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-20T23:59:00.000Z"
-last_activity: 2026-07-20 -- Completed 06.2-01-PLAN.md (harness capabilities)
+last_updated: "2026-07-21T02:12:00.000Z"
+last_activity: 2026-07-21 -- Completed 06.2-02-PLAN.md (harder corpus positive difficulty classes)
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 10
-  completed_plans: 6
+  completed_plans: 7
   percent: 20
 ---
 
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 ## Current Position
 
 Phase: 06.2 (nl-to-sparql-harder-corpus-and-genuine-live-model-baseline) — EXECUTING
-Plan: 2 of 4
-Status: Executing Phase 06.2 (Plan 01 complete)
-Last activity: 2026-07-20 -- Completed 06.2-01-PLAN.md (harness capabilities)
+Plan: 3 of 4
+Status: Executing Phase 06.2 (Plans 01–02 complete)
+Last activity: 2026-07-21 -- Completed 06.2-02-PLAN.md (harder corpus positive difficulty classes)
 
 Progress: [██████████] 100%
 
@@ -56,6 +56,7 @@ Progress: [██████████] 100%
 | Phase 06 P02 | 8min | 2 tasks | 3 files |
 | Phase 06 P03 | 6min | 2 tasks | 1 files |
 | Phase 06.2 P01 | ~10min | 3 tasks | 2 files |
+| Phase 06.2 P02 | ~15min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06.2-01]: gold-must-parse validator skips refusal cases (expected holds a human rationale, not gold SPARQL); SparqlParseError re-raised as pydantic ValueError
 - [Phase 06.2-01]: _load_corpus validates every case then returns the raw dict unchanged (a load-time gate, not a data-flow rewrite)
 - [Phase 06.2-01]: BaselineConfig carries optional model/temperature/corpus_sha so Plan 04 folds a live baseline in without re-touching runner.py
+- [Phase 06.2-02]: :placed/:knows are dedicated edge collections (phys:edgeCollectionName), not attribute joins — a bare owl:ObjectProperty raises SchemaResolutionError, so the committed Task-1 comment was wrong and its golds could not transpile (fixed)
+- [Phase 06.2-02]: property-path positives use :knows/:placed as real graph edges; transitive :knows+/:knows* use the default property_path_max_depth (10) with no knob override
+- [Phase 06.2-02]: 16 positive golds added (4 OPTIONAL, 3 aggregation/GROUP BY, 9 property-path/multi-hop); every non-refusal gold proven transpilable by test_gold_transpilable.py
 
 ### Pending Todos
 
@@ -104,6 +108,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-20T23:59:00.000Z
-Stopped at: Completed 06.2-01-PLAN.md — harness capabilities landed; Plan 02 next (positive difficulty classes)
+Last session: 2026-07-21T02:12:00.000Z
+Stopped at: Completed 06.2-02-PLAN.md — positive difficulty classes (OPTIONAL/aggregation/property-path/multi-hop) landed; Plan 03 next (expect_refusal negatives + baseline.json regen)
 Resume file: None
