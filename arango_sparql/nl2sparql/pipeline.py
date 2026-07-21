@@ -58,6 +58,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from arango_query_core.nl import FewShotIndex
 from arango_query_core.nl.engine import NLQueryEngine
 
 from ..api import TranslateResult
@@ -107,11 +108,18 @@ class NlPipeline:
         resolver: SchemaResolver,
         ontology_ttl: str = "",
         max_repairs: int = 2,
+        few_shot_k: int = 3,
+        few_shot_index: FewShotIndex | None = None,
     ) -> None:
         self.client = client
         self.resolver = resolver
         self.ontology_ttl = ontology_ttl
         self.repair_loop = RepairLoop(max_repairs=max_repairs)
+        # rule-300 caps few-shot at <=3 shots; the Plan 04 sweep overrides
+        # both via explicit passthrough (zero/dense/bm25 arm selection)
+        # without needing to edit this file again.
+        self.few_shot_k = few_shot_k
+        self.few_shot_index = few_shot_index
 
     # ------------------------------------------------------------------
     # Public surface
@@ -133,11 +141,15 @@ class NlPipeline:
         is mapped back to the public ``PipelineOutcome`` shape.
         """
         bridge = EngineProviderBridge(self.client)
-        adapter = SparqlAdapter(resolver=self.resolver, ontology_ttl=self.ontology_ttl)
+        adapter = SparqlAdapter(
+            resolver=self.resolver,
+            ontology_ttl=self.ontology_ttl,
+            few_shot_index=self.few_shot_index,
+        )
         engine = NLQueryEngine(
             provider=bridge,
             adapter=adapter,
-            few_shot_k=0,
+            few_shot_k=self.few_shot_k,
             max_retries=self.repair_loop.max_repairs,
         )
         t0 = time.perf_counter()

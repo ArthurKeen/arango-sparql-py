@@ -34,7 +34,9 @@ proven independently of the pipeline re-point.
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
+from arango_query_core.nl import FewShotIndex, cached_few_shot_index
 from arango_query_core.nl.seams import GuardrailVerdict, ValidationResult
 
 from ..api import translate as _api_translate
@@ -49,6 +51,10 @@ from .repair import format_repair_context
 # The four usage keys the engine's LLMProvider protocol expects in the
 # returned usage dict — kept in sync with ``arango_query_core.nl.engine._USAGE_KEYS``.
 _USAGE_KEYS = ("prompt_tokens", "completion_tokens", "total_tokens", "cached_tokens")
+
+# Curated few-shot bank (07-02) — disjoint from tests/nl2sparql/eval/corpus.yml.
+# parents[2] = repo root: engine_adapter.py -> nl2sparql -> arango_sparql -> repo.
+_FEWSHOT_BANK_PATH = Path(__file__).resolve().parents[2] / "tests" / "nl2sparql" / "eval" / "fewshot_bank.yml"
 
 
 class EngineProviderBridge:
@@ -137,7 +143,8 @@ class SparqlAdapter:
     Seam                        Maps to
     ==========================  ============================================
     ``grammar_prompt_section``  :class:`PromptBuilder`'s system turn
-    ``few_shot_index``          ``None`` (zero-shot; Phase 7 wires the corpus)
+    ``few_shot_index``          populated ``FewShotIndex`` via
+                                 ``cached_few_shot_index`` (mode=auto)
     ``validate``                :func:`arango_sparql.api.translate`
     ``repair_hint``             :func:`format_repair_context`
     ``guardrails``              allow-all (no tenant/write-op checks yet)
@@ -155,18 +162,44 @@ class SparqlAdapter:
 
     language = "sparql"
 
-    def __init__(self, *, resolver: SchemaResolver, ontology_ttl: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        resolver: SchemaResolver,
+        ontology_ttl: str = "",
+        few_shot_index: FewShotIndex | None = None,
+        few_shot_mode: str = "auto",
+    ) -> None:
         self.resolver = resolver
         self.ontology_ttl = ontology_ttl
+        self._few_shot_index = few_shot_index
+        self._few_shot_mode = few_shot_mode
 
     def grammar_prompt_section(self, schema_context: str) -> str:  # seam 1
         # Reuse the shipped system-prompt template so the grammar + ontology
         # block stays byte-aligned with the standalone PromptBuilder.
         return PromptBuilder(ontology_ttl=self.ontology_ttl).render_system()
 
-    def few_shot_index(self) -> None:  # seam 2
-        # Zero-shot for behavior-preservation; Phase 7 populates the corpus.
-        return None
+    def few_shot_index(self) -> FewShotIndex | None:  # seam 2
+        # Explicit injection wins (tests / the Plan 04 sweep); otherwise return
+        # the memoized, populated index built from the curated bank (07-02) via
+        # the shared engine's module-scope cached_few_shot_index factory — never
+        # constructed inline here (Pitfall 1: a fresh FewShotIndex per adapter
+        # construction would reload the SentenceTransformer model + re-embed the
+        # whole bank on every request/eval case).
+        #
+        # WARNING: this PRODUCTION seam requests mode="auto" (D-05) — a
+        # deployment lacking the `.[dense]` extra (no torch/sentence-transformers
+        # installed) gracefully degrades to BM25, then to a no-op retriever,
+        # rather than crashing. This means the measured NL-FEW-02 dense-mode
+        # pass-rate lift applies in production ONLY when the service is
+        # installed with `.[dense]` (`pip install '.[dense]'`); a default
+        # `.[nl]`-only install silently runs BM25/no-op, not dense. Plan 04's
+        # eval sweep therefore reports the bm25 arm as the honest DEFAULT-INSTALL
+        # number and scopes the dense-lift headline to `.[dense]` deployments.
+        if self._few_shot_index is not None:
+            return self._few_shot_index
+        return cached_few_shot_index(str(_FEWSHOT_BANK_PATH), self._few_shot_mode)
 
     def validate(self, query: str) -> ValidationResult:  # seam 3
         # Validate against the INJECTED resolver — the same schema the
