@@ -21,6 +21,29 @@ ontology: |
   :name a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:string .
   :age  a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:integer .
 
+  # OPTIONAL-class term: a conditional datatype attribute on :Person. Not
+  # every person carries one, so `OPTIONAL { ?s :email ?e }` exercises the
+  # LeftJoin "unbound-when-absent" cardinality. Same phys idiom as :name/:age
+  # (a bare owl:DatatypeProperty resolves to the local-name attribute
+  # "email"), so it transpiles without any extra mapping.
+  :email a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:string .
+
+  # Aggregation-per-key / multi-hop term: a Person -> Order object property.
+  # Declared as a bare owl:ObjectProperty with NO phys:edgeCollectionName, so
+  # resolve_property() gives edge_collection=None and treats it as an
+  # attribute join (`doc.placed == order._uri`) — the exact idiom
+  # tests/translate/hybrid.yml uses for `?p :placed ?o`. Lets `?p :placed ?o`
+  # group orders per person and lets multi-triple BGPs span the Person->Order
+  # hop.
+  :placed a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Order .
+
+  # Property-path term: a Person -> Person social relation (the textbook
+  # property-path subject). Same bare-object-property idiom as :placed
+  # (attribute join, no edge collection), so `:knows+` (transitive),
+  # `^:knows` (inverse), `:knows|:placed` (alternative) and `!:knows`
+  # (forward-negated) all desugar onto the attribute emitter and transpile.
+  :knows a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Person .
+
   :Order a owl:Class ;
     phys:collectionName "Orders" ;
     phys:typeField "kind" ;
