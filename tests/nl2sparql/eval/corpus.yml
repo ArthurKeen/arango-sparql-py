@@ -28,21 +28,24 @@ ontology: |
   # "email"), so it transpiles without any extra mapping.
   :email a owl:DatatypeProperty ; rdfs:domain :Person ; rdfs:range xsd:string .
 
-  # Aggregation-per-key / multi-hop term: a Person -> Order object property.
-  # Declared as a bare owl:ObjectProperty with NO phys:edgeCollectionName, so
-  # resolve_property() gives edge_collection=None and treats it as an
-  # attribute join (`doc.placed == order._uri`) — the exact idiom
-  # tests/translate/hybrid.yml uses for `?p :placed ?o`. Lets `?p :placed ?o`
-  # group orders per person and lets multi-triple BGPs span the Person->Order
-  # hop.
-  :placed a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Order .
+  # Aggregation-per-key / multi-hop term: a Person -> Order object property
+  # backed by a dedicated edge collection ("placed"), the DEDICATED_COLLECTION
+  # idiom from tests/translate/edge_traversal.yml. An owl:ObjectProperty MUST
+  # carry phys:edgeCollectionName or the visitor raises SchemaResolutionError
+  # (PRD §6.2) — a bare object property is NOT an attribute join. This mapping
+  # lets `?p :placed ?o` emit an OUTBOUND traversal so orders can be counted
+  # per person and multi-triple BGPs can span the Person->Order hop.
+  :placed a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Order ;
+    phys:edgeCollectionName "placed" .
 
-  # Property-path term: a Person -> Person social relation (the textbook
-  # property-path subject). Same bare-object-property idiom as :placed
-  # (attribute join, no edge collection), so `:knows+` (transitive),
+  # Property-path term: a Person -> Person social relation backed by a
+  # dedicated "knows" edge collection (same edge_traversal.yml idiom as
+  # :placed). Being a real graph edge makes it the textbook property-path
+  # subject, so `:knows+` (transitive), `:knows*` (reflexive-transitive),
   # `^:knows` (inverse), `:knows|:placed` (alternative) and `!:knows`
-  # (forward-negated) all desugar onto the attribute emitter and transpile.
-  :knows a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Person .
+  # (forward-negated) all transpile to non-empty AQL.
+  :knows a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Person ;
+    phys:edgeCollectionName "knows" .
 
   :Order a owl:Class ;
     phys:collectionName "Orders" ;
@@ -94,3 +97,177 @@ cases:
     scripted: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?n WHERE { ?s a :Person ; :name ?n . }
+
+  # =====================================================================
+  # Difficulty class: OPTIONAL cardinality (rdflib LeftJoin)
+  # =====================================================================
+  # Same-subject OPTIONAL collapses to attribute lookups that return null
+  # when the attribute is absent — SPARQL's "unbound" semantics (see
+  # tests/translate/leftjoin.yml). These are POSITIVES: scripted replays the
+  # gold, so they pass the canonical judge trivially; the required-vs-optional
+  # contrast is what gives the class its difficulty spine.
+
+  - name: optional-email
+    nl: "List all people with their name, and their email address if one is on file."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?email WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :email ?email }
+      }
+
+  - name: optional-age
+    nl: "List every person and their name, including their age when it is recorded."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?age WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :age ?age }
+      }
+
+  - name: optional-email-filtered
+    nl: "List people and their name; also show their email, but only when it starts with the letter a."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?email WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :email ?email . FILTER(STRSTARTS(?email, "a")) }
+      }
+
+  - name: required-email-contrast
+    # Contrast to `optional-email`: here the email is a MANDATORY constraint
+    # (it stays in the required BGP), so only people who HAVE an email match.
+    # Same term, opposite cardinality — the class's required-vs-conditional axis.
+    nl: "List only the people who have an email address on file, together with that email."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n ?email WHERE {
+        ?s a :Person ; :name ?n ; :email ?email .
+      }
+
+  # =====================================================================
+  # Difficulty class: aggregation / GROUP BY (rdflib AggregateJoin + Group)
+  # =====================================================================
+  # Idiomatic AQL is `COLLECT [k = e] WITH COUNT INTO c` for a single COUNT
+  # and `COLLECT [k = e] AGGREGATE a = f(e)` otherwise (see
+  # tests/translate/aggregate.yml). Every non-aggregated projected variable
+  # appears in GROUP BY (valid SPARQL 1.1 §11.4).
+
+  - name: count-all-people
+    nl: "How many people are there in total?"
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(?s) AS ?c) WHERE { ?s a :Person }
+
+  - name: orders-per-person
+    # COUNT-per-key over the :placed relationship. ?p is the only
+    # non-aggregated projected variable and is in GROUP BY.
+    nl: "For each person, count how many orders they placed."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?p (COUNT(?o) AS ?c) WHERE {
+        ?p a :Person ; :placed ?o .
+      } GROUP BY ?p
+
+  - name: average-age
+    nl: "What is the average age across all people?"
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT (AVG(?a) AS ?avg) WHERE { ?s a :Person ; :age ?a }
+
+  # =====================================================================
+  # Difficulty class: property paths (SPARQL 1.1 §9 / §18.4)
+  # =====================================================================
+  # Every operator below is SUPPORTED by the deterministic transpiler and
+  # emits non-empty AQL (see tests/translate/property_paths.yml +
+  # union_paths.yml for the shipped goldens): SequencePath `/`, InvPath `^`,
+  # transitive MulPath `+`/`*` (lowered to a bounded UNION of fixed-length
+  # arms, default max depth 10), AlternativePath `|`, and forward NegatedPath
+  # `!:p` / `!(:p|:q)`. These are POSITIVES: scripted replays the gold, so
+  # they pass the canonical judge trivially. The ONLY path form the transpiler
+  # rejects is the inverse-arm negated path `!(^:p)` — a Plan 03 negative, not
+  # authored here.
+
+  - name: path-friend-names-sequence
+    # SequencePath `:knows/:name` — "the name of someone this person knows".
+    # Desugars to a two-step join (`?s :knows ?mid . ?mid :name ?fname`).
+    nl: "For each person, list the names of the people they know."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?fname WHERE { ?s a :Person ; :knows/:name ?fname . }
+
+  - name: path-known-by-inverse
+    # InvPath `^:knows` — swaps subject/object: "?s is known BY ?other".
+    nl: "Find each person together with everyone who knows them."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?other WHERE { ?s ^:knows ?other }
+
+  - name: path-reachable-transitive-plus
+    # Transitive MulPath `:knows+` — one-or-more hops. Lowered to a bounded
+    # UNION of fixed-length arms; the default property_path_max_depth (10)
+    # applies, so no knob override is needed in the gold.
+    nl: "Find everyone reachable from each person through one or more acquaintance links."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?reachable WHERE { ?s :knows+ ?reachable }
+
+  - name: path-reachable-transitive-star
+    # Reflexive-transitive MulPath `:knows*` — zero-or-more hops (adds the
+    # identity arm on top of `:knows+`).
+    nl: "For each person, list themselves and everyone reachable through any chain of acquaintances."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?reachable WHERE { ?s :knows* ?reachable }
+
+  - name: path-knows-or-placed-alternative
+    # AlternativePath `:knows|:placed` — desugars to a UNION of two single-
+    # triple BGPs, byte-identical to the explicit UNION form.
+    nl: "For each person, find everything they are linked to — whether a person they know or an order they placed."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?linked WHERE { ?s :knows|:placed ?linked }
+
+  - name: path-not-knows-negated
+    # Forward NegatedPath `!:knows` — every predicate on the subject EXCEPT
+    # `:knows`. Lowered to an ATTRIBUTES fan-out with a NOT IN skip guard.
+    nl: "For each person, list every related value that is not an acquaintance link."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !:knows ?o }
+
+  - name: path-not-knows-or-placed-negated
+    # Multi-arm forward NegatedPath `!(:knows|:placed)` — same ATTRIBUTES
+    # fan-out with a longer NOT IN skip list.
+    nl: "For each person, list every related value that is neither an acquaintance link nor a placed order."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !(:knows|:placed) ?o }
+
+  # =====================================================================
+  # Difficulty class: multi-hop explicit-join chain (multi-triple BGP)
+  # =====================================================================
+  # A multi-triple BGP spanning two hops (Person -knows-> Person -placed->
+  # Order), joined on the shared intermediate ?b. Lowers to chained FOR loops
+  # with an equality FILTER bridging the hops (see tests/translate/join.yml).
+
+  - name: multihop-friends-orders
+    nl: "Find the orders placed by the people that each person knows."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?o WHERE {
+        ?a a :Person ; :knows ?b .
+        ?b :placed ?o .
+      }
+
+  - name: multihop-friend-order-with-name
+    # Three-triple chain: person -> acquaintance (?b) -> order (?o), also
+    # projecting the acquaintance's name. Exercises a multi-hop join where the
+    # intermediate node contributes both an edge hop and an attribute.
+    nl: "For each person, list the name of each acquaintance and the orders that acquaintance placed."
+    expected: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?bname ?o WHERE {
+        ?a a :Person ; :knows ?b .
+        ?b :name ?bname ; :placed ?o .
+      }
