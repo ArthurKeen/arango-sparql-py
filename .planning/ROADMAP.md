@@ -206,7 +206,7 @@ Plans:
   4. W3C DAWG query-eval coverage remains ≥ 96.4% (no transpiler regression)
 
 **Plans**: 4 plans
-**Status**: Planned
+**Status**: Executing — 07-04 Tasks 1-3 done, Task 4 (blocking-human dense-few-shot lift sweep) awaiting the credentialed human
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
@@ -217,7 +217,7 @@ Plans:
 - [x] 07-03-PLAN.md — Flip SparqlAdapter.few_shot_index() -> populated index (mode=auto) + NlPipeline few_shot_k=3 + SC2 engine-prompt gate [NL-FEW-01]
 
 **Wave 3** *(blocked on Wave 2)*
-- [ ] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02]
+- [~] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — Tasks 1-3 done (7ce312e, b2aa008, f1c327e); Task 4 (the credentialed lift sweep) is a blocking-human checkpoint, see STATE.md Blockers/Concerns
 
 ### Phase 8: Public release readiness
 
