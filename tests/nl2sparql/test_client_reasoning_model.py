@@ -76,3 +76,20 @@ class TestReasoningModelRequestBodyShape:
         client.generate([{"role": "user", "content": "hi"}])
 
         assert captured["body"]["temperature"] == 0.1
+
+
+class TestConfigurableTimeout:
+    """The reasoning tiers need a longer request timeout than the 30s that
+    suits gpt-4o-mini; NL2SPARQL_TIMEOUT provides it without a code change."""
+
+    def test_defaults_to_30s(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NL2SPARQL_TIMEOUT", raising=False)
+        assert OpenAICompatibleClient(model="gpt-5", api_key="x").timeout == 30.0
+
+    def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NL2SPARQL_TIMEOUT", "120")
+        assert OpenAICompatibleClient(model="gpt-5", api_key="x").timeout == 120.0
+
+    def test_explicit_arg_beats_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NL2SPARQL_TIMEOUT", "120")
+        assert OpenAICompatibleClient(model="gpt-5", api_key="x", timeout=45).timeout == 45

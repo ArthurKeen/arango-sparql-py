@@ -162,8 +162,14 @@ class OpenAICompatibleClient(_BaseHttpClient):
         model: str | None = None,
         provider: str = "openai",
         temperature: float = 0.1,
-        timeout: float = 30.0,
+        timeout: float | None = None,
     ) -> None:
+        # gpt-5/o1/o3/o4-family reasoning models spend tokens thinking before
+        # emitting output, so a single call can far exceed the 30s default that
+        # is fine for gpt-4o-mini. Let the eval sweep raise the ceiling via
+        # NL2SPARQL_TIMEOUT without a code change; an explicit ``timeout=`` arg
+        # still wins. (RESEARCH Pitfall 2 covered temperature; latency is its
+        # sibling for the reasoning tiers.)
         super().__init__(
             api_key=api_key or os.getenv("NL2SPARQL_API_KEY", ""),
             base_url=base_url
@@ -172,7 +178,7 @@ class OpenAICompatibleClient(_BaseHttpClient):
             model=model or os.getenv("NL2SPARQL_MODEL", "gpt-4o-mini"),
             provider=provider,
             temperature=temperature,
-            timeout=timeout,
+            timeout=timeout if timeout is not None else float(os.getenv("NL2SPARQL_TIMEOUT", "30")),
         )
 
     def generate(self, messages: list[dict[str, str]]) -> LLMResponse:
