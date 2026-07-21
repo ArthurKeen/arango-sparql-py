@@ -21,6 +21,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field, model_validator
 from rdflib.plugins.sparql.parserutils import CompValue
+from rdflib.term import Variable
 
 from arango_sparql.errors import SparqlParseError
 from arango_sparql.nl2sparql import (
@@ -227,11 +228,69 @@ def _stable_repr(node: Any) -> str:
     return repr(node)
 
 
+def _skeleton(node: Any) -> str:
+    """A ``repr`` of *node* with every ``Variable`` erased to ``"?"``.
+
+    Used only to order the elements of a set/frozenset in a way that does
+    NOT depend on the original variable names, so that alpha-renaming
+    numbering (``_alpha_normalize``) is driven by structure rather than by
+    whatever names the model happened to pick.
+    """
+    if isinstance(node, Variable):
+        return "?"
+    if isinstance(node, CompValue):
+        return f"{node.name}{{" + ",".join(f"{k}:{_skeleton(v)}" for k, v in node.items()) + "}"
+    if isinstance(node, (set, frozenset)):
+        return "{" + ",".join(sorted(_skeleton(v) for v in node)) + "}"
+    if isinstance(node, (list, tuple)):
+        return "[" + ",".join(_skeleton(v) for v in node) + "]"
+    if isinstance(node, dict):
+        return "{" + ",".join(f"{k}:{_skeleton(v)}" for k, v in node.items()) + "}"
+    return repr(node)
+
+
+def _alpha_normalize(node: Any, mapping: dict[Variable, Variable]) -> Any:
+    """Rebuild *node*, replacing each ``Variable`` with a canonical
+    ``?v0``/``?v1``/... assigned on first occurrence in a deterministic,
+    variable-name-independent walk.
+
+    This makes the canonical judge *alpha-equivalent*: two queries that are
+    identical up to a consistent bijective variable renaming (e.g. the gold's
+    ``?s ?n`` vs a model's ``?person ?name``) collapse to one canonical form.
+    It is SOUND — only consistent renamings unify, because a single bijection
+    (``mapping``) is applied across the whole tree before comparison; a
+    genuinely different query (extra triple, different projection, swapped
+    predicate) cannot collide. Ordered structures (``BGP.triples``, ``PV``)
+    seed the numbering; set-derived structures are ordered by ``_skeleton``
+    so numbering never depends on the original names.
+    """
+    if isinstance(node, Variable):
+        if node not in mapping:
+            mapping[node] = Variable(f"v{len(mapping)}")
+        return mapping[node]
+    if isinstance(node, CompValue):
+        return CompValue(
+            node.name,
+            **{key: _alpha_normalize(value, mapping) for key, value in node.items()},
+        )
+    if isinstance(node, (set, frozenset)):
+        ordered = sorted(node, key=_skeleton)
+        return type(node)(_alpha_normalize(v, mapping) for v in ordered)
+    if isinstance(node, list):
+        return [_alpha_normalize(v, mapping) for v in node]
+    if isinstance(node, tuple):
+        return tuple(_alpha_normalize(v, mapping) for v in node)
+    if isinstance(node, dict):
+        return {key: _alpha_normalize(value, mapping) for key, value in node.items()}
+    return node
+
+
 def _canonical(sparql: str) -> str | None:
     try:
-        return _stable_repr(parse_sparql(sparql).algebra)
+        algebra = parse_sparql(sparql).algebra
     except SparqlParseError:
         return None
+    return _stable_repr(_alpha_normalize(algebra, {}))
 
 
 def _judge_canonical(expected: str, outcome: Any) -> bool:
