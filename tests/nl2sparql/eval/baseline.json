@@ -68,5 +68,83 @@
       "temperature": 0.1,
       "corpus_sha": "d3d3806"
     }
+  },
+  "phase07_dense_few_shot_sweep": {
+    "_note_schema": "Deliberately NOT nested under `configs.*`: BaselineConfig.cases is a REQUIRED dict[str,bool] field, and this sweep captured only aggregate pass-rates + a single fresh McNemar pairing per test (no per-case verdict dicts across all N=5 runs, per the human's paste-back). Inventing a per-case `cases` map to satisfy the schema would fabricate data, so the sweep is folded in here as a sibling top-level key instead of a `configs['openai-gpt4o-mini-dense']`-style entry. Full narrative in 07-04-SUMMARY.md.",
+    "requirement": "NL-FEW-02",
+    "swept_by": "credentialed human (07-04 Task 4 blocking-human checkpoint)",
+    "run_config": {
+      "n_runs_per_model_arm": 5,
+      "nl2sparql_timeout_gpt5_tiers_seconds": 120,
+      "live_openai": true
+    },
+    "provenance": {
+      "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+      "embedding_revision": "7dbbc90392e2f80f3d3c277d6e90027e55de9125",
+      "sentence_transformers_version": "5.6.0",
+      "corpus_sha": "d3d3806",
+      "model_aliases_used": ["gpt-4o-mini", "gpt-5-mini", "gpt-5"],
+      "resolved_model_snapshot_ids": null,
+      "resolved_model_snapshot_ids_note": "NOT captured this sweep (limitation). The dense-vs-committed-0.32 (06.2) continuity check is therefore INAPPLICABLE/INVALID here -- 06.2's resolved snapshot is also unrecorded, so no snapshot-equality claim can be made either way."
+    },
+    "mean_pass_rate_by_model_arm": {
+      "gpt-4o-mini": {"zero": 0.376, "dense": 0.504, "bm25": 0.568, "bm25_stdev": 0.016},
+      "gpt-5-mini": {"zero": 0.240, "zero_stdev": 0.044, "dense": 0.296, "dense_stdev": 0.032, "bm25": 0.440, "bm25_stdev": 0.025},
+      "gpt-5": {"zero": 0.264, "zero_stdev": 0.041, "dense": 0.496, "dense_stdev": 0.065, "bm25": 0.552, "bm25_stdev": 0.039}
+    },
+    "primary_confirmatory_test": {
+      "description": "PRE-REGISTERED confirmatory test (M1/M2/B1): gpt-4o-mini anchor, dense vs a freshly-run zero arm, PAIRED McNemar over the same 25 cases, same session. Lift PASSES iff p<0.05. This is THE single confirmatory bar for NL-FEW-02.",
+      "model": "gpt-4o-mini",
+      "b": 5,
+      "c": 2,
+      "p_value": 0.453,
+      "paired_delta": 0.12,
+      "ci_95": [-0.08, 0.32],
+      "verdict": "NULL -- does not clear p<0.05",
+      "mde_context": "At n=25 and base-rate ~0.32 the paired design detects roughly a 4-case (~16pt) lift at p<0.05. This is a documented 'cannot-confirm-at-n=25' null interpreted against that MDE, NOT proof of no effect.",
+      "nl_few_02_disposition": "Closed via the plan-sanctioned human-accepted-documented-null completion path -- explicitly NOT a passed confirmatory test."
+    },
+    "secondary_and_exploratory_tests": {
+      "secondary_bm25_vs_zero_gpt4o_mini": {
+        "description": "SECONDARY/exploratory: bm25 was a pre-specified arm, but this specific comparison (bm25-vs-zero) was post-hoc, not the pre-registered confirmatory test. Report as secondary -- do not relabel as THE confirmatory result.",
+        "b": 6,
+        "c": 0,
+        "p_value": 0.0312,
+        "paired_delta": 0.24,
+        "ci_95": [0.08, 0.40],
+        "verdict": "SIGNIFICANT"
+      },
+      "exploratory_dense_vs_zero_gpt5_mini": {
+        "b": 1,
+        "c": 1,
+        "p_value": 1.0,
+        "paired_delta": 0.0,
+        "ci_95": [-0.12, 0.12],
+        "verdict": "null (no effect)"
+      },
+      "exploratory_dense_vs_zero_gpt5": {
+        "b": 5,
+        "c": 1,
+        "p_value": 0.219,
+        "paired_delta": 0.16,
+        "ci_95": [0.0, 0.36],
+        "verdict": "null (point estimate +16pt, not significant at n=25)"
+      }
+    },
+    "install_numbers": {
+      "default_install_bm25_by_model": {"gpt-4o-mini": 0.568, "gpt-5-mini": 0.440, "gpt-5": 0.552},
+      "dense_install_dense_by_model": {"gpt-4o-mini": 0.504, "gpt-5-mini": 0.296, "gpt-5": 0.496}
+    },
+    "key_findings": [
+      "The pre-registered confirmatory test (dense vs zero, gpt-4o-mini) is a documented NULL (p=0.453) interpreted against the ~16pt MDE -- a cannot-confirm-at-n=25 null, not proof of no effect. NL-FEW-02 closes via the human-accepted documented-null path, not a passed confirmatory test.",
+      "Lexical BM25 >= dense embeddings in EVERY tier (gpt-4o-mini 0.568>0.504; gpt-5-mini 0.440>0.296; gpt-5 0.552>0.496) -- contradicts the phase's founding SOTA-survey thesis that dense ranks #1. Genuine finding, not a failure.",
+      "SECONDARY significant result: gpt-4o-mini bm25-vs-zero IS significant (p=0.0312, 6/0 favorable flips, 0.376->0.568 = +19pt) -- reported as secondary/exploratory since bm25-vs-zero was post-hoc; the confirmatory verdict stays the dense null.",
+      "Default-install story (M3): production .[nl] is torch-free and uses BM25; the significant lift rides on the DEFAULT install. Dense's extra weight (torch/sentence-transformers) did not pay off at this bank size.",
+      "gpt-4o-mini zero-shot (0.376) beat both gpt-5 tiers' zero-shot (0.24-0.26) -- observation only, likely reasoning-model output-shape vs judge strictness, not over-interpreted."
+    ],
+    "limitations": [
+      "Only aggregate pass-rates + a single fresh-pairing McNemar test per comparison were captured and pasted back -- NOT full per-case verdict dicts across all N=5 runs per (model, arm). This is why this sweep is recorded here rather than as configs['*-dense']/['*-bm25'] BaselineConfig entries (which require a per-case `cases` map).",
+      "Resolved dated model snapshot ids for the gpt-4o-mini/gpt-5-mini/gpt-5 bare aliases were NOT captured this sweep. The M2 dense-vs-committed-0.32 (06.2) continuity check is therefore inapplicable/invalid -- 06.2's resolved snapshot is also unrecorded."
+    ]
   }
 }
