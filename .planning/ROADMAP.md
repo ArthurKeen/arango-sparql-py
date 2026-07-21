@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 6: NL→SPARQL eval harness + seed corpus** - Make NL quality measurable; check in `baseline.json` gate (FIRST ACTIVE) (completed 2026-07-15)
 - [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
 - [x] **Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline** - Grow corpus to real difficulty + capture a live-model baseline so a few-shot lift is measurable (INSERTED) (NEXT ACTIVE) (completed 2026-07-21)
-- [ ] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline
+- [x] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline (completed 2026-07-21)
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
 ## Phase Details
@@ -202,11 +202,11 @@ Plans:
 
   1. A dense/embedding few-shot retriever is loaded via `arango_query_core.nl.FewShotIndex` and returned by `SparqlAdapter.few_shot_index()` (≤ 3 shots per query, rule-300 budget); BM25 available as an ablation baseline
   2. Retrieved examples appear in the engine-built prompt's `## Examples` section (the `NLQueryEngine` few-shot path), not the standalone `PromptBuilder`
-  3. A dense few-shot eval run shows a **positive pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness
+  3. A dense few-shot eval run shows a **positive pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness — **ACTUAL RESULT**: the pre-registered gpt-4o-mini dense-vs-zero paired McNemar test returned a documented NULL (p=0.453), closed via the plan's own human-accepted-documented-null completion path, NOT a passed confirmatory test. A SECONDARY bm25-vs-zero comparison IS significant (p=0.031), and lexical BM25 outperformed dense embeddings in all 3 model tiers — see 07-04-SUMMARY.md for the full, honest result.
   4. W3C DAWG query-eval coverage remains ≥ 96.4% (no transpiler regression)
 
 **Plans**: 4 plans
-**Status**: Executing — 07-04 Tasks 1-3 done, Task 4 (blocking-human dense-few-shot lift sweep) awaiting the credentialed human
+**Status**: Complete (2026-07-21) — NL-FEW-02 closed via the documented-null completion path (see 07-04-SUMMARY.md)
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
@@ -217,7 +217,7 @@ Plans:
 - [x] 07-03-PLAN.md — Flip SparqlAdapter.few_shot_index() -> populated index (mode=auto) + NlPipeline few_shot_k=3 + SC2 engine-prompt gate [NL-FEW-01]
 
 **Wave 3** *(blocked on Wave 2)*
-- [~] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — Tasks 1-3 done (7ce312e, b2aa008, f1c327e); Task 4 (the credentialed lift sweep) is a blocking-human checkpoint, see STATE.md Blockers/Concerns
+- [x] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — complete (7ce312e, b2aa008, f1c327e, 3136c17, ac19edc); the credentialed human's live sweep returned a documented null on the pre-registered confirmatory test, closed per the plan's human-accepted-documented-null path — see 07-04-SUMMARY.md
 
 ### Phase 8: Public release readiness
 
@@ -254,5 +254,5 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 6. NL→SPARQL eval harness + corpus | 3/3 | Complete    | 2026-07-15 |
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
 | 06.2. NL→SPARQL harder corpus + live baseline | 4/4 | Complete    | 2026-07-21 |
-| 7. NL→SPARQL dense few-shot retrieval | 3/4 | In Progress|  |
+| 7. NL→SPARQL dense few-shot retrieval | 4/4 | Complete   | 2026-07-21 |
 | 8. Public release readiness | 0/TBD | Not started | - |

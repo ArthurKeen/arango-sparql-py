@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-07-21T18:28:56Z"
+status: verifying
+last_updated: "2026-07-21T23:14:10.401Z"
 last_activity: 2026-07-21
 progress:
   total_phases: 10
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 13
-  percent: 30
+  completed_plans: 14
+  percent: 40
 ---
 
 # Project State
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 07 — nl-sparql-dense-few-shot-retrieval
+**Current focus:** Phase 07 — nl-sparql-dense-few-shot-retrieval (COMPLETE; next up: Phase 8 — public release readiness)
 
 ## Current Position
 
-Phase: 07 (nl-sparql-dense-few-shot-retrieval) — EXECUTING
+Phase: 07 (nl-sparql-dense-few-shot-retrieval) — COMPLETE
 Plan: 4 of 4
-Status: Tasks 1-3 complete; Task 4 AWAITING BLOCKING-HUMAN CHECKPOINT (the credentialed dense-few-shot lift sweep)
+Status: Phase complete — ready for verification
 Last activity: 2026-07-21
 
-Progress: [█████████░] 93% (07-04 Tasks 1-3 of 4 done; plan not yet complete pending Task 4)
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [█████████░] 93% (07-04 Tasks 1-3 of 4 done; plan 
 | Phase 07 P01 | 7min | 3 tasks | 4 files |
 | Phase 07 P02 | 10min | 2 tasks | 2 files |
 | Phase 07 P03 | 20min | 3 tasks | 6 files |
+| Phase 07 P04 | ~35min | 4 tasks | 9 files |
 
 ## Accumulated Context
 
@@ -109,6 +110,11 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07-04 Task 1]: OpenAICompatibleClient.generate() omits temperature for gpt-5/o1/o3/o4-family models (400 on any explicit value); gpt-5/gpt-5-mini pricing rows added to cost.py — exact rates sourced from training knowledge, not live-fetched (openai.com/pricing behind a Cloudflare challenge this session); flag for spot-check before the Task 4 sweep
 - [Phase 07-04 Task 2]: configs.yml gains the additive 3-arm (zero/dense/bm25) x 3-model (gpt-4o-mini/gpt-5-mini/gpt-5) matrix; runner.run() threads few_shot config into NlPipeline via the 07-03 passthrough with a once-per-arm memoized index + D-06 isinstance(retriever, DenseRetriever) guard; BaselineConfig gains D-04 embedding provenance fields; pure-Python paired_mcnemar/bootstrap_paired_delta helpers added (no scipy) — run(config_name)->Report stays byte-identical
 - [Phase 07-04 Task 3]: README.md §7 documents the redesigned N>=5, paired-McNemar-primary (p<0.05 on gpt-4o-mini anchor) sweep runbook; test_eval.py gains a no-network dense-baseline structural test (skips until folded in); tests/w3c/test_coverage_gate.py is a new COMMITTED, ASSERTING SC4 gate (QUERY_EVAL >= 96.4%, currently 96.44%) wired into a new ci.yml `w3c-coverage` job — deliberately carries no `w3c` marker so it runs off the xfail-tolerant path
+- [Phase 07-04]: NL-FEW-02 closed via the plan-sanctioned human-accepted-documented-null path -- gpt-4o-mini dense-vs-zero paired McNemar returned p=0.453 (b=5,c=2), not significant at n=25's ~16pt MDE; NOT a passed confirmatory test
+- [Phase 07-04]: SECONDARY bm25-vs-zero (gpt-4o-mini) IS significant (p=0.0312, +19pt) but reported as secondary/exploratory, never substituted for the confirmatory dense-vs-zero result
+- [Phase 07-04]: Lexical BM25 outperformed dense embeddings in all 3 model tiers (gpt-4o-mini/gpt-5-mini/gpt-5) -- contradicts the phase's founding SOTA-survey dense-#1 thesis; documented as a genuine finding
+- [Phase 07-04]: sweep results folded into baseline.json as a sibling phase07_dense_few_shot_sweep top-level key (aggregate-only) rather than configs['*-dense'] BaselineConfig entries, since only aggregate pass-rates + single-pairing McNemar were captured (not full per-case dicts) and BaselineConfig.cases is a required field
+- [Phase 07-04]: resolved model snapshot ids were not captured this sweep, so the M2 dense-vs-committed-0.32 continuity check is flagged inapplicable/invalid rather than silently compared
 
 ### Pending Todos
 
@@ -116,7 +122,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ### Blockers/Concerns
 
-- [Phase 07-04] AWAITING BLOCKING-HUMAN CHECKPOINT (Task 4, checkpoint:human-verify, gate="blocking-human"): Tasks 1-3 of 07-04 are complete and committed (`7ce312e`, `b2aa008`, `f1c327e`). Task 4 — the gated dense-few-shot lift sweep (NL-FEW-02) — requires a real `NL2SPARQL_API_KEY` (OpenAI) and a first-time `sentence-transformers`/`torch` install that the agent must never hold or request. The credentialed human must: (1) confirm `sentence-transformers`/`torch` package legitimacy on pypi.org before `uv sync --extra dense`; (2) run a live model-resolution check confirming `gpt-5`/`gpt-5-mini` bare aliases resolve (a 404 is a human decision point — never a silent substitution); (3) follow README.md §7 to run each (model, arm) combination N>=5 times, running each model's zero arm freshly in the SAME session as its dense arm; (4) on the gpt-4o-mini anchor, compute `paired_mcnemar`/`bootstrap_paired_delta` over the same 25 cases — the lift PASSES iff McNemar p<0.05 (report b, c, p, delta+CI); report the gpt-5-mini/gpt-5 tiers + dense-vs-bm25 UNFILTERED as exploratory, and per-(model,arm) stddev as a secondary noise-floor only; (5) report BOTH the default-install(bm25) and dense-install(dense) numbers; (6) manually fold the dense/bm25 entries into baseline.json with D-04 provenance (embedding_model/embedding_revision/sentence_transformers_version) + resolved model ids; (7) confirm `pytest tests/w3c/test_coverage_gate.py -q` passes (>=96.4%). Resume signal: "approved" with the full result set (see 07-04-PLAN.md Task 4 for the exact acceptance criteria), or a description of what blocked the sweep. No 07-04-SUMMARY.md exists yet — the plan is not complete until this checkpoint resolves.
 - [Phase 06.2-04] AWAITING HUMAN CHECKPOINT (Task 2, checkpoint:human-action): the credentialed live `openai-gpt4o-mini` sweep needs a real `NL2SPARQL_API_KEY` the agent must never hold. Human runs `RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini'); write_report(r); print('pass_rate', r.pass_rate); [print(c.name, c.passed) for c in r.cases]"` + `git log -1 --format=%h -- tests/nl2sparql/eval/corpus.yml`, confirms headroom (pass_rate < 1.0), and pastes back aggregate + per-case verdicts + corpus_sha. Then the continuation folds them into baseline.json (Task 3 fold-in) and writes 06.2-04-SUMMARY.md.
 - [Phase 5] WP-UI-CAT / WP-UI-TENANT / WP-UI-CORR are backend-blocked (need async introspect, tenant catalogue, translator source-map).
 - [Gate] W3C DAWG query-eval coverage must stay ≥ 96.4% throughout the NL workstream (Phases 6–7).
@@ -132,6 +137,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T18:28:56Z
-Stopped at: 07-04-PLAN.md Tasks 1-3 complete (commits 7ce312e, b2aa008, f1c327e); Task 4 is a blocking-human checkpoint (the credentialed dense-few-shot lift sweep) — see Blockers/Concerns for the exact resume protocol.
-Resume file: .planning/phases/07-nl-sparql-dense-few-shot-retrieval/07-04-PLAN.md
+Last session: 2026-07-21T23:14:02.011Z
+Stopped at: Completed 07-04-PLAN.md (NL-FEW-02 closed via documented-null path)
+Resume file: None
