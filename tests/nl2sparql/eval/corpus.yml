@@ -271,3 +271,65 @@ cases:
         ?a a :Person ; :knows ?b .
         ?b :name ?bname ; :placed ?o .
       }
+
+  # =====================================================================
+  # Difficulty class: negative / unsupported (honest refusal)
+  # =====================================================================
+  # These carry `expect_refusal: true` and are scored by the INVERTED judge
+  # (runner._judge): a negative PASSES iff the pipeline produced NO
+  # transpilable AQL (outcome.aql == ""). `expected` here is a human-readable
+  # RATIONALE, NOT gold SPARQL — the CorpusCase load-time gate skips the
+  # gold-parse for refusal cases (Plan 01), so it need not be valid SPARQL.
+  # Each `scripted:` response is authored to trigger a GENUINE transpiler
+  # rejection so the refusal is real, never a lucky miss:
+  #   * neg-absent-invoice-class / neg-unexpressible-salary-relation use a
+  #     deliberately MALFORMED / unparseable SPARQL string — the drift-proof
+  #     PRIMARY trigger (SparqlParseError -> outcome.aql == ""), invariant to
+  #     any future transpiler capability.
+  #   * neg-inverse-arm-negated-path uses the ONE genuinely-unsupported
+  #     property-path form, the inverse-arm negated path `!(^:knows)`
+  #     (stable rejection message "negated property paths with inverse arms").
+  # NB: an unknown-IRI-only query is NOT a valid refusal trigger — the
+  # SchemaResolver falls back to a default collection with a WARNING, so it
+  # would still transpile and the case would FALSE-pass. Likewise, supported
+  # path operators (`+`/`*`/`|`/forward-`!:p`) transpile and are Plan 02
+  # positives, never refusal triggers.
+
+  - name: neg-absent-invoice-class
+    # Absent-term question: the ontology models Person/Order, not invoices.
+    # Drift-proof trigger — the scripted response is syntactically MALFORMED
+    # (missing closing brace) so it raises SparqlParseError -> empty AQL.
+    nl: "List every invoice along with its total amount."
+    expect_refusal: true
+    expected: |
+      Unanswerable: the ontology has no :Invoice class or amount property, so the
+      honest response is a refusal — not a fabricated query over invented terms.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?inv ?total WHERE { ?inv a :Invoice ; :totalAmount ?total
+
+  - name: neg-unexpressible-salary-relation
+    # The schema cannot express employment/salary/departments at all. Drift-proof
+    # trigger — the scripted response is plain prose (not SPARQL), so it fails to
+    # parse (SparqlParseError) and the pipeline surfaces the refusal as empty AQL.
+    nl: "Which employee earns the highest salary in each department?"
+    expect_refusal: true
+    expected: |
+      Unanswerable: the schema models people, orders and acquaintance links — not
+      employment, salary or departments — so there is no honest query for this.
+    scripted: |
+      This question cannot be expressed as a query over the given ontology.
+
+  - name: neg-inverse-arm-negated-path
+    # Verified-unsupported construct: the inverse-arm negated path `!(^:knows)`
+    # is the ONE property-path form the deterministic transpiler rejects (stable
+    # message "negated property paths with inverse arms"), so it yields empty AQL.
+    nl: "For each person, list everything related to them except who they are known by."
+    expect_refusal: true
+    expected: |
+      Unsupported: the inverse-arm negated path `!(^:knows)` is explicitly rejected
+      by the transpiler ("negated property paths with inverse arms"); the honest
+      response is a refusal rather than silently-wrong AQL.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE { ?s !(^:knows) ?o }
