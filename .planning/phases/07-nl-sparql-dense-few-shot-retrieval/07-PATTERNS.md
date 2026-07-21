@@ -19,7 +19,7 @@
 | `tests/nl2sparql/eval/test_fewshot_bank_disjoint.py` (D-02) | arango-sparql-py | test (committed invariant) | batch | `tests/nl2sparql/eval/test_gold_transpilable.py` | exact |
 | `tests/nl2sparql/eval/configs.yml` — new model entries + `few_shot:` block | arango-sparql-py | config | request-response | existing `configs.yml` (same file, additive entries) | exact |
 | `tests/nl2sparql/eval/runner.py` — additive `few_shot` config read + `BaselineConfig` extension | arango-sparql-py | service (harness) | batch | same file's existing `_client_for` / `BaselineConfig` | exact |
-| `tests/test_engine_adapter.py::test_few_shot_index_is_none` → replace | arango-sparql-py | test | request-response | same test class (`TestSparqlAdapterSeams`), same file | exact |
+| `tests/nl2sparql/test_engine_adapter.py::test_few_shot_index_is_none` → replace | arango-sparql-py | test | request-response | same test class (`TestSparqlAdapterSeams`), same file | exact |
 | `arango_query_core/tests/test_nl_fewshot.py` — extend with `DenseRetriever` unit tests | arango-query-core | test | transform | same file's existing BM25/no-op tests | exact |
 | `tests/nl2sparql/eval/baseline.json` — dense/BM25 baseline artifact entries | arango-sparql-py | config (provenance artifact) | batch | existing `openai-gpt4o-mini` entry, same file | exact |
 
@@ -103,7 +103,7 @@ Extend this exact try/except-log-degrade shape into the 3-way `mode` dispatch (`
 from functools import lru_cache
 
 @lru_cache(maxsize=4)
-def _cached_few_shot_index(bank_path: str, mode: str) -> "FewShotIndex":
+def cached_few_shot_index(bank_path: str, mode: str) -> "FewShotIndex":
     return FewShotIndex.from_corpus_files([Path(bank_path)], mode=mode)
 ```
 No precedent exists in either repo for this exact shape; it is new infrastructure, not a mirrored pattern. Place it in `fewshot.py` (engine-side, per RESEARCH's Architectural Responsibility Map — the cache is a property of "how you build an index cheaply," which is engine concern, not adapter concern) so both `SparqlAdapter` and Cypher's future adapter share one cache. `SparqlAdapter.few_shot_index()` in `engine_adapter.py` calls this cached function rather than constructing `FewShotIndex` inline — see next section.
@@ -145,7 +145,7 @@ Add a third constructor param (e.g. `few_shot_index: FewShotIndex | None = None`
 def few_shot_index(self) -> FewShotIndex | None:  # seam 2
     if self._few_shot_index is not None:      # explicit injection (tests, eval sweep)
         return self._few_shot_index
-    return _cached_few_shot_index(str(BANK_PATH), self._few_shot_mode)
+    return cached_few_shot_index(str(BANK_PATH), self._few_shot_mode)
 ```
 (per RESEARCH Pattern 2) — explicit constructor injection takes precedence over the memoized module-scope default, exactly the shape needed so `test_engine_adapter.py` and the eval sweep can inject a fake/scripted index without touching the real bank file.
 
@@ -311,7 +311,7 @@ Add sibling blocks for `gpt-5-mini` / `gpt-5`, and for each model × arm (zero/d
 judge_name = config.get("judge", "canonical")
 max_repairs = config.get("max_repairs", 2)
 ```
-Add `few_shot_cfg = config.get("few_shot", {})`, `few_shot_mode = few_shot_cfg.get("mode", "zero")`, `few_shot_k = few_shot_cfg.get("k", 0)` following this EXACT `.get(key, default)` idiom — no new config-parsing abstraction. Thread `few_shot_mode`/`few_shot_k` into the `NlPipeline` construction inside the `for case in corpus["cases"]:` loop (lines 356-366) by either (a) constructing/passing a `SparqlAdapter(..., few_shot_index=...)` explicitly when `few_shot_mode != "zero"`, using the SAME `_cached_few_shot_index` module-scope cache the production `SparqlAdapter.few_shot_index()` default uses (critical — Pitfall 1 applies identically inside this loop, which runs 25× per sweep arm), or (b) exposing a `NlPipeline(..., few_shot_k=..., few_shot_index=...)` passthrough. Either way, **`run()`'s signature (`run(config_name: str) -> Report`) and `Report`'s shape stay byte-identical** per RESEARCH.md's Pitfall 5 recommendation — only the internal per-case construction gains new optional plumbing.
+Add `few_shot_cfg = config.get("few_shot", {})`, `few_shot_mode = few_shot_cfg.get("mode", "zero")`, `few_shot_k = few_shot_cfg.get("k", 0)` following this EXACT `.get(key, default)` idiom — no new config-parsing abstraction. Thread `few_shot_mode`/`few_shot_k` into the `NlPipeline` construction inside the `for case in corpus["cases"]:` loop (lines 356-366) by either (a) constructing/passing a `SparqlAdapter(..., few_shot_index=...)` explicitly when `few_shot_mode != "zero"`, using the SAME `cached_few_shot_index` module-scope cache the production `SparqlAdapter.few_shot_index()` default uses (critical — Pitfall 1 applies identically inside this loop, which runs 25× per sweep arm), or (b) exposing a `NlPipeline(..., few_shot_k=..., few_shot_index=...)` passthrough. Either way, **`run()`'s signature (`run(config_name: str) -> Report`) and `Report`'s shape stay byte-identical** per RESEARCH.md's Pitfall 5 recommendation — only the internal per-case construction gains new optional plumbing.
 
 **`BaselineConfig` extension** (lines 110-125) — the model already has the three provenance fields Phase 7 needs (`model`, `temperature`, `corpus_sha`); D-04 asks for embedding-model id + revision + sentence-transformers version alongside these. Add optional fields the same way:
 ```python
@@ -350,7 +350,7 @@ New sibling entries (`openai-gpt4o-mini-dense`, `openai-gpt5-mini-dense`, etc.) 
 
 ---
 
-### `tests/test_engine_adapter.py::test_few_shot_index_is_none` → replace
+### `tests/nl2sparql/test_engine_adapter.py::test_few_shot_index_is_none` → replace
 
 **Analog:** the exact test being replaced (lines 191-193, class `TestSparqlAdapterSeams`):
 ```python
@@ -473,7 +473,7 @@ The docstring framing ("Authoring guard... fails CI at authoring time rather tha
 
 | File | Role | Data Flow | Reason |
 |------|------|-----------|--------|
-| Module-scope `_cached_few_shot_index` (`lru_cache`) in `fewshot.py` | utility | CRUD (cache) | Neither repo has an existing memoization-of-a-model-backed-index pattern; this is genuinely new infrastructure required to avoid Pitfall 1 (see RESEARCH.md Pattern 2). Planner should treat the `lru_cache` code sample in RESEARCH.md as the primary reference since no in-repo precedent exists. |
+| Module-scope `cached_few_shot_index` (`lru_cache`) in `fewshot.py` | utility | CRUD (cache) | Neither repo has an existing memoization-of-a-model-backed-index pattern; this is genuinely new infrastructure required to avoid Pitfall 1 (see RESEARCH.md Pattern 2). Planner should treat the `lru_cache` code sample in RESEARCH.md as the primary reference since no in-repo precedent exists. |
 | New (gated) lift-sweep orchestration script (`lift_sweep.py` or documented `python -c` invocation) | script | batch | 06.2's live-baseline precedent is a documented one-liner `python -c "from tests.nl2sparql.eval.runner import run, write_report; ..."` (README.md line 84) rather than a standalone script file — RESEARCH.md's Recommended Project Structure flags this as either a new script OR an extended README section; no existing STANDALONE script file exists to mirror in either repo, only the README-embedded one-liner precedent. |
 | `_is_reasoning_model` / gpt-5 pricing rows in `cost.py` | utility/config | transform | `cost.py`'s `_PRICING_PER_1K_TOKENS` table (RESEARCH.md Pitfall 4) has no existing per-model-family branching precedent to mirror beyond "add a new dict key" — genuinely new data, not a new pattern; low risk, mechanical addition. |
 
