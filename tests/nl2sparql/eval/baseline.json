@@ -1,17 +1,36 @@
 {
-  "generated_at": "2026-07-15T23:05:00Z",
+  "generated_at": "2026-07-21T02:16:32Z",
   "configs": {
     "scripted": {
-      "pass_rate": 0.8333333333333334,
-      "passed": 5,
-      "total": 6,
+      "pass_rate": 0.96,
+      "passed": 24,
+      "total": 25,
       "cases": {
         "people-with-names": true,
         "person-named-alice": true,
         "people-aged-30": true,
         "distinct-names-limit": true,
         "orders-list": true,
-        "deliberate-near-miss": false
+        "deliberate-near-miss": false,
+        "optional-email": true,
+        "optional-age": true,
+        "optional-email-filtered": true,
+        "required-email-contrast": true,
+        "count-all-people": true,
+        "orders-per-person": true,
+        "average-age": true,
+        "path-friend-names-sequence": true,
+        "path-known-by-inverse": true,
+        "path-reachable-transitive-plus": true,
+        "path-reachable-transitive-star": true,
+        "path-knows-or-placed-alternative": true,
+        "path-not-knows-negated": true,
+        "path-not-knows-or-placed-negated": true,
+        "multihop-friends-orders": true,
+        "multihop-friend-order-with-name": true,
+        "neg-absent-invoice-class": true,
+        "neg-unexpressible-salary-relation": true,
+        "neg-inverse-arm-negated-path": true
       }
     }
   }
