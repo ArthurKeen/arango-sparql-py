@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-20T23:19:39.192Z"
-last_activity: 2026-07-20 -- Phase 06.2 planning complete
+last_updated: "2026-07-20T23:59:00.000Z"
+last_activity: 2026-07-20 -- Completed 06.2-01-PLAN.md (harness capabilities)
 progress:
   total_phases: 10
   completed_phases: 2
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 06.2 — NL→SPARQL harder corpus + genuine live-model baseline
+**Current focus:** Phase 06.2 — nl-to-sparql-harder-corpus-and-genuine-live-model-baseline
 
 ## Current Position
 
-Phase: 06.2
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-20 -- Phase 06.2 planning complete
+Phase: 06.2 (nl-to-sparql-harder-corpus-and-genuine-live-model-baseline) — EXECUTING
+Plan: 2 of 4
+Status: Executing Phase 06.2 (Plan 01 complete)
+Last activity: 2026-07-20 -- Completed 06.2-01-PLAN.md (harness capabilities)
 
 Progress: [██████████] 100%
 
@@ -55,6 +55,7 @@ Progress: [██████████] 100%
 | Phase 06 P01 | 6min | 2 tasks | 3 files |
 | Phase 06 P02 | 8min | 2 tasks | 3 files |
 | Phase 06 P03 | 6min | 2 tasks | 1 files |
+| Phase 06.2 P01 | ~10min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -78,6 +79,10 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06]: CI wiring (.github/workflows/ci.yml new eval job) deferred — out of 06-02's file scope
 - [Phase 06]: CI eval job installs .[dev,nl,service] and runs RUN_EVAL=1 pytest -m eval; existing test job marker exclusion left unchanged
 - [Phase 06]: W3C DAWG query-eval coverage confirmed unchanged at 96.4% (244/253); zero transpiler files touched by Phase 6
+- [Phase 06.2-01]: `expect_refusal` pinned as the negatives marker key across corpus data, CorpusCase field, and the _judge branch
+- [Phase 06.2-01]: gold-must-parse validator skips refusal cases (expected holds a human rationale, not gold SPARQL); SparqlParseError re-raised as pydantic ValueError
+- [Phase 06.2-01]: _load_corpus validates every case then returns the raw dict unchanged (a load-time gate, not a data-flow rewrite)
+- [Phase 06.2-01]: BaselineConfig carries optional model/temperature/corpus_sha so Plan 04 folds a live baseline in without re-touching runner.py
 
 ### Pending Todos
 
@@ -99,6 +104,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-15T23:14:56.224Z
-Stopped at: Completed 06-03-PLAN.md — Phase 06 all plans complete, ready for verification
+Last session: 2026-07-20T23:59:00.000Z
+Stopped at: Completed 06.2-01-PLAN.md — harness capabilities landed; Plan 02 next (positive difficulty classes)
 Resume file: None
