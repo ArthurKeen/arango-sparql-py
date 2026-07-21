@@ -219,7 +219,7 @@ examples:
         ?c :name ?cname .
       }
 
-  - question: "For each person, count how many orders were placed by the people they know."
+  - question: "Per person, what is the total order count across everyone in their acquaintance circle?"
     query: |
       PREFIX : <http://ex.org/>
       SELECT ?a (COUNT(?o) AS ?c) WHERE {
