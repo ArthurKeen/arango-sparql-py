@@ -32,6 +32,41 @@
         "neg-unexpressible-salary-relation": true,
         "neg-inverse-arm-negated-path": true
       }
+    },
+    "openai-gpt4o-mini": {
+      "pass_rate": 0.32,
+      "passed": 8,
+      "total": 25,
+      "cases": {
+        "people-with-names": true,
+        "person-named-alice": false,
+        "people-aged-30": false,
+        "distinct-names-limit": true,
+        "orders-list": true,
+        "deliberate-near-miss": false,
+        "optional-email": false,
+        "optional-age": true,
+        "optional-email-filtered": true,
+        "required-email-contrast": false,
+        "count-all-people": true,
+        "orders-per-person": false,
+        "average-age": true,
+        "path-friend-names-sequence": false,
+        "path-known-by-inverse": false,
+        "path-reachable-transitive-plus": false,
+        "path-reachable-transitive-star": false,
+        "path-knows-or-placed-alternative": false,
+        "path-not-knows-negated": false,
+        "path-not-knows-or-placed-negated": false,
+        "multihop-friends-orders": true,
+        "multihop-friend-order-with-name": false,
+        "neg-absent-invoice-class": false,
+        "neg-unexpressible-salary-relation": false,
+        "neg-inverse-arm-negated-path": false
+      },
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "corpus_sha": "d3d3806"
     }
   }
 }
