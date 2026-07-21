@@ -205,8 +205,19 @@ Plans:
   3. A dense few-shot eval run shows a **positive pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness
   4. W3C DAWG query-eval coverage remains ≥ 96.4% (no transpiler regression)
 
-**Plans**: TBD
-**Status**: Not started
+**Plans**: 4 plans
+**Status**: Planned
+
+Plans:
+**Wave 1** *(parallel — no file overlap)*
+- [ ] 07-01-PLAN.md — Engine-side DenseRetriever + mode= dispatch + .retriever property + memoized index factory [NL-FEW-01]
+- [ ] 07-02-PLAN.md — Curated disjoint few-shot bank (fewshot_bank.yml) + D-02 two-way disjointness gate [NL-FEW-01]
+
+**Wave 2** *(blocked on Wave 1)*
+- [ ] 07-03-PLAN.md — Flip SparqlAdapter.few_shot_index() -> populated index (mode=auto) + NlPipeline few_shot_k=3 + SC2 engine-prompt gate [NL-FEW-01]
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02]
 
 ### Phase 8: Public release readiness
 
