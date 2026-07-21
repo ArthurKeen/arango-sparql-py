@@ -2,15 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: executing
-last_updated: "2026-07-21T02:19:01.623Z"
+status: ready_to_plan
+last_updated: 2026-07-21T03:41:07.383Z
 last_activity: 2026-07-21
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 10
-  completed_plans: 9
+  completed_plans: 10
   percent: 20
+stopped_at: Phase 06.2 complete (4/4) — ready to discuss Phase 7
 ---
 
 # Project State
@@ -20,13 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 06.2 — nl-to-sparql-harder-corpus-and-genuine-live-model-baseline
+**Current focus:** Phase 7 — nl→sparql dense few shot retrieval
 
 ## Current Position
 
-Phase: 06.2 (nl-to-sparql-harder-corpus-and-genuine-live-model-baseline) — EXECUTING
-Plan: 4 of 4
-Status: PAUSED at checkpoint:human-action (Task 2 — credentialed live sweep). Autonomous tasks (README runbook, no-network structural test) done + committed; awaiting human-run live numbers to fold into baseline.json.
+Phase: 7
+Plan: Not started
+Status: Ready to plan
 Last activity: 2026-07-21
 
 Progress: [█████████░] 90%
@@ -35,7 +36,7 @@ Progress: [█████████░] 90%
 
 **Velocity:**
 
-- Total plans completed: 3 (Phases 1–3 shipped pre-GSD, outside GSD tracking)
+- Total plans completed: 7 (Phases 1–3 shipped pre-GSD, outside GSD tracking)
 - Average duration: n/a
 - Total execution time: n/a
 
@@ -45,6 +46,7 @@ Progress: [█████████░] 90%
 |-------|-------|-------|----------|
 | 1–3 | shipped pre-GSD | - | - |
 | 06 | 3 | - | - |
+| 06.2 | 4 | - | - |
 
 **Recent Trend:**
 
