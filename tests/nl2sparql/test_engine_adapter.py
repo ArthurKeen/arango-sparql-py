@@ -20,6 +20,7 @@ import json
 
 import pytest
 import yaml
+from arango_query_core.nl import FewShotIndex
 from arango_query_core.nl.engine import NLQueryEngine
 from arango_query_core.nl.providers import LLMProvider
 from arango_query_core.nl.seams import QueryLanguageAdapter
@@ -188,9 +189,11 @@ class TestSparqlAdapterSeams:
         verdict = adapter.guardrails(GOOD_QUERY, {})
         assert verdict.allowed is True
 
-    def test_few_shot_index_is_none(self) -> None:
+    def test_few_shot_index_returns_populated_index(self) -> None:
         adapter = SparqlAdapter(resolver=SchemaResolver.from_turtle(ONTOLOGY), ontology_ttl=ONTOLOGY)
-        assert adapter.few_shot_index() is None
+        index = adapter.few_shot_index()
+        assert index is not None
+        assert isinstance(index, FewShotIndex)
 
 
 # ---------------------------------------------------------------------------
@@ -266,11 +269,19 @@ class TestVerdictReproduction:
             engine = NLQueryEngine(provider=bridge, adapter=adapter, few_shot_k=0, max_retries=2)
 
             res = engine.generate(case["nl"], schema_context="")
-            expected_canonical = _canonical(case["expected"])
-            actual_canonical = _canonical(res.query) if res.query else None
-            engine_pass = bool(
-                res.ok and expected_canonical is not None and expected_canonical == actual_canonical
-            )
+            if case.get("expect_refusal"):
+                # Mirrors tests/nl2sparql/eval/runner.py::_judge's inverted
+                # refusal branch (added in 06.2, after this test was first
+                # written): a negative case PASSES iff the engine produced NO
+                # validated/transpilable query — never compare against the
+                # human-rationale ``expected`` prose as if it were SPARQL.
+                engine_pass = not res.ok
+            else:
+                expected_canonical = _canonical(case["expected"])
+                actual_canonical = _canonical(res.query) if res.query else None
+                engine_pass = bool(
+                    res.ok and expected_canonical is not None and expected_canonical == actual_canonical
+                )
             passed += int(engine_pass)
 
             assert engine_pass == bool(baseline[name]), (
@@ -278,4 +289,9 @@ class TestVerdictReproduction:
             )
 
         pass_rate = passed / len(corpus["cases"])
-        assert pass_rate == pytest.approx(0.8333333333333334, abs=1e-9)
+        # Compare against the CURRENT scripted baseline's own pass-rate (derived
+        # from ``baseline.json``, not a hardcoded number) so this assertion never
+        # goes stale again as the corpus grows — the per-case loop above is the
+        # real regression gate; this is just the aggregate sanity check.
+        expected_pass_rate = sum(1 for v in baseline.values() if v) / len(baseline)
+        assert pass_rate == pytest.approx(expected_pass_rate, abs=1e-9)
