@@ -62,3 +62,35 @@ def test_scripted_pass_rate_meets_baseline() -> None:
             f"new case {name!r} must pass before it's added to baseline.json "
             f"(got {live_by_name.get(name)!r})"
         )
+
+
+@pytest.mark.skipif(not _RUN_EVAL, reason="set RUN_EVAL=1 to run the NL eval gate")
+def test_scripted_headroom_invariant() -> None:
+    """Scripted headroom SENTINEL + the deliberate-near-miss per-case guard.
+
+    The `0.0 < pass_rate < 1.0` bound is a SENTINEL only: it proves the judge
+    CAN fail something on the no-network, key-free path — it is NOT a
+    difficulty/headroom measure (one near-miss in a ~25-case corpus is ≈ 0.96,
+    so the aggregate bound stays weak as the corpus grows). Genuine headroom is
+    a LIVE-config property (Plan 04).
+
+    The REAL guard is the per-case assertion that `deliberate-near-miss` reports
+    `passed is False` (AI-SPEC SC2): it fails if the near-miss is removed or
+    flipped, so the sentinel cannot be trivially "fixed" by adding passing
+    cases — do NOT delete the near-miss to make this go green.
+    """
+    report = run("scripted")
+
+    # SENTINEL: the judge must be able to both pass and fail something.
+    assert 0.0 < report.pass_rate < 1.0, (
+        f"scripted pass_rate must stay strictly in (0, 1) as a headroom "
+        f"sentinel; got {report.pass_rate!r}"
+    )
+
+    # REAL GUARD (AI-SPEC SC2): the deliberate near-miss must still fail.
+    live_by_name = {c.name: c.passed for c in report.cases}
+    assert live_by_name.get("deliberate-near-miss") is False, (
+        "deliberate-near-miss must report passed=False — it is the real "
+        "regression guard keeping baseline.json non-trivial (AI-SPEC SC2); "
+        f"got {live_by_name.get('deliberate-near-miss')!r}"
+    )
