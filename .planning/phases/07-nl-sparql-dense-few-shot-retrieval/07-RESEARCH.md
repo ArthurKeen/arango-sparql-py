@@ -573,10 +573,15 @@ if not _is_reasoning_model(self.model):
 | A4 | The bare aliases `gpt-5` and `gpt-5-mini` currently resolve to a live, working model (not yet fully retired) | Common Pitfalls (Pitfall 3) / Open Questions | If either alias 404s, D-08's matrix cannot run as literally specified and requires a human substitution decision before the sweep |
 | A5 | `huggingface_hub` need not be pinned directly (transitive via `sentence-transformers` is sufficient) | Standard Stack (Supporting) | Low risk — if a specific `HF_HUB_OFFLINE` behavior requires a minimum `huggingface_hub` version, this would surface immediately as an `ImportError`/`TypeError` on first use, not silently |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `SparqlAdapter.few_shot_index()`'s PRODUCTION path request `mode="dense"`
    (hard-fail without torch) or `mode="auto"` (silently degrade)?**
+   - RESOLVED: The PRODUCTION seam defaults to `mode="auto"` (graceful dense->BM25->no-op)
+     per D-05 — wired in 07-03 Task 2 (`SparqlAdapter.few_shot_index` / `few_shot_mode="auto"`).
+     The explicit `mode="dense"` hard-raise is reserved for the 07-04 eval sweep; the
+     `.[dense]`-required-in-production caveat is documented in the `few_shot_index()` docstring
+     (07-03 WARNING-3 note).
    - What we know: D-05 defines the two-tier chain at the `from_corpus_files()` API
      level; D-06 requires the EVAL SWEEP specifically to assert dense-mode via a hard
      construct-time check.
@@ -593,6 +598,9 @@ if not _is_reasoning_model(self.model):
 
 2. **Does extending `configs.yml`'s schema with a `few_shot:` block violate the
    "harness runner contract... not in scope" boundary from CONTEXT.md?**
+   - RESOLVED: No — 07-04 adds an ADDITIVE optional `few_shot: {mode, k}` config block plus a
+     small additive read in `runner.py`; `run(config_name) -> Report` stays byte-identical and
+     `scripted` stays the CI default, so the runner contract itself is unchanged (07-04 Task 2).
    - What we know: some extension is structurally unavoidable (Pitfall 5); the phase
      BRIEF explicitly praises the harness as "already model-agnostic... a new model = a
      new config block, no runner surgery" — implying config-block additions are
@@ -607,6 +615,10 @@ if not _is_reasoning_model(self.model):
 
 3. **What exact model snapshot do the bare `gpt-5`/`gpt-5-mini` aliases resolve to as of
    the actual sweep-execution date** (which may be later than this research date)?
+   - RESOLVED: Deferred to run time by design — the 07-04 gated sweep checkpoint (Task 4) runs a
+     LIVE model-resolution check (`GET /v1/models` or a 1-token completion) BEFORE the sweep and
+     records the resolved snapshot id in the D-04 provenance; a 404 is a human decision point,
+     never a silent substitution.
    - What we know: as of 2026-07-21, dated 2025-08-07 snapshots are mid-deprecation
      (shutdown 2026-12-11); `gpt-5.4-mini`/`gpt-5.5` are the current named successors; the
      bare aliases were not found on the deprecation list.
@@ -618,6 +630,8 @@ if not _is_reasoning_model(self.model):
      into the provenance artifact — exactly as `corpus_sha` is captured today.
 
 4. **Bank size / per-difficulty-class balance** (left to discretion by CONTEXT.md).
+   - RESOLVED: Bank sized at ~18-24 examples (~3-5 per positive difficulty class) — authored in
+     07-02 Task 1; the two-way disjointness + ontology-parity gate is 07-02 Task 2.
    - What we know: the eval corpus has 25 cases across ~6 pattern classes (basic BGP,
      OPTIONAL, aggregation, property-path/multi-hop, negatives). Only POSITIVE patterns
      belong in the bank (a retrieved "refusal" example has no gold query to demonstrate).
