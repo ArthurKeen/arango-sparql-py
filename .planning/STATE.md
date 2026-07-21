@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-21T16:54:45.697Z"
-last_activity: 2026-07-21 -- Phase 07 planning complete
+last_updated: "2026-07-21T17:48:24.982Z"
+last_activity: 2026-07-21
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 14
-  completed_plans: 10
+  completed_plans: 11
   percent: 30
 ---
 
@@ -20,16 +20,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 7 — nl→sparql dense few shot retrieval
+**Current focus:** Phase 07 — nl-sparql-dense-few-shot-retrieval
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
+Phase: 07 (nl-sparql-dense-few-shot-retrieval) — EXECUTING
+Plan: 2 of 4
 Status: Ready to execute
-Last activity: 2026-07-21 -- Phase 07 planning complete
+Last activity: 2026-07-21
 
-Progress: [█████████░] 90%
+Progress: [████████░░] 79%
 
 ## Performance Metrics
 
@@ -59,6 +59,7 @@ Progress: [█████████░] 90%
 | Phase 06.2 P01 | ~10min | 3 tasks | 2 files |
 | Phase 06.2 P02 | ~15min | 3 tasks | 2 files |
 | Phase 06.2 P03 | 10min | 3 tasks | 3 files |
+| Phase 07 P01 | 7min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -94,6 +95,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06.2]: [Phase 06.2-03]: 0<pass_rate<1 is a SENTINEL; real guard is per-case deliberate-near-miss passed is False (AI-SPEC SC2)
 - [Phase 06.2-04]: README.md live-baseline runbook documents the key-gated sweep (NL2SPARQL_API_KEY, not OPENAI_API_KEY — Pitfall 1), corpus_sha capture, and the MANUAL human-reviewed fold-in into baseline.json (never auto-regenerated in CI — Pitfall 2)
 - [Phase 06.2-04]: no-network structural test validates the openai-gpt4o-mini companion via BaselineConfig (model/temperature==0.1/corpus_sha + 0<pass_rate<1 headroom) and SKIPS key-free until the entry is folded in; a static guard asserts the CI gate only ever runs("scripted")
+- [Phase 07-01]: DenseRetriever pinned to sentence-transformers/all-MiniLM-L6-v2 @ 7dbbc90392e2f80f3d3c277d6e90027e55de9125 (verified present on huggingface.co, matched RESEARCH candidate exactly)
+- [Phase 07-01]: cached_few_shot_index() lives engine-side in arango_query_core.nl.fewshot (not adapter-side) so Cypher's future adapter shares the same memoized model cache
+- [Phase 07-01]: arango-query-core bumped to commit a5a42cdc89184ebbc9896198071a4ea8f0b7aa20 (pushed to origin/main) — Plan 03 must bump arango-sparql-py's pyproject.toml git pin to this SHA
 
 ### Pending Todos
 
@@ -116,6 +120,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T15:14:39.273Z
-Stopped at: Phase 7 context gathered
-Resume file: .planning/phases/07-nl-sparql-dense-few-shot-retrieval/07-CONTEXT.md
+Last session: 2026-07-21T17:48:24.977Z
+Stopped at: Completed 07-01-PLAN.md
+Resume file: None
