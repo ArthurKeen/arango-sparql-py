@@ -316,9 +316,7 @@ def get_default_client() -> LLMClient | None:
        sibling Cypher service enables this pipeline without duplicate keys.
     4. Returns ``None`` when no usable API key can be resolved.
     """
-    provider = (
-        os.getenv("NL2SPARQL_PROVIDER") or os.getenv("LLM_PROVIDER") or ""
-    ).strip().lower()
+    provider = (os.getenv("NL2SPARQL_PROVIDER") or os.getenv("LLM_PROVIDER") or "").strip().lower()
     nl_key = os.getenv("NL2SPARQL_API_KEY", "")
     openai_key = os.getenv("OPENAI_API_KEY", "")
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")

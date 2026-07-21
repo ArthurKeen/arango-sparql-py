@@ -36,8 +36,7 @@ def test_scripted_pass_rate_meets_baseline() -> None:
 
     # Aggregate regression gate.
     assert report.pass_rate >= baseline["pass_rate"] - 1e-9, (
-        f"scripted pass_rate regressed: live={report.pass_rate!r} "
-        f"baseline={baseline['pass_rate']!r}"
+        f"scripted pass_rate regressed: live={report.pass_rate!r} baseline={baseline['pass_rate']!r}"
     )
 
     # Per-case regression gate: any case that passed at baseline time must
@@ -61,8 +60,7 @@ def test_scripted_pass_rate_meets_baseline() -> None:
     new_names = corpus_names - baseline_names
     for name in new_names:
         assert live_by_name.get(name) is True, (
-            f"new case {name!r} must pass before it's added to baseline.json "
-            f"(got {live_by_name.get(name)!r})"
+            f"new case {name!r} must pass before it's added to baseline.json (got {live_by_name.get(name)!r})"
         )
 
 
@@ -85,8 +83,7 @@ def test_scripted_headroom_invariant() -> None:
 
     # SENTINEL: the judge must be able to both pass and fail something.
     assert 0.0 < report.pass_rate < 1.0, (
-        f"scripted pass_rate must stay strictly in (0, 1) as a headroom "
-        f"sentinel; got {report.pass_rate!r}"
+        f"scripted pass_rate must stay strictly in (0, 1) as a headroom sentinel; got {report.pass_rate!r}"
     )
 
     # REAL GUARD (AI-SPEC SC2): the deliberate near-miss must still fail.
@@ -148,6 +145,40 @@ def test_live_baseline_companion_structural() -> None:
         f"missing={scripted_cases - set(cfg.cases)!r} "
         f"extra={set(cfg.cases) - scripted_cases!r}"
     )
+
+
+@pytest.mark.skipif(not _RUN_EVAL, reason="set RUN_EVAL=1 to run the NL eval gate")
+def test_dense_baseline_companion_structural() -> None:
+    """No-network structural validation of a folded-in dense baseline entry.
+
+    Mirrors `test_live_baseline_companion_structural` exactly, but for the
+    Phase 7 07-04 dense-mode companion(s) (e.g. `openai-gpt4o-mini-dense`).
+    This NEVER makes a network call: it only inspects the checked-in
+    `baseline.json`. The dense sweep is human-run (Task 4, blocking-human
+    checkpoint) and folded in later via a MANUAL, human-reviewed step — so
+    before that fold-in no dense entry exists and this test SKIPS, keeping
+    the CI gate green and key-free. Once a dense companion IS present,
+    validate its shape via `BaselineConfig` and assert the D-04 provenance
+    fields are populated and genuine headroom (`0.0 < pass_rate < 1.0`) holds.
+    """
+    configs = json.loads((EVAL_DIR / "baseline.json").read_text())["configs"]
+    dense_names = [name for name in configs if name.endswith("-dense")]
+    if not dense_names:
+        pytest.skip(
+            "no dense baseline entry yet folded into baseline.json "
+            "(human-run Task 4 sweep + manual fold-in; see README.md §7)"
+        )
+
+    for name in dense_names:
+        entry = configs[name]
+        cfg = BaselineConfig(**entry)
+
+        assert cfg.embedding_model, f"{name}: missing embedding_model (D-04)"
+        assert cfg.embedding_revision, f"{name}: missing embedding_revision (D-04)"
+        assert cfg.sentence_transformers_version, f"{name}: missing sentence_transformers_version (D-04)"
+        assert 0.0 < cfg.pass_rate < 1.0, (
+            f"{name}: dense baseline must show genuine headroom; got {cfg.pass_rate!r}"
+        )
 
 
 @pytest.mark.skipif(not _RUN_EVAL, reason="set RUN_EVAL=1 to run the NL eval gate")

@@ -160,3 +160,181 @@ asserts `0.0 < pass_rate < 1.0` (headroom).
   The default test path never hits the network (rule 200).
 - **Never auto-regenerate `baseline.json` in CI** — the fold-in is always a
   reviewed human step.
+
+---
+
+## 7. The Phase 7 dense few-shot lift sweep
+
+This section documents the credentialed, human-run measurement behind
+NL-FEW-02: does dense few-shot retrieval produce a **statistically
+supported** pass-rate lift over a freshly-run zero-shot arm? It follows the
+exact discipline of §§3–6 above (key-gated, `scripted` stays the CI default,
+manual human-reviewed fold-in) with the additions the dense arm requires.
+
+### 7.1 Install (the only path that pulls torch)
+
+```bash
+uv sync --extra dense       # pulls sentence-transformers + torch (arango-query-core[dense])
+```
+
+Pre-warm the HF model once so subsequent runs can go fully offline (D-03
+reproducibility):
+
+```bash
+python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2', revision='7dbbc90392e2f80f3d3c277d6e90027e55de9125')"
+export HF_HUB_OFFLINE=1   # after the pre-warm, guarantee no further network calls
+```
+
+**Package legitimacy (blocking, before the first install):** confirm
+`sentence-transformers` (https://pypi.org/project/sentence-transformers/) and
+`torch` (https://pypi.org/project/torch/) are the legitimate, widely-used
+packages before running `uv sync --extra dense` — this is the cheap-insurance
+check the RESEARCH slopcheck audit calls for even though it returned clean.
+
+### 7.2 Design: 3-arm self-baselining, N >= 5 runs per arm
+
+Each model (`gpt-4o-mini` anchor, `gpt-5-mini`, `gpt-5`) runs its own
+zero/dense/bm25 arm set (D-07). Run **each arm N >= 5 times** (raised from an
+earlier N=3 draft — B1): a single run is not trustworthy since gpt-4o-mini
+is not bit-deterministic even at low temperature.
+
+Live model-resolution check, BEFORE running any part of the sweep (Open
+Question 3 / Pitfall 3 — bare `gpt-5`/`gpt-5-mini` aliases can shift which
+dated snapshot they resolve to):
+
+```bash
+python -c "
+import os, requests
+r = requests.get('https://api.openai.com/v1/models', headers={'Authorization': f\"Bearer {os.environ['NL2SPARQL_API_KEY']}\"})
+r.raise_for_status()
+ids = {m['id'] for m in r.json()['data']}
+for alias in ('gpt-4o-mini', 'gpt-5-mini', 'gpt-5'):
+    print(alias, 'resolves' if alias in ids else 'MISSING — human decision needed')
+"
+```
+
+A 404/missing alias is a **human decision point** (swap to
+`gpt-5.4-mini`/`gpt-5.5`) — never a silent substitution. Record whichever
+resolved snapshot id you observe into the provenance you fold into
+`baseline.json`.
+
+Per-arm invocation (mirrors §3's one-liner; export `NL2SPARQL_API_KEY` into
+this shell only):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "
+from tests.nl2sparql.eval.runner import run, write_report, paired_mcnemar, bootstrap_paired_delta
+r = run('openai-gpt4o-mini-dense')
+write_report(r)
+print('pass_rate', r.pass_rate)
+[print(c.name, c.passed) for c in r.cases]
+"
+```
+
+Repeat for every `(model, arm)` combination in `configs.yml`'s Phase 7 block,
+N >= 5 times each. **Run each model's zero arm freshly IN THE SAME SESSION as
+its dense arm** — the confirmatory comparison (below) is dense-vs-
+freshly-run-zero, never dense-vs-the-06.2-committed-number (M2).
+
+### 7.3 PRIMARY confirmatory test (pre-registered, THE pass/fail bar)
+
+On the **gpt-4o-mini anchor only**: compare the dense arm vs a freshly-run
+zero arm, **paired over the same 25 cases**, using the pure-Python helpers
+added in Task 2:
+
+```python
+from tests.nl2sparql.eval.runner import run, paired_mcnemar, bootstrap_paired_delta
+
+zero = run("openai-gpt4o-mini")          # freshly run THIS session, same snapshot
+dense = run("openai-gpt4o-mini-dense")
+
+zero_cases = {c.name: c.passed for c in zero.cases}
+dense_cases = {c.name: c.passed for c in dense.cases}
+
+b, c, p = paired_mcnemar(zero_cases, dense_cases)
+delta, lo, hi = bootstrap_paired_delta(zero_cases, dense_cases)
+print(f"b={b} c={c} p={p:.4f}  delta={delta:.3f} CI=({lo:.3f}, {hi:.3f})")
+```
+
+**The lift PASSES iff McNemar `p < 0.05`.** This single test — on the
+gpt-4o-mini anchor, dense vs freshly-run zero, paired over the same 25 cases
+— is THE confirmatory bar for NL-FEW-02 (m1/B1/M2). Report `b`, `c`, the
+exact p-value, and the bootstrap paired-delta 95% CI.
+
+### 7.4 SECONDARY checks (noise floor, MDE, continuity — never the pass/fail bar)
+
+- **Per-(model, arm) standard deviation** across the N >= 5 runs is a
+  noise-floor sanity check only, NOT a global max-over-arms range and NOT
+  the pass/fail bar (B1).
+- **Minimum detectable effect (MDE):** at n=25 and a base pass-rate ~0.32,
+  the paired McNemar design detects roughly a **4-case (~16pt) lift** at
+  `p < 0.05`. A smaller true lift may not reach significance — **do not
+  over-read a null result** against this design's actual power.
+- **Continuity check against the committed 06.2 baseline (0.32):** dense vs
+  0.32 is a SECONDARY signal only, and is **INVALID if the resolved model
+  snapshot differs from 06.2's** — record both snapshot ids and flag
+  accordingly. The confirmatory comparison is always dense-vs-
+  freshly-run-zero in the same session (M2).
+
+### 7.5 EXPLORATORY: capability tiers + dense-vs-bm25 (report unfiltered)
+
+The `gpt-5-mini` / `gpt-5` tiers and the dense-vs-bm25 comparison are
+**EXPLORATORY** — report all of them, in full, **never cherry-picked** for
+whichever tier happens to show a lift (m1). A null result on the flagship
+(`gpt-5` already saturating zero-shot — a ceiling effect) is a **finding**,
+not a phase failure. Dense-vs-bm25 is explicitly **uninterpretable as a
+null** at the ~18-24-item bank size used here (m3) — do not read a bm25 tie
+as "dense doesn't help."
+
+### 7.6 Report BOTH install numbers (M3)
+
+- **DEFAULT-INSTALL number = the bm25 arm.** Production `SparqlAdapter`
+  requests `mode="auto"` (D-05); a plain `.[nl]` install (no `.[dense]`
+  extra) never runs dense in production — it degrades to BM25 then no-op.
+  This is the honest number for anyone who installs the service without
+  `.[dense]`.
+- **DENSE-INSTALL number = the dense arm.** The headline dense-lift claim is
+  scoped explicitly to `.[dense]` deployments — it does NOT automatically
+  apply to a default install.
+
+Both numbers MUST appear in the sweep's writeup.
+
+### 7.7 Similarity distribution (memorization sanity check)
+
+Alongside the lift numbers, surface the 07-02 nearest-neighbor bank<->corpus
+similarity distribution (min/median/max cosine) so a reviewer can rule out
+the dense arm "winning" via near-duplicate memorization rather than genuine
+retrieval-augmented generalization.
+
+### 7.8 Framing rule (M1)
+
+The SOTA survey's "+21 F1" appears **only** as background motivation
+(`.planning/BRIEF-nl-to-conceptual-sota.md`). The actual success bar for
+this phase is: *"a positive, statistically-supported pass-rate lift on the
+25-case conceptual-schema corpus (paired McNemar p < 0.05 on the gpt-4o-mini
+anchor)."* Never report the success bar as "+21 F1."
+
+### 7.9 MANUAL fold-in into `baseline.json`
+
+Same discipline as §5 — a human-reviewed copy, never auto-regenerated in
+CI. Add sibling `configs['openai-gpt4o-mini-dense']` /
+`configs['openai-gpt4o-mini-bm25']` / etc. entries with the aggregate
+`pass_rate`/`passed`/`total`/`cases`, `model`, `temperature`, `corpus_sha`,
+and the three D-04 provenance fields:
+
+```json
+{
+  "embedding_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "embedding_revision": "7dbbc90392e2f80f3d3c277d6e90027e55de9125",
+  "sentence_transformers_version": "5.6.0"
+}
+```
+
+Capture `sentence_transformers_version` at RUN TIME via
+`sentence_transformers.__version__` — never hardcode it; the actual
+installed version is what makes the artifact reproducible, not a pin in
+`pyproject.toml`. `embedding_model`/`embedding_revision` come from the pinned
+constants in `arango_query_core.nl.fewshot` (07-01).
+
+Same secret hygiene as §6: **never commit a key or raw prompts/completions**
+— only the aggregate numbers + provenance cross into `baseline.json`.

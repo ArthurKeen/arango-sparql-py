@@ -68,3 +68,19 @@ jobs:
       # baseline.json makes zero network calls, so this job needs no LLM
       # API key or secret.
       - run: RUN_EVAL=1 pytest -m eval --tb=short -q
+
+  w3c-coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,nl,service]"
+      # Fetches the W3C DAWG corpus, then runs the COMMITTED, ASSERTING SC4
+      # coverage gate (Phase 7 07-04, M4) — distinct from the `test` job's
+      # `-m "not integration and not w3c and not eval"` exclusion and from
+      # the xfail-tolerant `-m w3c` path (which never fails on coverage
+      # regression by design). This job needs no LLM API key or secret.
+      - run: bash scripts/fetch_w3c.sh
+      - run: pytest tests/w3c/test_coverage_gate.py --tb=short -q

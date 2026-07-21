@@ -21,11 +21,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from arango_query_core.nl import DenseRetriever, FewShotIndex, cached_few_shot_index
 from pydantic import BaseModel, Field, model_validator
 from rdflib.plugins.sparql.parserutils import CompValue
 from rdflib.term import Variable
 
-from arango_query_core.nl import DenseRetriever, FewShotIndex, cached_few_shot_index
 from arango_sparql.errors import SparqlParseError
 from arango_sparql.nl2sparql import (
     AnthropicClient,
@@ -335,9 +335,7 @@ def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> bool:
     store = load_store_from_string(data_ttl)
     expected_bindings = oxi_bindings(store, expected)
     actual_bindings = oxi_bindings(store, outcome.sparql)
-    return sorted(map(_canon_row, expected_bindings)) == sorted(
-        map(_canon_row, actual_bindings)
-    )
+    return sorted(map(_canon_row, expected_bindings)) == sorted(map(_canon_row, actual_bindings))
 
 
 def _judge(judge_name: str, case: dict[str, Any], outcome: Any) -> bool:
@@ -539,10 +537,7 @@ def write_report(report: Report, *, out_dir: Path = REPORTS_DIR) -> tuple[Path, 
     payload = {
         "config": report.config,
         "pass_rate": report.pass_rate,
-        "cases": [
-            {"name": c.name, "passed": c.passed, "elapsed_ms": c.elapsed_ms}
-            for c in report.cases
-        ],
+        "cases": [{"name": c.name, "passed": c.passed, "elapsed_ms": c.elapsed_ms} for c in report.cases],
     }
     json_path.write_text(json.dumps(payload, indent=2) + "\n")
 
