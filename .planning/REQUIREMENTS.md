@@ -45,7 +45,7 @@
 
 - [x] **NL-EVAL-01**: NL→SPARQL eval harness implemented — `tests/nl2sparql/eval/runner.py::run()` + `write_report()` (currently `NotImplementedError`) execute each corpus entry against each configured provider and emit JSON+Markdown reports; eval marker wired into CI. — acceptance: eval marker green in CI with a scripted provider
 - [x] **NL-EVAL-02**: Seed corpus authored — `corpus.yml` + `configs.yml` created, `baseline.json` checked in as the regression gate; **NL→SPARQL pass-rate becomes a tracked metric**. — acceptance: `baseline.json` present; harness reports a numeric pass-rate
-- [ ] **NL-EVAL-03**: Harder eval corpus — grow `corpus.yml` beyond the 6 toy single-BGP cases to real-difficulty patterns (OPTIONAL, aggregation, property paths, multi-hop, plus negative/unsupported cases), each with a gold SPARQL judged by canonical algebra; corpus has genuine headroom (baseline pass-rate meaningfully below 1.0 with room for a few-shot lift). — acceptance: corpus contains the new pattern classes; `RUN_EVAL=1 pytest -m eval` green on the scripted config
+- [x] **NL-EVAL-03**: Harder eval corpus — grow `corpus.yml` beyond the 6 toy single-BGP cases to real-difficulty patterns (OPTIONAL, aggregation, property paths, multi-hop, plus negative/unsupported cases), each with a gold SPARQL judged by canonical algebra; corpus has genuine headroom (baseline pass-rate meaningfully below 1.0 with room for a few-shot lift). — acceptance: corpus contains the new pattern classes; `RUN_EVAL=1 pytest -m eval` green on the scripted config
 - [ ] **NL-EVAL-04**: Genuine live-model baseline — run the `openai` (real-provider) config against the harder corpus and check in a **credentials-gated** live-model `baseline.json` companion (scripted stays the no-network CI default; live run behind `RUN_EVAL=1` + provider key, never committing secrets). — acceptance: a live-model baseline artifact exists and is reproducible; CI still runs key-free on the scripted config
 - [ ] **NL-FEW-01**: Dense/embedding few-shot retrieval — wire the shared engine's few-shot seam through `SparqlAdapter.few_shot_index()` using a sentence-transformer (dense) retriever over the curated corpus (≤ 3 shots per rule-300), landing engine-side (`arango_query_core.nl.FewShotIndex`) so Cypher inherits it. BM25 is the fallback/ablation, not the primary. — acceptance: retrieved examples appear in the `NLQueryEngine`-built prompt's `## Examples` section; unit tests pass
 - [ ] **NL-FEW-02**: Measurable accuracy lift — dense few-shot run shows a **positive NL→SPARQL pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness. — acceptance: eval report delta > 0 over the live baseline
@@ -94,7 +94,7 @@ Deferred to future release. Tracked but not in the current roadmap.
 | REQ-ui-parity | Phase 5 | Pending |
 | NL-EVAL-01 | Phase 6 | Complete |
 | NL-EVAL-02 | Phase 6 | Complete |
-| NL-EVAL-03 | Phase 06.2 | Pending |
+| NL-EVAL-03 | Phase 06.2 | Complete |
 | NL-EVAL-04 | Phase 06.2 | Pending |
 | NL-FEW-01 | Phase 7 | Pending |
 | NL-FEW-02 | Phase 7 | Pending |

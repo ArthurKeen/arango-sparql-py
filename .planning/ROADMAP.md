@@ -186,7 +186,7 @@ Plans:
 - [x] 06.2-02-PLAN.md — Author positive difficulty classes (OPTIONAL, aggregation, property-path, multi-hop) + ontology extension + transpilability guard [NL-EVAL-03]
 
 **Wave 2** *(blocked on Wave 1)*
-- [ ] 06.2-03-PLAN.md — Author negative/unsupported expect_refusal cases + retain near-miss + regenerate scripted baseline.json + headroom-invariant test [NL-EVAL-03]
+- [x] 06.2-03-PLAN.md — Author negative/unsupported expect_refusal cases + retain near-miss + regenerate scripted baseline.json + headroom-invariant test [NL-EVAL-03]
 
 **Wave 3** *(blocked on Wave 2)*
 - [ ] 06.2-04-PLAN.md — Live-model baseline: reproducibility runbook + credentials-gated openai-gpt4o-mini companion (human-run sweep) + no-network structural test [NL-EVAL-04]
@@ -242,6 +242,6 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
 | 6. NL→SPARQL eval harness + corpus | 3/3 | Complete    | 2026-07-15 |
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
-| 06.2. NL→SPARQL harder corpus + live baseline | 2/4 | In Progress|  |
+| 06.2. NL→SPARQL harder corpus + live baseline | 3/4 | In Progress|  |
 | 7. NL→SPARQL dense few-shot retrieval | 0/TBD | Not started | - |
 | 8. Public release readiness | 0/TBD | Not started | - |

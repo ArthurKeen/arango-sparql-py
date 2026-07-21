@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-21T02:12:00.000Z"
-last_activity: 2026-07-21 -- Completed 06.2-02-PLAN.md (harder corpus positive difficulty classes)
+last_updated: "2026-07-21T02:19:01.623Z"
+last_activity: 2026-07-21
 progress:
   total_phases: 10
   completed_phases: 2
   total_plans: 10
-  completed_plans: 7
+  completed_plans: 9
   percent: 20
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 ## Current Position
 
 Phase: 06.2 (nl-to-sparql-harder-corpus-and-genuine-live-model-baseline) — EXECUTING
-Plan: 3 of 4
-Status: Executing Phase 06.2 (Plans 01–02 complete)
-Last activity: 2026-07-21 -- Completed 06.2-02-PLAN.md (harder corpus positive difficulty classes)
+Plan: 4 of 4
+Status: Ready to execute
+Last activity: 2026-07-21
 
-Progress: [██████████] 100%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [██████████] 100%
 | Phase 06 P03 | 6min | 2 tasks | 1 files |
 | Phase 06.2 P01 | ~10min | 3 tasks | 2 files |
 | Phase 06.2 P02 | ~15min | 3 tasks | 2 files |
+| Phase 06.2 P03 | 10min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 06.2-02]: :placed/:knows are dedicated edge collections (phys:edgeCollectionName), not attribute joins — a bare owl:ObjectProperty raises SchemaResolutionError, so the committed Task-1 comment was wrong and its golds could not transpile (fixed)
 - [Phase 06.2-02]: property-path positives use :knows/:placed as real graph edges; transitive :knows+/:knows* use the default property_path_max_depth (10) with no knob override
 - [Phase 06.2-02]: 16 positive golds added (4 OPTIONAL, 3 aggregation/GROUP BY, 9 property-path/multi-hop); every non-refusal gold proven transpilable by test_gold_transpilable.py
+- [Phase 06.2]: [Phase 06.2-03]: 3 expect_refusal negatives — 2 malformed-SPARQL drift-proof triggers + unsupported !(^:knows); all refuse to empty AQL, PASS inverted judge
+- [Phase 06.2]: [Phase 06.2-03]: baseline.json regenerated from true run('scripted') — 0.96 (24/25), all 25 cases tracked, near-miss=false, nested schema preserved
+- [Phase 06.2]: [Phase 06.2-03]: 0<pass_rate<1 is a SENTINEL; real guard is per-case deliberate-near-miss passed is False (AI-SPEC SC2)
 
 ### Pending Todos
 
@@ -108,6 +112,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T02:12:00.000Z
+Last session: 2026-07-21T02:18:37.153Z
 Stopped at: Completed 06.2-02-PLAN.md — positive difficulty classes (OPTIONAL/aggregation/property-path/multi-hop) landed; Plan 03 next (expect_refusal negatives + baseline.json regen)
 Resume file: None
