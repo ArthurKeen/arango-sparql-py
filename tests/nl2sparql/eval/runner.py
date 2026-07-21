@@ -13,6 +13,8 @@ is checked in — that is the regression gate.
 from __future__ import annotations
 
 import json
+import math
+import random
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +25,7 @@ from pydantic import BaseModel, Field, model_validator
 from rdflib.plugins.sparql.parserutils import CompValue
 from rdflib.term import Variable
 
+from arango_query_core.nl import DenseRetriever, FewShotIndex, cached_few_shot_index
 from arango_sparql.errors import SparqlParseError
 from arango_sparql.nl2sparql import (
     AnthropicClient,
@@ -39,6 +42,10 @@ EVAL_DIR = Path(__file__).parent
 CORPUS_PATH = EVAL_DIR / "corpus.yml"
 CONFIGS_PATH = EVAL_DIR / "configs.yml"
 REPORTS_DIR = EVAL_DIR / "reports"
+# Curated few-shot bank (07-02) — same path SparqlAdapter's production default
+# resolves to (engine_adapter.py::_FEWSHOT_BANK_PATH), shared here so the
+# dense/bm25 sweep arms build against the identical bank file.
+BANK_PATH = EVAL_DIR / "fewshot_bank.yml"
 
 
 @dataclass
@@ -113,7 +120,10 @@ class BaselineConfig(BaseModel):
     The scripted gate needs only ``pass_rate``/``passed``/``total``/``cases``.
     The optional live-reproducibility fields (``model``, ``temperature``,
     ``corpus_sha``) let Plan 04 fold a live-model run into ``baseline.json``
-    without re-touching ``runner.py``.
+    without re-touching ``runner.py``. The three ``embedding_*`` fields
+    (D-04, Phase 7 07-04) extend that same provenance convention for the
+    dense-mode arms — captured at RUN TIME (never hardcoded) so a re-run
+    reproduces the same retrieval order.
     """
 
     pass_rate: float = Field(ge=0.0, le=1.0)
@@ -123,6 +133,10 @@ class BaselineConfig(BaseModel):
     model: str | None = None
     temperature: float | None = None
     corpus_sha: str | None = None
+    # Phase 7 07-04 additions — dense-run provenance (D-04).
+    embedding_model: str | None = None
+    embedding_revision: str | None = None
+    sentence_transformers_version: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -353,6 +367,30 @@ def run(config_name: str) -> Report:
     judge_name = config.get("judge", "canonical")
     max_repairs = config.get("max_repairs", 2)
 
+    # Additive few_shot config read (Phase 7 07-04 / RESEARCH Pitfall 5):
+    # `run(config_name) -> Report`'s signature and Report's shape stay
+    # byte-identical; absent `few_shot:` == today's zero-shot behavior.
+    few_shot_cfg = config.get("few_shot", {})
+    few_shot_mode = few_shot_cfg.get("mode", "zero")
+    few_shot_k = few_shot_cfg.get("k", 0)
+
+    # Build the index ONCE per arm, outside the per-case loop (Pitfall 1 —
+    # never per-case; a fresh FewShotIndex would reload the SentenceTransformer
+    # model + re-embed the whole bank on every one of the 25 corpus cases).
+    few_shot_index: FewShotIndex | None = None
+    if few_shot_mode in ("dense", "bm25"):
+        few_shot_index = cached_few_shot_index(str(BANK_PATH), few_shot_mode)
+        if few_shot_mode == "dense":
+            # D-06 belt-and-suspenders: a wrong-mode/degraded retriever must
+            # never be silently filed as a dense number.
+            assert isinstance(few_shot_index.retriever, DenseRetriever), (
+                f"D-06 guard failed: config {config_name!r} requested mode='dense' "
+                f"but the built index's retriever is {type(few_shot_index.retriever).__name__!r}, "
+                "not DenseRetriever. This means sentence-transformers is not "
+                "installed/importable (install `.[dense]` before running this arm) — "
+                "never record this as a dense-mode measurement."
+            )
+
     cases: list[CaseResult] = []
     for case in corpus["cases"]:
         ontology_ttl = case.get("ontology", shared_ontology)
@@ -363,6 +401,8 @@ def run(config_name: str) -> Report:
             resolver=resolver,
             ontology_ttl=ontology_ttl,
             max_repairs=max_repairs,
+            few_shot_k=few_shot_k,
+            few_shot_index=few_shot_index,
         )
 
         t0 = time.perf_counter()
@@ -381,6 +421,109 @@ def run(config_name: str) -> Report:
         )
 
     return Report(config=config_name, cases=cases)
+
+
+# ---------------------------------------------------------------------------
+# Paired-analysis helpers (B1) — the primary confirmatory signal.
+#
+# Pure-Python, no scipy: `paired_mcnemar` computes the EXACT two-sided
+# McNemar test over the (b, c) discordant-pair counts between two Reports'
+# per-case verdicts (aligned by case name — both arms MUST run the same 25
+# cases); `bootstrap_paired_delta` resamples the shared case keys with
+# replacement to report a 95% CI on the paired pass-rate delta. Neither
+# function makes a network call or constructs a Report itself — they operate
+# purely on the `{case_name: bool}` dicts a caller extracts from two Reports.
+# ---------------------------------------------------------------------------
+
+
+def _cases_as_dict(report_cases: dict[str, bool] | list[CaseResult]) -> dict[str, bool]:
+    """Normalize either a raw ``{name: passed}`` dict or a ``Report.cases``
+    list of :class:`CaseResult` into a ``{name: passed}`` dict."""
+    if isinstance(report_cases, dict):
+        return report_cases
+    return {c.name: c.passed for c in report_cases}
+
+
+def paired_mcnemar(
+    zero_cases: dict[str, bool] | list[CaseResult],
+    dense_cases: dict[str, bool] | list[CaseResult],
+) -> tuple[int, int, float]:
+    """Exact two-sided McNemar test over paired zero-shot vs dense verdicts.
+
+    Returns ``(b, c, p_value)`` where ``b`` = count(zero False & dense True)
+    (the "lift" flips) and ``c`` = count(zero True & dense False) (the
+    "regression" flips). ``p_value`` is the exact binomial two-sided McNemar
+    p-value: ``min(1.0, 2 * sum(C(n, i) for i in 0..min(b, c)) / 2**n)`` with
+    ``n = b + c`` (returns ``1.0`` when ``n == 0`` — no discordant pairs means
+    no evidence of a difference either way).
+
+    Raises ``ValueError`` if the two case-verdict sets don't share identical
+    keys — this guards against comparing misaligned arms (e.g. a dense run
+    against a stale/partial zero-shot run over a different case subset).
+    """
+    zero = _cases_as_dict(zero_cases)
+    dense = _cases_as_dict(dense_cases)
+    if zero.keys() != dense.keys():
+        raise ValueError(
+            "paired_mcnemar requires zero_cases and dense_cases to share "
+            f"identical keys; zero-only={set(zero) - set(dense)!r} "
+            f"dense-only={set(dense) - set(zero)!r}"
+        )
+    b = sum(1 for name in zero if zero[name] is False and dense[name] is True)
+    c = sum(1 for name in zero if zero[name] is True and dense[name] is False)
+    n = b + c
+    if n == 0:
+        return b, c, 1.0
+    k = min(b, c)
+    tail = sum(math.comb(n, i) for i in range(0, k + 1))
+    p_value = min(1.0, 2 * tail / (2**n))
+    return b, c, p_value
+
+
+def bootstrap_paired_delta(
+    zero_cases: dict[str, bool] | list[CaseResult],
+    dense_cases: dict[str, bool] | list[CaseResult],
+    iters: int = 10000,
+    seed: int = 1234,
+) -> tuple[float, float, float]:
+    """Bootstrap CI on the paired pass-rate delta (dense - zero).
+
+    Returns ``(delta, lo, hi)``: ``delta`` is the observed
+    ``dense_pass_rate - zero_pass_rate`` over the shared case keys; ``lo``/
+    ``hi`` are the 2.5th/97.5th percentile of the delta resampled (with
+    replacement) ``iters`` times over the shared case keys, using a seeded
+    ``random.Random`` for reproducibility.
+
+    Raises ``ValueError`` if the two case-verdict sets don't share identical
+    keys (same guard as :func:`paired_mcnemar`).
+    """
+    zero = _cases_as_dict(zero_cases)
+    dense = _cases_as_dict(dense_cases)
+    if zero.keys() != dense.keys():
+        raise ValueError(
+            "bootstrap_paired_delta requires zero_cases and dense_cases to "
+            f"share identical keys; zero-only={set(zero) - set(dense)!r} "
+            f"dense-only={set(dense) - set(zero)!r}"
+        )
+    names = sorted(zero.keys())
+    n = len(names)
+    if n == 0:
+        return 0.0, 0.0, 0.0
+
+    def _pass_rate(sample_names: list[str], verdicts: dict[str, bool]) -> float:
+        return sum(1 for name in sample_names if verdicts[name]) / len(sample_names)
+
+    observed_delta = _pass_rate(names, dense) - _pass_rate(names, zero)
+
+    rng = random.Random(seed)
+    deltas: list[float] = []
+    for _ in range(iters):
+        sample = [names[rng.randrange(n)] for _ in range(n)]
+        deltas.append(_pass_rate(sample, dense) - _pass_rate(sample, zero))
+    deltas.sort()
+    lo_idx = max(0, int(0.025 * len(deltas)))
+    hi_idx = min(len(deltas) - 1, int(0.975 * len(deltas)))
+    return observed_delta, deltas[lo_idx], deltas[hi_idx]
 
 
 # ---------------------------------------------------------------------------

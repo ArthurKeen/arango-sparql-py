@@ -11,7 +11,10 @@
 # Real-provider credentials are NEVER stored here — they are read from the
 # NL2SPARQL_* environment variables (see arango_sparql/nl2sparql/client.py) only
 # when a non-scripted config is actually run. This file is checked into VCS as
-# trusted repo data; it holds no credentials.
+# trusted repo data; it holds no credentials. The optional `few_shot:` block
+# (added Phase 7 07-04) is likewise config-only data (mode + k) — it never
+# carries a bank path override or any credential; the bank file itself lives
+# at tests/nl2sparql/eval/fewshot_bank.yml (07-02), trusted repo data.
 
 configs:
   # The CI default: no network, deterministic, gates baseline.json.
@@ -28,3 +31,87 @@ configs:
       model: gpt-4o-mini
     judge: canonical
     max_repairs: 2
+
+  # --------------------------------------------------------------------
+  # Phase 7 07-04: 3-arm (zero/dense/bm25) x 3-model (gpt-4o-mini anchor,
+  # gpt-5-mini, gpt-5) matrix. All additive; `few_shot` absent == today's
+  # zero-shot behavior. Not run in CI — gated behind RUN_EVAL=1 +
+  # NL2SPARQL_API_KEY per the Task 4 human-run sweep (README §7).
+  # --------------------------------------------------------------------
+
+  # gpt-4o-mini — the anchor model (06.2's committed live baseline).
+  openai-gpt4o-mini-dense:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
+    few_shot:
+      mode: dense
+      k: 3
+
+  openai-gpt4o-mini-bm25:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
+    few_shot:
+      mode: bm25
+      k: 3
+
+  # gpt-5-mini — mid capability tier (exploratory per D-08/m1).
+  openai-gpt5-mini:
+    provider:
+      type: openai
+      model: gpt-5-mini
+    judge: canonical
+    max_repairs: 2
+
+  openai-gpt5-mini-dense:
+    provider:
+      type: openai
+      model: gpt-5-mini
+    judge: canonical
+    max_repairs: 2
+    few_shot:
+      mode: dense
+      k: 3
+
+  openai-gpt5-mini-bm25:
+    provider:
+      type: openai
+      model: gpt-5-mini
+    judge: canonical
+    max_repairs: 2
+    few_shot:
+      mode: bm25
+      k: 3
+
+  # gpt-5 — flagship / deliberate ceiling-effect stress test (exploratory).
+  openai-gpt5:
+    provider:
+      type: openai
+      model: gpt-5
+    judge: canonical
+    max_repairs: 2
+
+  openai-gpt5-dense:
+    provider:
+      type: openai
+      model: gpt-5
+    judge: canonical
+    max_repairs: 2
+    few_shot:
+      mode: dense
+      k: 3
+
+  openai-gpt5-bm25:
+    provider:
+      type: openai
+      model: gpt-5
+    judge: canonical
+    max_repairs: 2
+    few_shot:
+      mode: bm25
+      k: 3
