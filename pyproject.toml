@@ -45,7 +45,17 @@ nl = [
   # the nl2sparql pipeline drives. First-party sibling repo, not yet on PyPI, so
   # pinned to a specific git rev (deterministic — never a floating branch).
   # Migrates to a PyPI version pin at the 0.2.0 milestone (2026-07-20 lane notes).
-  "arango-query-core @ git+https://github.com/arango-solutions/arango-query-core.git@c5b6026c344cfa994c442181b797f5400919d70c",
+  "arango-query-core @ git+https://github.com/arango-solutions/arango-query-core.git@a5a42cdc89184ebbc9896198071a4ea8f0b7aa20",
+]
+# Torch-free-by-default packaging (D-05 packaging discretion, Phase 7 07-03):
+# a plain `pip install '.[nl]'` never pulls sentence-transformers/torch — the
+# production `SparqlAdapter.few_shot_index()` seam defaults to `mode="auto"`
+# and gracefully degrades to BM25/no-op without it. Installing `.[dense]` is
+# the ONLY path that pulls torch, composing arango-query-core's own `[dense]`
+# extra (sentence-transformers) on top of `[nl]`'s deps.
+dense = [
+  "arango-sparql-py[nl]",
+  "arango-query-core[dense] @ git+https://github.com/arango-solutions/arango-query-core.git@a5a42cdc89184ebbc9896198071a4ea8f0b7aa20",
 ]
 dev = [
   "pytest>=8.0.0",
