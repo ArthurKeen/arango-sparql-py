@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-21T18:04:46.568Z"
+last_updated: "2026-07-21T18:18:48.147Z"
 last_activity: 2026-07-21
 progress:
   total_phases: 10
   completed_phases: 3
   total_plans: 14
-  completed_plans: 12
+  completed_plans: 13
   percent: 30
 ---
 
@@ -25,11 +25,11 @@ See: .planning/PROJECT.md (updated 2026-07-15)
 ## Current Position
 
 Phase: 07 (nl-sparql-dense-few-shot-retrieval) — EXECUTING
-Plan: 3 of 4
+Plan: 4 of 4
 Status: Ready to execute
 Last activity: 2026-07-21
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
@@ -61,6 +61,7 @@ Progress: [█████████░] 86%
 | Phase 06.2 P03 | 10min | 3 tasks | 3 files |
 | Phase 07 P01 | 7min | 3 tasks | 4 files |
 | Phase 07 P02 | 10min | 2 tasks | 2 files |
+| Phase 07 P03 | 20min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 - [Phase 07-02]: 07-02: _skeleton() blanks both literal values AND quoted URIRef('...') tokens (not literal-only), verified empirically against all 22 corpus skeletons before finalizing the bank
 - [Phase 07-02]: 07-02: 23-example fewshot_bank.yml (5 basic BGP, 4 OPTIONAL, 4 aggregation, 6 property-path, 4 multi-hop) authored with corpus.yml closed, ontology shared verbatim
 - [Phase 07-02]: 07-02: NL-FEW-01 not marked complete yet (spans plans 01-03 per 07-01 precedent); seam-wiring lands in 07-03
+- [Phase 07-03]: production seam defaults to mode=auto (D-05); Plan 04 must report the bm25 arm as the honest default-install number since dense requires .[dense]
+- [Phase 07-03]: M5 origin-fetchability verified live via git ls-remote before uv lock; pin bumped to a5a42cdc89184ebbc9896198071a4ea8f0b7aa20
+- [Phase 07-03]: fixed a pre-existing (pre-Phase-7) bug in test_engine_reproduces_baseline_verdicts — refusal-blind judging + stale hardcoded 0.8333 pass-rate, verified broken since 06.2 completion
 
 ### Pending Todos
 
@@ -124,6 +128,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T18:04:46.562Z
-Stopped at: Completed 07-02-PLAN.md
+Last session: 2026-07-21T18:18:48.142Z
+Stopped at: Completed 07-03-PLAN.md
 Resume file: None
