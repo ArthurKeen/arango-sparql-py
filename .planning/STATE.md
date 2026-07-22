@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-last_updated: 2026-07-22T14:51:42.685Z
-last_activity: 2026-07-21
+status: planning
+last_updated: "2026-07-22T16:01:18.837Z"
+last_activity: 2026-07-22
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 4
   total_plans: 14
   completed_plans: 14
-  percent: 40
-stopped_at: Phase 07 complete (4/4) — ready to discuss Phase 8
+  percent: 36
 ---
 
 # Project State
@@ -21,11 +20,11 @@ stopped_at: Phase 07 complete (4/4) — ready to discuss Phase 8
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 8 — public release readiness
+**Current focus:** Phase 07.1 — NL→SPARQL synthetic eval-corpus growth
 
 ## Current Position
 
-Phase: 8
+Phase: 07.1
 Plan: Not started
 Status: Ready to plan
 Last activity: 2026-07-22
@@ -72,6 +71,7 @@ Progress: [██████████] 100%
 
 - Phase 06.1 inserted after Phase 6: Re-point nl2sparql onto arango-query-core shared engine (prerequisite for engine-side SOTA) (URGENT)
 - Phase 06.2 inserted after Phase 6: harder corpus + genuine live-model baseline (unblocks measurable few-shot lift) (URGENT)
+- Phase 07.1 inserted after Phase 7: NL→SPARQL synthetic eval-corpus growth to reach statistical power (MDE ≤ 5pt); corpus+bank only, heavy levers deferred to v1.1 (URGENT)
 
 ### Decisions
 
@@ -139,6 +139,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent decisions affecti
 
 ## Session Continuity
 
-Last session: 2026-07-21T23:14:02.011Z
-Stopped at: Completed 07-04-PLAN.md (NL-FEW-02 closed via documented-null path)
-Resume file: None
+Last session: 2026-07-22T16:01:18.823Z
+Stopped at: Phase 07.1 context gathered
+Resume file: .planning/phases/07.1-nl-to-sparql-synthetic-eval-corpus-growth-ontology-driven-ge/07.1-CONTEXT.md
