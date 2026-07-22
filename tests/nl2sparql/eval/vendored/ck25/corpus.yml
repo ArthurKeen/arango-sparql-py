@@ -399,6 +399,8 @@ ontology: |+
       rdfs:isDefinedBy pv: ;
       owl:versionInfo "v0.0.1-37-g15bd45c-dirty" .
 
+data_path: raw/prod-inst.ttl
+
 cases:
 - name: ck25-1
   nl: In which department is Ms. Brant?
