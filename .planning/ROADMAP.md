@@ -257,12 +257,22 @@ grounding remain deferred.
 ≥ 96.4%; `scripted` stays the no-network CI default; adopted sets vendored with CC-BY
 attribution; no secrets committed.
 
-**Requirements**: TBD (being re-planned for the benchmark-adoption approach)
+**Requirements**: NL-BENCH-01, NL-BENCH-02, NL-BENCH-03, NL-BENCH-04, NL-BENCH-05, NL-BENCH-06, NL-BENCH-07
 **Depends on:** Phase 7 (eval harness + judge + the measurement finding)
-**Plans:** being re-planned (synthetic plans retired)
+**Plans:** 6 plans
 
 Plans:
-- [ ] TBD (re-planning in progress — benchmark adoption)
+**Wave 1** *(parallel — no file overlap)*
+- [ ] 07.1-01-PLAN.md — Harness foundation: power module (D-07) + additive `corpus:` config key (test-first, Pitfall 1) + glob-driven gold-transpilability guard [NL-BENCH-04, NL-BENCH-05, NL-BENCH-07]
+- [ ] 07.1-02-PLAN.md — Vendored-data provenance + no-secrets static guard (T-07.1-01) [NL-BENCH-06]
+- [ ] 07.1-03-PLAN.md — Refusal supplement: ~10–12 expect_refusal cases keyed to real UnsupportedSparqlError sites [NL-BENCH-03]
+
+**Wave 2** *(parallel — no file overlap; blocked on Wave 1)*
+- [ ] 07.1-04-PLAN.md — QALD-9-plus adoption: QALD-JSON→cases, minimal phys:-annotated DBpedia subset, D-06 filter log (combined train+test pool) [NL-BENCH-01, NL-BENCH-07]
+- [ ] 07.1-05-PLAN.md — CK25 adoption: questions.yml→cases, phys:-annotate the prod-inst.ttl schema, D-06 filter log [NL-BENCH-02, NL-BENCH-07]
+
+**Wave 3** *(blocked on Waves 1–2)*
+- [ ] 07.1-06-PLAN.md — Wire per-set configs + regenerate scripted baseline (QALD/CK25 reported SEPARATELY) + achieved-MDE via power module + W3C guard + file NL-BENCH ids [NL-BENCH-01..07]
 
 ### Phase 8: Public release readiness
 
