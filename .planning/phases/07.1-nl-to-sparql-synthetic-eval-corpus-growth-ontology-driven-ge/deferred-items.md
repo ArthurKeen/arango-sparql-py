@@ -39,3 +39,28 @@ current task's changes).
 > **Orchestrator note:** Both drift reports refer to the same root cause. Resolution is
 > owned by **07.1-06 Task 2**, which regenerates `baseline.json` and explicitly folds in
 > the Plan-03 refusal cases (per 07.1-06-PLAN.md). This entry closes once that lands green.
+>
+> **CLOSED (07.1-06):** `baseline.json`'s `scripted` entry now carries all 34 corpus
+> cases (25 original + 9 refusal), and `test_engine_reproduces_baseline_verdicts` is
+> confirmed green (`uv run pytest tests/nl2sparql/test_engine_adapter.py -q`).
+
+## 07.1-06: pre-existing W3C corpus data absent in this environment (out of scope)
+
+- **Found during:** 07.1-06 Task 2 full-suite verification
+  (`pytest -q -m "not integration and not w3c and not eval"`).
+- **Symptom:** `tests/cross/test_minus_optional_cross.py::test_minus_optional_matches_oxigraph[full_minuend]`
+  and `[part_minuend]` fail with
+  `FileNotFoundError: .../tests/w3c/data/sparql11-test-suite/negation/part-minuend.rq`.
+- **Root cause:** `tests/w3c/data/` does not exist in this worktree/environment at all —
+  the W3C DAWG test-suite corpus was never fetched (`scripts/fetch_w3c.sh` has not been
+  run here). Confirmed unrelated to any file this plan touches (`configs.yml`,
+  `baseline.json`, `README.md`, `runner.py`'s `_alpha_normalize`/`_skeleton`,
+  `test_eval.py`) — `tests/w3c/test_coverage_gate.py` itself correctly `pytest.skip`s
+  for the same reason (`w3c_corpus_root() is None`), confirming this is an environment
+  data-fetch gap, not a code regression.
+- **Not fixed here:** out of scope — fetching/vendoring the full W3C DAWG suite is
+  unrelated to this phase's NL->SPARQL benchmark-adoption work, and the transpiler
+  itself is untouched (`git diff --stat` over `arango_sparql/translate/` is empty for
+  this plan).
+- **Suggested owner:** whichever CI/dev-environment task is responsible for running
+  `scripts/fetch_w3c.sh` before the full test suite in this sandbox.

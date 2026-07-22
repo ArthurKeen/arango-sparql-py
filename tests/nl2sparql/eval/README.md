@@ -18,10 +18,12 @@ Files:
 | File | Role |
 |------|------|
 | `corpus.yml` | Gold NL→SPARQL cases (positives + `expect_refusal` negatives). |
-| `configs.yml` | Provider/judge configs (`scripted`, `openai-gpt4o-mini`). |
+| `configs.yml` | Provider/judge configs (`scripted`, `openai-gpt4o-mini`, plus per-set `scripted-qald9plus`/`scripted-ck25` — §8). |
 | `runner.py` | `run()`, `write_report()`, the canonical-algebra judge. |
-| `baseline.json` | The **only** checked-in report artifact — the regression gate. |
+| `baseline.json` | The **only** checked-in report artifact — the regression gate (separate top-level entry per set, §8.4). |
 | `test_eval.py` | The `@pytest.mark.eval` gate (behind `RUN_EVAL=1`). |
+| `power.py` | Pure-Python `required_n`/`achieved_mde` (§8.3). |
+| `vendored/{qald9plus,ck25}/` | Public-benchmark adoption: converted corpora + CC-BY-4.0 provenance (§8). |
 | `reports/` | **Gitignored** `write_report()` output (raw per-case JSON + Markdown). |
 
 ---
@@ -338,3 +340,113 @@ constants in `arango_query_core.nl.fewshot` (07-01).
 
 Same secret hygiene as §6: **never commit a key or raw prompts/completions**
 — only the aggregate numbers + provenance cross into `baseline.json`.
+
+---
+
+## 8. Public-benchmark adoption (QALD-9-plus + CK25) — 07.1-06
+
+Phase 07.1 adopted two public, human-authored NL→SPARQL benchmarks so
+translation quality is measurable with real statistical power, instead of
+relying only on the 25-case hand-authored `corpus.yml` (~16pt MDE). **Two
+jobs, two sets (D-02/D-03) — always reported SEPARATELY, never blended
+into one number (RESEARCH Pitfall 3):**
+
+| Set | Role | Vendored corpus | Scripted config | Live config |
+|-----|------|------------------|------------------|-------------|
+| **QALD-9-plus** (DBpedia, CC-BY-4.0) | **Powered capability gate** — measures transferable SPARQL-generation skill (right predicates, OPTIONAL/aggregation/paths) | `vendored/qald9plus/corpus.yml` | `scripted-qald9plus` | `openai-gpt4o-mini-qald9plus` |
+| **CK25** (corporate/product KG, CC-BY-4.0) | **Corporate-domain relevance anchor** — directional, NOT a power gate (small N is expected/acceptable) | `vendored/ck25/corpus.yml` | `scripted-ck25` | `openai-gpt4o-mini-ck25` |
+
+Both sets are wired in via the additive `corpus:` config-key (§Pattern 1 of
+`07.1-RESEARCH.md`) — `configs.yml`'s `corpus:` entry selects a different
+`corpus.yml` than the hand-authored root file; `runner.py` needed exactly
+one additive line (`config.get("corpus", "corpus.yml")`), no judge/pipeline
+surgery.
+
+### 8.1 Vendoring + provenance
+
+Each set lives under `tests/nl2sparql/eval/vendored/{qald9plus,ck25}/` with:
+`NOTICE.md` (CC-BY-4.0 attribution + source URL/commit), `raw/` (pruned
+English-only / verbatim source files), `convert_{qald,ck25}.py` (the D-06
+filter: parse via rdflib + judgeable + transpile to non-empty AQL + only
+schema terms in the authored subset), the output `corpus.yml`
+(`ontology:` + `cases:`), and `filter_log.md` (kept/dropped counts +
+per-reason breakdown — D-06's "no silent truncation" audit trail).
+
+### 8.2 Per-set scripted numbers (no-network, judge/harness plumbing only)
+
+Run (no network, no key):
+
+```bash
+RUN_EVAL=1 python -c "from tests.nl2sparql.eval.runner import run; print(run('scripted-qald9plus').pass_rate); print(run('scripted-ck25').pass_rate)"
+```
+
+The `scripted-*` pass_rate is **1.0 for both sets** — the scripted client
+replays the gold `expected` SPARQL verbatim as the "generated" response, so
+a correctly-functioning judge/harness pipeline must reproduce the gold
+exactly. As with the root `scripted` config (§2), **this tests the judge,
+not the model** — it is not a model-quality number.
+
+### 8.3 Achieved MDE (D-07 power module, `power.py`)
+
+Computed via `achieved_mde(n, pi)` (Connor 1987, α=0.05, power=0.80) over
+each set's D-06 surviving-case count (`filter_log.md`'s "Kept" total):
+
+| Set | Surviving N | achieved_mde @ π=0.20 | achieved_mde @ π=0.25 | Gate role |
+|-----|------------:|------:|------:|-----------|
+| QALD-9-plus (train+test combined, D-02) | 514 | 0.0553 (~5.5pt) | 0.0618 (~6.2pt) | **Powered gate** |
+| CK25 (D-03) | 49 | 0.179 (~17.9pt) | 0.2001 (~20.0pt) | **Anchor, reported NOT gated** |
+
+QALD-9-plus's combined train+test pool reaches the ≤5-8pt goal (D-02);
+CK25's smaller, expert-curated set stays directional by design — its role
+is to catch "good at DBpedia trivia, bad at corporate schemas," not to
+detect a small regression with statistical confidence. **Do not gate CI or
+promotion decisions on a CK25 McNemar/MDE result** (RESEARCH
+Anti-Patterns).
+
+### 8.4 baseline.json shape (SEPARATE, never blended)
+
+`baseline.json`'s `configs` map carries `scripted-qald9plus` and
+`scripted-ck25` as their OWN top-level entries, each with `pass_rate` /
+`passed` / `total` / `cases` (the same shape as `scripted`), plus:
+
+```json
+{
+  "role": "powered_gate",            // or "anchor_reported_not_gated"
+  "surviving_n": 514,
+  "achieved_mde": {"pi_0.20": 0.0553, "pi_0.25": 0.0618},
+  "note": "..."
+}
+```
+
+The `scripted` entry itself is unchanged in shape — it now simply tracks
+all 34 hand-authored cases (25 original + the 9-case refusal supplement
+from 07.1-03).
+
+### 8.5 Live per-set sweep (credentials-gated, human-run)
+
+Same discipline as §§3–7: `RUN_EVAL=1` + `NL2SPARQL_API_KEY`, out-of-band,
+manual human-reviewed fold-in — never auto-regenerated in CI.
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-qald9plus'); write_report(r); print('pass_rate', r.pass_rate)"
+RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-ck25'); write_report(r); print('pass_rate', r.pass_rate)"
+```
+
+Fold in as sibling `configs['openai-gpt4o-mini-qald9plus']` /
+`configs['openai-gpt4o-mini-ck25']` entries (aggregate `pass_rate` /
+`passed` / `total` / `cases` + `model` / `temperature` / `corpus_sha`),
+exactly as §5 documents for the root corpus — never touching the
+`scripted-*` entries.
+
+### 8.6 Non-regression invariants (unchanged)
+
+- `scripted` remains the sole CI-reachable config
+  (`test_ci_gate_only_ever_runs_scripted`); every new `scripted-*` config is
+  still only reachable by explicit `run("scripted-...")` calls, never from
+  the default test path.
+- W3C DAWG `QUERY_EVAL` coverage stays ≥ 96.4%
+  (`tests/w3c/test_coverage_gate.py`) — the transpiler is untouched by this
+  phase.
+- No secrets, raw prompts/completions, or full multilingual JSON blobs are
+  vendored — only the CC-BY-4.0-licensed English question/gold-SPARQL pairs
+  the harness needs, plus the required attribution `NOTICE.md` per set.

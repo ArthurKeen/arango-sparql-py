@@ -24,7 +24,7 @@ import yaml
 from arango_query_core.nl import DenseRetriever, FewShotIndex, cached_few_shot_index
 from pydantic import BaseModel, Field, model_validator
 from rdflib.plugins.sparql.parserutils import CompValue
-from rdflib.term import Variable
+from rdflib.term import BNode, Variable
 
 from arango_sparql.errors import SparqlParseError
 from arango_sparql.nl2sparql import (
@@ -243,15 +243,21 @@ def _stable_repr(node: Any) -> str:
 
 
 def _skeleton(node: Any) -> str:
-    """A ``repr`` of *node* with every ``Variable`` erased to ``"?"``.
+    """A ``repr`` of *node* with every ``Variable``/``BNode`` erased to a
+    fixed placeholder.
 
     Used only to order the elements of a set/frozenset in a way that does
-    NOT depend on the original variable names, so that alpha-renaming
-    numbering (``_alpha_normalize``) is driven by structure rather than by
-    whatever names the model happened to pick.
+    NOT depend on the original variable names (nor on a blank node's
+    randomly-generated internal id — ``rdflib`` mints a fresh skolem id on
+    every parse, e.g. ``FILTER NOT EXISTS { [] pv:hasManager ?empl }``'s
+    anonymous ``[]``), so that alpha-renaming numbering
+    (``_alpha_normalize``) is driven by structure rather than by whatever
+    names/ids the model or parser happened to pick.
     """
     if isinstance(node, Variable):
         return "?"
+    if isinstance(node, BNode):
+        return "?_bnode"
     if isinstance(node, CompValue):
         return f"{node.name}{{" + ",".join(f"{k}:{_skeleton(v)}" for k, v in node.items()) + "}"
     if isinstance(node, (set, frozenset)):
@@ -263,10 +269,10 @@ def _skeleton(node: Any) -> str:
     return repr(node)
 
 
-def _alpha_normalize(node: Any, mapping: dict[Variable, Variable]) -> Any:
-    """Rebuild *node*, replacing each ``Variable`` with a canonical
-    ``?v0``/``?v1``/... assigned on first occurrence in a deterministic,
-    variable-name-independent walk.
+def _alpha_normalize(node: Any, mapping: dict[Variable | BNode, Variable | BNode]) -> Any:
+    """Rebuild *node*, replacing each ``Variable``/``BNode`` with a canonical
+    ``?v0``/``?v1``/... (or ``_:b0``/``_:b1``/...) assigned on first
+    occurrence in a deterministic, name/id-independent walk.
 
     This makes the canonical judge *alpha-equivalent*: two queries that are
     identical up to a consistent bijective variable renaming (e.g. the gold's
@@ -277,10 +283,23 @@ def _alpha_normalize(node: Any, mapping: dict[Variable, Variable]) -> Any:
     predicate) cannot collide. Ordered structures (``BGP.triples``, ``PV``)
     seed the numbering; set-derived structures are ordered by ``_skeleton``
     so numbering never depends on the original names.
+
+    ``BNode`` gets the same alpha-renaming treatment as ``Variable`` for the
+    same reason: an anonymous blank node (SPARQL's ``[]`` shorthand, e.g. in
+    ``FILTER NOT EXISTS { [] pv:hasManager ?empl }``) is assigned a fresh,
+    randomly-generated skolem id by rdflib's parser on *every* parse call —
+    without this, ``_canonical(same_sparql_string)`` would not even equal
+    itself across two separate parses, permanently failing the judge for any
+    otherwise-identical gold that happens to use a blank node (discovered via
+    CK25's ``ck25-27``/``ck25-40`` gold queries).
     """
     if isinstance(node, Variable):
         if node not in mapping:
             mapping[node] = Variable(f"v{len(mapping)}")
+        return mapping[node]
+    if isinstance(node, BNode):
+        if node not in mapping:
+            mapping[node] = BNode(f"b{len(mapping)}")
         return mapping[node]
     if isinstance(node, CompValue):
         return CompValue(
