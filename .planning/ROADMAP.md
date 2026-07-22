@@ -227,7 +227,7 @@ power (target minimum-detectable-effect ≤ 5pt, vs. today's ~16pt) via **ontolo
 synthetic generation** of curated (question → gold-SPARQL) pairs, so future NL-quality
 lifts become measurable at all. Phase 07's dense/BM25 sweep showed BM25 few-shot delivers
 a real lift but that the corpus is too small to confirm most effects (the pre-registered
-dense-vs-zero test was an underpowered null). This phase removes that measurement ceiling.
+dense-vs-zero test was an underpowered null). This phase **begins removing** that ceiling — it ships the ontology-driven generator + power instrument + a first power-informed growth batch; reaching MDE≤5pt continues incrementally via human-gated live re-measurement.
 
 **Scope (deliberately narrow):** eval-corpus growth + disjoint few-shot-bank expansion
 only, generated from the existing conceptual-schema ontology, human-curated, and judged
