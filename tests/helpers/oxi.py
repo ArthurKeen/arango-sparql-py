@@ -9,6 +9,7 @@ binding-equality semantics stay consistent.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -16,6 +17,19 @@ try:
     import pyoxigraph as oxi
 except ImportError:  # pragma: no cover - pyoxigraph is in [dev]
     oxi = None  # type: ignore[assignment]
+
+
+@dataclass
+class OxiQueryResult:
+    """Form-aware result of a single `oxi_query()` call.
+
+    `kind` is `"ask"` or `"select"`, set from the *actual Python type*
+    `store.query()` returned -- never from inspecting the SPARQL text.
+    """
+
+    kind: str
+    rows: list[dict[str, str]] | None = None
+    boolean: bool | None = None
 
 
 def load_store(rdf_paths: list[Path]) -> Any:
@@ -77,6 +91,39 @@ def oxi_bindings(store: Any, sparql: str) -> list[dict[str, str]]:
             row[var.value] = str(term)
         rows.append(row)
     return rows
+
+
+def oxi_query(store: Any, sparql: str) -> OxiQueryResult:
+    """Run *sparql* against *store* and return a form-aware result.
+
+    Branches on the Python type `store.query()` actually returns
+    (`pyoxigraph.QueryBoolean` for ASK, `pyoxigraph.QuerySolutions` for
+    SELECT) -- never by inspecting the SPARQL text (a `SELECT` inside a
+    nested ASK pattern, or a comment, would confuse a text-based check).
+
+    `QueryBoolean` exposes only `.serialize()`, never `.variables` --
+    reading `.variables` on it raises. `bool(result)` is the correct,
+    documented way to extract the ASK answer.
+
+    Any `SyntaxError`/`RuntimeError` `store.query()` raises (malformed
+    SPARQL, an unsupported custom function, ...) propagates to the
+    caller unchanged -- classifying/tagging that failure is the judge's
+    responsibility (D-05), not this helper's.
+    """
+    result = store.query(sparql)
+    if isinstance(result, oxi.QueryBoolean):
+        return OxiQueryResult(kind="ask", boolean=bool(result))
+    variables = list(result.variables)
+    rows: list[dict[str, str]] = []
+    for solution in result:
+        row: dict[str, str] = {}
+        for var in variables:
+            term = solution[var]
+            if term is None:
+                continue
+            row[var.value] = str(term)
+        rows.append(row)
+    return OxiQueryResult(kind="select", rows=rows)
 
 
 def normalize_oxi_row(row: dict[str, str]) -> dict[str, Any]:
