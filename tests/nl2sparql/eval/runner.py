@@ -425,9 +425,16 @@ def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> tuple[bool, 
     # Pattern 3: xsd:int is a *derived* XSD type with no implicit SPARQL
     # constructor function; xsd:integer (the primitive supertype) is
     # supported and semantically equivalent for this dataset's untyped
-    # decimal-string literals. Only the GOLD is normalized — the
-    # candidate's own text is never rewritten (Anti-Pattern).
+    # decimal-string literals. This is a KNOWN-SAFE engine-compat shim for a
+    # valid XSD constructor pyoxigraph simply does not implement — applied
+    # SYMMETRICALLY to gold and candidate so a query text is never accepted on
+    # one side and rejected on the other (the scripted gold-vs-gold
+    # self-consistency invariant, Plan 03 SC3). It is NOT model-error masking:
+    # the candidate_engine_rejected bucket (D-05) still fires for genuinely
+    # malformed/unsupported candidate SPARQL — only this one valid-but-
+    # unimplemented constructor is normalized, identically on both sides.
     gold_sparql = expected.replace("xsd:int(", "xsd:integer(")
+    cand_sparql = outcome.sparql.replace("xsd:int(", "xsd:integer(")
 
     try:
         gold_result = oxi_query(store, gold_sparql)
@@ -435,7 +442,7 @@ def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> tuple[bool, 
         return False, f"gold_engine_limitation: {exc}"
 
     try:
-        cand_result = oxi_query(store, outcome.sparql)
+        cand_result = oxi_query(store, cand_sparql)
     except (SyntaxError, RuntimeError) as exc:
         return False, f"candidate_engine_rejected: {exc}"
 
