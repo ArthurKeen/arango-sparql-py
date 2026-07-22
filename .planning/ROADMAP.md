@@ -32,8 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
 - [x] **Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline** - Grow corpus to real difficulty + capture a live-model baseline so a few-shot lift is measurable (INSERTED) (NEXT ACTIVE) (completed 2026-07-21)
 - [x] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline (completed 2026-07-21)
-- [ ] **Phase 07.1: NL→SPARQL synthetic eval-corpus growth** - Ontology-driven synthesis to grow the 25-case corpus to real statistical power (MDE ≤ 5pt) so future NL lifts are measurable; corpus + bank only, heavy levers deferred to v1.1 (INSERTED)
-- [ ] **Phase 07.2: NL→SPARQL external reality anchor (CK25)** - Adapt the CC-BY CK25 corporate Text2SPARQL set (50 human-curated Q→gold-SPARQL pairs, real corporate/product ontology) as a small directional check that the 07.1 synthetic corpus tracks real human questions; closes the external-validity gap + is CDF-domain-matched (INSERTED, fast-follow to 07.1)
+- [ ] **Phase 07.1: NL→SPARQL eval via public benchmarks** - Adopt public NL→SPARQL benchmark test sets (QALD-9-plus = powered capability gate; CK25 = corporate-domain anchor) + a small refusal supplement, reaching ~5–8pt MDE with real vetted questions; synthetic generation retired (INSERTED; pivoted via grill-me, former 07.2 folded in)
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
 ## Phase Details
@@ -221,63 +220,49 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 - [x] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — complete (7ce312e, b2aa008, f1c327e, 3136c17, ac19edc); the credentialed human's live sweep returned a documented null on the pre-registered confirmatory test, closed per the plan's human-accepted-documented-null path — see 07-04-SUMMARY.md
 
-### Phase 07.1: NL→SPARQL synthetic eval-corpus growth (INSERTED)
+### Phase 07.1: NL→SPARQL eval via public benchmarks (INSERTED)
 
-**Goal:** Grow the held-out NL→SPARQL eval corpus from 25 cases to real statistical
-power (target minimum-detectable-effect ≤ 5pt, vs. today's ~16pt) via **ontology-driven
-synthetic generation** of curated (question → gold-SPARQL) pairs, so future NL-quality
-lifts become measurable at all. Phase 07's dense/BM25 sweep showed BM25 few-shot delivers
-a real lift but that the corpus is too small to confirm most effects (the pre-registered
-dense-vs-zero test was an underpowered null). This phase **begins removing** that ceiling — it ships the ontology-driven generator + power instrument + a first power-informed growth batch; reaching MDE≤5pt continues incrementally via human-gated live re-measurement.
+> **Approach pivoted 2026-07-22 via a `/grill-me` design review.** The original plan
+> (synthetic ontology-driven corpus generation) was **retired** in favor of adopting public,
+> human-authored NL→SPARQL benchmark test sets. The former Phase 07.2 (CK25 anchor) is
+> **folded into this phase**. See `07.1-CONTEXT.md` for the full rationale (D-01..D-09).
 
-**Scope (deliberately narrow):** eval-corpus growth + disjoint few-shot-bank expansion
-only, generated from the existing conceptual-schema ontology, human-curated, and judged
-by the existing canonical-algebra judge. Each synthetic case keeps a parsing/transpilable
-gold and preserves the committed bank↔corpus disjointness gate (D-02).
+**Goal:** Make NL→SPARQL quality measurable with real statistical power by **adopting public
+benchmark test sets** rather than generating a synthetic corpus. The eval judge already
+compares SPARQL-to-SPARQL (canonical algebra — no data or transpiler needed for positive
+cases), so public (question → gold-SPARQL) sets drop into the existing harness cheaply. This
+reaches ~5–8pt minimum-detectable-effect (from ~16pt at 25 cases) using real, independently
+vetted questions — and removes the template-correctness, external-validity, and SPARQL-fluency
+risks that sank the synthetic approach.
 
-**Explicitly OUT of scope (deferred to a v1.1 NL milestone):** generator fine-tuning
-(SFT/LoRA), execution-guided / validator-in-the-loop selection, retriever-embedder
-fine-tuning, and any modern-embedder / hybrid-fusion retrieval swap. Those are only
-*measurable* once this corpus growth lands, which is why they wait.
+**Scope:**
+- Adopt **QALD-9-plus** (DBpedia, CC-BY-4.0, ~558 English Q w/ gold SPARQL) as the **powered
+  capability gate** (~6–8pt MDE, transferable SPARQL skill).
+- Adopt **CK25** (`eccenca/ck25-dataset`, CC-BY-4.0, ~50 expert-curated corporate Q) as the
+  **corporate-domain relevance anchor** (directional; domain-matched to CDF).
+- Author a **small `expect_refusal` supplement** (~a dozen cases) keyed to the transpiler's
+  actual coverage — the one thing public sets can't provide.
+- Keep the **power-analysis module** (achieved-MDE reporting) — the sole salvage from the
+  retired synthetic plan.
+- Wire both sets into the harness (schema subset + question filter + `configs.yml`),
+  regenerate the scripted baseline; keep the W3C ≥ 96.4% guard.
 
-**Non-regression:** deterministic SPARQL→AQL transpiler untouched; W3C DAWG query-eval
-coverage stays ≥ 96.4% (committed gate); `scripted` stays the no-network CI default.
+**Explicitly OUT of scope:** the synthetic generator (templates/enumeration/LLM authoring/
+faithfulness judge/partitioning) — **retired**, revisited only if real QALD+CK25 numbers show a
+specific need for more corporate-domain power (then as an amplifier of CK25's real patterns).
+v1.1 levers (SFT/LoRA, execution-guided selection, embedder/hybrid swap) and live-CDF-schema
+grounding remain deferred.
 
-**Input:** the Phase-07 deep-research report (beyond-prompting levers, ranked) —
-saved at `.planning/research/nl-to-sparql-beyond-prompting.md`.
+**Non-regression:** deterministic SPARQL→AQL transpiler untouched; W3C DAWG query-eval coverage
+≥ 96.4%; `scripted` stays the no-network CI default; adopted sets vendored with CC-BY
+attribution; no secrets committed.
 
-**Requirements**: NL-GROW-01, NL-GROW-02, NL-GROW-03, NL-GROW-04, NL-GROW-05, NL-GROW-06, NL-GROW-07
-**Depends on:** Phase 7 (needs the harder corpus + judge + the measurement finding)
-**Plans:** 6 plans
+**Requirements**: TBD (being re-planned for the benchmark-adoption approach)
+**Depends on:** Phase 7 (eval harness + judge + the measurement finding)
+**Plans:** being re-planned (synthetic plans retired)
 
 Plans:
-**Wave 1**
-- [ ] 07.1-01-PLAN.md — Nyquist Wave 0 scaffold: file NL-GROW-01..07 + RED test stubs + generator package skeleton [NL-GROW-01..07]
-
-**Wave 2** *(parallel — no file overlap)*
-- [ ] 07.1-02-PLAN.md — Power-analysis module (required_n / achieved_mde, no scipy) [NL-GROW-01]
-- [ ] 07.1-03-PLAN.md — Extend eval ontology (CDF-shaped, proven phys idioms) + Pitfall-1 audit [NL-GROW-02]
-
-**Wave 3** *(blocked on Wave 2)*
-- [ ] 07.1-04-PLAN.md — Committed seeded generator: templates/enumerate/partition/faithfulness/authoring/cli [NL-GROW-03, NL-GROW-05, NL-GROW-06]
-
-**Wave 4** *(blocked on Wave 3 — has human checkpoint)*
-- [ ] 07.1-05-PLAN.md — Grow corpus + disjoint bank (first batch) via gated authoring + English-only curation [NL-GROW-04]
-
-**Wave 5** *(blocked on Wave 4)*
-- [ ] 07.1-06-PLAN.md — Regenerate scripted baseline + live re-baseline runbook + achieved-MDE loop + W3C gate [NL-GROW-07]
-
-### Phase 07.2: NL→SPARQL external reality anchor (CK25) (INSERTED)
-
-**Goal**: Add a small, independent **reality anchor** to the NL→SPARQL eval so a strong score on the 07.1 synthetic corpus can be trusted. Adapt the CC-BY-4.0 **CK25 "Corporate Knowledge"** dataset (`github.com/eccenca/ck25-dataset`; 50 expert-curated question → gold-SPARQL pairs over a real 13-class/30-property corporate product ontology, human-readable IDs) into the eval harness, and use it as a **directional** check — flag drift if the synthetic corpus reports a gain while the real-question anchor moves the other way. Closes the external-validity gap in 07.1 and is domain-matched to the Contextual Data Fabric goal (a real corporate ontology, not DBpedia/Wikidata).
-
-**Depends on**: Phase 07.1 (needs the grown synthetic corpus + the eval harness to anchor against).
-**Requirements**: TBD (run /gsd-plan-phase 07.2)
-**Scope (deliberately small)**: vendor CK25 (with CC-BY attribution) → add phys: mapping annotations to its Turtle ontology and load via `SchemaResolver.from_turtle` → map to an ArangoDB physical model → filter its 50 questions to the transpiler-supported subset (~30–45 expected) → grade with the existing canonical-algebra judge → wire the synthetic-vs-anchor drift check. **Out of scope**: coupling to the live/evolving CDF master ontology; treating the anchor's absolute score as comparable to the synthetic corpus (it is directional only).
-**Non-regression**: deterministic transpiler untouched; W3C ≥ 96.4%; `scripted` stays the no-network CI default; no secrets committed.
-
-**Plans**: TBD
-**Status**: Not started
+- [ ] TBD (re-planning in progress — benchmark adoption)
 
 ### Phase 8: Public release readiness
 
@@ -297,7 +282,7 @@ Plans:
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 06.1 → 06.2 → 7 → 07.1 → 07.2 → 8.
+Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6 → 06.1 → 06.2 → 7 → 07.1 → 8.
 Phases 1–3 are already Complete. The active workstream begins at **Phase 6**
 (NL→SPARQL). Phases 4, 5, and 6 have no hard inter-dependency on each other and may
 be sequenced by priority — the user's directive puts NL→SPARQL first. The NL→SPARQL
@@ -315,6 +300,5 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
 | 06.2. NL→SPARQL harder corpus + live baseline | 4/4 | Complete    | 2026-07-21 |
 | 7. NL→SPARQL dense few-shot retrieval | 4/4 | Complete    | 2026-07-22 |
-| 07.1. NL→SPARQL synthetic eval-corpus growth | 0/6 | Planned | - |
-| 07.2. NL→SPARQL external reality anchor (CK25) | 0/TBD | Not started | - |
+| 07.1. NL→SPARQL eval via public benchmarks | 0/TBD | Re-planning (pivoted) | - |
 | 8. Public release readiness | 0/TBD | Not started | - |
