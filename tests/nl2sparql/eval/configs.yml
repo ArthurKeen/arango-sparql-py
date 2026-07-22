@@ -33,6 +33,50 @@ configs:
     max_repairs: 2
 
   # --------------------------------------------------------------------
+  # Phase 07.1-06: per-set QALD-9-plus / CK25 configs via the additive
+  # `corpus:` key (07.1-01 / RESEARCH Pattern 1). Two jobs, two sets
+  # (D-02/D-03): QALD is the powered gate, CK25 is the reported (un-gated)
+  # corporate-domain anchor — each gets its OWN scripted + live config and
+  # its OWN baseline.json entry, never blended into the hand-authored
+  # `scripted` corpus above (Pitfall 3).
+  # --------------------------------------------------------------------
+
+  # QALD-9-plus — no network, deterministic; gates its OWN baseline.json entry.
+  scripted-qald9plus:
+    provider:
+      type: scripted
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/qald9plus/corpus.yml
+
+  # CK25 — no network, deterministic; gates its OWN baseline.json entry.
+  scripted-ck25:
+    provider:
+      type: scripted
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+
+  # Live QALD-9-plus sweep — documents the real-provider shape. Not run in
+  # CI — gated behind RUN_EVAL=1 + NL2SPARQL_API_KEY, human-run (README §3).
+  openai-gpt4o-mini-qald9plus:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/qald9plus/corpus.yml
+
+  # Live CK25 sweep — same discipline as above.
+  openai-gpt4o-mini-ck25:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+
+  # --------------------------------------------------------------------
   # Phase 7 07-04: 3-arm (zero/dense/bm25) x 3-model (gpt-4o-mini anchor,
   # gpt-5-mini, gpt-5) matrix. All additive; `few_shot` absent == today's
   # zero-shot behavior. Not run in CI — gated behind RUN_EVAL=1 +
