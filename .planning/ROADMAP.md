@@ -250,10 +250,18 @@ match this phase). Deterministic transpiler + W3C ≥ 96.4% guard untouched.
   3. `scripted-ck25` under execution judging is a green gold-vs-gold sanity gate (100%), and a live `openai-gpt4o-mini-ck25` execution-graded accuracy number is recorded in `baseline.json` (reported, NOT gated — CK25 is the directional anchor)
   4. Non-regression: `scripted` stays the no-network canonical CI default, W3C DAWG coverage ≥ 96.4% holds, transpiler untouched, no secrets/raw-prompts committed
 
-**Plans:** 0 plans
+**Plans:** 4 plans
 
 Plans:
-- [ ] TBD (run /gsd-plan-phase 07.2 to break down)
+**Wave 1** *(parallel — no file overlap)*
+- [ ] 07.2-01-PLAN.md — Answer-set execution judge: oxi_query() form-aware helper + relaxed _judge_execution (value-set + IRI↔label norm + ASK + gold xsd:int fix + D-05 tagged buckets) + corpus data_path read, test-first [NL-EVAL-05]
+- [ ] 07.2-02-PLAN.md — Vendor full CK25 instance graph (951,747 B / 26,903 triples @ pinned commit) + extend NOTICE.md + corpus.yml data_path key [NL-EVAL-05]
+
+**Wave 2** *(blocked on Wave 1)*
+- [ ] 07.2-03-PLAN.md — Flip scripted-ck25 / openai-gpt4o-mini-ck25 to judge: execution in place + gold-vs-gold sanity gate (100%) + execution-graded scripted-ck25 baseline entry [NL-EVAL-05]
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 07.2-04-PLAN.md — Human-run live openai-gpt4o-mini-ck25 execution sweep + fold reported-not-gated anchor number into baseline.json + README runbook [NL-EVAL-05]
 
 ### Phase 07.1: NL→SPARQL eval via public benchmarks (INSERTED)
 
