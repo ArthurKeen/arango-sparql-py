@@ -32,6 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
 - [x] **Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline** - Grow corpus to real difficulty + capture a live-model baseline so a few-shot lift is measurable (INSERTED) (NEXT ACTIVE) (completed 2026-07-21)
 - [x] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline (completed 2026-07-21)
+- [ ] **Phase 07.1: NL→SPARQL synthetic eval-corpus growth** - Ontology-driven synthesis to grow the 25-case corpus to real statistical power (MDE ≤ 5pt) so future NL lifts are measurable; corpus + bank only, heavy levers deferred to v1.1 (INSERTED)
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
 ## Phase Details
@@ -219,6 +220,52 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 - [x] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — complete (7ce312e, b2aa008, f1c327e, 3136c17, ac19edc); the credentialed human's live sweep returned a documented null on the pre-registered confirmatory test, closed per the plan's human-accepted-documented-null path — see 07-04-SUMMARY.md
 
+### Phase 07.1: NL→SPARQL synthetic eval-corpus growth (INSERTED)
+
+**Goal:** Grow the held-out NL→SPARQL eval corpus from 25 cases to real statistical
+power (target minimum-detectable-effect ≤ 5pt, vs. today's ~16pt) via **ontology-driven
+synthetic generation** of curated (question → gold-SPARQL) pairs, so future NL-quality
+lifts become measurable at all. Phase 07's dense/BM25 sweep showed BM25 few-shot delivers
+a real lift but that the corpus is too small to confirm most effects (the pre-registered
+dense-vs-zero test was an underpowered null). This phase removes that measurement ceiling.
+
+**Scope (deliberately narrow):** eval-corpus growth + disjoint few-shot-bank expansion
+only, generated from the existing conceptual-schema ontology, human-curated, and judged
+by the existing canonical-algebra judge. Each synthetic case keeps a parsing/transpilable
+gold and preserves the committed bank↔corpus disjointness gate (D-02).
+
+**Explicitly OUT of scope (deferred to a v1.1 NL milestone):** generator fine-tuning
+(SFT/LoRA), execution-guided / validator-in-the-loop selection, retriever-embedder
+fine-tuning, and any modern-embedder / hybrid-fusion retrieval swap. Those are only
+*measurable* once this corpus growth lands, which is why they wait.
+
+**Non-regression:** deterministic SPARQL→AQL transpiler untouched; W3C DAWG query-eval
+coverage stays ≥ 96.4% (committed gate); `scripted` stays the no-network CI default.
+
+**Input:** the Phase-07 deep-research report (beyond-prompting levers, ranked) —
+saved at `.planning/research/nl-to-sparql-beyond-prompting.md`.
+
+**Requirements**: NL-GROW-01, NL-GROW-02, NL-GROW-03, NL-GROW-04, NL-GROW-05, NL-GROW-06, NL-GROW-07
+**Depends on:** Phase 7 (needs the harder corpus + judge + the measurement finding)
+**Plans:** 6 plans
+
+Plans:
+**Wave 1**
+- [ ] 07.1-01-PLAN.md — Nyquist Wave 0 scaffold: file NL-GROW-01..07 + RED test stubs + generator package skeleton [NL-GROW-01..07]
+
+**Wave 2** *(parallel — no file overlap)*
+- [ ] 07.1-02-PLAN.md — Power-analysis module (required_n / achieved_mde, no scipy) [NL-GROW-01]
+- [ ] 07.1-03-PLAN.md — Extend eval ontology (CDF-shaped, proven phys idioms) + Pitfall-1 audit [NL-GROW-02]
+
+**Wave 3** *(blocked on Wave 2)*
+- [ ] 07.1-04-PLAN.md — Committed seeded generator: templates/enumerate/partition/faithfulness/authoring/cli [NL-GROW-03, NL-GROW-05, NL-GROW-06]
+
+**Wave 4** *(blocked on Wave 3 — has human checkpoint)*
+- [ ] 07.1-05-PLAN.md — Grow corpus + disjoint bank (first batch) via gated authoring + English-only curation [NL-GROW-04]
+
+**Wave 5** *(blocked on Wave 4)*
+- [ ] 07.1-06-PLAN.md — Regenerate scripted baseline + live re-baseline runbook + achieved-MDE loop + W3C gate [NL-GROW-07]
+
 ### Phase 8: Public release readiness
 
 **Goal**: Ship v1.0 publicly with a green CI matrix, complete governance docs, and a signed-off SBOM.
@@ -255,4 +302,5 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
 | 06.2. NL→SPARQL harder corpus + live baseline | 4/4 | Complete    | 2026-07-21 |
 | 7. NL→SPARQL dense few-shot retrieval | 4/4 | Complete    | 2026-07-22 |
+| 07.1. NL→SPARQL synthetic eval-corpus growth | 0/TBD | Not planned | - |
 | 8. Public release readiness | 0/TBD | Not started | - |
