@@ -260,7 +260,7 @@ match this phase). Deterministic transpiler + W3C ≥ 96.4% guard untouched.
   3. `scripted-ck25` under execution judging is a green gold-vs-gold sanity gate (100%), and a live `openai-gpt4o-mini-ck25` execution-graded accuracy number is recorded in `baseline.json` (reported, NOT gated — CK25 is the directional anchor)
   4. Non-regression: `scripted` stays the no-network canonical CI default, W3C DAWG coverage ≥ 96.4% holds, transpiler untouched, no secrets/raw-prompts committed
 
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
@@ -270,7 +270,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1)*
 
-- [ ] 07.2-03-PLAN.md — Flip scripted-ck25 / openai-gpt4o-mini-ck25 to judge: execution in place + gold-vs-gold sanity gate (100%) + execution-graded scripted-ck25 baseline entry [NL-EVAL-05]
+- [x] 07.2-03-PLAN.md — Flip scripted-ck25 / openai-gpt4o-mini-ck25 to judge: execution in place + gold-vs-gold sanity gate (100%) + execution-graded scripted-ck25 baseline entry [NL-EVAL-05]
 
 **Wave 3** *(blocked on Wave 2)*
 
