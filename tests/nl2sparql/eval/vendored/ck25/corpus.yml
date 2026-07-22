@@ -1,0 +1,1074 @@
+ontology: |+
+  @prefix creativecommons: <http://creativecommons.org/ns#> .
+  @prefix dbo: <http://dbpedia.org/ontology/> .
+  @prefix ecc: <https://ns.eccenca.com/> .
+  @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+  @prefix ns2: <http://purl.org/dc/terms/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <http://arangodb.com/schema/physical#> .
+  @prefix prodi: <http://ld.company.org/prod-instances/> .
+  @prefix pv: <http://ld.company.org/prod-vocab/> .
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+  @prefix vann: <http://purl.org/vocab/vann/> .
+  @prefix void: <http://rdfs.org/ns/void#> .
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+  creativecommons:license a owl:AnnotationProperty ;
+      rdfs:isDefinedBy <http://creativecommons.org/ns> .
+
+  prodi: a void:Dataset ;
+      rdfs:label "Products - Integration"@en .
+
+  pv:addressCountry a owl:DatatypeProperty ;
+      rdfs:label "address country"@en ;
+      rdfs:comment "The address country."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:addressCountryCode a owl:DatatypeProperty ;
+      rdfs:label "address country code"@en ;
+      rdfs:comment "The address country code."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:addressLocality a owl:DatatypeProperty ;
+      rdfs:label "address locality"@en ;
+      rdfs:comment "The address locality (city)."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:addressText a owl:DatatypeProperty ;
+      rdfs:label "address text"@en ;
+      rdfs:comment "The address text."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:amount a owl:DatatypeProperty ;
+      rdfs:label "amount"@en ;
+      rdfs:comment "The amount."@en ;
+      rdfs:domain pv:Price ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:areaOfExpertise a owl:ObjectProperty ;
+      rdfs:label "area of expertise"@en ;
+      phys:edgeCollectionName "areaOfExpertise" ;
+      rdfs:comment "The product category agent is expert for."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:ProductCategory ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:compatibleProduct a owl:ObjectProperty ;
+      rdfs:label "compatible product"@en ;
+      phys:edgeCollectionName "compatibleProduct" ;
+      rdfs:comment "A compatible product."@en ;
+      rdfs:domain pv:Product ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Product ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:country a owl:ObjectProperty ;
+      rdfs:label "country"@en ;
+      phys:edgeCollectionName "country" ;
+      rdfs:comment "The country where the supplier is located."@en ;
+      rdfs:domain pv:Supplier ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range dbo:Country ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:currency a owl:DatatypeProperty ;
+      rdfs:label "currency"@en ;
+      rdfs:comment "The currency."@en ;
+      rdfs:domain pv:Price ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:depth_mm a owl:DatatypeProperty ;
+      rdfs:label "depth (mm)"@en ;
+      rdfs:comment "The depth of an item measured in millimeter."@en ;
+      rdfs:domain pv:Hardware ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:eligibleFor a owl:ObjectProperty ;
+      rdfs:label "eligible for"@en ;
+      phys:edgeCollectionName "eligibleFor" ;
+      rdfs:comment "Valid product service combinations (bundles, accessories)."@en ;
+      rdfs:domain pv:Service ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Product ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:email a owl:DatatypeProperty ;
+      rdfs:label "email"@en ;
+      rdfs:comment "The e-mail of an agent."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:hasBomPart a owl:ObjectProperty ;
+      rdfs:label "has BOM Part"@en ;
+      phys:edgeCollectionName "hasBomPart" ;
+      rdfs:comment "A part(s) used in this BOM."@en ;
+      rdfs:domain pv:BillOfMaterial ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:BomPart ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:hasCategory a owl:ObjectProperty ;
+      rdfs:label "has category"@en ;
+      phys:edgeCollectionName "hasCategory" ;
+      rdfs:comment "The category name of a product."@en ;
+      rdfs:domain pv:Product ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:ProductCategory ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:hasDirectReport a owl:ObjectProperty ;
+      rdfs:label "has direct report"@en ;
+      rdfs:comment "The employees manager she is reporting to."@en ;
+      rdfs:domain pv:Manager ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Employee ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:hasManager a owl:ObjectProperty ;
+      rdfs:label "has manager"@en ;
+      phys:edgeCollectionName "hasManager" ;
+      rdfs:comment "The manager of the employee."@en ;
+      rdfs:domain pv:Employee ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Manager ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:hasPart a owl:ObjectProperty ;
+      rdfs:label "part"@en ;
+      phys:edgeCollectionName "hasPart" ;
+      rdfs:comment "The Product needed."@en ;
+      rdfs:domain pv:BomPart ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Product ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:hasProductManager a owl:ObjectProperty ;
+      rdfs:label "has product manager"@en ;
+      phys:edgeCollectionName "hasProductManager" ;
+      rdfs:comment "The employee acting as the product manager of the product."@en ;
+      rdfs:domain pv:Product ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Employee ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:hasSupplier a owl:ObjectProperty ;
+      rdfs:label "supplier"@en ;
+      phys:edgeCollectionName "hasSupplier" ;
+      rdfs:comment "The supplier of a product."@en ;
+      rdfs:domain pv:Product ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Supplier ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:height_mm a owl:DatatypeProperty ;
+      rdfs:label "height (mm)"@en ;
+      rdfs:comment "The height of an item measured in millimeter."@en ;
+      rdfs:domain pv:Hardware ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:id a owl:DatatypeProperty ;
+      rdfs:label "ID"@en ;
+      rdfs:comment "The ID of a thing."@en ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:memberOf a owl:ObjectProperty ;
+      rdfs:label "member of"@en ;
+      phys:edgeCollectionName "memberOf" ;
+      rdfs:comment "The department to which an agents belongs."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Department ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:name a owl:DatatypeProperty ;
+      rdfs:label "name"@en ;
+      rdfs:comment "The name of something."@en ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:phone a owl:DatatypeProperty ;
+      rdfs:label "phone number"@en ;
+      rdfs:comment "A phone number."@en ;
+      rdfs:domain pv:Agent ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:string ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:price a owl:ObjectProperty ;
+      rdfs:label "price"@en ;
+      phys:edgeCollectionName "price" ;
+      rdfs:comment "The price specification of a product."@en ;
+      rdfs:domain pv:Product ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Price ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:quantity a owl:DatatypeProperty ;
+      rdfs:label "quantity"@en ;
+      rdfs:comment "The quantity needed."@en ;
+      rdfs:domain pv:BomPart ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:reliabilityIndex a owl:DatatypeProperty ;
+      rdfs:label "has reliability index"@en ;
+      rdfs:comment "A computed KPI to have an reliablity indicator in the context of a supply chain."@en ;
+      rdfs:domain pv:Hardware ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:responsibleFor a owl:ObjectProperty ;
+      rdfs:label "responsible for"@en ;
+      phys:edgeCollectionName "responsibleFor" ;
+      rdfs:comment "The product for which a department is responsible."@en ;
+      rdfs:domain pv:Department ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range pv:Product ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%230085C6&format=svg> .
+
+  pv:weight_g a owl:DatatypeProperty ;
+      rdfs:label "weight (g)"@en ;
+      rdfs:comment "The weight of an item measured in grams."@en ;
+      rdfs:domain pv:Hardware ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  pv:width_mm a owl:DatatypeProperty ;
+      rdfs:label "width (mm)"@en ;
+      rdfs:comment "The width of an item measured in millimeter."@en ;
+      rdfs:domain pv:Hardware ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:range xsd:decimal ;
+      foaf:depiction <https://api.iconify.design/carbon:property-relationship.svg?color=%2339AB4B&format=svg> .
+
+  ns2:creator a owl:AnnotationProperty ;
+      rdfs:isDefinedBy ns2: .
+
+  ns2:issued a owl:AnnotationProperty ;
+      rdfs:isDefinedBy ns2: .
+
+  ns2:modified a owl:AnnotationProperty ;
+      rdfs:isDefinedBy ns2: .
+
+  ns2:publisher a owl:AnnotationProperty ;
+      rdfs:isDefinedBy ns2: .
+
+  ns2:rights a owl:AnnotationProperty ;
+      rdfs:isDefinedBy ns2: .
+
+  vann:preferredNamespacePrefix a owl:AnnotationProperty ;
+      rdfs:isDefinedBy vann: .
+
+  vann:preferredNamespaceUri a owl:AnnotationProperty ;
+      rdfs:isDefinedBy vann: .
+
+  dbo:Country a owl:Class ;
+      rdfs:label "Country"@en ;
+      foaf:depiction <https://api.iconify.design/gis/search-country.svg?color=%23D6AF00&format=svg> .
+
+  pv:BillOfMaterial a owl:Class ;
+      rdfs:label "Bill of Material (BOM)"@en ;
+      phys:collectionName "BillOfMaterials" ;
+      rdfs:comment "The Bill of Material (BOM) of a complex product."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/icon-park-outline/tree-list.svg?color=%23D6AF00&format=svg> .
+
+  pv:Service a owl:Class ;
+      rdfs:label "Service"@en ;
+      phys:collectionName "Services" ;
+      rdfs:comment "Some value added service realized based on other product(s)."@en ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:subClassOf pv:Product ;
+      foaf:depiction <https://api.iconify.design/mdi/account-service-outline.svg?color=%23D6AF00&format=svg> .
+
+  pv:Department a owl:Class ;
+      rdfs:label "Department"@en ;
+      phys:collectionName "Departments" ;
+      rdfs:comment "A department in an organization."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/arcticons/emoji-department-store.svg?color=%23D6AF00&format=svg> .
+
+  pv:Manager a owl:Class ;
+      rdfs:label "Manager"@en ;
+      phys:collectionName "Managers" ;
+      rdfs:comment "An employee with some direct reports and management duties."@en ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:subClassOf pv:Employee ;
+      foaf:depiction <https://api.iconify.design/hugeicons/manager.svg?color=%23D6AF00&format=svg> .
+
+  pv:ProductCategory a owl:Class ;
+      rdfs:label "Product Category"@en ;
+      phys:collectionName "ProductCategorys" ;
+      rdfs:comment "The category of a product."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/material-symbols-light/category-outline.svg?color=%23D6AF00&format=svg> .
+
+  pv:Supplier a owl:Class ;
+      rdfs:label "Supplier"@en ;
+      phys:collectionName "Suppliers" ;
+      rdfs:comment "The Supplier of some item(s)."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/mdi/company.svg?color=%23D6AF00&format=svg> .
+
+  pv:BomPart a owl:Class ;
+      rdfs:label "BOM Part"@en ;
+      phys:collectionName "BomParts" ;
+      rdfs:comment "A (number of) part(s) in a BOM."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/fluent/puzzle-cube-piece-20-filled.svg?color=%23D6AF00&format=svg> .
+
+  pv:Price a owl:Class ;
+      rdfs:label "Price"@en ;
+      phys:collectionName "Prices" ;
+      rdfs:comment "A price object to deal with multiple prices and/or currencies."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/solar/tag-price-bold.svg?color=%23D6AF00&format=svg> .
+
+  pv:Employee a owl:Class ;
+      rdfs:label "Employee"@en ;
+      phys:collectionName "Employees" ;
+      rdfs:comment "An employee in my company."@en ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:subClassOf pv:Agent ;
+      foaf:depiction <https://api.iconify.design/clarity/employee-line.svg?color=%23D6AF00&format=svg> .
+
+  pv:Hardware a owl:Class ;
+      rdfs:label "Hardware"@en ;
+      phys:collectionName "Hardwares" ;
+      rdfs:comment "The hardware products produced."@en ;
+      rdfs:isDefinedBy pv: ;
+      rdfs:subClassOf pv:Product ;
+      foaf:depiction <https://api.iconify.design/ion/hardware-chip-outline.svg?color=%23D6AF00&format=svg> .
+
+  pv:Agent a owl:Class ;
+      rdfs:label "Agent"@en ;
+      phys:collectionName "Agents" ;
+      rdfs:comment "Abstract base class for people, robots or other things that can act."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/mdi/anonymous.svg?color=%23D6AF00&format=svg> .
+
+  pv:Product a owl:Class ;
+      rdfs:label "Product"@en ;
+      phys:collectionName "Products" ;
+      rdfs:comment "Anything that we make and/or sell."@en ;
+      rdfs:isDefinedBy pv: ;
+      foaf:depiction <https://api.iconify.design/ant-design/product-outlined.svg?color=%23D6AF00&format=svg> .
+
+  pv: a owl:Ontology ;
+      rdfs:label "pv: Products - Vocab"@en ;
+      creativecommons:license <http://creativecommons.org/licenses/by/4.0/> ;
+      ns2:contributor ecc:stramp ;
+      ns2:created "2018-08-29"^^xsd:date ;
+      ns2:creator ecc:rpietzsch ;
+      ns2:modified "2018-08-29"^^xsd:date ;
+      ns2:publisher ecc:eccenca-GmbH ;
+      vann:preferredNamespacePrefix "pv" ;
+      vann:preferredNamespaceUri "http://ld.company.org/prod-vocab/" ;
+      void:vocabulary vann:,
+          foaf: ;
+      rdfs:comment "Example vocabulary modeled from a simple sentence about products and services."@en ;
+      rdfs:isDefinedBy pv: ;
+      owl:versionInfo "v0.0.1-37-g15bd45c-dirty" .
+
+cases:
+- name: ck25-1
+  nl: In which department is Ms. Brant?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/empl-Karen.Brant%40company.org> pv:memberOf ?result .
+      ?result a pv:Department .
+    }
+- name: ck25-2
+  nl: What is the telephone of Baldwin Dirksen?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/empl-Baldwin.Dirksen%40company.org> pv:phone ?result .
+    }
+- name: ck25-3
+  nl: Who is the manager of Heinrich Hoch?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/empl-Heinrich.Hoch%40company.org> pv:hasManager ?result .
+    }
+- name: ck25-4
+  nl: What is the email of Sabrina from Marketing?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?department pv:name "Marketing" .
+      ?person pv:memberOf ?department .
+      ?person pv:email ?result .
+      ?person pv:name ?name .
+      FILTER (CONTAINS(?name, "Sabrina"))
+    }
+- name: ck25-5
+  nl: Who has expertise in Transistors?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:areaOfExpertise <http://ld.company.org/prod-instances/prod-cat-Transistor> .
+    }
+- name: ck25-6
+  nl: Who is our Sensor expert?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:areaOfExpertise <http://ld.company.org/prod-instances/prod-cat-Sensor> .
+    }
+- name: ck25-7
+  nl: Who is the manager of the Data Services department?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?person pv:memberOf <http://ld.company.org/prod-instances/dept-41622> .
+      ?person pv:hasManager ?result .
+    }
+- name: ck25-8
+  nl: Which department is responsible for the Sensor Switch M558-2275045?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:responsibleFor <http://ld.company.org/prod-instances/hw-M558-2275045> .
+    }
+- name: ck25-9
+  nl: How many Sensor Switches do we offer?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT (COUNT(?resultR) as ?result)
+    WHERE
+    {
+      ?resultR pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Sensor> .
+      ?resultR pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Switch> .
+    }
+- name: ck25-10
+  nl: What is the name of the Network expert from the Marketing Department?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?employee pv:memberOf <http://ld.company.org/prod-instances/dept-85880> .
+      ?employee pv:areaOfExpertise <http://ld.company.org/prod-instances/prod-cat-Network> .
+      ?employee pv:name ?result .
+    }
+- name: ck25-11
+  nl: Which departments have Transducer Experts?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?employee pv:memberOf ?result .
+      ?employee pv:areaOfExpertise <http://ld.company.org/prod-instances/prod-cat-Transducer> .
+    }
+- name: ck25-12
+  nl: Which supplier are available to deliver Compensators?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?hardware pv:hasSupplier ?result .
+      ?hardware pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Compensator> .
+    }
+- name: ck25-13
+  nl: How many suppliers do we have in France?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT (COUNT(DISTINCT ?supplier) as ?result)
+    WHERE
+    {
+      ?product pv:hasSupplier ?supplier .
+      ?supplier pv:addressCountry "France" .
+    }
+- name: ck25-14
+  nl: Which supplier in France delivers Compensators?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?product pv:hasSupplier ?result .
+      ?product pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Compensator> .
+      ?result pv:addressCountry "France" .
+    }
+- name: ck25-15
+  nl: What is the cheapest Encoder we can get from a french or german supplier?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Encoder> .
+      ?result pv:price ?priceR .
+      ?priceR pv:amount ?price .
+      ?result pv:hasSupplier ?supplier .
+      ?supplier pv:addressCountry ?country .
+      FILTER ( (?country = "France") ||  (?country = "Germany") )
+    }
+    ORDER BY ASC(?price)
+    LIMIT 1
+- name: ck25-16
+  nl: Do we have suppliers in Toulouse?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    ASK
+    WHERE
+    {
+      ?product pv:hasSupplier ?supplier .
+      ?supplier pv:addressLocality "Toulouse" .
+    }
+- name: ck25-17
+  nl: Which suppliers do we have in Toulouse?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?product pv:hasSupplier ?result .
+      ?result pv:addressLocality "Toulouse" .
+    }
+- name: ck25-18
+  nl: What is the cheapest Oscillator we have?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Oscillator> .
+      ?result pv:price ?priceR .
+      ?priceR pv:amount ?price .
+    }
+    ORDER BY ASC(?price)
+    LIMIT 1
+- name: ck25-19
+  nl: What is the most expensive service we offer?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result a pv:Service .
+      ?result pv:price ?priceR .
+      ?priceR pv:amount ?price .
+    }
+    ORDER BY DESC(?price)
+    LIMIT 1
+- name: ck25-20
+  nl: Who is responsible for the most expensive service we offer?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?service a pv:Service .
+      ?service pv:hasProductManager ?result .
+      ?service pv:price ?priceR .
+      ?priceR pv:amount ?price .
+    }
+    ORDER BY DESC(?price)
+    LIMIT 1
+- name: ck25-21
+  nl: What is the heaviest coil that does not exceed a base area of 15x15 milimeter?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Coil> .
+      ?result pv:weight_g ?weight_g .
+      ?result pv:width_mm ?width_mm .
+      ?result pv:depth_mm ?depth_mm .
+      FILTER (?width_mm <= 15)
+      FILTER (?depth_mm <= 15)
+    }
+    ORDER BY DESC(?weight_g)
+    LIMIT 1
+- name: ck25-22
+  nl: What products are compatible with the U990 LCD Inductor?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/hw-U990-5234138> pv:compatibleProduct ?result .
+    }
+- name: ck25-23
+  nl: What products can I get from US suppliers that are compatible with the U990 LCD Inductor?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/hw-U990-5234138> pv:compatibleProduct ?result .
+      ?result pv:hasSupplier ?supplier .
+      ?supplier pv:country <http://dbpedia.org/resource/United_States> .
+    }
+- name: ck25-24
+  nl: What is the pontiometer with the smallest volume?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Potentiometer> .
+      ?result pv:width_mm ?width_mm .
+      ?result pv:depth_mm ?depth_mm .
+      ?result pv:height_mm ?height_mm .
+      BIND(?width_mm * ?depth_mm * ?height_mm as ?volume)
+    }
+    ORDER BY ASC(?volume)
+    LIMIT 1
+- name: ck25-25
+  nl: Which coil has the highest density?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Coil> .
+      ?result pv:width_mm ?width_mm .
+      ?result pv:depth_mm ?depth_mm .
+      ?result pv:height_mm ?height_mm .
+      ?result pv:weight_g ?weight_g .
+      BIND(?width_mm * ?depth_mm * ?height_mm / 1000000000 AS ?volume_m3)
+      BIND(?weight_g / 1000 AS ?weight_kg)
+      BIND(?weight_kg / ?volume_m3 AS ?density)
+    }
+    ORDER BY DESC(?density)
+    LIMIT 1
+- name: ck25-26
+  nl: In which cities are our US suppliers for LCDs?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?product pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-LCD> .
+      ?product pv:hasSupplier ?supplier .
+      ?supplier pv:country <http://dbpedia.org/resource/United_States> .
+      ?supplier pv:addressLocality ?result .
+    }
+- name: ck25-27
+  nl: Give me a phone directory of everyone on staff who does not manage anyone, I need name, email, and
+    phone, sorted by name?
+  expected: |
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?empl ?name ?email ?phone
+    WHERE {
+      ?emplClass rdfs:subClassOf* pv:Employee .
+      ?empl a ?emplClass ;
+          pv:name ?name ;
+          pv:email ?email .
+      OPTIONAL { ?empl pv:phone ?phone }
+      FILTER NOT EXISTS { [] pv:hasManager ?empl . }
+    }
+    ORDER BY ?name
+- name: ck25-28
+  nl: Do we have any service that does apply to a BOM where parts are sourced from Russia?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    ASK
+    WHERE {
+      { # all BOMs with parts from russia
+        SELECT ?bom
+        WHERE {
+          ?bom pv:hasBomPart ?bomPart .
+          ?bomPart pv:hasPart ?hw .
+          ?hw pv:hasSupplier ?suppl .
+          ?suppl pv:addressCountry ?country .
+          FILTER (CONTAINS(LCASE(?country), LCASE("Russia")))
+        }
+      }
+
+      # services eligible for parts associated with these BOMs?
+      ?s a pv:Service .
+      ?s pv:eligibleFor ?hw .
+      ?bom pv:hasBomPart ?bomPart .
+      ?bomPart pv:hasPart ?hw .
+    }
+- name: ck25-29
+  nl: What suppliers - I need name, country and price - deliver the 6th to 10th most expensive hardware
+    items.
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?name ?country ?price
+    WHERE {
+      ?sup a pv:Supplier ;
+        pv:addressCountry ?country ;
+      pv:name ?name .
+      ?hw a pv:Hardware ;
+      pv:price/pv:amount ?price ;
+        pv:price/pv:currency "EUR" ;
+        pv:hasSupplier ?sup .
+    }
+    ORDER BY DESC(?price)
+    LIMIT 5 OFFSET 10
+- name: ck25-30
+  nl: Which department have more than 5 employees? I need their names and the number of employees.
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?name (COUNT(?emp) AS ?numEmployees)
+    WHERE {
+      ?dept a pv:Department ;
+        pv:name ?name .
+      ?emp a pv:Employee ;
+        pv:memberOf ?dept .
+    }
+    GROUP BY ?depty ?name
+    HAVING (COUNT(?emp) > 5)
+- name: ck25-31
+  nl: Per product category, what's our lightest and heaviest hardware item?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?cat (MIN(?w) AS ?minWeight) (MAX(?w) AS ?maxWeight)
+    WHERE {
+      ?catItem a pv:ProductCategory ;
+        pv:name ?cat .
+      ?hw a pv:Hardware ;
+        pv:hasCategory ?catItem ;
+        pv:weight_g ?w .
+    }
+    GROUP BY ?cat
+- name: ck25-32
+  nl: For each supplier, what's the average price (in EUR) of what they sell, round reasonably?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?name (ROUND(AVG(?amt) * 100) / 100 AS ?avgEur) WHERE {
+      ?sup a pv:Supplier ;
+        pv:name ?name .
+      ?hw pv:hasSupplier ?sup ;
+        pv:price/pv:amount ?amt ;
+        pv:price/pv:currency "EUR" .
+    }
+    GROUP BY ?sup ?name
+- name: ck25-33
+  nl: Are there departments with no manager assigned?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+
+    ASK
+    WHERE {
+      ?dept a pv:Department .
+      FILTER NOT EXISTS {
+        ?m pv:memberOf ?dept .
+        ?m a pv:Manager .
+      }
+    }
+- name: ck25-34
+  nl: I need to update my supplier rolodex, give me every supplier's name and all address details.
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?name ?locality ?ccode ?country
+    WHERE {
+      ?sup a pv:Supplier ;
+        pv:name ?name .
+      OPTIONAL { ?sup pv:addressLocality ?locality . }
+      OPTIONAL { ?sup pv:addressCountryCode ?ccode . }
+      OPTIONAL { ?sup pv:addressCountry ?country . }
+    }
+- name: ck25-35
+  nl: For every product, list what other products it is compatible with and the price differences between
+    both.
+  expected: |
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv:    <http://ld.company.org/prod-vocab/>
+
+    SELECT ?prod ?compatible (?prodAmount - ?compatibleAmount AS ?priceDiff)
+    WHERE {
+      ?prodClass rdfs:subClassOf* pv:Product .
+      ?prod a ?prodClass ;
+        pv:compatibleProduct ?compatible .
+      ?prod pv:price/pv:amount ?prodAmount ;
+        pv:price/pv:currency "EUR" .
+      ?compatible pv:price/pv:amount ?compatibleAmount ;
+        pv:price/pv:currency "EUR" .
+    }
+- name: ck25-36
+  nl: Which area of expertise is most relevant among our products, what are the top three skills?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?cat ?name
+    WHERE {
+      ?hw a pv:Hardware ;
+        pv:hasCategory ?cat .
+      ?cat pv:name ?name .
+    }
+    GROUP BY ?cat ?name
+    ORDER BY DESC(COUNT(*))
+    LIMIT 3
+- name: ck25-37
+  nl: For each Bill of Material, how many parts does it contain and what is the total material quantity
+    — show me only those BOMs exceeding 600 total items and order them descending.
+  expected: |
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?bom (COUNT(?part) AS ?partCount) (SUM(?qty) AS ?totalQty)
+    WHERE {
+      ?bom a pv:BillOfMaterial ;
+        pv:hasBomPart ?part .
+      ?part pv:quantity ?qty_ .
+      BIND(xsd:int(?qty_) AS ?qty)
+    }
+    GROUP BY ?bom
+    HAVING (SUM(?qty) > 600)
+    ORDER BY DESC(SUM(?qty))
+- name: ck25-39
+  nl: Which hardware items are wider than they are tall, and have a depth under 50 mm? List their dimensions.
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?hw ?width ?height ?depth
+    WHERE {
+      ?hw a pv:Hardware ;
+        pv:width_mm ?width ;
+        pv:height_mm ?height ;
+        pv:depth_mm ?depth .
+      FILTER (?width > ?height && ?depth < 50)
+    }
+- name: ck25-40
+  nl: Which hardware items - list id and name - have no active product manager?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?hw ?id ?name
+    WHERE {
+      ?hw a pv:Hardware ;
+        pv:id ?id ;
+        pv:name ?name .
+      FILTER NOT EXISTS { ?hw pv:hasProductManager/pv:name [] . }
+    }
+- name: ck25-41
+  nl: For each manager, what percentage of their entire team work in the same department as the manager?
+  expected: |
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?m ?name (?deptTeam / ?fullteam * 100 AS ?pct)
+    WHERE {
+
+      ?m pv:name ?name .
+
+      { # full team
+        SELECT ?m (COUNT(*) AS ?fullteam) WHERE {
+          ?e pv:hasManager ?m .
+        } GROUP BY ?m
+      }
+
+      { # team in same dept
+        SELECT ?m (COUNT(*) AS ?deptTeam) WHERE {
+          ?m pv:memberOf ?dept .
+          ?e pv:hasManager ?m .
+          ?e pv:memberOf ?dept .
+        } GROUP BY ?m
+      }
+    }
+- name: ck25-42
+  nl: Which Bill-of-Material has the highest average unit cost of its hardware parts, and what is that
+    average?
+  expected: |
+    PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX prodi: <http://ld.company.org/prod-instances/>
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?bom (ROUND(AVG(?spst / ?sq) * 100) / 100 AS ?avgUnitCost)
+    WHERE {
+      {
+        SELECT ?bom (SUM(?partSubTotal) AS ?spst) (SUM(xsd:int(?quant)) AS ?sq)
+        WHERE {
+          ?bom a pv:BillOfMaterial ;
+            pv:hasBomPart ?part .
+          ?part pv:quantity ?quant .
+          ?part pv:hasPart/pv:price/pv:amount ?amount .
+          ?part pv:hasPart/pv:price/pv:currency "EUR" .
+          BIND(xsd:int(?quant) * ?amount AS ?partSubTotal)
+        }
+        GROUP BY ?bom
+      }
+    }
+    GROUP BY ?bom
+    ORDER BY DESC(?avgUnitCost)
+    LIMIT 1
+- name: ck25-43
+  nl: Show me any cycles of product compatibility — i.e. product A says it's compatible with B, and B
+    says it's compatible with A (mutual pairs).
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?a ?b
+    WHERE {
+      ?a pv:compatibleProduct ?b .
+      FILTER (STR(?a) < STR(?b))
+    }
+- name: ck25-44
+  nl: Which hardware items have dimensions in the top 10 % of all widths, and what are their IDs, names
+    and widths?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+
+    SELECT ?id ?name ?width
+    WHERE {
+      { # get min-max range
+        SELECT (MIN(?width) AS ?minW) (MAX(?width) AS ?maxW)
+        WHERE {
+          ?hw a pv:Hardware ;
+            pv:width_mm ?width .
+        }
+      }
+
+      # get 90. percentile
+      BIND(?minW + (0.9 * (?maxW - ?minW)) AS ?pct90)
+
+      ?hw a pv:Hardware ;
+        pv:id ?id ;
+        pv:name ?name ;
+        pv:width_mm ?width .
+
+      FILTER(?width >= ?pct90)
+    }
+    ORDER BY DESC(?width)
+- name: ck25-45
+  nl: Which supplier delivers the most reliable Inductor?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?hardware pv:hasCategory <http://ld.company.org/prod-instances/prod-cat-Inductor> .
+      ?hardware pv:reliabilityIndex ?reliabilityIndex .
+      ?hardware pv:hasSupplier ?result .
+    }
+    ORDER BY DESC(?reliabilityIndex)
+    LIMIT 1
+- name: ck25-46
+  nl: What are the top 5 suppliers with best average reliability over their products.
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result (AVG(?reliabilityIndex) AS ?averageReliabilityIndex)
+    WHERE
+    {
+      ?hardware pv:reliabilityIndex ?reliabilityIndex .
+      ?hardware pv:hasSupplier ?result .
+    }
+    GROUP BY ?result
+    ORDER BY DESC(?averageReliabilityIndex)
+    LIMIT 5
+- name: ck25-47
+  nl: From which countries are the BOM parts of our SkySync MechWave delivered?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/bom-17> pv:hasBomPart ?bomPart .
+      ?bomPart pv:hasPart ?product .
+      ?product pv:hasSupplier ?supplier .
+      ?supplier pv:country ?result
+    }
+- name: ck25-48
+  nl: Show me all BOMs which have at least on part from a polish supplier.
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result
+    WHERE
+    {
+      ?result a pv:BillOfMaterial .
+      ?result pv:hasBomPart ?bomPart .
+      ?bomPart pv:hasPart ?product .
+      ?product pv:hasSupplier ?supplier .
+      ?supplier pv:country <http://dbpedia.org/resource/Poland> .
+    }
+- name: ck25-49
+  nl: How many suppliers can deliver alternative compatible products for the K367 Strain Encoder?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT (COUNT(?supplier) AS ?result)
+    WHERE
+    {
+      <http://ld.company.org/prod-instances/hw-K367-1320550> pv:compatibleProduct ?alternative .
+      ?alternative pv:hasSupplier ?supplier .
+    }
+- name: ck25-50
+  nl: Which department is resposible for the most product and how many product are this?
+  expected: |
+    PREFIX pv: <http://ld.company.org/prod-vocab/>
+    SELECT DISTINCT ?result (COUNT(?result) AS ?count)
+    WHERE
+    {
+      ?result pv:responsibleFor ?product .
+    }
+    GROUP BY ?result
+    ORDER BY DESC(?count)
+    LIMIT 1

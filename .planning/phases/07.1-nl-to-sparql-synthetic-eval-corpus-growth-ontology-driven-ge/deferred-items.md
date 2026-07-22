@@ -24,3 +24,18 @@ current task's changes).
   `run('scripted')`/`write_report` (or the equivalent fold-in script) so
   `baseline.json` carries a verdict for every `corpus.yml` case, including
   `neg-service-federation`.
+
+## 07.1-05 (CK25 vendoring)
+
+- **`tests/nl2sparql/test_engine_adapter.py::TestVerdictReproduction::test_engine_reproduces_baseline_verdicts`
+  fails with `KeyError: 'neg-service-federation'`.** Same pre-existing drift as noted
+  above under 07.1-04 — `neg-service-federation` is an existing case name in the root
+  `tests/nl2sparql/eval/corpus.yml` (added by 07.1-03), and neither
+  `test_engine_adapter.py` nor `tests/nl2sparql/eval/baseline.json` were touched by
+  this plan (`git diff --stat <base> -- tests/nl2sparql/test_engine_adapter.py
+  tests/nl2sparql/eval/baseline.json` is empty). Left unfixed — out of this plan's file
+  scope (`tests/nl2sparql/eval/vendored/ck25/**` only).
+
+> **Orchestrator note:** Both drift reports refer to the same root cause. Resolution is
+> owned by **07.1-06 Task 2**, which regenerates `baseline.json` and explicitly folds in
+> the Plan-03 refusal cases (per 07.1-06-PLAN.md). This entry closes once that lands green.
