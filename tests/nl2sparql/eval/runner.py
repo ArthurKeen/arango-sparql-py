@@ -55,6 +55,7 @@ class CaseResult:
     actual: str
     passed: bool
     elapsed_ms: float = 0.0
+    judge_note: str | None = None
 
 
 @dataclass
@@ -343,21 +344,119 @@ def _canon_row(row: dict[str, str]) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(row.items()))
 
 
-def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> bool:
-    """Optional execution-equivalence tier — only used when a case carries
-    a `data:` Turtle fixture. Lazy-imports `tests.helpers.oxi` so pyoxigraph
-    absence never breaks the default (canonical) judging path."""
+def _strip_execution_literal(raw: str) -> str:
+    """Strip pyoxigraph's N-Triples lexical envelope (surrounding quotes,
+    optional ``^^<datatype>``/``@lang`` suffix) from a stringified literal
+    term, e.g. ``'"Alice"'`` -> ``'Alice'``, ``'"72"^^<...#integer>'`` ->
+    ``'72'``, ``'"Alice"@en'`` -> ``'Alice'``."""
+    return raw.split('"^^')[0].strip('"').split('"@')[0]
+
+
+def _build_label_map(store: Any) -> dict[str, str]:
+    """One `IRI -> rdfs:label` lookup per judged store (Pattern 2).
+
+    Verified against the real CK25 instance graph: `rdfs:label` strictly
+    covers `pv:name` (0 counterexamples), so no domain-specific predicate
+    fallback is needed.
+    """
+    from tests.helpers.oxi import oxi_query
+
+    result = oxi_query(
+        store,
+        "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> "
+        "SELECT ?s ?label WHERE { ?s rdfs:label ?label }",
+    )
+    out: dict[str, str] = {}
+    for row in result.rows or []:
+        subj = row.get("s")
+        label = row.get("label")
+        if subj is None or label is None:
+            continue
+        iri = subj[1:-1] if subj.startswith("<") and subj.endswith(">") else subj
+        out[iri] = _strip_execution_literal(label)
+    return out
+
+
+def _normalize_execution_value(raw: str, label_map: dict[str, str]) -> str:
+    """Map a stringified pyoxigraph term to a comparable plain-text form.
+
+    An IRI with a known `rdfs:label` normalizes to that label (an entity's
+    IRI and its label are equivalent answers, D-03); an IRI with no known
+    label falls back to its bare (unbracketed) form. A quoted literal is
+    stripped of its N-Triples envelope so it compares equal to a label
+    looked up the same way — both sides must land on the SAME plain-text
+    representation, or an IRI-normalized-to-label value would never equal
+    a literal-projecting candidate's raw quoted string.
+    """
+    if raw.startswith("<") and raw.endswith(">"):
+        iri = raw[1:-1]
+        return label_map.get(iri, iri)
+    if raw.startswith('"'):
+        return _strip_execution_literal(raw)
+    return raw
+
+
+def _execution_row_key(row: dict[str, str], label_map: dict[str, str]) -> tuple[str, ...]:
+    """Sorted-tuple row key (Pattern 4) — var-name/column-order insensitive
+    AND duplicate-safe (a `frozenset` would silently collapse two equal
+    values projected into the same row)."""
+    return tuple(sorted(_normalize_execution_value(v, label_map) for v in row.values()))
+
+
+def _judge_execution(expected: str, outcome: Any, data_ttl: str) -> tuple[bool, str | None]:
+    """Answer-set execution judge (NL-EVAL-05, D-02..D-05).
+
+    Runs gold + candidate SPARQL through pyoxigraph and compares ANSWERS
+    (not query structure): up to variable renaming and IRI<->label
+    normalization for SELECT, boolean comparison for ASK. Gold-side and
+    candidate-side pyoxigraph failures are caught SEPARATELY and tagged
+    with a distinguishing `judge_note` — never blended into a bare `False`
+    (Pitfall 3). Returns `(passed, judge_note)`; `judge_note` is `None` for
+    an ordinary pass/fail and a short tag string for the two D-05 visible
+    buckets.
+    """
     if not outcome.aql:
-        return False
-    from tests.helpers.oxi import load_store_from_string, oxi_bindings
+        return False, None
+
+    from tests.helpers.oxi import load_store_from_string, oxi_query
 
     store = load_store_from_string(data_ttl)
-    expected_bindings = oxi_bindings(store, expected)
-    actual_bindings = oxi_bindings(store, outcome.sparql)
-    return sorted(map(_canon_row, expected_bindings)) == sorted(map(_canon_row, actual_bindings))
+
+    # Pattern 3: xsd:int is a *derived* XSD type with no implicit SPARQL
+    # constructor function; xsd:integer (the primitive supertype) is
+    # supported and semantically equivalent for this dataset's untyped
+    # decimal-string literals. Only the GOLD is normalized — the
+    # candidate's own text is never rewritten (Anti-Pattern).
+    gold_sparql = expected.replace("xsd:int(", "xsd:integer(")
+
+    try:
+        gold_result = oxi_query(store, gold_sparql)
+    except (SyntaxError, RuntimeError) as exc:
+        return False, f"gold_engine_limitation: {exc}"
+
+    try:
+        cand_result = oxi_query(store, outcome.sparql)
+    except (SyntaxError, RuntimeError) as exc:
+        return False, f"candidate_engine_rejected: {exc}"
+
+    if gold_result.kind != cand_result.kind:
+        return False, None  # e.g. gold ASK vs candidate SELECT — a genuine mismatch
+
+    if gold_result.kind == "ask":
+        return gold_result.boolean == cand_result.boolean, None
+
+    label_map = _build_label_map(store)
+    gold_rows = sorted(_execution_row_key(r, label_map) for r in gold_result.rows or [])
+    cand_rows = sorted(_execution_row_key(r, label_map) for r in cand_result.rows or [])
+    return gold_rows == cand_rows, None
 
 
-def _judge(judge_name: str, case: dict[str, Any], outcome: Any) -> bool:
+def _judge(
+    judge_name: str,
+    case: dict[str, Any],
+    outcome: Any,
+    data_ttl: str | None = None,
+) -> tuple[bool, str | None]:
     if case.get("expect_refusal"):
         # Inverted refusal signal (AI-SPEC §5 "Scoring negatives"): a negative
         # case PASSES iff the pipeline produced NO transpilable AQL. The
@@ -365,10 +464,16 @@ def _judge(judge_name: str, case: dict[str, Any], outcome: Any) -> bool:
         # ``W_NL_TRANSLATION_FAILED`` warning (it never raises), so ``aql`` is
         # the authoritative signal — mirroring ``_judge_canonical``'s empty-AQL
         # check, but inverted. A non-empty AQL over invented terms FAILS.
-        return not outcome.aql
-    if judge_name == "execution" and case.get("data"):
-        return _judge_execution(case["expected"], outcome, case["data"])
-    return _judge_canonical(case["expected"], outcome)
+        return not outcome.aql, None
+    # BLOCKER fix: CK25 cases carry NO per-case `data:` field — the instance
+    # graph is a CORPUS-LEVEL `data_path:` key threaded in via `data_ttl`.
+    # The guard must fire on that corpus-level fixture, not solely on
+    # `case.get("data")` (which would never fire for CK25 and would silently
+    # reproduce the canonical 0% floor this phase exists to eliminate). A
+    # per-case `data` still overrides when present.
+    if judge_name == "execution" and (data_ttl is not None or case.get("data")):
+        return _judge_execution(case["expected"], outcome, case.get("data") or data_ttl)
+    return _judge_canonical(case["expected"], outcome), None
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +493,18 @@ def run(config_name: str) -> Report:
     shared_ontology = corpus.get("ontology", "")
     judge_name = config.get("judge", "canonical")
     max_repairs = config.get("max_repairs", 2)
+
+    # Additive `data_path:` config-key read (RESEARCH Pitfall 1/5): a
+    # corpus-level instance-graph file, resolved relative to the corpus
+    # file's directory and read ONCE (not per-case) — mirrors the existing
+    # `shared_ontology` pattern above, but for a file path rather than
+    # inline text. Absent `data_path` == `data_ttl` stays `None`, the
+    # execution-judge guard in `_judge` never fires, and every existing
+    # config's behavior stays byte-identical.
+    data_path = corpus.get("data_path")
+    data_ttl: str | None = None
+    if data_path:
+        data_ttl = (corpus_path.parent / data_path).read_text()
 
     # Additive few_shot config read (Phase 7 07-04 / RESEARCH Pitfall 5):
     # `run(config_name) -> Report`'s signature and Report's shape stay
@@ -431,7 +548,7 @@ def run(config_name: str) -> Report:
         outcome = pipeline.run(case["nl"], params=case.get("params"))
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
-        passed = _judge(judge_name, case, outcome)
+        passed, judge_note = _judge(judge_name, case, outcome, data_ttl)
         cases.append(
             CaseResult(
                 name=case["name"],
@@ -439,6 +556,7 @@ def run(config_name: str) -> Report:
                 actual=outcome.sparql,
                 passed=passed,
                 elapsed_ms=elapsed_ms,
+                judge_note=judge_note,
             )
         )
 

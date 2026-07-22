@@ -57,11 +57,7 @@ def test_var_rename_insensitive_row_match() -> None:
     two different projected variables (a multi-value row) to exercise the
     duplicate-safe sorted-tuple row key (Pattern 4) rather than a frozenset,
     which would silently collapse the duplicate."""
-    data = (
-        _PREFIX
-        + ':alice :val "x" ; :val2 "x" .\n'
-        + ':bob :val "y" ; :val2 "z" .\n'
-    )
+    data = _PREFIX + ':alice :val "x" ; :val2 "x" .\n' + ':bob :val "y" ; :val2 "z" .\n'
     gold = _PREFIX + "SELECT ?a ?b WHERE { ?s :val ?a ; :val2 ?b }"
     candidate = _PREFIX + "SELECT ?p ?q WHERE { ?s :val ?p ; :val2 ?q }"
 

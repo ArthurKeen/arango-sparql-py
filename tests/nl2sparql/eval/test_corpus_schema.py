@@ -91,7 +91,7 @@ def test_judge_refusal_passes_when_no_aql() -> None:
     """expect_refusal case + empty AQL → PASS (honest refusal)."""
     case = {"name": "neg", "expected": "rationale", "expect_refusal": True}
     outcome = SimpleNamespace(aql="", sparql="")
-    assert _judge("canonical", case, outcome) is True
+    assert _judge("canonical", case, outcome)[0] is True
 
 
 def test_judge_refusal_fails_when_aql_emitted() -> None:
@@ -101,7 +101,7 @@ def test_judge_refusal_fails_when_aql_emitted() -> None:
         aql="FOR d IN Swallow RETURN d",
         sparql="SELECT ?s WHERE { ?s a <http://ex.org/Swallow> }",
     )
-    assert _judge("canonical", case, outcome) is False
+    assert _judge("canonical", case, outcome)[0] is False
 
 
 def test_judge_positive_empty_aql_still_fails_via_canonical() -> None:
@@ -109,7 +109,7 @@ def test_judge_positive_empty_aql_still_fails_via_canonical() -> None:
     the inverted branch must only fire for expect_refusal cases."""
     case = {"name": "pos", "expected": _VALID_GOLD}
     outcome = SimpleNamespace(aql="", sparql="")
-    assert _judge("canonical", case, outcome) is False
+    assert _judge("canonical", case, outcome)[0] is False
 
 
 # ---------------------------------------------------------------------------
