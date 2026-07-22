@@ -18,7 +18,7 @@ import re
 
 import pytest
 
-from tests.nl2sparql.eval.runner import EVAL_DIR, BaselineConfig, run
+from tests.nl2sparql.eval.runner import CORPUS_PATH, EVAL_DIR, BaselineConfig, _load_corpus, run
 
 pytestmark = pytest.mark.eval
 
@@ -27,6 +27,37 @@ pytestmark = pytest.mark.eval
 # silently get "eval on" instead. Treat "", "0", "false", "no"
 # (case-insensitive) as off.
 _RUN_EVAL = os.getenv("RUN_EVAL", "").strip().lower() not in ("", "0", "false", "no")
+
+
+def test_corpus_path_default() -> None:
+    """The additive `corpus:` config key must be default-preserving (NL-BENCH-05).
+
+    No-network, always-on test (deliberately NOT gated behind the RUN_EVAL
+    skipif -- unlike the sweep-driving tests below, this only exercises
+    path-resolution logic, never NlPipeline/a provider). Written BEFORE
+    `_load_corpus`/`run()` are changed to accept a `corpus:` path (RESEARCH
+    Pitfall 1 -- "the single-hardcoded-corpus.yml trap") so the "existing
+    configs behave byte-identically" guarantee is enforced from the first
+    commit, not asserted after the fact.
+    """
+    # `_load_corpus()` (no arg) must equal explicitly loading CORPUS_PATH --
+    # the byte-identical default this additive change must never break.
+    assert _load_corpus() == _load_corpus(CORPUS_PATH)
+
+    # A config dict lacking a `corpus:` key resolves to today's corpus.yml --
+    # this is the exact `config.get("corpus", "corpus.yml")` formula `run()`
+    # uses; existing configs (none of which carry a `corpus:` key) must keep
+    # resolving here.
+    config_without_corpus: dict = {}
+    resolved_default = EVAL_DIR / config_without_corpus.get("corpus", "corpus.yml")
+    assert resolved_default == CORPUS_PATH
+
+    # A config dict carrying a `corpus:` key resolves to THAT relative path
+    # under EVAL_DIR instead -- the mechanism QALD/CK25 configs will use.
+    config_with_corpus = {"corpus": "vendored/qald9plus/corpus.yml"}
+    resolved_custom = EVAL_DIR / config_with_corpus.get("corpus", "corpus.yml")
+    assert resolved_custom == EVAL_DIR / "vendored/qald9plus/corpus.yml"
+    assert resolved_custom != CORPUS_PATH
 
 
 @pytest.mark.skipif(not _RUN_EVAL, reason="set RUN_EVAL=1 to run the NL eval gate")
