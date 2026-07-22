@@ -50,10 +50,13 @@ configs:
     corpus: vendored/qald9plus/corpus.yml
 
   # CK25 — no network, deterministic; gates its OWN baseline.json entry.
+  # 07.2: flipped to judge: execution in place (D-06) — CK25's corpus-level
+  # data_path vendors a real instance graph, so answer-set execution grading
+  # applies here (unlike the hand-authored `scripted` corpus above).
   scripted-ck25:
     provider:
       type: scripted
-    judge: canonical
+    judge: execution
     max_repairs: 2
     corpus: vendored/ck25/corpus.yml
 
@@ -68,11 +71,13 @@ configs:
     corpus: vendored/qald9plus/corpus.yml
 
   # Live CK25 sweep — same discipline as above.
+  # 07.2: flipped to judge: execution in place (D-06) — same rationale as
+  # scripted-ck25 above.
   openai-gpt4o-mini-ck25:
     provider:
       type: openai
       model: gpt-4o-mini
-    judge: canonical
+    judge: execution
     max_repairs: 2
     corpus: vendored/ck25/corpus.yml
 
