@@ -2,16 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-last_updated: 2026-07-22T21:31:23.283Z
-last_activity: 2026-07-22 -- Phase 07.1 execution started
+status: planning
+last_updated: "2026-07-22T22:07:25.761Z"
+last_activity: 2026-07-22
 progress:
-  total_phases: 11
-  completed_phases: 4
+  total_phases: 12
+  completed_phases: 5
   total_plans: 20
   completed_plans: 20
-  percent: 36
-stopped_at: Phase 07.1 complete (6/6) — ready to discuss Phase 8
+  percent: 42
 ---
 
 # Project State
@@ -74,6 +73,7 @@ Progress: [██████████] 100%
 - Phase 06.1 inserted after Phase 6: Re-point nl2sparql onto arango-query-core shared engine (prerequisite for engine-side SOTA) (URGENT)
 - Phase 06.2 inserted after Phase 6: harder corpus + genuine live-model baseline (unblocks measurable few-shot lift) (URGENT)
 - Phase 07.1 inserted after Phase 7: NL→SPARQL synthetic eval-corpus growth to reach statistical power (MDE ≤ 5pt); corpus+bank only, heavy levers deferred to v1.1 (URGENT)
+- Phase 07.2 inserted after Phase 7: Execution-based (answer-set) eval judging for adopted benchmarks; CK25 first, QALD later — surfaced by 07.1 live-eval finding that the canonical judge floors real LLM output at 0% (URGENT)
 
 ### Decisions
 

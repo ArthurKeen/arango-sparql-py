@@ -220,6 +220,41 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 - [x] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — complete (7ce312e, b2aa008, f1c327e, 3136c17, ac19edc); the credentialed human's live sweep returned a documented null on the pre-registered confirmatory test, closed per the plan's human-accepted-documented-null path — see 07-04-SUMMARY.md
 
+### Phase 07.2: Execution-based eval judging for adopted benchmarks (CK25) (INSERTED)
+
+**Goal:** Make adopted-benchmark eval meaningful by grading on ANSWERS, not query
+structure. 07.1's live run proved the canonical exact-algebra judge floors real LLM
+output at 0% on QALD/CK25 (the golds pre-resolve entity IRIs + fix projections the
+model can't reproduce). This phase adds answer-set execution judging (pyoxigraph) with
+variable-rename + IRI↔label normalization, vendors the CK25 instance graph, and records
+CK25's first real end-to-end NL→SPARQL accuracy number as the corporate-domain anchor.
+
+**Scope (locked in 07.2-CONTEXT.md):**
+- CK25 now; QALD's heavier DBpedia-subset capture deferred to its own later phase.
+- Execution engine = **pyoxigraph only** (the repo's W3C ground-truth engine); no
+  ArangoDB/AQL execution path this phase (transpiler AQL correctness stays covered by the
+  W3C suite).
+- Correctness = answer-set equality up to variable renaming **+ IRI↔label normalization**
+  (so a manager's name vs IRI both count); handles SELECT and ASK.
+
+**Explicitly OUT of scope:** QALD execution grading + DBpedia answer-subset capture (own
+phase); transpiler→AQL→ArangoDB grading path; partial-credit/F1 scoring (binary answer-set
+match this phase). Deterministic transpiler + W3C ≥ 96.4% guard untouched.
+
+**Requirements**: NL-EVAL-05
+**Depends on:** Phase 7, Phase 07.1
+**Success Criteria** (what must be TRUE):
+
+  1. CK25 instance graph vendored under `vendored/ck25/` with CC-BY-4.0 NOTICE + source/commit provenance (passes the 07.1 `test_vendored_provenance.py` guard; no secrets)
+  2. An answer-set execution judge exists — runs gold + candidate SPARQL through pyoxigraph, compares answers up to variable renaming + IRI↔label normalization, handles SELECT and ASK, and is opt-in per config via `judge: execution`
+  3. `scripted-ck25` under execution judging is a green gold-vs-gold sanity gate (100%), and a live `openai-gpt4o-mini-ck25` execution-graded accuracy number is recorded in `baseline.json` (reported, NOT gated — CK25 is the directional anchor)
+  4. Non-regression: `scripted` stays the no-network canonical CI default, W3C DAWG coverage ≥ 96.4% holds, transpiler untouched, no secrets/raw-prompts committed
+
+**Plans:** 0 plans
+
+Plans:
+- [ ] TBD (run /gsd-plan-phase 07.2 to break down)
+
 ### Phase 07.1: NL→SPARQL eval via public benchmarks (INSERTED)
 
 > **Approach pivoted 2026-07-22 via a `/grill-me` design review.** The original plan
