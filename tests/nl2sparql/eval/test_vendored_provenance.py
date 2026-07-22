@@ -57,9 +57,21 @@ _MAX_SCAN_BYTES = 5 * 1024 * 1024
 
 
 def _vendored_dataset_dirs() -> list[Path]:
+    """Every immediate, real dataset subdirectory of ``vendored/``.
+
+    Excludes ``__pycache__`` (and any other dunder-named directory): once a
+    vendored set ships an ``__init__.py`` (so its conversion script is
+    importable as ``tests.nl2sparql.eval.vendored.<set>.convert_*``), pytest
+    collection byte-compiles it and Python drops a same-level
+    ``vendored/__pycache__`` directory alongside the real dataset dirs — a
+    filesystem artifact, never a dataset, and must not be mistaken for one
+    missing its NOTICE.md.
+    """
     if not VENDORED.is_dir():
         return []
-    return sorted(p for p in VENDORED.iterdir() if p.is_dir())
+    return sorted(
+        p for p in VENDORED.iterdir() if p.is_dir() and not p.name.startswith("__")
+    )
 
 
 def test_every_vendored_dataset_has_a_cc_by_notice() -> None:

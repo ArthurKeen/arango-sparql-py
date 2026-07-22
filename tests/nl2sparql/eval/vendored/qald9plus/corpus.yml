@@ -1,0 +1,3141 @@
+ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
+
+  @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+
+  @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  @prefix dbo: <http://dbpedia.org/ontology/> .
+
+  @prefix dbp: <http://dbpedia.org/property/> .
+
+  @prefix dbyago: <http://dbpedia.org/class/yago/> .
+
+  @prefix dct: <http://purl.org/dc/terms/> .
+
+  @prefix foaf: <http://xmlns.com/foaf/0.1/> .
+
+  @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
+
+
+
+  # DBpedia ontology subset — 75 classes, 250 properties.
+
+  # Authored by convert_qald.py from the D-06 provisional survivors''
+
+  # own referenced terms (see module docstring) — never the full DBpedia
+
+  # ontology (RESEARCH D-05 / Anti-Patterns).
+
+
+  # --- Classes ---
+
+  dbyago:City108524735 a owl:Class ; phys:collectionName "City108524735" .
+
+  dbyago:LakesOfDenmark a owl:Class ; phys:collectionName "LakesOfDenmark" .
+
+  dbyago:WikicatAmericanVegans a owl:Class ; phys:collectionName "WikicatAmericanVegans"
+  .
+
+  dbyago:WikicatDaughtersOfBritishEarls a owl:Class ; phys:collectionName "WikicatDaughtersOfBritishEarls"
+  .
+
+  dbyago:WikicatEatingDisorders a owl:Class ; phys:collectionName "WikicatEatingDisorders"
+  .
+
+  dbyago:WikicatEnglishMonarchs a owl:Class ; phys:collectionName "WikicatEnglishMonarchs"
+  .
+
+  dbyago:WikicatFrisianIslands a owl:Class ; phys:collectionName "WikicatFrisianIslands"
+  .
+
+  dbyago:WikicatJapaneseMusicalInstruments a owl:Class ; phys:collectionName "WikicatJapaneseMusicalInstruments"
+  .
+
+  dbyago:WikicatMonarchsOfTheUnitedKingdom a owl:Class ; phys:collectionName "WikicatMonarchsOfTheUnitedKingdom"
+  .
+
+  dbyago:WikicatStatesOfTheUnitedStates a owl:Class ; phys:collectionName "WikicatStatesOfTheUnitedStates"
+  .
+
+  dbo:Actor a owl:Class ; phys:collectionName "Actor" .
+
+  dbo:AdministrativeRegion a owl:Class ; phys:collectionName "AdministrativeRegion"
+  .
+
+  dbo:Airline a owl:Class ; phys:collectionName "Airline" .
+
+  dbo:Album a owl:Class ; phys:collectionName "Album" .
+
+  dbo:Animal a owl:Class ; phys:collectionName "Animal" .
+
+  dbo:Artist a owl:Class ; phys:collectionName "Artist" .
+
+  dbo:Astronaut a owl:Class ; phys:collectionName "Astronaut" .
+
+  dbo:Band a owl:Class ; phys:collectionName "Band" .
+
+  dbo:BasketballPlayer a owl:Class ; phys:collectionName "BasketballPlayer" .
+
+  dbo:Beverage a owl:Class ; phys:collectionName "Beverage" .
+
+  dbo:BodyOfWater a owl:Class ; phys:collectionName "BodyOfWater" .
+
+  dbo:Book a owl:Class ; phys:collectionName "Book" .
+
+  dbo:Brewery a owl:Class ; phys:collectionName "Brewery" .
+
+  dbo:Bridge a owl:Class ; phys:collectionName "Bridge" .
+
+  dbo:Building a owl:Class ; phys:collectionName "Building" .
+
+  dbo:Cave a owl:Class ; phys:collectionName "Cave" .
+
+  dbo:ChessPlayer a owl:Class ; phys:collectionName "ChessPlayer" .
+
+  dbo:City a owl:Class ; phys:collectionName "City" .
+
+  dbo:Company a owl:Class ; phys:collectionName "Company" .
+
+  dbo:Country a owl:Class ; phys:collectionName "Country" .
+
+  dbo:DartsPlayer a owl:Class ; phys:collectionName "DartsPlayer" .
+
+  dbo:Film a owl:Class ; phys:collectionName "Film" .
+
+  dbo:FormulaOneRacer a owl:Class ; phys:collectionName "FormulaOneRacer" .
+
+  dbo:Holiday a owl:Class ; phys:collectionName "Holiday" .
+
+  dbo:Island a owl:Class ; phys:collectionName "Island" .
+
+  dbo:Lake a owl:Class ; phys:collectionName "Lake" .
+
+  dbo:Language a owl:Class ; phys:collectionName "Language" .
+
+  dbo:LaunchPad a owl:Class ; phys:collectionName "LaunchPad" .
+
+  dbo:Library a owl:Class ; phys:collectionName "Library" .
+
+  dbo:MilitaryConflict a owl:Class ; phys:collectionName "MilitaryConflict" .
+
+  dbo:Monarch a owl:Class ; phys:collectionName "Monarch" .
+
+  dbo:Mountain a owl:Class ; phys:collectionName "Mountain" .
+
+  dbo:Museum a owl:Class ; phys:collectionName "Museum" .
+
+  dbo:Musical a owl:Class ; phys:collectionName "Musical" .
+
+  dbo:Organisation a owl:Class ; phys:collectionName "Organisation" .
+
+  dbo:Person a owl:Class ; phys:collectionName "Person" .
+
+  dbo:Place a owl:Class ; phys:collectionName "Place" .
+
+  dbo:PoliticalParty a owl:Class ; phys:collectionName "PoliticalParty" .
+
+  dbo:Politician a owl:Class ; phys:collectionName "Politician" .
+
+  dbo:Pope a owl:Class ; phys:collectionName "Pope" .
+
+  dbo:President a owl:Class ; phys:collectionName "President" .
+
+  dbo:ProgrammingLanguage a owl:Class ; phys:collectionName "ProgrammingLanguage"
+  .
+
+  dbo:Protein a owl:Class ; phys:collectionName "Protein" .
+
+  dbo:RecordLabel a owl:Class ; phys:collectionName "RecordLabel" .
+
+  dbo:River a owl:Class ; phys:collectionName "River" .
+
+  dbo:Rocket a owl:Class ; phys:collectionName "Rocket" .
+
+  dbo:Royalty a owl:Class ; phys:collectionName "Royalty" .
+
+  dbo:Scientist a owl:Class ; phys:collectionName "Scientist" .
+
+  dbo:Settlement a owl:Class ; phys:collectionName "Settlement" .
+
+  dbo:Ship a owl:Class ; phys:collectionName "Ship" .
+
+  dbo:SoccerClub a owl:Class ; phys:collectionName "SoccerClub" .
+
+  dbo:SoccerPlayer a owl:Class ; phys:collectionName "SoccerPlayer" .
+
+  dbo:Software a owl:Class ; phys:collectionName "Software" .
+
+  dbo:Song a owl:Class ; phys:collectionName "Song" .
+
+  dbo:Sport a owl:Class ; phys:collectionName "Sport" .
+
+  dbo:Stadium a owl:Class ; phys:collectionName "Stadium" .
+
+  dbo:Swimmer a owl:Class ; phys:collectionName "Swimmer" .
+
+  dbo:TelevisionShow a owl:Class ; phys:collectionName "TelevisionShow" .
+
+  dbo:Town a owl:Class ; phys:collectionName "Town" .
+
+  dbo:University a owl:Class ; phys:collectionName "University" .
+
+  dbo:VideoGame a owl:Class ; phys:collectionName "VideoGame" .
+
+  dbo:Volcano a owl:Class ; phys:collectionName "Volcano" .
+
+  dbo:Weapon a owl:Class ; phys:collectionName "Weapon" .
+
+  dbo:Writer a owl:Class ; phys:collectionName "Writer" .
+
+  owl:Thing a owl:Class ; phys:collectionName "Thing" .
+
+
+  # --- Object properties (IRI-valued objects; edge-collection mapped) ---
+
+  dbo:affiliation a owl:ObjectProperty ; phys:edgeCollectionName "affiliation" .
+
+  dbo:alliance a owl:ObjectProperty ; phys:edgeCollectionName "alliance" .
+
+  dbo:almaMater a owl:ObjectProperty ; phys:edgeCollectionName "dbo_almaMater" .
+
+  dbo:architecturalStyle a owl:ObjectProperty ; phys:edgeCollectionName "architecturalStyle"
+  .
+
+  dbo:artist a owl:ObjectProperty ; phys:edgeCollectionName "artist" .
+
+  dbo:assembly a owl:ObjectProperty ; phys:edgeCollectionName "assembly" .
+
+  dbo:author a owl:ObjectProperty ; phys:edgeCollectionName "dbo_author" .
+
+  dbo:award a owl:ObjectProperty ; phys:edgeCollectionName "award" .
+
+  dbo:birthPlace a owl:ObjectProperty ; phys:edgeCollectionName "birthPlace" .
+
+  dbo:child a owl:ObjectProperty ; phys:edgeCollectionName "child" .
+
+  dbo:city a owl:ObjectProperty ; phys:edgeCollectionName "city" .
+
+  dbo:class a owl:ObjectProperty ; phys:edgeCollectionName "class" .
+
+  dbo:country a owl:ObjectProperty ; phys:edgeCollectionName "country" .
+
+  dbo:creator a owl:ObjectProperty ; phys:edgeCollectionName "creator" .
+
+  dbo:crosses a owl:ObjectProperty ; phys:edgeCollectionName "crosses" .
+
+  dbo:currency a owl:ObjectProperty ; phys:edgeCollectionName "currency" .
+
+  dbo:deathPlace a owl:ObjectProperty ; phys:edgeCollectionName "deathPlace" .
+
+  dbo:developer a owl:ObjectProperty ; phys:edgeCollectionName "developer" .
+
+  dbo:director a owl:ObjectProperty ; phys:edgeCollectionName "director" .
+
+  dbo:field a owl:ObjectProperty ; phys:edgeCollectionName "field" .
+
+  dbo:foundationPlace a owl:ObjectProperty ; phys:edgeCollectionName "foundationPlace"
+  .
+
+  dbo:foundedBy a owl:ObjectProperty ; phys:edgeCollectionName "foundedBy" .
+
+  dbo:genre a owl:ObjectProperty ; phys:edgeCollectionName "genre" .
+
+  dbo:governmentType a owl:ObjectProperty ; phys:edgeCollectionName "governmentType"
+  .
+
+  dbo:ground a owl:ObjectProperty ; phys:edgeCollectionName "dbo_ground" .
+
+  dbo:headquarter a owl:ObjectProperty ; phys:edgeCollectionName "headquarter" .
+
+  dbo:hometown a owl:ObjectProperty ; phys:edgeCollectionName "hometown" .
+
+  dbo:ideology a owl:ObjectProperty ; phys:edgeCollectionName "ideology" .
+
+  dbo:industry a owl:ObjectProperty ; phys:edgeCollectionName "industry" .
+
+  dbo:inflow a owl:ObjectProperty ; phys:edgeCollectionName "inflow" .
+
+  dbo:influenced a owl:ObjectProperty ; phys:edgeCollectionName "influenced" .
+
+  dbo:influencedBy a owl:ObjectProperty ; phys:edgeCollectionName "influencedBy" .
+
+  dbo:instrument a owl:ObjectProperty ; phys:edgeCollectionName "instrument" .
+
+  dbo:isPartOf a owl:ObjectProperty ; phys:edgeCollectionName "isPartOf" .
+
+  dbo:isPartOfMilitaryConflict a owl:ObjectProperty ; phys:edgeCollectionName "isPartOfMilitaryConflict"
+  .
+
+  dbo:knownFor a owl:ObjectProperty ; phys:edgeCollectionName "knownFor" .
+
+  dbo:language a owl:ObjectProperty ; phys:edgeCollectionName "language" .
+
+  dbo:launchSite a owl:ObjectProperty ; phys:edgeCollectionName "launchSite" .
+
+  dbo:leader a owl:ObjectProperty ; phys:edgeCollectionName "leader" .
+
+  dbo:league a owl:ObjectProperty ; phys:edgeCollectionName "league" .
+
+  dbo:literaryGenre a owl:ObjectProperty ; phys:edgeCollectionName "literaryGenre"
+  .
+
+  dbo:locatedInArea a owl:ObjectProperty ; phys:edgeCollectionName "locatedInArea"
+  .
+
+  dbo:location a owl:ObjectProperty ; phys:edgeCollectionName "location" .
+
+  dbo:locationCountry a owl:ObjectProperty ; phys:edgeCollectionName "locationCountry"
+  .
+
+  dbo:manufacturer a owl:ObjectProperty ; phys:edgeCollectionName "manufacturer" .
+
+  dbo:mission a owl:ObjectProperty ; phys:edgeCollectionName "mission" .
+
+  dbo:mountainRange a owl:ObjectProperty ; phys:edgeCollectionName "mountainRange"
+  .
+
+  dbo:musicBy a owl:ObjectProperty ; phys:edgeCollectionName "musicBy" .
+
+  dbo:musicalArtist a owl:ObjectProperty ; phys:edgeCollectionName "musicalArtist"
+  .
+
+  dbo:nationality a owl:ObjectProperty ; phys:edgeCollectionName "nationality" .
+
+  dbo:occupation a owl:ObjectProperty ; phys:edgeCollectionName "dbo_occupation" .
+
+  dbo:operator a owl:ObjectProperty ; phys:edgeCollectionName "operator" .
+
+  dbo:origin a owl:ObjectProperty ; phys:edgeCollectionName "origin" .
+
+  dbo:owner a owl:ObjectProperty ; phys:edgeCollectionName "owner" .
+
+  dbo:parent a owl:ObjectProperty ; phys:edgeCollectionName "parent" .
+
+  dbo:party a owl:ObjectProperty ; phys:edgeCollectionName "party" .
+
+  dbo:place a owl:ObjectProperty ; phys:edgeCollectionName "place" .
+
+  dbo:producer a owl:ObjectProperty ; phys:edgeCollectionName "producer" .
+
+  dbo:product a owl:ObjectProperty ; phys:edgeCollectionName "product" .
+
+  dbo:profession a owl:ObjectProperty ; phys:edgeCollectionName "profession" .
+
+  dbo:publisher a owl:ObjectProperty ; phys:edgeCollectionName "publisher" .
+
+  dbo:religion a owl:ObjectProperty ; phys:edgeCollectionName "religion" .
+
+  dbo:residence a owl:ObjectProperty ; phys:edgeCollectionName "dbo_residence" .
+
+  dbo:restingPlace a owl:ObjectProperty ; phys:edgeCollectionName "restingPlace" .
+
+  dbo:riverMouth a owl:ObjectProperty ; phys:edgeCollectionName "riverMouth" .
+
+  dbo:routeStart a owl:ObjectProperty ; phys:edgeCollectionName "routeStart" .
+
+  dbo:series a owl:ObjectProperty ; phys:edgeCollectionName "series" .
+
+  dbo:spokenIn a owl:ObjectProperty ; phys:edgeCollectionName "spokenIn" .
+
+  dbo:spouse a owl:ObjectProperty ; phys:edgeCollectionName "dbo_spouse" .
+
+  dbo:starring a owl:ObjectProperty ; phys:edgeCollectionName "dbo_starring" .
+
+  dbo:targetAirport a owl:ObjectProperty ; phys:edgeCollectionName "targetAirport"
+  .
+
+  dbo:team a owl:ObjectProperty ; phys:edgeCollectionName "team" .
+
+  dbo:type a owl:ObjectProperty ; phys:edgeCollectionName "dbo_type" .
+
+  dbo:wineProduced a owl:ObjectProperty ; phys:edgeCollectionName "wineProduced" .
+
+  dbp:breed a owl:ObjectProperty ; phys:edgeCollectionName "breed" .
+
+  dbp:burialPlace a owl:ObjectProperty ; phys:edgeCollectionName "burialPlace" .
+
+  dbp:conviction a owl:ObjectProperty ; phys:edgeCollectionName "conviction" .
+
+  dbp:designer a owl:ObjectProperty ; phys:edgeCollectionName "designer" .
+
+  dbp:governor a owl:ObjectProperty ; phys:edgeCollectionName "governor" .
+
+  dbp:launchPad a owl:ObjectProperty ; phys:edgeCollectionName "launchPad" .
+
+  dbp:programme a owl:ObjectProperty ; phys:edgeCollectionName "programme" .
+
+  dbp:satelliteOf a owl:ObjectProperty ; phys:edgeCollectionName "satelliteOf" .
+
+  dbp:shipNamesake a owl:ObjectProperty ; phys:edgeCollectionName "shipNamesake" .
+
+  dbp:title a owl:ObjectProperty ; phys:edgeCollectionName "title" .
+
+  dbp:trailheads a owl:ObjectProperty ; phys:edgeCollectionName "trailheads" .
+
+  dbp:type a owl:ObjectProperty ; phys:edgeCollectionName "dbp_type" .
+
+  dct:subject a owl:ObjectProperty ; phys:edgeCollectionName "subject" .
+
+  skos:broader a owl:ObjectProperty ; phys:edgeCollectionName "broader" .
+
+
+  # --- Datatype properties (literal-valued objects; attribute lookup) ---
+
+  dbo:abbreviation a owl:DatatypeProperty .
+
+  dbo:activeYearsEndDate a owl:DatatypeProperty .
+
+  dbo:activeYearsStartYear a owl:DatatypeProperty .
+
+  dbo:album a owl:DatatypeProperty .
+
+  dbo:alias a owl:DatatypeProperty .
+
+  dbo:architect a owl:DatatypeProperty .
+
+  dbo:areaCode a owl:DatatypeProperty .
+
+  dbo:areaTotal a owl:DatatypeProperty .
+
+  dbo:bSide a owl:DatatypeProperty .
+
+  dbo:bandMember a owl:DatatypeProperty .
+
+  dbo:battle a owl:DatatypeProperty .
+
+  dbo:birthDate a owl:DatatypeProperty .
+
+  dbo:birthName a owl:DatatypeProperty .
+
+  dbo:birthYear a owl:DatatypeProperty .
+
+  dbo:budget a owl:DatatypeProperty .
+
+  dbo:capacity a owl:DatatypeProperty .
+
+  dbo:capital a owl:DatatypeProperty .
+
+  dbo:coach a owl:DatatypeProperty .
+
+  dbo:commander a owl:DatatypeProperty .
+
+  dbo:completionDate a owl:DatatypeProperty .
+
+  dbo:composer a owl:DatatypeProperty .
+
+  dbo:conservationStatus a owl:DatatypeProperty .
+
+  dbo:date a owl:DatatypeProperty .
+
+  dbo:deathCause a owl:DatatypeProperty .
+
+  dbo:deathDate a owl:DatatypeProperty .
+
+  dbo:discoverer a owl:DatatypeProperty .
+
+  dbo:dissolutionDate a owl:DatatypeProperty .
+
+  dbo:doctoralAdvisor a owl:DatatypeProperty .
+
+  dbo:editor a owl:DatatypeProperty .
+
+  dbo:elevation a owl:DatatypeProperty .
+
+  dbo:eruptionYear a owl:DatatypeProperty .
+
+  dbo:ethnicGroup a owl:DatatypeProperty .
+
+  dbo:firstAscentPerson a owl:DatatypeProperty .
+
+  dbo:floorCount a owl:DatatypeProperty .
+
+  dbo:formationYear a owl:DatatypeProperty .
+
+  dbo:founder a owl:DatatypeProperty .
+
+  dbo:foundingDate a owl:DatatypeProperty .
+
+  dbo:foundingYear a owl:DatatypeProperty .
+
+  dbo:growingGrape a owl:DatatypeProperty .
+
+  dbo:height a owl:DatatypeProperty .
+
+  dbo:ingredient a owl:DatatypeProperty .
+
+  dbo:languageFamily a owl:DatatypeProperty .
+
+  dbo:largestCity a owl:DatatypeProperty .
+
+  dbo:leaderName a owl:DatatypeProperty .
+
+  dbo:leaderTitle a owl:DatatypeProperty .
+
+  dbo:length a owl:DatatypeProperty .
+
+  dbo:locationCity a owl:DatatypeProperty .
+
+  dbo:mainspan a owl:DatatypeProperty .
+
+  dbo:manager a owl:DatatypeProperty .
+
+  dbo:mass a owl:DatatypeProperty .
+
+  dbo:maximumDepth a owl:DatatypeProperty .
+
+  dbo:mayor a owl:DatatypeProperty .
+
+  dbo:meanRadius a owl:DatatypeProperty .
+
+  dbo:movement a owl:DatatypeProperty .
+
+  dbo:museum a owl:DatatypeProperty .
+
+  dbo:musicComposer a owl:DatatypeProperty .
+
+  dbo:netIncome a owl:DatatypeProperty .
+
+  dbo:numberOfEmployees a owl:DatatypeProperty .
+
+  dbo:numberOfEpisodes a owl:DatatypeProperty .
+
+  dbo:numberOfLocations a owl:DatatypeProperty .
+
+  dbo:numberOfPages a owl:DatatypeProperty .
+
+  dbo:numberOfVisitors a owl:DatatypeProperty .
+
+  dbo:officialLanguage a owl:DatatypeProperty .
+
+  dbo:officialSchoolColour a owl:DatatypeProperty .
+
+  dbo:openingYear a owl:DatatypeProperty .
+
+  dbo:populationTotal a owl:DatatypeProperty .
+
+  dbo:portrayer a owl:DatatypeProperty .
+
+  dbo:presenter a owl:DatatypeProperty .
+
+  dbo:productionEndYear a owl:DatatypeProperty .
+
+  dbo:productionStartYear a owl:DatatypeProperty .
+
+  dbo:programmingLanguage a owl:DatatypeProperty .
+
+  dbo:publicationDate a owl:DatatypeProperty .
+
+  dbo:races a owl:DatatypeProperty .
+
+  dbo:recordLabel a owl:DatatypeProperty .
+
+  dbo:region a owl:DatatypeProperty .
+
+  dbo:releaseDate a owl:DatatypeProperty .
+
+  dbo:result a owl:DatatypeProperty .
+
+  dbo:revenue a owl:DatatypeProperty .
+
+  dbo:routeEnd a owl:DatatypeProperty .
+
+  dbo:runtime a owl:DatatypeProperty .
+
+  dbo:seasonNumber a owl:DatatypeProperty .
+
+  dbo:seatingCapacity a owl:DatatypeProperty .
+
+  dbo:sourceCountry a owl:DatatypeProperty .
+
+  dbo:state a owl:DatatypeProperty .
+
+  dbo:subsidiary a owl:DatatypeProperty .
+
+  dbo:successor a owl:DatatypeProperty .
+
+  dbo:timeZone a owl:DatatypeProperty .
+
+  dbo:vicePresident a owl:DatatypeProperty .
+
+  dbo:wavelength a owl:DatatypeProperty .
+
+  dbo:website a owl:DatatypeProperty .
+
+  dbo:wikiPageRedirects a owl:DatatypeProperty .
+
+  dbo:wineRegion a owl:DatatypeProperty .
+
+  dbo:writer a owl:DatatypeProperty .
+
+  dbp:accessioneudate a owl:DatatypeProperty .
+
+  dbp:admittancedate a owl:DatatypeProperty .
+
+  dbp:almaMater a owl:DatatypeProperty .
+
+  dbp:atmosphereComposition a owl:DatatypeProperty .
+
+  dbp:author a owl:DatatypeProperty .
+
+  dbp:awards a owl:DatatypeProperty .
+
+  dbp:ballpark a owl:DatatypeProperty .
+
+  dbp:beginningDate a owl:DatatypeProperty .
+
+  dbp:birthDate a owl:DatatypeProperty .
+
+  dbp:birthName a owl:DatatypeProperty .
+
+  dbp:borderingstates a owl:DatatypeProperty .
+
+  dbp:borders a owl:DatatypeProperty .
+
+  dbp:calories a owl:DatatypeProperty .
+
+  dbp:capacity a owl:DatatypeProperty .
+
+  dbp:carbs a owl:DatatypeProperty .
+
+  dbp:children a owl:DatatypeProperty .
+
+  dbp:crewMembers a owl:DatatypeProperty .
+
+  dbp:date a owl:DatatypeProperty .
+
+  dbp:deathCause a owl:DatatypeProperty .
+
+  dbp:densityrank a owl:DatatypeProperty .
+
+  dbp:editor a owl:DatatypeProperty .
+
+  dbp:elevationM a owl:DatatypeProperty .
+
+  dbp:employees a owl:DatatypeProperty .
+
+  dbp:entranceCount a owl:DatatypeProperty .
+
+  dbp:established a owl:DatatypeProperty .
+
+  dbp:ethnicity a owl:DatatypeProperty .
+
+  dbp:fifaMin a owl:DatatypeProperty .
+
+  dbp:formation a owl:DatatypeProperty .
+
+  dbp:foundation a owl:DatatypeProperty .
+
+  dbp:founded a owl:DatatypeProperty .
+
+  dbp:founders a owl:DatatypeProperty .
+
+  dbp:frequentFlyer a owl:DatatypeProperty .
+
+  dbp:ground a owl:DatatypeProperty .
+
+  dbp:highest a owl:DatatypeProperty .
+
+  dbp:highlights a owl:DatatypeProperty .
+
+  dbp:ign a owl:DatatypeProperty .
+
+  dbp:incumbent a owl:DatatypeProperty .
+
+  dbp:largestmetro a owl:DatatypeProperty .
+
+  dbp:leaderParty a owl:DatatypeProperty .
+
+  dbp:length a owl:DatatypeProperty .
+
+  dbp:members a owl:DatatypeProperty .
+
+  dbp:mineral a owl:DatatypeProperty .
+
+  dbp:name a owl:DatatypeProperty .
+
+  dbp:numEmployees a owl:DatatypeProperty .
+
+  dbp:occupation a owl:DatatypeProperty .
+
+  dbp:officialLanguages a owl:DatatypeProperty .
+
+  dbp:populationDensityRank a owl:DatatypeProperty .
+
+  dbp:presidentEnd a owl:DatatypeProperty .
+
+  dbp:presidentStart a owl:DatatypeProperty .
+
+  dbp:releaseDate a owl:DatatypeProperty .
+
+  dbp:residence a owl:DatatypeProperty .
+
+  dbp:satellites a owl:DatatypeProperty .
+
+  dbp:speciality a owl:DatatypeProperty .
+
+  dbp:species a owl:DatatypeProperty .
+
+  dbp:spouse a owl:DatatypeProperty .
+
+  dbp:starring a owl:DatatypeProperty .
+
+  dbp:studio a owl:DatatypeProperty .
+
+  dbp:successor a owl:DatatypeProperty .
+
+  dbp:taxon a owl:DatatypeProperty .
+
+  dbp:timezone a owl:DatatypeProperty .
+
+  dbp:voiceactor a owl:DatatypeProperty .
+
+  dbp:writer a owl:DatatypeProperty .
+
+  dbp:years a owl:DatatypeProperty .
+
+  <http://www.w3.org/2000/01/rdf-schema#label> a owl:DatatypeProperty .
+
+  foaf:gender a owl:DatatypeProperty .
+
+  foaf:givenName a owl:DatatypeProperty .
+
+  foaf:homepage a owl:DatatypeProperty .
+
+  foaf:name a owl:DatatypeProperty .
+
+  foaf:nick a owl:DatatypeProperty .
+
+
+  '
+cases:
+- name: qald9plus-train-1
+  nl: List all boardgames by GMT.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT ?uri WHERE { ?uri
+    dbo:publisher res:GMT_Games }'
+- name: qald9plus-train-2
+  nl: Who developed Skype?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?uri WHERE
+    { res:Skype dbo:developer ?uri. }'
+- name: qald9plus-train-3
+  nl: Which people were born in Heraklion?
+  expected: 'PREFIX yago: <http://dbpedia.org/class/yago/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX onto: <http://dbpedia.org/ontology/>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type onto:Person ; onto:birthPlace <http://dbpedia.org/resource/Heraklion>.
+    }'
+- name: qald9plus-train-4
+  nl: In which U.S. state is Area 51 located?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?uri WHERE
+    { res:Area_51 dbo:location ?uri . ?uri dbo:country res:United_States. }'
+- name: qald9plus-train-5
+  nl: Who is the mayor of New York City?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:New_York_City dbo:leaderName ?uri }'
+- name: qald9plus-train-6
+  nl: Which countries have places with more than two caves?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?cave rdf:type dbo:Cave ; dbo:location ?uri . ?uri
+    rdf:type dbo:Country } GROUP BY ?uri HAVING ( COUNT(?cave) > 2 )'
+- name: qald9plus-train-7
+  nl: Where did Abraham Lincoln die?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?uri WHERE
+    { res:Abraham_Lincoln dbo:deathPlace ?uri. }'
+- name: qald9plus-train-8
+  nl: Which airports does Air China serve?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Air_China dbo:targetAirport ?uri }'
+- name: qald9plus-train-9
+  nl: Give me all actors starring in movies directed by and starring William Shatner.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dbp: <http://dbpedia.org/property/> SELECT DISTINCT ?uri WHERE { ?x dbo:director
+    res:William_Shatner ; dbo:starring res:William_Shatner { ?x dbo:starring ?uri
+    } UNION { ?x dbp:starring ?uri } }'
+- name: qald9plus-train-10
+  nl: What are the official languages of the Philippines?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Philippines dbo:officialLanguage ?uri }'
+- name: qald9plus-train-11
+  nl: Give me all Danish films.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Film ; dbo:country res:Denmark }'
+- name: qald9plus-train-12
+  nl: Which movies starring Brad Pitt were directed by Guy Ritchie?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Film ; dbo:starring res:Brad_Pitt ; dbo:director res:Guy_Ritchie
+    }'
+- name: qald9plus-train-13
+  nl: Give me the grandchildren of Bruce Lee.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Bruce_Lee dbo:child ?child . ?child <http://dbpedia.org/property/children>
+    ?uri }'
+- name: qald9plus-train-14
+  nl: Which other weapons did the designer of the Uzi develop?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dbp: <http://dbpedia.org/property/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:Weapon ; dbp:designer ?x . res:Uzi
+    dbp:designer ?x FILTER ( ?uri != res:Uzi ) }'
+- name: qald9plus-train-15
+  nl: Who is the owner of Universal Studios?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Universal_Studios dbo:owner ?uri }'
+- name: qald9plus-train-16
+  nl: Which state of the USA has the highest population density?
+  expected: 'PREFIX yago: <http://dbpedia.org/class/yago/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type yago:WikicatStatesOfTheUnitedStates ; dbp:densityrank ?rank
+    } ORDER BY ASC(?rank) LIMIT 1'
+- name: qald9plus-train-17
+  nl: Which monarchs were married to a German?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Monarch ; dbo:spouse ?spouse { ?spouse dbo:birthPlace
+    res:Germany } UNION { ?spouse dbo:birthPlace ?p . ?p dbo:country res:Germany }
+    }'
+- name: qald9plus-train-18
+  nl: Which organizations were founded in 1950?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Organisation { ?uri dbo:formationYear ?date } UNION
+    { ?uri dbo:foundingYear ?date } UNION { ?uri dbp:foundation ?date } UNION { ?uri
+    dbp:formation ?date } FILTER regex(?date, "^1950") }'
+- name: qald9plus-train-19
+  nl: Who created the comic Captain America?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Captain_America dbo:creator ?uri }'
+- name: qald9plus-train-20
+  nl: Give me the Apollo 14 astronauts.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:mission res:Apollo_14 }'
+- name: qald9plus-train-21
+  nl: Who wrote the book The pillars of the Earth?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?uri WHERE
+    { res:The_Pillars_of_the_Earth dbo:author ?uri }'
+- name: qald9plus-train-22
+  nl: Which state of the United States of America has the highest density?
+  expected: 'PREFIX yago: <http://dbpedia.org/class/yago/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX dbp: <http://dbpedia.org/property/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT ?uri WHERE { ?uri dbp:densityrank ?density } ORDER BY ASC(?density) LIMIT
+    1'
+- name: qald9plus-train-23
+  nl: Which spaceflights were launched from Baikonur?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/launchPad> res:Baikonur_Cosmodrome
+    }'
+- name: qald9plus-train-24
+  nl: Give me a list of all trumpet players that were bandleaders.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:occupation res:Bandleader ; dbo:instrument
+    res:Trumpet }'
+- name: qald9plus-train-25
+  nl: Which U.S. states are in the same timezone as Utah?
+  expected: 'PREFIX yago: <http://dbpedia.org/class/yago/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dbp: <http://dbpedia.org/property/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { res:Utah dbp:timezone ?x . ?uri rdf:type yago:WikicatStatesOfTheUnitedStates
+    ; dbp:timezone ?x FILTER ( ?uri != res:Utah ) }'
+- name: qald9plus-train-26
+  nl: Which U.S. states possess gold minerals?
+  expected: 'PREFIX yago: <http://dbpedia.org/class/yago/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type yago:WikicatStatesOfTheUnitedStates ; dbp:mineral ?mineral
+    FILTER regex(?mineral, "gold", "i") }'
+- name: qald9plus-train-27
+  nl: Who is the daughter of Ingrid Bergman married to?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Ingrid_Bergman dbo:child ?child . ?child <http://dbpedia.org/property/spouse>
+    ?uri }'
+- name: qald9plus-train-28
+  nl: How deep is Lake Placid?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT DISTINCT ?n WHERE {
+    <http://dbpedia.org/resource/Lake_Placid_(Texas)> dbo:maximumDepth ?n }'
+- name: qald9plus-train-29
+  nl: Show me all museums in London.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Museum>
+    ; <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/London>
+    }
+- name: qald9plus-train-30
+  nl: Which caves have more than 3 entrances?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Cave>
+    ; <http://dbpedia.org/property/entranceCount> ?entrance FILTER ( ?entrance > 3
+    ) }
+- name: qald9plus-train-31
+  nl: Who is the tallest player of the Atlanta Falcons?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/team> <http://dbpedia.org/resource/Atlanta_Falcons>
+    ; <http://dbpedia.org/ontology/height> ?h } ORDER BY DESC(?h) OFFSET 0 LIMIT 1
+- name: qald9plus-train-32
+  nl: What are the top-10 action role-playing video games according to IGN?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://purl.org/dc/terms/subject> <http://dbpedia.org/resource/Category:Action_role-playing_video_games>
+    ; <http://dbpedia.org/property/ign> ?score } ORDER BY DESC(?score) LIMIT 10
+- name: qald9plus-train-33
+  nl: Give me all writers that won the Nobel Prize in literature.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Writer>
+    ; <http://dbpedia.org/ontology/award> <http://dbpedia.org/resource/Nobel_Prize_in_Literature>
+    }
+- name: qald9plus-train-34
+  nl: Show me all basketball players that are higher than 2 meters.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/BasketballPlayer>
+    ; <http://dbpedia.org/ontology/height> ?n FILTER ( ?n > 2.0 ) }
+- name: qald9plus-train-35
+  nl: When was the Statue of Liberty built?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Statue_of_Liberty>
+    <http://dbpedia.org/property/beginningDate> ?date }
+- name: qald9plus-train-36
+  nl: Which states border Illinois?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Illinois> <http://dbpedia.org/property/borderingstates>
+    ?uri }
+- name: qald9plus-train-37
+  nl: Who developed Minecraft?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Minecraft> <http://dbpedia.org/ontology/developer>
+    ?uri }
+- name: qald9plus-train-38
+  nl: Where did Hillel Slovak die?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Hillel_Slovak>
+    <http://dbpedia.org/ontology/deathPlace> ?uri }
+- name: qald9plus-train-39
+  nl: What movies does Jesse Eisenberg play in?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/starring> <http://dbpedia.org/resource/Jesse_Eisenberg>
+    }
+- name: qald9plus-train-40
+  nl: Give all swimmers that were born in Moscow.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Swimmer>
+    ; <http://dbpedia.org/ontology/birthPlace> <http://dbpedia.org/resource/Moscow>
+    }
+- name: qald9plus-train-42
+  nl: Give me all Swiss non-profit organizations.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/type> <http://dbpedia.org/resource/Nonprofit_organization>
+    { ?uri <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/Switzerland>
+    } UNION { ?uri <http://dbpedia.org/ontology/location> ?x . ?x <http://dbpedia.org/ontology/country>
+    <http://dbpedia.org/resource/Switzerland> } }
+- name: qald9plus-train-43
+  nl: Which presidents were born in 1945?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/President>
+    ; <http://dbpedia.org/ontology/birthDate> ?date FILTER regex(?date, "^1945") }
+- name: qald9plus-train-44
+  nl: What kind of music did Lou Reed play?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Lou_Reed> <http://dbpedia.org/ontology/genre>
+    ?uri }
+- name: qald9plus-train-45
+  nl: Where do the Red Sox play?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Boston_Red_Sox>
+    <http://dbpedia.org/property/ballpark> ?uri }
+- name: qald9plus-train-46
+  nl: Show a list of soccer clubs that play in the Bundesliga.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/SoccerClub>
+    ; <http://dbpedia.org/ontology/league> <http://dbpedia.org/resource/Bundesliga>
+    }
+- name: qald9plus-train-47
+  nl: Which volcanos in Japan erupted since 2000?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Volcano>
+    ; <http://dbpedia.org/ontology/locatedInArea> <http://dbpedia.org/resource/Japan>
+    ; <http://dbpedia.org/ontology/eruptionYear> ?date FILTER ( year(?date) >= 2000
+    ) }
+- name: qald9plus-train-48
+  nl: Which bridges cross the Seine?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Bridge>
+    ; <http://dbpedia.org/ontology/crosses> <http://dbpedia.org/resource/Seine> }
+- name: qald9plus-train-49
+  nl: What is the official color of the University of Oxford?
+  expected: SELECT DISTINCT ?string WHERE { <http://dbpedia.org/resource/University_of_Oxford>
+    <http://dbpedia.org/ontology/officialSchoolColour> ?string }
+- name: qald9plus-train-50
+  nl: How many films did Hal Roach produce?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri <http://dbpedia.org/ontology/producer>
+    <http://dbpedia.org/resource/Hal_Roach> }
+- name: qald9plus-train-51
+  nl: Give me all Danish movies.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Denmark>
+    }
+- name: qald9plus-train-52
+  nl: What is the most frequent cause of death?
+  expected: SELECT DISTINCT ?x WHERE { ?uri <http://dbpedia.org/ontology/deathCause>
+    ?x . } ORDER BY DESC(COUNT(DISTINCT ?uri)) OFFSET 0 LIMIT 1
+- name: qald9plus-train-53
+  nl: Who are the four youngest MVP basketball players?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/BasketballPlayer>
+    ; <http://dbpedia.org/ontology/birthDate> ?date ; <http://dbpedia.org/property/highlights>
+    ?h FILTER regex(?h, "MVP") } ORDER BY DESC(?date) OFFSET 0 LIMIT 4
+- name: qald9plus-train-55
+  nl: Give me the capitals of all countries that the Himalayas run through.
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Himalayas> <http://dbpedia.org/ontology/country>
+    ?country . ?country <http://dbpedia.org/ontology/capital> ?uri }
+- name: qald9plus-train-57
+  nl: Which rivers flow into a German lake?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/River>
+    . ?x <http://dbpedia.org/ontology/inflow> ?uri ; a <http://dbpedia.org/ontology/Lake>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Germany>
+    }
+- name: qald9plus-train-58
+  nl: How many airlines are there?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Airline>
+    }
+- name: qald9plus-train-59
+  nl: Give me all islands that belong to Japan.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Island>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Japan> }
+- name: qald9plus-train-60
+  nl: How many inhabitants does Maribor have?
+  expected: SELECT DISTINCT ?num WHERE { <http://dbpedia.org/resource/Maribor> <http://dbpedia.org/ontology/populationTotal>
+    ?num }
+- name: qald9plus-train-61
+  nl: Give me all Apollo 14 astronauts.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/mission>
+    <http://dbpedia.org/resource/Apollo_14> }
+- name: qald9plus-train-62
+  nl: Which companies have more than 1 million employees?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Company>
+    { ?uri <http://dbpedia.org/ontology/numberOfEmployees> ?n } UNION { ?uri <http://dbpedia.org/property/numEmployees>
+    ?n } FILTER ( ?n > 1000000 ) }
+- name: qald9plus-train-63
+  nl: In which films directed by Garry Marshall was Julia Roberts starring?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/starring> <http://dbpedia.org/resource/Julia_Roberts>
+    ; <http://dbpedia.org/ontology/director> <http://dbpedia.org/resource/Garry_Marshall>
+    }
+- name: qald9plus-train-64
+  nl: Give me all soccer clubs in the Premier League.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/SoccerClub>
+    ; <http://dbpedia.org/ontology/league> <http://dbpedia.org/resource/Premier_League>
+    }
+- name: qald9plus-train-65
+  nl: What is the highest place of the Urals?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Ural_Mountains>
+    <http://dbpedia.org/property/highest> ?uri }
+- name: qald9plus-train-66
+  nl: Who is the governor of Wyoming?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Wyoming> <http://dbpedia.org/property/governor>
+    ?uri }
+- name: qald9plus-train-67
+  nl: Where did the architect of the Eiffel Tower study?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Eiffel_Tower>
+    <http://dbpedia.org/ontology/architect> ?x . ?x <http://dbpedia.org/property/almaMater>
+    ?uri }
+- name: qald9plus-train-69
+  nl: Give me all actors who were born in Paris after 1950.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Actor> . ?uri <http://dbpedia.org/ontology/birthPlace>
+    <http://dbpedia.org/resource/Paris> . ?uri <http://dbpedia.org/ontology/birthDate>
+    ?date . FILTER ( ?date >= xsd:dateTime('1950-12-31T00:00:00Z')) }
+- name: qald9plus-train-70
+  nl: Which movies star both Liz Taylor and Richard Burton?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/starring>
+    <http://dbpedia.org/resource/Elizabeth_Taylor> ; <http://dbpedia.org/ontology/starring>
+    <http://dbpedia.org/resource/Richard_Burton> }
+- name: qald9plus-train-71
+  nl: Give me all Australian nonprofit organizations.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/type> <http://dbpedia.org/resource/Nonprofit_organization>
+    { ?uri <http://dbpedia.org/ontology/locationCountry> <http://dbpedia.org/resource/Australia>
+    } UNION { ?uri <http://dbpedia.org/ontology/location> ?x . ?x <http://dbpedia.org/ontology/country>
+    <http://dbpedia.org/resource/Australia> } }
+- name: qald9plus-train-72
+  nl: Which pope succeeded John Paul II?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Pope_John_Paul_II>
+    <http://dbpedia.org/property/successor> ?uri }
+- name: qald9plus-train-73
+  nl: Give me all ESA astronauts.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Astronaut>
+    ; <http://dbpedia.org/property/type> <http://dbpedia.org/resource/European_Space_Agency>
+    }
+- name: qald9plus-train-74
+  nl: Who was president of Pakistan in 1978?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/title>
+    <http://dbpedia.org/resource/President_of_Pakistan> ; <http://dbpedia.org/property/years>
+    1978 }
+- name: qald9plus-train-75
+  nl: Who is the owner of Rolls-Royce?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Rolls-Royce_Motors>
+    <http://dbpedia.org/ontology/owner> ?uri }
+- name: qald9plus-train-76
+  nl: How many museums does Paris have?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Museum>
+    ; <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/Paris> }
+- name: qald9plus-train-77
+  nl: Where was JFK assassinated?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/John_F._Kennedy>
+    <http://dbpedia.org/ontology/deathPlace> ?uri }
+- name: qald9plus-train-79
+  nl: Show me everyone who was born on Halloween.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Person>
+    { ?uri <http://dbpedia.org/ontology/birthDate> ?date } UNION { ?uri <http://dbpedia.org/property/birthDate>
+    ?date } <http://dbpedia.org/resource/Halloween> <http://dbpedia.org/property/date>
+    ?date }
+- name: qald9plus-train-80
+  nl: Which beer originated in Ireland?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/type> <http://dbpedia.org/resource/Beer>
+    ; <http://dbpedia.org/ontology/origin> <http://dbpedia.org/resource/Beer_in_Ireland>
+    }
+- name: qald9plus-train-81
+  nl: To which countries does the Himalayan mountain system extend?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Himalayas> <http://dbpedia.org/ontology/country>
+    ?uri }
+- name: qald9plus-train-82
+  nl: Which actors were born in Germany?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Actor>
+    { ?uri <http://dbpedia.org/ontology/birthPlace> <http://dbpedia.org/resource/Germany>
+    } UNION { ?uri <http://dbpedia.org/ontology/birthPlace> ?place . ?place <http://dbpedia.org/ontology/country>
+    <http://dbpedia.org/resource/Germany> } }
+- name: qald9plus-train-83
+  nl: How much carbs does peanut butter have?
+  expected: SELECT DISTINCT ?carbs WHERE { <http://dbpedia.org/resource/Peanut_butter>
+    <http://dbpedia.org/property/carbs> ?carbs }
+- name: qald9plus-train-84
+  nl: Who produced the most films?
+  expected: SELECT DISTINCT ?uri WHERE { ?film <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Film> . ?film <http://dbpedia.org/ontology/producer>
+    ?uri . } ORDER BY DESC(COUNT(?film)) OFFSET 0 LIMIT 1
+- name: qald9plus-train-85
+  nl: How many employees does Google have?
+  expected: SELECT DISTINCT ?num WHERE { <http://dbpedia.org/resource/Google> <http://dbpedia.org/ontology/numberOfEmployees>
+    ?num }
+- name: qald9plus-train-86
+  nl: Give me all actors who were born in Berlin.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Actor>
+    ; <http://dbpedia.org/ontology/birthPlace> <http://dbpedia.org/resource/Berlin>
+    }
+- name: qald9plus-train-87
+  nl: Who created Goofy?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Goofy> <http://dbpedia.org/ontology/creator>
+    ?uri }
+- name: qald9plus-train-88
+  nl: Which music albums contain the song Last Christmas?
+  expected: SELECT DISTINCT ?uri WHERE { ?single <http://dbpedia.org/ontology/album>
+    ?uri ; <http://www.w3.org/2000/01/rdf-schema#label> "Last Christmas"@en }
+- name: qald9plus-train-89
+  nl: When was Alberta admitted as province?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Alberta> <http://dbpedia.org/property/admittancedate>
+    ?date }
+- name: qald9plus-train-90
+  nl: How many missions does the Soyuz programme have?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri <http://dbpedia.org/property/programme>
+    <http://dbpedia.org/resource/Soyuz_programme> }
+- name: qald9plus-train-91
+  nl: Give me all the TV shows with Neil Patrick Harris.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/TelevisionShow>
+    ; <http://dbpedia.org/ontology/starring> <http://dbpedia.org/resource/Neil_Patrick_Harris>
+    }
+- name: qald9plus-train-92
+  nl: When were the Hells Angels founded?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Hells_Angels>
+    <http://dbpedia.org/property/founded> ?date }
+- name: qald9plus-train-93
+  nl: What is the net income of Apple?
+  expected: SELECT DISTINCT ?ni WHERE { <http://dbpedia.org/resource/Apple_Inc.> <http://dbpedia.org/ontology/netIncome>
+    ?ni }
+- name: qald9plus-train-94
+  nl: Give me all Swedish holidays.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Holiday>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Sweden> }
+- name: qald9plus-train-95
+  nl: In which city was the former Dutch queen Juliana buried?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Juliana_of_the_Netherlands>
+    <http://dbpedia.org/property/burialPlace> ?uri . ?uri a <http://dbpedia.org/ontology/Settlement>
+    }
+- name: qald9plus-train-96
+  nl: List all the musicals with music by Leonard Bernstein.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Musical>
+    ; <http://dbpedia.org/ontology/musicBy> <http://dbpedia.org/resource/Leonard_Bernstein>
+    }
+- name: qald9plus-train-97
+  nl: Give me all companies in the advertising industry.
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Company>
+    { ?uri <http://dbpedia.org/ontology/industry> <http://dbpedia.org/resource/Advertising>
+    } UNION { ?uri <http://dbpedia.org/ontology/industry> ?industry FILTER regex(?industry,
+    "advertising", "i") } }
+- name: qald9plus-train-98
+  nl: What is the largest metropolitan area in Washington state?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Washington_(state)>
+    <http://dbpedia.org/property/largestmetro> ?uri }
+- name: qald9plus-train-99
+  nl: Who killed John Lennon?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Person>
+    ; <http://dbpedia.org/property/conviction> <http://dbpedia.org/resource/Death_of_John_Lennon>
+    }
+- name: qald9plus-train-101
+  nl: Give me all Australian metalcore bands.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Band>
+    ; <http://dbpedia.org/ontology/genre> <http://dbpedia.org/resource/Metalcore>
+    { ?uri <http://dbpedia.org/ontology/hometown> <http://dbpedia.org/resource/Australia>
+    } UNION { ?uri <http://dbpedia.org/ontology/hometown> ?h . ?h <http://dbpedia.org/ontology/country>
+    <http://dbpedia.org/resource/Australia> } }
+- name: qald9plus-train-103
+  nl: Give me all types of eating disorders.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/class/yago/WikicatEatingDisorders>
+    }
+- name: qald9plus-train-104
+  nl: Was Marc Chagall a jew?
+  expected: ASK WHERE { <http://dbpedia.org/resource/Marc_Chagall> <http://dbpedia.org/property/ethnicity>
+    "Jewish"@en }
+- name: qald9plus-train-105
+  nl: What was Brazil's lowest rank in the FIFA World Ranking?
+  expected: SELECT DISTINCT ?n WHERE { <http://dbpedia.org/resource/Brazil_national_football_team>
+    <http://dbpedia.org/property/fifaMin> ?n }
+- name: qald9plus-train-106
+  nl: How many films did Leonardo DiCaprio star in?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/starring> <http://dbpedia.org/resource/Leonardo_DiCaprio>
+    }
+- name: qald9plus-train-107
+  nl: Was Margaret Thatcher a chemist?
+  expected: ASK WHERE { <http://dbpedia.org/resource/Margaret_Thatcher> <http://dbpedia.org/ontology/profession>
+    <http://dbpedia.org/resource/Chemist> }
+- name: qald9plus-train-108
+  nl: Which U.S. states are in the same time zone as Utah?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Utah> <http://dbpedia.org/property/timezone>
+    ?x . ?uri a <http://dbpedia.org/class/yago/WikicatStatesOfTheUnitedStates> ; <http://dbpedia.org/property/timezone>
+    ?x FILTER ( ?uri != <http://dbpedia.org/resource/Utah> ) }
+- name: qald9plus-train-109
+  nl: Give me all books written by Danielle Steel.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Book>
+    ; <http://dbpedia.org/ontology/author> <http://dbpedia.org/resource/Danielle_Steel>
+    }
+- name: qald9plus-train-110
+  nl: Which country has the most official languages?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Country> . ?uri <http://dbpedia.org/property/officialLanguages>
+    ?language . } ORDER BY DESC(COUNT(?language)) OFFSET 0 LIMIT 1
+- name: qald9plus-train-111
+  nl: What is the total amount of men and women serving in the FDNY?
+  expected: SELECT DISTINCT ?num WHERE { <http://dbpedia.org/resource/New_York_City_Fire_Department>
+    <http://dbpedia.org/property/employees> ?num }
+- name: qald9plus-train-112
+  nl: Which actor played Chewbacca?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Chewbacca> <http://dbpedia.org/ontology/portrayer>
+    ?uri }
+- name: qald9plus-train-113
+  nl: Give me all libraries established earlier than 1400.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Library>
+    ; <http://dbpedia.org/property/established> ?year FILTER ( ?year < 1400 ) }
+- name: qald9plus-train-117
+  nl: Which ships were called after Benjamin Franklin?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/shipNamesake>
+    <http://dbpedia.org/resource/Benjamin_Franklin> }
+- name: qald9plus-train-118
+  nl: Give me all Methodist politicians.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Politician>
+    ; <http://dbpedia.org/ontology/religion> <http://dbpedia.org/resource/Methodism>
+    }
+- name: qald9plus-train-119
+  nl: What other books have been written by the author of The Fault in Our Stars?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT ?books WHERE { ?books
+    dbo:author <http://dbpedia.org/resource/John_Green_(author)> }'
+- name: qald9plus-train-120
+  nl: What is the highest mountain?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Mountain>
+    ; <http://dbpedia.org/ontology/elevation> ?elevation } ORDER BY DESC(?elevation)
+    OFFSET 0 LIMIT 1
+- name: qald9plus-train-121
+  nl: Which poet wrote the most books?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/occupation>
+    <http://dbpedia.org/resource/Poet> . ?x <http://dbpedia.org/ontology/author> ?uri
+    . ?x <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Book>
+    . } ORDER BY DESC(COUNT(?x)) OFFSET 0 LIMIT 1
+- name: qald9plus-train-122
+  nl: Which programming languages influenced Javascript?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/ProgrammingLanguage>
+    ; <http://dbpedia.org/ontology/influenced> <http://dbpedia.org/resource/JavaScript>
+    }
+- name: qald9plus-train-123
+  nl: Which musician wrote the most books?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/occupation>
+    <http://dbpedia.org/resource/Musician> . ?x <http://dbpedia.org/ontology/author>
+    ?uri . ?x <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Book>
+    . } ORDER BY DESC(COUNT(?x)) OFFSET 0 LIMIT 1
+- name: qald9plus-train-124
+  nl: Which films starring Clint Eastwood did he direct himself?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/director>
+    <http://dbpedia.org/resource/Clint_Eastwood> ; <http://dbpedia.org/ontology/starring>
+    <http://dbpedia.org/resource/Clint_Eastwood> }
+- name: qald9plus-train-125
+  nl: Which software has been developed by organizations founded in California?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Software>
+    . ?company a <http://dbpedia.org/ontology/Company> . ?uri <http://dbpedia.org/ontology/developer>
+    ?company . ?company <http://dbpedia.org/ontology/foundationPlace> <http://dbpedia.org/resource/California>
+    }
+- name: qald9plus-train-126
+  nl: Which instruments does Cat Stevens play?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Cat_Stevens>
+    <http://dbpedia.org/ontology/instrument> ?uri }
+- name: qald9plus-train-127
+  nl: How many airlines are members of the Star Alliance?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Airline>
+    ; <http://dbpedia.org/ontology/alliance> <http://dbpedia.org/resource/Star_Alliance>
+    }
+- name: qald9plus-train-129
+  nl: Who wrote The Hunger Games?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/The_Hunger_Games>
+    <http://dbpedia.org/property/author> ?uri }
+- name: qald9plus-train-130
+  nl: For which label did Elvis record his first album?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?x rdf:type dbo:Album ; dbo:artist res:Elvis_Presley ; dbo:releaseDate
+    ?y ; dbo:recordLabel ?uri } ORDER BY ASC(?y) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-131
+  nl: Is Christian Bale starring in Batman Begins?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Batman_Begins dbo:starring res:Christian_Bale }'
+- name: qald9plus-train-132
+  nl: Where is the residence of the prime minister of Spain?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Prime_Minister_of_Spain>
+    <http://dbpedia.org/property/residence> ?uri }
+- name: qald9plus-train-133
+  nl: Which actor was casted in the most movies?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Actor> . ?f <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Film> . ?f <http://dbpedia.org/ontology/starring>
+    ?uri . } ORDER BY DESC(COUNT(DISTINCT(?f))) OFFSET 0 LIMIT 1
+- name: qald9plus-train-134
+  nl: Which countries have more than two official languages?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Country>
+    ; <http://dbpedia.org/ontology/officialLanguage> ?language } GROUP BY ?uri HAVING
+    ( COUNT(?language) > 2 )
+- name: qald9plus-train-135
+  nl: Which countries have more than ten caves?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Country>
+    . ?cave a <http://dbpedia.org/ontology/Cave> { ?cave <http://dbpedia.org/ontology/location>
+    ?uri } UNION { ?cave <http://dbpedia.org/ontology/location> ?loc . ?loc <http://dbpedia.org/ontology/country>
+    ?uri } } GROUP BY ?uri HAVING ( COUNT(?cave) > 10 )
+- name: qald9plus-train-136
+  nl: Show me all songs from Bruce Springsteen released between 1980 and 1990.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Song> . ?uri <http://dbpedia.org/ontology/artist>
+    <http://dbpedia.org/resource/Bruce_Springsteen> . ?uri <http://dbpedia.org/ontology/releaseDate>
+    ?date . FILTER (?date >= '1980-01-01'^^xsd:date && ?date <= '1990-12-31'^^xsd:date)
+    }
+- name: qald9plus-train-137
+  nl: Which television shows were created by John Cleese?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/TelevisionShow>
+    ; <http://dbpedia.org/ontology/creator> <http://dbpedia.org/resource/John_Cleese>
+    }
+- name: qald9plus-train-138
+  nl: When did Latvia join the EU?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Latvia> <http://dbpedia.org/property/accessioneudate>
+    ?date }
+- name: qald9plus-train-139
+  nl: Which soccer players were born on Malta?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/SoccerPlayer>
+    ; <http://dbpedia.org/ontology/birthPlace> <http://dbpedia.org/resource/Malta>
+    }
+- name: qald9plus-train-140
+  nl: How many politicians graduated from Columbia University?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri <http://dbpedia.org/ontology/profession>
+    <http://dbpedia.org/resource/Politician> ; <http://dbpedia.org/ontology/almaMater>
+    <http://dbpedia.org/resource/Columbia_University> }
+- name: qald9plus-train-141
+  nl: Give me the birthdays of all actors of the television show Charmed.
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Charmed> <http://dbpedia.org/ontology/starring>
+    ?actor . ?actor <http://dbpedia.org/ontology/birthDate> ?date }
+- name: qald9plus-train-143
+  nl: Give me a list of all lakes in Denmark.
+  expected: SELECT DISTINCT ?uri WHERE { { ?uri a <http://dbpedia.org/ontology/Lake>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Denmark>
+    } UNION { ?uri a <http://dbpedia.org/class/yago/LakesOfDenmark> } }
+- name: qald9plus-train-144
+  nl: How many children does Eddie Murphy have?
+  expected: SELECT DISTINCT ?n WHERE { <http://dbpedia.org/resource/Eddie_Murphy>
+    <http://dbpedia.org/property/children> ?n }
+- name: qald9plus-train-145
+  nl: Show me all English Gothic buildings in Kent.
+  expected: SELECT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Building> ; <http://dbpedia.org/ontology/architecturalStyle>
+    <http://dbpedia.org/resource/English_Gothic_architecture> ; <http://dbpedia.org/ontology/location>
+    <http://dbpedia.org/resource/Kent> }
+- name: qald9plus-train-146
+  nl: Who is the manager of Real Madrid?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Real_Madrid_C.F.>
+    <http://dbpedia.org/ontology/manager> ?uri }
+- name: qald9plus-train-147
+  nl: In which countries can you pay using the West African CFA franc?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/currency>
+    <http://dbpedia.org/resource/West_African_CFA_franc> }
+- name: qald9plus-train-148
+  nl: Which holidays are celebrated around the world?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:Holiday }'
+- name: qald9plus-train-149
+  nl: What is the longest river?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/River>
+    { ?uri <http://dbpedia.org/ontology/length> ?l } UNION { ?uri <http://dbpedia.org/property/length>
+    ?l } } ORDER BY DESC(?l) OFFSET 0 LIMIT 1
+- name: qald9plus-train-150
+  nl: Which organizations were founded in 1930?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Organisation>
+    { ?uri <http://dbpedia.org/ontology/formationYear> ?date } UNION { ?uri <http://dbpedia.org/ontology/foundingYear>
+    ?date } FILTER regex(?date, "^1930") }
+- name: qald9plus-train-151
+  nl: What is the birth name of Angela Merkel?
+  expected: SELECT DISTINCT ?string WHERE { <http://dbpedia.org/resource/Angela_Merkel>
+    <http://dbpedia.org/property/birthName> ?string }
+- name: qald9plus-train-152
+  nl: Who has Tom Cruise been married to?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/spouse>
+    <http://dbpedia.org/resource/Tom_Cruise> }
+- name: qald9plus-train-153
+  nl: Which weapons did Heckler & Koch develop?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Weapon>
+    ; <http://dbpedia.org/property/designer> <http://dbpedia.org/resource/Heckler_&_Koch>
+    }
+- name: qald9plus-train-154
+  nl: What is the smallest city by area in Germany?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX dct: <http://purl.org/dc/terms/>
+    SELECT ?city WHERE { ?m skos:broader dbc:Cities_in_Germany . ?city dct:subject
+    ?m ; dbo:areaTotal ?area } ORDER BY ?area LIMIT 1'
+- name: qald9plus-train-155
+  nl: What is the ruling party in Lisbon?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Lisbon> <http://dbpedia.org/property/leaderParty>
+    ?uri }
+- name: qald9plus-train-156
+  nl: How heavy is Jupiter's lightest moon?
+  expected: SELECT DISTINCT ?n WHERE { ?uri <http://dbpedia.org/property/satelliteOf>
+    <http://dbpedia.org/resource/Jupiter> ; <http://dbpedia.org/ontology/mass> ?n
+    } ORDER BY ASC(?n) OFFSET 0 LIMIT 1
+- name: qald9plus-train-157
+  nl: How many employees does IBM have?
+  expected: SELECT DISTINCT ?number WHERE { <http://dbpedia.org/resource/IBM> <http://dbpedia.org/ontology/numberOfEmployees>
+    ?number }
+- name: qald9plus-train-158
+  nl: List all episodes of the first season of the HBO television series The Sopranos!
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:series res:The_Sopranos ; dbo:seasonNumber
+    1 }'
+- name: qald9plus-train-159
+  nl: What does ICRO stand for?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/abbreviation>
+    "ICRO" }
+- name: qald9plus-train-160
+  nl: Does the new Battlestar Galactica series have more episodes than the old one?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { <http://dbpedia.org/resource/Battlestar_Galactica_%281978_TV_series%29>
+    dbo:numberOfEpisodes ?x . <http://dbpedia.org/resource/Battlestar_Galactica_%282004_TV_series%29>
+    dbo:numberOfEpisodes ?y FILTER ( ?y > ?x ) }'
+- name: qald9plus-train-161
+  nl: Give me all films produced by Hal Roach.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/producer> <http://dbpedia.org/resource/Hal_Roach>
+    }
+- name: qald9plus-train-162
+  nl: Who played Agent Smith in Matrix?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?uri WHERE { res:Agent_Smith <http://dbpedia.org/ontology/portrayer>
+    ?uri }'
+- name: qald9plus-train-163
+  nl: Which Greek parties are pro-European?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/PoliticalParty>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Greece> ;
+    <http://dbpedia.org/ontology/ideology> <http://dbpedia.org/resource/Pro-Europeanism>
+    }
+- name: qald9plus-train-164
+  nl: Give me a list of all bandleaders that play trumpet.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/occupation>
+    <http://dbpedia.org/resource/Bandleader> ; <http://dbpedia.org/ontology/instrument>
+    <http://dbpedia.org/resource/Trumpet> }
+- name: qald9plus-train-165
+  nl: What is the second highest mountain on Earth?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Mountain>
+    ; <http://dbpedia.org/ontology/elevation> ?elevation } ORDER BY DESC(?elevation)
+    OFFSET 1 LIMIT 1
+- name: qald9plus-train-166
+  nl: Is Egypts largest city also its capital?
+  expected: ASK WHERE { <http://dbpedia.org/resource/Egypt> <http://dbpedia.org/ontology/largestCity>
+    ?large ; <http://dbpedia.org/ontology/capital> ?capital FILTER ( ?large = ?capital
+    ) }
+- name: qald9plus-train-167
+  nl: Which rockets were launched from Baikonur?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Rocket>
+    ; <http://dbpedia.org/ontology/launchSite> <http://dbpedia.org/resource/Baikonur_Cosmodrome>
+    }
+- name: qald9plus-train-168
+  nl: How many programming languages are there?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/ProgrammingLanguage>
+    }
+- name: qald9plus-train-169
+  nl: Which Chess players died in the same place they were born in?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/ChessPlayer>
+    ; <http://dbpedia.org/ontology/birthPlace> ?x ; <http://dbpedia.org/ontology/deathPlace>
+    ?y FILTER ( ?x = ?y ) }
+- name: qald9plus-train-170
+  nl: Who is the owner of Facebook?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Facebook> <http://dbpedia.org/ontology/foundedBy>
+    ?uri }
+- name: qald9plus-train-171
+  nl: Give me all movies with Tom Cruise.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/starring> <http://dbpedia.org/resource/Tom_Cruise>
+    }
+- name: qald9plus-train-172
+  nl: In which U.S. state is Fort Knox located?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dbp: <http://dbpedia.org/property/> SELECT DISTINCT ?uri WHERE { res:Fort_Knox
+    dbo:location ?uri . ?uri dbo:country res:United_States }'
+- name: qald9plus-train-173
+  nl: Give me all cities in New Jersey with more than 100000 inhabitants.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dbp: <http://dbpedia.org/property/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:City ; dbo:isPartOf res:New_Jersey
+    ; dbo:populationTotal ?inhabitants FILTER ( ?inhabitants > 100000 ) }'
+- name: qald9plus-train-174
+  nl: Which mountains are higher than the Nanga Parbat?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Nanga_Parbat>
+    <http://dbpedia.org/ontology/elevation> ?elevation . ?uri a <http://dbpedia.org/ontology/Mountain>
+    { ?uri <http://dbpedia.org/ontology/elevation> ?otherelevation } UNION { ?uri
+    <http://dbpedia.org/property/elevationM> ?otherelevation } FILTER ( ?otherelevation
+    > ?elevation ) }
+- name: qald9plus-train-175
+  nl: Give me all B-sides of the Ramones.
+  expected: SELECT DISTINCT ?string WHERE { ?x <http://dbpedia.org/ontology/musicalArtist>
+    <http://dbpedia.org/resource/Ramones> ; <http://dbpedia.org/ontology/bSide> ?string
+    }
+- name: qald9plus-train-176
+  nl: What are the specialities of the UNC Health Care?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/UNC_Health_Care>
+    <http://dbpedia.org/property/speciality> ?uri }
+- name: qald9plus-train-177
+  nl: When was Olof Palme shot?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Olof_Palme>
+    <http://dbpedia.org/ontology/deathDate> ?date }
+- name: qald9plus-train-178
+  nl: List the seven kings of Rome.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/title>
+    <http://dbpedia.org/resource/King_of_Rome> }
+- name: qald9plus-train-179
+  nl: Give me all people that were born in Vienna and died in Berlin.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/birthPlace>
+    <http://dbpedia.org/resource/Vienna> ; <http://dbpedia.org/ontology/deathPlace>
+    <http://dbpedia.org/resource/Berlin> }
+- name: qald9plus-train-180
+  nl: Is Darth Vader Luke’s father?
+  expected: ASK WHERE { <http://dbpedia.org/resource/Darth_Vader> <http://dbpedia.org/ontology/child>
+    <http://dbpedia.org/resource/Luke_Skywalker> }
+- name: qald9plus-train-181
+  nl: Show me all the breweries in Australia.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Brewery>
+    { ?uri <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/Australia>
+    } UNION { ?uri <http://dbpedia.org/ontology/location> ?x . ?x <http://dbpedia.org/ontology/country>
+    <http://dbpedia.org/resource/Australia> } }
+- name: qald9plus-train-182
+  nl: Give me all films produced by Steven Spielberg with a budget of at least $80
+    million.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Film> . ?uri <http://dbpedia.org/ontology/director>
+    <http://dbpedia.org/resource/Steven_Spielberg> . ?uri <http://dbpedia.org/ontology/budget>
+    ?b . FILTER( xsd:double(?b) >= 8.0E7 ) }
+- name: qald9plus-train-183
+  nl: Give me all soccer clubs in Spain.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/SoccerClub>
+    { ?uri <http://dbpedia.org/ontology/ground> <http://dbpedia.org/resource/Spain>
+    } UNION { ?uri <http://dbpedia.org/property/ground> ?ground FILTER regex(?ground,
+    "Spain") } }
+- name: qald9plus-train-184
+  nl: Who produced films starring Natalie Portman?
+  expected: SELECT DISTINCT ?uri WHERE { ?film a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/starring> <http://dbpedia.org/resource/Natalie_Portman>
+    ; <http://dbpedia.org/ontology/producer> ?uri }
+- name: qald9plus-train-185
+  nl: Give me all breeds of the German Shepherd dog.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/breed>
+    <http://dbpedia.org/resource/German_Shepherd> }
+- name: qald9plus-train-187
+  nl: Which languages are spoken in Estonia?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/spokenIn>
+    <http://dbpedia.org/resource/Estonia> }
+- name: qald9plus-train-188
+  nl: What is the largest country in the world?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:Country ; dbo:areaTotal ?n } ORDER
+    BY DESC(?n) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-189
+  nl: What is the largest city in america?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?lcity WHERE { dbr:United_States dbo:largestCity ?lcity }'
+- name: qald9plus-train-190
+  nl: Who was the pope that founded the Vatican Television?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT ?uri WHERE {
+    ?uri rdf:type dbo:Pope . res:Vatican_Television_Center dbo:foundedBy ?uri }'
+- name: qald9plus-train-191
+  nl: Who discovered Ceres?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT DISTINCT ?uri WHERE
+    { <http://dbpedia.org/resource/Ceres_(dwarf_planet)> dbo:discoverer ?uri }'
+- name: qald9plus-train-192
+  nl: Who is the king of the Netherlands?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Netherlands dbo:leader ?uri . ?uri rdf:type dbo:Royalty }'
+- name: qald9plus-train-193
+  nl: Is Cola a beverage?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK WHERE { res:Cola
+    rdf:type dbo:Beverage }'
+- name: qald9plus-train-194
+  nl: What is the alma mater of the chancellor of Germany Angela Merkel?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?Almamater WHERE { dbr:Angela_Merkel dbo:almaMater ?Almamater }'
+- name: qald9plus-train-195
+  nl: Who wrote the book Les Piliers de la terre?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:The_Pillars_of_the_Earth dbo:author ?uri }'
+- name: qald9plus-train-196
+  nl: Which airports does Yeti Airlines serve?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Yeti_Airlines dbo:targetAirport ?uri }'
+- name: qald9plus-train-197
+  nl: Where is the birthplace of Goethe?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?Goethe WHERE { dbr:Johann_Wolfgang_von_Goethe dbo:birthPlace ?Goethe }'
+- name: qald9plus-train-198
+  nl: Was the Cuban Missile Crisis earlier than the Bay of Pigs Invasion?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Cuban_Missile_Crisis dbo:date ?x . res:Bay_of_Pigs_Invasion dbo:date
+    ?y FILTER ( ?x < ?y ) }'
+- name: qald9plus-train-199
+  nl: Which ingredients do I need for carrot cake?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Carrot_cake dbo:ingredient ?uri }'
+- name: qald9plus-train-200
+  nl: Who created Wikipedia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Wikipedia dbo:author ?uri }'
+- name: qald9plus-train-201
+  nl: What is the highest mountain in Saxony Germany?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?m WHERE { ?m dbo:mountainRange dbr:Ore_Mountains ; dbo:elevation ?height
+    } ORDER BY DESC(?height) LIMIT 1'
+- name: qald9plus-train-202
+  nl: Who is the current federal minister of finance in Germany?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT ?leader WHERE { <http://dbpedia.org/resource/Federal_Ministry_of_Finance_(Germany)>
+    dbo:leader ?leader }'
+- name: qald9plus-train-203
+  nl: In which country is Mecca located?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Mecca dbo:country ?uri }'
+- name: qald9plus-train-204
+  nl: Who played Gus Fring in Breaking Bad?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Gus_Fring dbo:portrayer ?uri }'
+- name: qald9plus-train-205
+  nl: In which country does the Nile start?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Nile dbo:sourceCountry ?uri }'
+- name: qald9plus-train-206
+  nl: In which state Penn State University is located?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?s WHERE { dbr:Pennsylvania_State_University dbo:state ?s }'
+- name: qald9plus-train-207
+  nl: What is the biggest stadium in Spain?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Stadium ; dbo:location res:Spain ; dbo:seatingCapacity
+    ?n } ORDER BY DESC(?n) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-208
+  nl: Who is the coach of Ankara's ice hockey team?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?x dbo:city res:Ankara ; dbo:league res:Turkish_Ice_Hockey_First_League
+    ; dbo:coach ?uri }'
+- name: qald9plus-train-209
+  nl: How large is the area of UK?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?area WHERE { dbr:United_Kingdom dbo:areaTotal ?area }'
+- name: qald9plus-train-210
+  nl: Who created Batman?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Batman dbo:creator ?uri }'
+- name: qald9plus-train-211
+  nl: Was Sigmund Freud married?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    ASK WHERE { dbr:Sigmund_Freud dbo:spouse ?uri }'
+- name: qald9plus-train-212
+  nl: Who are the developers of DBpedia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:DBpedia dbo:developer ?uri }'
+- name: qald9plus-train-213
+  nl: Give me all movies directed by Francis Ford Coppola.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Film ; dbo:director res:Francis_Ford_Coppola }'
+- name: qald9plus-train-214
+  nl: Are tree frogs a type of amphibian?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Hylidae dbo:class res:Amphibian }'
+- name: qald9plus-train-215
+  nl: What is the location of the Houses of Parliament?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { res:Palace_of_Westminster dbo:location ?uri }'
+- name: qald9plus-train-216
+  nl: how much is the elevation of Düsseldorf Airport ?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?ele WHERE { dbr:Düsseldorf_Airport dbo:elevation ?ele } LIMIT 1'
+- name: qald9plus-train-217
+  nl: How much is the population of mexico city ?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?Mexico_City WHERE { dbr:Mexico_City dbo:populationTotal ?Mexico_City }'
+- name: qald9plus-train-218
+  nl: when was the founding date of french fifth republic?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?ff WHERE { dbr:French_Fifth_Republic dbo:foundingDate ?ff }'
+- name: qald9plus-train-219
+  nl: Who was the first King of England?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX yago: <http://dbpedia.org/class/yago/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Royalty ; rdf:type yago:WikicatEnglishMonarchs ; dbo:activeYearsStartYear
+    ?date } ORDER BY ASC(?date) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-220
+  nl: Who is the editor of Forbes?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Forbes dbo:editor ?uri }'
+- name: qald9plus-train-221
+  nl: Which awards did Douglas Hofstadter win?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Douglas_Hofstadter dbo:award ?uri }'
+- name: qald9plus-train-222
+  nl: Who is the youngest Darts player?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:DartsPlayer ; dbo:birthDate ?date
+    } ORDER BY DESC(?date) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-223
+  nl: Is horse racing a sport?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK WHERE { dbr:Horse_racing
+    rdf:type dbo:Sport }'
+- name: qald9plus-train-224
+  nl: Which river does the Brooklyn Bridge cross?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Brooklyn_Bridge dbo:crosses ?uri }'
+- name: qald9plus-train-225
+  nl: How many people live in Poland?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Poland dbo:populationTotal ?uri }'
+- name: qald9plus-train-226
+  nl: When was the last episode of the TV series Friends aired?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?date WHERE { dbr:Friends dbo:completionDate ?date }'
+- name: qald9plus-train-227
+  nl: Is the wife of president Obama called Michelle?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ASK WHERE { res:Barack_Obama
+    dbo:spouse ?spouse . ?spouse rdfs:label ?name FILTER regex(?name, "Michelle")
+    }'
+- name: qald9plus-train-229
+  nl: Who is 8th president of US?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX dbr: <http://dbpedia.org/resource/> SELECT ?name WHERE { dbr:8th_President_of_the_United_States
+    dbo:wikiPageRedirects ?link . ?link dbp:name ?name }'
+- name: qald9plus-train-230
+  nl: how much is the total population of european union?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?europop WHERE { dbr:European_Union dbo:populationTotal ?europop }'
+- name: qald9plus-train-231
+  nl: Give me all launch pads operated by NASA.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:LaunchPad ; dbo:operator res:NASA }'
+- name: qald9plus-train-232
+  nl: Who developed the video game World of Warcraft?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:World_of_Warcraft dbo:developer ?uri }'
+- name: qald9plus-train-233
+  nl: What is the birth name of Adele?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?bn WHERE { dbr:Adele dbo:birthName ?bn }'
+- name: qald9plus-train-234
+  nl: What is the population of Cairo?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?pop WHERE { dbr:Cairo dbo:populationTotal ?pop }'
+- name: qald9plus-train-236
+  nl: What is the last work of Dan Brown?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX dbr: <http://dbpedia.org/resource/> SELECT ?book WHERE { { ?book dbo:author
+    dbr:Dan_Brown . ?book dbp:releaseDate ?date } UNION { ?book dbo:author dbr:Dan_Brown
+    . ?book dbo:publicationDate ?date} } ORDER BY DESC(xsd:date(?date)) LIMIT 1'
+- name: qald9plus-train-237
+  nl: Where is Sungkyunkwan University?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?country WHERE { dbr:Sungkyunkwan_University dbo:city ?city ;
+    dbo:country ?country }'
+- name: qald9plus-train-238
+  nl: Who is the author of the interpretation of dreams?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?Author WHERE { dbr:The_Interpretation_of_Dreams dbo:author ?Author }'
+- name: qald9plus-train-239
+  nl: When was the death of Shakespeare?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?x WHERE { dbr:William_Shakespeare dbo:deathDate ?x } LIMIT 1'
+- name: qald9plus-train-241
+  nl: Who developed Slack?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT DISTINCT ?uri WHERE
+    { ?uri dbo:product <http://dbpedia.org/resource/Slack_(software)> }'
+- name: qald9plus-train-242
+  nl: Where is the origin of Carolina reaper?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/>PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { dbr:Carolina_Reaper dbo:origin ?uri}'
+- name: qald9plus-train-243
+  nl: In which year was Rachel Stevens born?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Rachel_Stevens dbo:birthYear ?uri }'
+- name: qald9plus-train-244
+  nl: How often did Jane Fonda marry?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { res:Jane_Fonda dbo:spouse ?uri }'
+- name: qald9plus-train-245
+  nl: Was the wife of president Lincoln called Mary?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ASK WHERE { res:Abraham_Lincoln
+    dbo:spouse ?spouse . ?spouse rdfs:label ?name FILTER regex(?name, "Mary") }'
+- name: qald9plus-train-246
+  nl: Which cities does the Weser flow through?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Weser dbo:city ?uri }'
+- name: qald9plus-train-247
+  nl: In which programming language is GIMP written?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:GIMP dbo:programmingLanguage ?uri }'
+- name: qald9plus-train-248
+  nl: Which university did Angela Merkel attend?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?university WHERE { res:Angela_Merkel dbo:almaMater ?university
+    }'
+- name: qald9plus-train-249
+  nl: List all the musicals with music by Elton John.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Musical ; dbo:musicBy res:Elton_John }'
+- name: qald9plus-train-250
+  nl: How many Aldi stores are there?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?number WHERE { res:Aldi dbo:numberOfLocations ?number }'
+- name: qald9plus-train-251
+  nl: What is the longest river in the world?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT ?uri WHERE { ?uri rdf:type dbo:BodyOfWater ; dbo:length ?length } ORDER
+    BY DESC(?length) LIMIT 1'
+- name: qald9plus-train-252
+  nl: When was John Adams born?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?date WHERE { res:John_Adams dbo:birthDate ?date }'
+- name: qald9plus-train-253
+  nl: Which companies produce hovercrafts?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Company ; dbo:product res:Hovercraft }'
+- name: qald9plus-train-254
+  nl: Who was the wife of U.S. president Lincoln?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Abraham_Lincoln dbo:spouse ?uri }'
+- name: qald9plus-train-255
+  nl: Which species does an elephant belong?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT ?species WHERE { dbr:Elephant dbp:species ?species }'
+- name: qald9plus-train-256
+  nl: How many people live in the capital of Australia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?num WHERE { res:Australia dbo:capital ?x . ?x dbo:populationTotal
+    ?num }'
+- name: qald9plus-train-257
+  nl: In which ancient empire could you pay with cocoa beans?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:currency res:Cocoa_bean }'
+- name: qald9plus-train-258
+  nl: How many theories did Albert Einstein come up with?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT (COUNT(?uri) AS ?count) WHERE { dbr:Albert_Einstein dbo:knownFor ?uri }'
+- name: qald9plus-train-259
+  nl: Who composed the soundtrack for Cameron's Titanic?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT DISTINCT ?uri WHERE
+    { <http://dbpedia.org/resource/Titanic_(1997_film)> dbo:musicComposer ?uri }'
+- name: qald9plus-train-260
+  nl: Give me the runtime of Toy Story.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?runtime WHERE { res:Toy_Story dbo:runtime ?runtime }'
+- name: qald9plus-train-262
+  nl: With how many countries Iran has borders?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT ?border WHERE { dbr:Geography_of_Iran dbp:borders ?border } LIMIT 8'
+- name: qald9plus-train-263
+  nl: Which electronics companies were founded in Beijing?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Company ; dbo:industry res:Electronics ; dbo:foundationPlace
+    res:Beijing }'
+- name: qald9plus-train-264
+  nl: Who was the successor of John F. Kennedy?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:John_F._Kennedy dbo:successor ?uri }'
+- name: qald9plus-train-265
+  nl: Who is the mayor of Paris?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Paris dbo:mayor ?uri }'
+- name: qald9plus-train-266
+  nl: Did Arnold Schwarzenegger attend a university?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK WHERE { res:Arnold_Schwarzenegger
+    dbo:almaMater ?x . ?x rdf:type dbo:University }'
+- name: qald9plus-train-267
+  nl: Is James Bond married?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:James_Bond dbo:spouse ?uri }'
+- name: qald9plus-train-268
+  nl: Does the Isar flow into a lake?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK WHERE { ?x dbo:inflow
+    res:Isar ; rdf:type dbo:Lake }'
+- name: qald9plus-train-269
+  nl: Which Indian company has the most employees?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Company ; dbo:location res:India ; dbo:numberOfEmployees
+    ?n } ORDER BY DESC(?n) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-270
+  nl: Who was John F. Kennedy's vice president?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:John_F._Kennedy dbo:vicePresident ?uri }'
+- name: qald9plus-train-271
+  nl: Which country does the creator of Miffy come from?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Miffy dbo:creator ?x . ?x dbo:nationality ?uri
+    }'
+- name: qald9plus-train-273
+  nl: In what city is the Heineken brewery?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Heineken dbo:manufacturer ?x . ?x dbo:locationCity
+    ?uri }'
+- name: qald9plus-train-274
+  nl: Is Barack Obama a democrat?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Barack_Obama dbo:party <http://dbpedia.org/resource/Democratic_Party_(United_States)>
+    }'
+- name: qald9plus-train-275
+  nl: List the children of Margaret Thatcher.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Margaret_Thatcher dbo:child ?uri }'
+- name: qald9plus-train-276
+  nl: From which region is the Melon de Bourgogne?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Melon_de_Bourgogne dbo:wineRegion ?uri }'
+- name: qald9plus-train-278
+  nl: how big is the total area of North Rhine- Westphalia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?tarea WHERE { dbr:North_Rhine-Westphalia dbo:areaTotal ?tarea }'
+- name: qald9plus-train-279
+  nl: Which city has the most inhabitants?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:City ; dbo:populationTotal ?pop } ORDER BY DESC(?pop)
+    OFFSET 0 LIMIT 1'
+- name: qald9plus-train-280
+  nl: What is Donald Trump's main business?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?owner WHERE { ?owner dbo:owner dbr:Donald_Trump }'
+- name: qald9plus-train-281
+  nl: When will start the final match of the football world cup 2018?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT ?Date WHERE { dbr:2018_FIFA_World_Cup dbp:date ?Date } ORDER BY DESC(?Date)
+    LIMIT 1'
+- name: qald9plus-train-282
+  nl: Which films did Stanley Kubrick direct?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:director res:Stanley_Kubrick }'
+- name: qald9plus-train-283
+  nl: how much is the population Iraq?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?pIraq WHERE { dbr:Iraq dbo:populationTotal ?pIraq }'
+- name: qald9plus-train-284
+  nl: How many inhabitants does the largest city in Canada have?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?num WHERE { res:Canada dbo:largestCity ?city . ?city dbo:populationTotal
+    ?num }'
+- name: qald9plus-train-285
+  nl: Who is the mayor of the capital of French Polynesia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:French_Polynesia dbo:capital ?x . ?x dbo:mayor
+    ?uri }'
+- name: qald9plus-train-286
+  nl: Give me all actors starring in movies directed by William Shatner.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?x dbo:director res:William_Shatner ; dbo:starring
+    ?uri }'
+- name: qald9plus-train-287
+  nl: How tall is Claudia Schiffer?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?height WHERE { res:Claudia_Schiffer dbo:height ?height }'
+- name: qald9plus-train-288
+  nl: how much is the population densty rank of germany?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT ?rank WHERE { dbr:Germany dbp:populationDensityRank ?rank }'
+- name: qald9plus-train-289
+  nl: What is the highest mountain in Italy?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Mountain ; dbo:locatedInArea res:Italy ; dbo:elevation
+    ?num } ORDER BY DESC(?num) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-290
+  nl: List all games by GMT.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:publisher res:GMT_Games }'
+- name: qald9plus-train-291
+  nl: What is the official language of Suriname?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Suriname dbo:officialLanguage ?uri }'
+- name: qald9plus-train-292
+  nl: In which city did Nikos Kazantzakis die?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Nikos_Kazantzakis dbo:deathPlace ?uri . ?uri rdf:type dbo:Town }'
+- name: qald9plus-train-293
+  nl: What is in a chocolate chip cookie?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Chocolate_chip_cookie dbo:ingredient ?uri }'
+- name: qald9plus-train-294
+  nl: In which country is the Limerick Lake?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Limerick_Lake dbo:country ?uri }'
+- name: qald9plus-train-295
+  nl: Give me all video games published by Mean Hamster Software.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:VideoGame ; dbo:publisher res:Mean_Hamster_Software
+    }'
+- name: qald9plus-train-296
+  nl: Give me all members of Prodigy.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:The_Prodigy dbo:bandMember ?uri }'
+- name: qald9plus-train-297
+  nl: In which time zone is Rome?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Rome dbo:timeZone ?uri }'
+- name: qald9plus-train-298
+  nl: How high is the lighthouse in Colombo?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?num WHERE { res:Colombo_Lighthouse dbo:height ?num }'
+- name: qald9plus-train-299
+  nl: Who are the writers of the Wall album of Pink Floyd?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT ?writers WHERE { dbr:The_Wall dbp:writer ?writers }'
+- name: qald9plus-train-300
+  nl: Who is the mayor of Rotterdam?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Rotterdam dbo:leaderName ?uri }'
+- name: qald9plus-train-301
+  nl: What is the largest city in Australia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Australia dbo:largestCity ?uri }'
+- name: qald9plus-train-302
+  nl: Who was married to president Chirac?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Jacques_Chirac dbo:spouse ?uri }'
+- name: qald9plus-train-303
+  nl: What form of government is found in South Africa?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { dbr:South_Africa dbo:governmentType ?uri }'
+- name: qald9plus-train-304
+  nl: How high is the Yokohama Marine Tower?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?num WHERE { res:Yokohama_Marine_Tower dbo:height ?num }'
+- name: qald9plus-train-305
+  nl: Which holidays are celebrated around the world?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:Holiday }'
+- name: qald9plus-train-306
+  nl: Who is the tallest basketball player?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:BasketballPlayer ; dbo:height ?num
+    } ORDER BY DESC(?num) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-307
+  nl: How many languages are spoken in Turkmenistan?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT (COUNT(DISTINCT ?x) AS ?c) WHERE { res:Turkmenistan dbo:language ?x }'
+- name: qald9plus-train-308
+  nl: Did Che Guevara have children?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Che_Guevara dbo:child ?uri }'
+- name: qald9plus-train-309
+  nl: Did Kaurismäki ever win the Grand Prix at Cannes?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Aki_Kaurismäki dbo:award <http://dbpedia.org/resource/Grand_Prix_(Cannes_Film_Festival)>
+    }'
+- name: qald9plus-train-310
+  nl: To which party does the mayor of Paris belong?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Paris dbo:mayor ?x . ?x dbo:party ?uri }'
+- name: qald9plus-train-311
+  nl: Who is the Formula 1 race driver with the most races?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:FormulaOneRacer ; dbo:races ?x
+    } ORDER BY DESC(?x) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-312
+  nl: What country is Sitecore from?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Sitecore dbo:foundationPlace ?uri }'
+- name: qald9plus-train-313
+  nl: Give me the birth place of Frank Sinatra.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?place WHERE { res:Frank_Sinatra dbo:birthPlace ?place }'
+- name: qald9plus-train-314
+  nl: Is Christian Bale starring in Velvet Goldmine?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Velvet_Goldmine dbo:starring res:Christian_Bale }'
+- name: qald9plus-train-315
+  nl: Who is the son of Sonny and Cher?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:parent res:Cher ; dbo:parent res:Sonny_Bono
+    }'
+- name: qald9plus-train-316
+  nl: How many ethnic groups live in Slovenia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { res:Slovenia dbo:ethnicGroup ?uri
+    }'
+- name: qald9plus-train-317
+  nl: What is the capital of Cameroon?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Cameroon dbo:capital ?uri }'
+- name: qald9plus-train-318
+  nl: Was Natalie Portman born in the United States?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Natalie_Portman dbo:birthPlace ?city . ?city dbo:country res:United_States
+    }'
+- name: qald9plus-train-319
+  nl: How many pages does War and Peace have?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?n WHERE { res:War_and_Peace dbo:numberOfPages ?n }'
+- name: qald9plus-train-320
+  nl: Who is the oldest child of Meryl Streep?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Meryl_Streep dbo:child ?uri . ?uri dbo:birthDate
+    ?d } ORDER BY ASC(?d) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-321
+  nl: Which television shows were created by Walt Disney?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:TelevisionShow ; dbo:creator res:Walt_Disney }'
+- name: qald9plus-train-322
+  nl: What does IYCM stand for?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:abbreviation "IYCM" }'
+- name: qald9plus-train-323
+  nl: Which types of grapes grow in Oregon?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Oregon_wine dbo:growingGrape ?uri }'
+- name: qald9plus-train-324
+  nl: Was U.S. president Jackson involved in a war?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Andrew_Jackson dbo:battle ?battle }'
+- name: qald9plus-train-325
+  nl: When was the Titanic completed?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?date WHERE { res:RMS_Titanic dbo:completionDate ?date }'
+- name: qald9plus-train-326
+  nl: Did Tesla win a nobel prize in physics?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Nikola_Tesla dbo:award res:Nobel_Prize_in_Physics }'
+- name: qald9plus-train-327
+  nl: How many states are in Mexico?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT (COUNT(?uri) AS ?count) WHERE { ?uri dbo:type dbr:States_of_Mexico }'
+- name: qald9plus-train-328
+  nl: Which scientist is known for the Manhattan Project and the Nobel Peace Prize?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri dbo:knownFor res:Manhattan_Project ; rdf:type dbo:Scientist ; dbo:knownFor
+    res:Nobel_Peace_Prize }'
+- name: qald9plus-train-329
+  nl: How much did the Lego Movie cost?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?n WHERE { res:The_Lego_Movie dbo:budget ?n }'
+- name: qald9plus-train-330
+  nl: Who composed the music for Harold and Maude?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Harold_and_Maude dbo:musicComposer ?uri }'
+- name: qald9plus-train-331
+  nl: List all episodes of the first season of the HBO television series The Sopranos.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:series res:The_Sopranos ; dbo:seasonNumber
+    1 }'
+- name: qald9plus-train-332
+  nl: Which city has the least inhabitants?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:City ; dbo:populationTotal ?pop
+    } ORDER BY ASC(?pop) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-333
+  nl: Where is Syngman Rhee buried?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Syngman_Rhee dbo:restingPlace ?uri }'
+- name: qald9plus-train-334
+  nl: Does Neymar play for Real Madrid?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Neymar dbo:team <http://dbpedia.org/resource/Real_Madrid_C.F.>
+    }'
+- name: qald9plus-train-335
+  nl: Who wrote the book The Pillars of the Earth?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:The_Pillars_of_the_Earth dbo:author ?uri }'
+- name: qald9plus-train-336
+  nl: Do Prince Harry and Prince William have the same parents?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { <http://dbpedia.org/resource/Prince_William,_Duke_of_Cambridge> dbo:parent
+    ?x . res:Prince_Harry dbo:parent ?x }'
+- name: qald9plus-train-337
+  nl: Who was the doctoral supervisor of Albert Einstein?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Albert_Einstein dbo:doctoralAdvisor ?uri }'
+- name: qald9plus-train-338
+  nl: Does Breaking Bad have more episodes than Game of Thrones?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Breaking_Bad dbo:numberOfEpisodes ?x . res:Game_of_Thrones dbo:numberOfEpisodes
+    ?y FILTER ( ?y > ?x ) }'
+- name: qald9plus-train-339
+  nl: Who was Vincent van Gogh inspired by?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:influenced res:Vincent_van_Gogh }'
+- name: qald9plus-train-340
+  nl: Which building after the Burj Khalifa has the most floors?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Burj_Khalifa dbo:floorCount ?burj . ?uri rdf:type dbo:Building ; dbo:floorCount
+    ?proj FILTER ( ?proj < ?burj ) } ORDER BY DESC(?proj) LIMIT 1'
+- name: qald9plus-train-341
+  nl: What was the final result of the War of the Roses?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?result WHERE { ?uri dbo:isPartOfMilitaryConflict dbr:Wars_of_the_Roses
+    ; dbo:result ?result ; dbo:date ?date } ORDER BY DESC(?date) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-342
+  nl: How much did Pulp Fiction cost?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?n WHERE { res:Pulp_Fiction dbo:budget ?n }'
+- name: qald9plus-train-343
+  nl: Is proinsulin a protein?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK WHERE { res:Proinsulin
+    rdf:type dbo:Protein }'
+- name: qald9plus-train-344
+  nl: Do Urdu and Persian have a common root?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    ASK WHERE { dbr:Urdu dbo:languageFamily ?uri . dbr:Persian_language dbo:languageFamily
+    ?uri }'
+- name: qald9plus-train-345
+  nl: Who is starring in Spanish movies produced by Benicio del Toro?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?film rdf:type dbo:Film ; dbo:country res:Spain ; dbo:producer res:Benicio_del_Toro
+    ; dbo:starring ?uri . ?uri rdf:type dbo:Person }'
+- name: qald9plus-train-346
+  nl: Is Lake Baikal bigger than the Great Bear Lake?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Lake_Baikal dbo:areaTotal ?a1 . res:Great_Bear_Lake dbo:areaTotal
+    ?a2 FILTER ( ?a1 > ?a2 ) }'
+- name: qald9plus-train-347
+  nl: Show me all books in Asimov's Foundation series.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:series res:Foundation_series }'
+- name: qald9plus-train-348
+  nl: Where was Bach born?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Johann_Sebastian_Bach dbo:birthPlace ?uri }'
+- name: qald9plus-train-349
+  nl: Which city has the oldest running metro?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT ?loc WHERE {
+    ?uri dbo:type dbr:Rapid_transit ; dbo:openingYear ?date ; dbo:location ?loc .
+    ?loc rdf:type dbo:City } ORDER BY ASC(?date) LIMIT 1'
+- name: qald9plus-train-350
+  nl: Who designed the Brooklyn Bridge?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Brooklyn_Bridge dbo:architect ?uri }'
+- name: qald9plus-train-351
+  nl: How many people live in Eurasia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?population WHERE { res:Eurasia dbo:populationTotal ?population
+    }'
+- name: qald9plus-train-352
+  nl: Who is the host of the BBC Wildlife Specials?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:BBC_Wildlife_Specials dbo:presenter ?uri }'
+- name: qald9plus-train-353
+  nl: What is the total population of Melbourne, Florida?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT ?uri WHERE { <http://dbpedia.org/resource/Melbourne,_Florida>
+    dbo:populationTotal ?uri }'
+- name: qald9plus-train-354
+  nl: What country is Mount Everest in?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Mount_Everest dbo:locatedInArea ?uri . ?uri rdf:type dbo:Country }'
+- name: qald9plus-train-355
+  nl: To which artistic movement did the painter of The Three Dancers belong?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:The_Three_Dancers dbo:author ?person . ?person
+    dbo:movement ?uri }'
+- name: qald9plus-train-356
+  nl: When did Operation Overlord commence?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?d WHERE { res:Operation_Overlord dbo:date ?d }'
+- name: qald9plus-train-357
+  nl: What is the bridge with the longest span?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Bridge ; dbo:mainspan ?s } ORDER BY DESC(?s) OFFSET
+    0 LIMIT 1'
+- name: qald9plus-train-358
+  nl: Is there a video game called Battle Chess?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> ASK WHERE { ?uri rdf:type
+    dbo:VideoGame ; rdfs:label "Battle Chess"@en }'
+- name: qald9plus-train-359
+  nl: Who was buried in the Great Pyramid of Giza?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { ?uri dbo:restingPlace dbr:Great_Pyramid_of_Giza }'
+- name: qald9plus-train-360
+  nl: Does the Ford Motor Company have a manufacturing plant in Malaysia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    ASK WHERE { ?uri dbo:assembly dbr:Malaysia ; dbo:manufacturer dbr:Ford_Motor_Company
+    }'
+- name: qald9plus-train-361
+  nl: Did Socrates influence Aristotle?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Aristotle dbo:influencedBy res:Socrates }'
+- name: qald9plus-train-362
+  nl: How many children did Benjamin Franklin have?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { res:Benjamin_Franklin dbo:child ?uri
+    }'
+- name: qald9plus-train-363
+  nl: How tall is Michael Jordan?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?num WHERE { res:Michael_Jordan dbo:height ?num }'
+- name: qald9plus-train-364
+  nl: In which UK city are the headquarters of the MI6?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Secret_Intelligence_Service dbo:headquarter ?uri . ?uri dbo:country
+    res:United_Kingdom }'
+- name: qald9plus-train-365
+  nl: Who created Family Guy?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Family_Guy dbo:creator ?uri }'
+- name: qald9plus-train-366
+  nl: In which city does the Chile Route 68 end?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Chile_Route_68 dbo:routeEnd ?uri }'
+- name: qald9plus-train-367
+  nl: Give me the grandchildren of Elvis Presley.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Elvis_Presley dbo:child ?child . ?child dbo:child
+    ?uri }'
+- name: qald9plus-train-368
+  nl: When did the Ming dynasty dissolve?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?date WHERE { res:Ming_dynasty dbo:dissolutionDate ?date }'
+- name: qald9plus-train-369
+  nl: In which military conflicts did Lawrence of Arabia participate?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:T._E._Lawrence dbo:battle ?uri }'
+- name: qald9plus-train-370
+  nl: What is the timezone in San Pedro de Atacama?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:San_Pedro_de_Atacama dbo:timeZone ?uri }'
+- name: qald9plus-train-371
+  nl: Give me all books by William Goldman with more than 300 pages.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Book ; dbo:author res:William_Goldman ; dbo:numberOfPages
+    ?x FILTER ( ?x > 300 ) }'
+- name: qald9plus-train-372
+  nl: What did Bruce Carver die from?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Bruce_Carver dbo:deathCause ?uri }'
+- name: qald9plus-train-373
+  nl: Which subsidiary of Lufthansa serves both Dortmund and Berlin Tegel?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Lufthansa dbo:subsidiary ?uri . ?uri dbo:targetAirport
+    res:Dortmund_Airport ; dbo:targetAirport res:Berlin_Tegel_Airport }'
+- name: qald9plus-train-374
+  nl: Does Abraham Lincoln's death place have a website?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Abraham_Lincoln dbo:deathPlace ?p . ?p dbo:website ?w }'
+- name: qald9plus-train-375
+  nl: Did Elvis Presley have children?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Elvis_Presley dbo:child ?uri }'
+- name: qald9plus-train-376
+  nl: Is Michelle Obama the wife of Barack Obama?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Barack_Obama dbo:spouse res:Michelle_Obama }'
+- name: qald9plus-train-377
+  nl: In which city does Sylvester Stallone live?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:City . res:Sylvester_Stallone dbo:residence ?uri }'
+- name: qald9plus-train-378
+  nl: Which books by Kerouac were published by Viking Press?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Book ; dbo:publisher res:Viking_Press ; dbo:author res:Jack_Kerouac
+    }'
+- name: qald9plus-train-379
+  nl: Who wrote the song Hotel California?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Hotel_California dbo:writer ?uri }'
+- name: qald9plus-train-380
+  nl: What is the capital of Canada?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Canada dbo:capital ?uri }'
+- name: qald9plus-train-381
+  nl: Who is the mayor of Tel Aviv?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Tel_Aviv dbo:leaderName ?uri }'
+- name: qald9plus-train-382
+  nl: What form of government does Russia have?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Russia dbo:governmentType ?uri }'
+- name: qald9plus-train-383
+  nl: Show me the book that Muhammad Ali wrote.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Book ; dbo:author res:Muhammad_Ali }'
+- name: qald9plus-train-384
+  nl: Who was the first to climb Mount Everest?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Mount_Everest dbo:firstAscentPerson ?uri }'
+- name: qald9plus-train-385
+  nl: How many languages are spoken in Colombia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT (COUNT(DISTINCT
+    ?uri) AS ?c) WHERE { ?uri rdf:type dbo:Language . res:Colombia dbo:language ?uri
+    }'
+- name: qald9plus-train-386
+  nl: What is the currency of the Czech Republic?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Czech_Republic dbo:currency ?uri }'
+- name: qald9plus-train-387
+  nl: Where in France is sparkling wine produced?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:wineProduced res:Sparkling_wine ; dbo:location
+    res:France }'
+- name: qald9plus-train-388
+  nl: When did Boris Becker end his active career?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?d WHERE { res:Boris_Becker dbo:activeYearsEndDate ?d }'
+- name: qald9plus-train-389
+  nl: Which movies starring Mickey Rourke were directed by Guy Ritchie?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Film ; dbo:starring res:Mickey_Rourke ; dbo:director
+    res:Guy_Ritchie }'
+- name: qald9plus-train-390
+  nl: In which films did Julia Roberts as well as Richard Gere play?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Film ; dbo:starring res:Julia_Roberts ; dbo:starring
+    res:Richard_Gere }'
+- name: qald9plus-train-391
+  nl: Show me Hemingway's autobiography.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:author res:Ernest_Hemingway ; dbo:literaryGenre
+    res:Autobiography }'
+- name: qald9plus-train-392
+  nl: How tall is Amazon Eve?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?height WHERE { res:Amazon_Eve dbo:height ?height }'
+- name: qald9plus-train-393
+  nl: What are the five boroughs of New York?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT DISTINCT ?uri WHERE
+    { ?uri dbo:governmentType <http://dbpedia.org/resource/Borough_(New_York_City)>
+    }'
+- name: qald9plus-train-394
+  nl: Give me all Canadian Grunge record labels.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:RecordLabel ; dbo:genre res:Grunge ; dbo:country res:Canada
+    }'
+- name: qald9plus-train-395
+  nl: In which country does the Ganges start?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Ganges dbo:sourceCountry ?uri }'
+- name: qald9plus-train-396
+  nl: Who is the founder of Penguin Books?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Penguin_Books dbo:founder ?uri }'
+- name: qald9plus-train-397
+  nl: Who wrote the Game of Thrones theme?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Game_of_Thrones dbo:composer ?uri }'
+- name: qald9plus-train-398
+  nl: Who is the president of Eritrea?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Eritrea dbo:leader ?uri ; dbo:leaderTitle "President"@en
+    }'
+- name: qald9plus-train-399
+  nl: In which city did John F. Kennedy die?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:John_F._Kennedy dbo:deathPlace ?uri . ?uri rdf:type dbo:City }'
+- name: qald9plus-train-400
+  nl: What is the highest mountain in Australia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Mountain ; dbo:locatedInArea res:Australia ; dbo:elevation
+    ?elevation } ORDER BY DESC(?elevation) LIMIT 1'
+- name: qald9plus-train-401
+  nl: Who writes the Farmers' Almanac?
+  expected: 'PREFIX dbp: <http://dbpedia.org/property/> SELECT ?uri WHERE { <http://dbpedia.org/resource/Farmers''_Almanac>
+    dbp:editor ?uri }'
+- name: qald9plus-train-402
+  nl: Give me the currency of China.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:China dbo:currency ?uri }'
+- name: qald9plus-train-403
+  nl: Give me all Swedish oceanographers.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:field res:Oceanography ; dbo:birthPlace
+    res:Sweden }'
+- name: qald9plus-train-404
+  nl: In which city are the headquarters of the United Nations?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { res:Headquarters_of_the_United_Nations dbo:location ?uri . ?uri rdf:type
+    dbo:City }'
+- name: qald9plus-train-405
+  nl: Is Rita Wilson the wife of Tom Hanks?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { res:Tom_Hanks dbo:spouse res:Rita_Wilson }'
+- name: qald9plus-train-406
+  nl: In which countries do people speak Japanese?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Country ; dbo:language res:Japanese_language }'
+- name: qald9plus-train-407
+  nl: Which of Tim Burton's films had the highest budget?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:director res:Tim_Burton ; dbo:budget ?b
+    } ORDER BY ?b OFFSET 0 LIMIT 1'
+- name: qald9plus-train-408
+  nl: Which museum in New York has the most visitors?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Museum ; dbo:location res:New_York_City ; dbo:numberOfVisitors
+    ?num } ORDER BY DESC(?num) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-409
+  nl: What was the first Queen album?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:Album ; dbo:artist <http://dbpedia.org/resource/Queen_(band)>
+    ; dbo:releaseDate ?d } ORDER BY ASC(?d) OFFSET 0 LIMIT 1'
+- name: qald9plus-train-410
+  nl: What was the first name of the band Queens of the Stone Age?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?name WHERE { res:Queens_of_the_Stone_Age dbo:alias ?name }'
+- name: qald9plus-train-411
+  nl: What was the last movie with Alec Guinness?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Film ; dbo:starring res:Alec_Guinness ; dbo:releaseDate
+    ?date } ORDER BY DESC(?date) LIMIT 1'
+- name: qald9plus-train-412
+  nl: Give me all actors starring in Last Action Hero.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Last_Action_Hero dbo:starring ?uri }'
+- name: qald9plus-train-413
+  nl: Who discovered Pluto?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { dbr:Pluto dbo:discoverer ?uri }'
+- name: qald9plus-test-99
+  nl: What is the time zone of Salt Lake City?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?uri WHERE { res:Salt_Lake_City <http://dbpedia.org/ontology/timeZone>
+    ?uri }'
+- name: qald9plus-test-98
+  nl: Who killed Caesar?
+  expected: 'PREFIX dct: <http://purl.org/dc/terms/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    SELECT DISTINCT ?uri WHERE { ?uri dct:subject dbc:Assassins_of_Julius_Caesar }'
+- name: qald9plus-test-86
+  nl: What is the highest mountain in Germany?
+  expected: 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX onto: <http://dbpedia.org/ontology/> SELECT ?uri WHERE { ?uri rdf:type
+    onto:Mountain ; onto:elevation ?elevation ; onto:locatedInArea <http://dbpedia.org/resource/Germany>
+    } ORDER BY DESC(?elevation) LIMIT 1'
+- name: qald9plus-test-84
+  nl: Which American presidents were in office during the Vietnam War?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dct: <http://purl.org/dc/terms/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    SELECT ?uri WHERE { ?uri dct:subject dbc:Presidents_of_the_United_States . res:Vietnam_War
+    dbo:commander ?uri }'
+- name: qald9plus-test-81
+  nl: Butch Otter is the governor of which U.S. state?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/class/yago/WikicatStatesOfTheUnitedStates>
+    ; <http://dbpedia.org/property/governor> <http://dbpedia.org/resource/Butch_Otter>
+    }
+- name: qald9plus-test-66
+  nl: Which artists were born on the same date as Rachel Stevens?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri a dbo:Artist . dbr:Rachel_Stevens dbo:birthDate
+    ?birthdate . ?uri dbo:birthDate ?birthdate }'
+- name: qald9plus-test-64
+  nl: What is the profession of Frank Herbert?
+  expected: 'PREFIX dbpedia2: <http://dbpedia.org/property/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?string WHERE { res:Frank_Herbert dbpedia2:occupation ?string
+    }'
+- name: qald9plus-test-6
+  nl: Are Taiko some kind of Japanese musical instrument?
+  expected: ASK WHERE { <http://dbpedia.org/resource/Taiko> a <http://dbpedia.org/class/yago/WikicatJapaneseMusicalInstruments>
+    }
+- name: qald9plus-test-56
+  nl: How many seats does the home stadium of FC Porto have?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX dbr: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX db: <http://dbpedia.org/>
+    SELECT ?capacity WHERE { { dbr:FC_Porto dbo:ground ?ground . ?ground dbo:capacity
+    ?capacity } UNION { dbr:FC_Porto dbo:ground ?ground . ?ground dbp:capacity ?capacity
+    } }'
+- name: qald9plus-test-49
+  nl: Which frequent flyer program has the most airlines?
+  expected: SELECT ?uri WHERE { ?airline <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Airline> . ?airline <http://dbpedia.org/property/frequentFlyer>
+    ?uri. } GROUP BY ?uri ORDER BY DESC(COUNT(DISTINCT ?airline)) OFFSET 0 LIMIT 1
+- name: qald9plus-test-44
+  nl: Which European countries have a constitutional monarchy?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dct: <http://purl.org/dc/terms/>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { ?uri dct:subject dbc:Countries_in_Europe ; dbo:governmentType
+    dbr:Constitutional_monarchy }'
+- name: qald9plus-test-42
+  nl: Which countries have places with more than two caves?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?cave rdf:type dbo:Cave ; dbo:location ?uri . ?uri
+    rdf:type dbo:Country } GROUP BY ?uri HAVING ( COUNT(?cave) > 2 )'
+- name: qald9plus-test-37
+  nl: What are the nicknames of San Francisco?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX foaf:<http://xmlns.com/foaf/0.1/> SELECT DISTINCT ?string WHERE { res:San_Francisco
+    foaf:nick ?string }'
+- name: qald9plus-test-32
+  nl: What is Angela Merkel’s birth name?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?string WHERE { res:Angela_Merkel dbp:birthName ?string }'
+- name: qald9plus-test-68
+  nl: Which country was Bill Gates born in?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX dbr: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?country WHERE { { dbr:Bill_Gates dbo:birthPlace ?birthPlace .
+    ?birthPlace dbo:country ?country } UNION { dbr:Bill_Gates dbo:birthPlace ?birthPlace
+    . ?birthPlace dbo:isPartOf ?place . ?place dbo:country ?country } }'
+- name: qald9plus-test-214
+  nl: Give me all professional skateboarders from Sweden.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX dbr: <http://dbpedia.org/resource/> SELECT DISTINCT ?uri WHERE { ?uri dbo:occupation
+    dbr:Skateboarder { ?uri dbo:birthPlace dbr:Sweden } UNION { ?uri dbo:birthPlace
+    ?place . ?place dbo:country dbr:Sweden } }'
+- name: qald9plus-test-210
+  nl: Which monarchs of the United Kingdom were married to a German?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX yago: <http://dbpedia.org/class/yago/>
+    PREFIX res: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type yago:WikicatMonarchsOfTheUnitedKingdom
+    ; dbo:spouse ?spouse . ?spouse dbo:birthPlace res:Germany }'
+- name: qald9plus-test-203
+  nl: How did Michael Jackson die?
+  expected: SELECT DISTINCT ?s WHERE { <http://dbpedia.org/resource/Michael_Jackson>
+    <http://dbpedia.org/property/deathCause> ?s }
+- name: qald9plus-test-197
+  nl: Which U.S. state has been admitted latest?
+  expected: 'PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX dct: <http://purl.org/dc/terms/>
+    SELECT DISTINCT ?uri WHERE { ?uri dct:subject dbc:States_of_the_United_States
+    ; <http://dbpedia.org/property/admittancedate> ?x } ORDER BY DESC(?x) LIMIT 1'
+- name: qald9plus-test-196
+  nl: Which classes does the Millepede belong to?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?String WHERE { res:Millipede dbp:taxon ?String }'
+- name: qald9plus-test-188
+  nl: Give me the homepage of Forbes.
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    SELECT DISTINCT ?string WHERE { res:Forbes foaf:homepage ?string }'
+- name: qald9plus-test-187
+  nl: Who is the husband of Amanda Palmer?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/spouse>
+    <http://dbpedia.org/resource/Amanda_Palmer> }
+- name: qald9plus-test-173
+  nl: When did Finland join the EU?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?date WHERE { res:Finland dbp:accessioneudate ?date }'
+- name: qald9plus-test-168
+  nl: Which actors play in Big Bang Theory?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/The_Big_Bang_Theory>
+    <http://dbpedia.org/ontology/starring> ?uri }
+- name: qald9plus-test-166
+  nl: Which computer scientist won an oscar?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/field>
+    <http://dbpedia.org/resource/Computer_science> ; <http://dbpedia.org/ontology/award>
+    <http://dbpedia.org/resource/Academy_Award> }
+- name: qald9plus-test-160
+  nl: Who wrote Harry Potter?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Harry_Potter>
+    <http://dbpedia.org/property/author> ?uri }
+- name: qald9plus-test-158
+  nl: Give me all writers that won the Nobel Prize in literature.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Writer>
+    ; <http://dbpedia.org/ontology/award> <http://dbpedia.org/resource/Nobel_Prize_in_Literature>
+    }
+- name: qald9plus-test-157
+  nl: Give me English actors starring in Lovesick.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT DISTINCT ?uri WHERE
+    { <http://dbpedia.org/resource/Lovesick_(1983_film)> dbo:starring ?uri . ?uri
+    dbo:birthPlace ?city . ?city dbo:country <http://dbpedia.org/resource/United_Kingdom>
+    }'
+- name: qald9plus-test-155
+  nl: What is the nick name of Baghdad?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+    SELECT ?nm WHERE { dbr:Baghdad foaf:nick ?nm }'
+- name: qald9plus-test-150
+  nl: In which city was the president of Montenegro born?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?x <http://dbpedia.org/property/title> dbr:President_of_Montenegro
+    ; dbo:birthPlace ?uri . ?uri dbo:type dbr:Capital_city }'
+- name: qald9plus-test-149
+  nl: Which U.S. state has the highest population density?
+  expected: SELECT ?uri WHERE { ?uri <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/United_States>
+    . ?uri <http://dbpedia.org/ontology/capital> ?capital . ?uri <http://dbpedia.org/property/densityrank>
+    ?density . OPTIONAL {?uri <http://www.w3.org/2000/01/rdf-schema#label> ?string.
+    FILTER (lang(?string) = 'en') } } ORDER BY ASC(?density) LIMIT 1
+- name: qald9plus-test-25
+  nl: What is the longest river in China?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/River>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/China> ;
+    <http://dbpedia.org/property/length> ?l } ORDER BY DESC(?l) OFFSET 0 LIMIT 1
+- name: qald9plus-test-143
+  nl: What is the area code of Berlin?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?string WHERE { res:Berlin dbo:areaCode ?string }'
+- name: qald9plus-test-140
+  nl: How many scientists graduated from an Ivy League university?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Scientist>
+    ; <http://dbpedia.org/ontology/almaMater> ?university . ?university <http://dbpedia.org/ontology/affiliation>
+    <http://dbpedia.org/resource/Ivy_League> ; a <http://dbpedia.org/ontology/University>
+    }
+- name: qald9plus-test-137
+  nl: Give me all Dutch parties.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/PoliticalParty>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Netherlands>
+    }
+- name: qald9plus-test-136
+  nl: How many moons does Mars have?
+  expected: SELECT DISTINCT ?n WHERE { <http://dbpedia.org/resource/Mars> <http://dbpedia.org/property/satellites>
+    ?n }
+- name: qald9plus-test-134
+  nl: What is Batman's real name?
+  expected: SELECT DISTINCT ?label WHERE { <http://dbpedia.org/resource/Batman> <http://xmlns.com/foaf/0.1/name>
+    ?label FILTER ( str(?label) != "Batman" ) }
+- name: qald9plus-test-132
+  nl: What is Elon Musk famous for?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Elon_Musk> <http://dbpedia.org/ontology/knownFor>
+    ?uri }
+- name: qald9plus-test-128
+  nl: Who is the author of WikiLeaks?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX onto: <http://dbpedia.org/ontology/> SELECT ?uri WHERE { res:WikiLeaks
+    onto:author ?uri }'
+- name: qald9plus-test-126
+  nl: Sean Parnell was the governor of which U.S. state?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Sean_Parnell dbo:region ?uri }'
+- name: qald9plus-test-125
+  nl: How many years was the Ford Model T manufactured?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+    PREFIX res: <http://dbpedia.org/resource/> SELECT ?years WHERE { res:Ford_Model_T
+    dbo:productionEndYear ?end ; dbo:productionStartYear ?start. BIND ( ( year(xsd:date(?end))
+    - year(xsd:date(?start)) ) AS ?years) }'
+- name: qald9plus-test-123
+  nl: Give me all animals that are extinct.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Animal>
+    ; <http://dbpedia.org/ontology/conservationStatus> "EX" }
+- name: qald9plus-test-111
+  nl: How many awards has Bertrand Russell?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT (COUNT(?Awards) AS ?Counter) WHERE { dbr:Bertrand_Russell dbp:awards ?Awards
+    }'
+- name: qald9plus-test-117
+  nl: Is Pamela Anderson a vegan?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> ASK WHERE { dbr:Pamela_Anderson
+    a <http://dbpedia.org/class/yago/WikicatAmericanVegans> }'
+- name: qald9plus-test-59
+  nl: Which space probes were sent into orbit around the sun?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    PREFIX dct: <http://purl.org/dc/terms/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?s WHERE { ?s dct:subject dbc:Missions_to_the_Sun ; rdf:type ?type
+    FILTER ( ?type IN (dbo:Satellite, dbo:ArtificialSatellite) ) }'
+- name: qald9plus-test-113
+  nl: Which German cities have more than 250000 inhabitants?
+  expected: SELECT DISTINCT ?uri WHERE { { ?uri a <http://dbpedia.org/ontology/City>
+    } UNION { ?uri a <http://dbpedia.org/ontology/Town> } ?uri <http://dbpedia.org/ontology/country>
+    <http://dbpedia.org/resource/Germany> ; <http://dbpedia.org/ontology/populationTotal>
+    ?population FILTER ( ?population > 250000 ) }
+- name: qald9plus-test-104
+  nl: Who is the daughter of Robert Kennedy married to?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Robert_F._Kennedy>
+    <http://dbpedia.org/ontology/child> ?child . ?child <http://dbpedia.org/ontology/spouse>
+    ?uri }
+- name: qald9plus-test-1
+  nl: What is the revenue of IBM?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX onto: <http://dbpedia.org/ontology/>
+    SELECT ?number WHERE { res:IBM onto:revenue ?number }'
+- name: qald9plus-test-129
+  nl: Who does the voice of Bart Simpson?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Bart_Simpson>
+    <http://dbpedia.org/property/voiceactor> ?uri }
+- name: qald9plus-test-181
+  nl: Through which countries does the Yenisei river flow?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?uri WHERE { res:Yenisei_River <http://dbpedia.org/ontology/country>
+    ?uri }'
+- name: qald9plus-test-135
+  nl: When did Michael Jackson die?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Michael_Jackson>
+    <http://dbpedia.org/ontology/deathDate> ?date }
+- name: qald9plus-test-39
+  nl: Which poet wrote the most books?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/occupation>
+    <http://dbpedia.org/resource/Poet> . ?x <http://dbpedia.org/ontology/author> ?uri
+    . ?x <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://dbpedia.org/ontology/Book>
+    . } ORDER BY DESC(COUNT(?x)) OFFSET 0 LIMIT 1
+- name: qald9plus-test-83
+  nl: Give me all gangsters from the prohibition era.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dct: <http://purl.org/dc/terms/>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:occupation dbr:Gangster ; dct:subject dbc:Prohibition-era_gangsters
+    }'
+- name: qald9plus-test-71
+  nl: Give me all spacecrafts that flew to Mars.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    PREFIX dct: <http://purl.org/dc/terms/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?s WHERE { ?s dct:subject dbc:Mars_rovers ; rdf:type ?type FILTER
+    ( ?type IN (dbo:Satellite, dbo:ArtificialSatellite) ) }'
+- name: qald9plus-test-213
+  nl: Show me all Czech movies.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Film>
+    ; <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Czech_Republic>
+    }
+- name: qald9plus-test-209
+  nl: Give me all taikonauts.
+  expected: SELECT DISTINCT ?uri WHERE { { ?uri a <http://dbpedia.org/ontology/Astronaut>
+    ; <http://dbpedia.org/ontology/nationality> <http://dbpedia.org/resource/People's_Republic_of_China>
+    } UNION { ?uri a <http://dbpedia.org/ontology/Astronaut> ; <http://dbpedia.org/ontology/nationality>
+    <http://dbpedia.org/resource/China> } }
+- name: qald9plus-test-105
+  nl: Which countries have more than ten volcanoes?
+  expected: SELECT DISTINCT ?uri WHERE { ?x a <http://dbpedia.org/ontology/Volcano>
+    ; <http://dbpedia.org/ontology/locatedInArea> ?uri . ?uri a <http://dbpedia.org/ontology/Country>
+    } GROUP BY ?uri HAVING ( COUNT(?x) > 10 )
+- name: qald9plus-test-21
+  nl: Who created English Wikipedia?
+  expected: 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX onto: <http://dbpedia.org/ontology/> SELECT ?uri WHERE { <http://dbpedia.org/resource/Wikipedia>
+    onto:author ?uri }'
+- name: qald9plus-test-34
+  nl: Give me all female German chancellors.
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?uri WHERE { res:Chancellor_of_Germany dbp:incumbent ?uri }'
+- name: qald9plus-test-145
+  nl: Who owns Aldi?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?uri WHERE { res:Aldi dbp:founders ?uri }'
+- name: qald9plus-test-154
+  nl: Which books were written by Danielle Steel?
+  expected: 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/> PREFIX onto: <http://dbpedia.org/ontology/>
+    SELECT ?uri WHERE { ?uri rdf:type onto:Book ; onto:author <http://dbpedia.org/resource/Danielle_Steel>
+    }'
+- name: qald9plus-test-198
+  nl: Who was influenced by Socrates?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/influencedBy>
+    <http://dbpedia.org/resource/Socrates> }
+- name: qald9plus-test-162
+  nl: How deep is Lake Chiemsee?
+  expected: SELECT DISTINCT ?n WHERE { <http://dbpedia.org/resource/Chiemsee> <http://dbpedia.org/ontology/maximumDepth>
+    ?n }
+- name: qald9plus-test-212
+  nl: Which companies work in the aerospace industry as well as in medicine?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri a dbo:Company ; dbo:industry dbr:Aerospace ;
+    dbo:industry dbr:Medical }'
+- name: qald9plus-test-40
+  nl: Who were the parents of Queen Victoria?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Queen_Victoria dbo:parent ?uri }'
+- name: qald9plus-test-79
+  nl: Are there any castles in the United States?
+  expected: 'PREFIX dct: <http://purl.org/dc/terms/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    ASK WHERE { ?uri dct:subject dbc:Castles_in_the_United_States }'
+- name: qald9plus-test-141
+  nl: Which languages are spoken in Estonia?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/spokenIn>
+    <http://dbpedia.org/resource/Estonia> }
+- name: qald9plus-test-107
+  nl: Who was the father of Queen Elizabeth II?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT * WHERE { res:Elizabeth_II dbo:parent ?uri . ?uri <http://xmlns.com/foaf/0.1/gender>
+    "male"@en }'
+- name: qald9plus-test-163
+  nl: Give me all chemical elements.
+  expected: 'PREFIX dct: <http://purl.org/dc/terms/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX owl: <http://www.w3.org/2002/07/owl#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type owl:Thing ; dct:subject dbc:Chemical_elements
+    }'
+- name: qald9plus-test-211
+  nl: Give me all American presidents of the last 20 years.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX dct: <http://purl.org/dc/terms/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type dbo:Person ; dct:subject dbc:Presidents_of_the_United_States
+    ; dbo:activeYearsEndDate ?termEnd FILTER ( ( year(now()) - year(?termEnd) ) <=
+    20 ) }'
+- name: qald9plus-test-51
+  nl: When is the movie Worst Case Scenario going to be in cinemas in the Netherlands?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX dbr: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/> SELECT DISTINCT ?rel WHERE { <http://dbpedia.org/resource/Worst_Case_Scenario_(film)>
+    ?p ?o ; dbo:releaseDate ?rel FILTER contains(lcase(str(?o)), "netherlands") }'
+- name: qald9plus-test-167
+  nl: Which subsidiary of TUI Travel serves both Glasgow and Dublin?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/TUI_Travel>
+    <http://dbpedia.org/ontology/subsidiary> ?uri . ?uri <http://dbpedia.org/ontology/targetAirport>
+    <http://dbpedia.org/resource/Glasgow_International_Airport> ; <http://dbpedia.org/ontology/targetAirport>
+    <http://dbpedia.org/resource/Dublin_Airport> }
+- name: qald9plus-test-131
+  nl: What languages are spoken in Pakistan?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Pakistan> <http://dbpedia.org/ontology/language>
+    ?uri }
+- name: qald9plus-test-120
+  nl: Who is the daughter of Bill Clinton married to?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX dbp: <http://dbpedia.org/property/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { dbr:Bill_Clinton dbo:child ?child . ?child dbo:spouse
+    ?uri . ?uri rdfs:label ?string }'
+- name: qald9plus-test-164
+  nl: Who was on the Apollo 11 mission?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Apollo_11> <http://dbpedia.org/property/crewMembers>
+    ?uri }
+- name: qald9plus-test-88
+  nl: What is the wavelength of Indigo?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?n WHERE { dbr:Indigo dbo:wavelength ?n }'
+- name: qald9plus-test-151
+  nl: Give me all B-sides of the Ramones.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX dbp: <http://dbpedia.org/property/> SELECT DISTINCT ?string WHERE { ?x
+    dbo:musicalArtist res:Ramones ; dbo:bSide ?string }'
+- name: qald9plus-test-63
+  nl: Who was called Scarface?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> SELECT ?uri WHERE { ?uri dbo:alias
+    ?alias FILTER contains(lcase(?alias), "scarface") }'
+- name: qald9plus-test-27
+  nl: Which rivers flow into the North Sea?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/River>
+    ; <http://dbpedia.org/ontology/riverMouth> <http://dbpedia.org/resource/North_Sea>
+    }
+- name: qald9plus-test-156
+  nl: Where is Fort Knox located?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Fort_Knox> <http://dbpedia.org/ontology/location>
+    ?uri. ?uri a <http://dbpedia.org/ontology/Place>. }
+- name: qald9plus-test-207
+  nl: Which daughters of British earls died at the same place they were born at?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX yago: <http://dbpedia.org/class/yago/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { ?uri rdf:type yago:WikicatDaughtersOfBritishEarls ; dbo:birthPlace ?x
+    ; dbo:deathPlace ?y FILTER ( ?x = ?y ) }'
+- name: qald9plus-test-133
+  nl: What are the names of the Teenage Mutant Ninja Turtles?
+  expected: PREFIX foaf:<http://xmlns.com/foaf/0.1/> SELECT DISTINCT ?s WHERE { <http://dbpedia.org/resource/Teenage_Mutant_Ninja_Turtles>
+    <http://dbpedia.org/property/members> ?x . ?x foaf:givenName ?s }
+- name: qald9plus-test-103
+  nl: Where does Piccadilly start?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/routeStart>
+    <http://dbpedia.org/resource/Piccadilly> }
+- name: qald9plus-test-165
+  nl: What is the name of the university where Obama's wife studied?
+  expected: SELECT DISTINCT ?s WHERE { <http://dbpedia.org/resource/Barack_Obama>
+    <http://dbpedia.org/ontology/spouse> ?x . ?x <http://dbpedia.org/ontology/almaMater>
+    ?s }
+- name: qald9plus-test-108
+  nl: When did Paraguay proclaim its independence?
+  expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Paraguay> <http://dbpedia.org/ontology/foundingDate>
+    ?date }
+- name: qald9plus-test-15
+  nl: How short is the shortest active NBA player?
+  expected: SELECT DISTINCT ?n WHERE { ?x a <http://dbpedia.org/ontology/BasketballPlayer>
+    ; <http://dbpedia.org/ontology/league> <http://dbpedia.org/resource/National_Basketball_Association>
+    ; <http://dbpedia.org/ontology/height> ?n FILTER NOT EXISTS { ?x <http://dbpedia.org/ontology/activeYearsEndYear>
+    ?d } } ORDER BY ASC(?n) OFFSET 0 LIMIT 1
+- name: qald9plus-test-45
+  nl: Where did Abraham Lincoln die?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> SELECT DISTINCT ?uri WHERE
+    { res:Abraham_Lincoln dbo:deathPlace ?uri }'
+- name: qald9plus-test-9
+  nl: In which city is the headquarter of Air China?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Air_China> <http://dbpedia.org/ontology/headquarter>
+    ?uri . ?uri a <http://dbpedia.org/class/yago/City108524735> }
+- name: qald9plus-test-171
+  nl: When did the Boston Tea Party take place?
+  expected: SELECT DISTINCT ?d WHERE { <http://dbpedia.org/resource/Boston_Tea_Party>
+    <http://dbpedia.org/property/date> ?d }
+- name: qald9plus-test-182
+  nl: Which animals are critically endangered?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Animal>
+    ; <http://dbpedia.org/ontology/conservationStatus> "CR" }
+- name: qald9plus-test-13
+  nl: Which politicians were married to a German?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Politician>
+    ; <http://dbpedia.org/ontology/spouse> ?spouse { ?spouse <http://dbpedia.org/ontology/birthPlace>
+    <http://dbpedia.org/resource/Germany> } UNION { ?spouse <http://dbpedia.org/ontology/birthPlace>
+    ?p . ?p <http://dbpedia.org/ontology/country> <http://dbpedia.org/resource/Germany>
+    } }
+- name: qald9plus-test-114
+  nl: How big is the earth's diameter?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT (( xsd:double(?radius) * 2 ) AS ?diameter) WHERE { res:Earth dbo:meanRadius
+    ?radius }'
+- name: qald9plus-test-92
+  nl: Is the wife of President Obama called Michelle?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX onto: <http://dbpedia.org/ontology/> ASK WHERE { res:Barack_Obama onto:spouse
+    ?spouse . ?spouse rdfs:label ?name FILTER regex(?name, "Michelle") }'
+- name: qald9plus-test-26
+  nl: What is the atmosphere of the Moon composed of?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Moon> <http://dbpedia.org/property/atmosphereComposition>
+    ?uri }
+- name: qald9plus-test-60
+  nl: Who is the governor of Texas?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT DISTINCT ?string WHERE { res:Texas dbp:governor ?string }'
+- name: qald9plus-test-110
+  nl: Which movies did Kurosawa direct?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT ?uri WHERE {
+    ?uri rdf:type dbo:Film ; dbo:director res:Akira_Kurosawa }'
+- name: qald9plus-test-206
+  nl: What was the name of the famous battle in 1836 in San Antonio?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
+    SELECT ?uri WHERE { ?uri a dbo:MilitaryConflict ; dbo:place dbr:San_Antonio ;
+    dbo:date ?date FILTER ( ?date > "1835-12-31T00:00:00Z"^^xsd:dateTime ) FILTER
+    ( ?date <= "1836-12-31T00:00:00Z"^^xsd:dateTime ) }'
+- name: qald9plus-test-97
+  nl: Give me the official websites of actors of the television show Charmed.
+  expected: 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX foaf: <http://xmlns.com/foaf/0.1/> PREFIX onto: <http://dbpedia.org/ontology/>
+    SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Charmed> onto:starring
+    ?actors . ?actors foaf:homepage ?uri }'
+- name: qald9plus-test-20
+  nl: How many calories does a baguette have?
+  expected: SELECT DISTINCT ?n WHERE { <http://dbpedia.org/resource/Baguette> <http://dbpedia.org/property/calories>
+    ?n }
+- name: qald9plus-test-169
+  nl: Give me all libraries established before 1400.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Library>
+    ; <http://dbpedia.org/property/established> ?year FILTER ( ?year < 1400 ) }
+- name: qald9plus-test-38
+  nl: Give me all Frisian islands that belong to the Netherlands.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX yago: <http://dbpedia.org/class/yago/>
+    PREFIX res: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type yago:WikicatFrisianIslands ; dbo:country
+    res:Netherlands }'
+- name: qald9plus-test-192
+  nl: Which museum exhibits The Scream by Munch?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:The_Scream dbo:museum ?uri }'
+- name: qald9plus-test-19
+  nl: Who became president after JFK died?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/John_F._Kennedy>
+    <http://dbpedia.org/property/presidentEnd> ?x . ?uri <http://dbpedia.org/property/presidentStart>
+    ?x; a <http://dbpedia.org/ontology/Person>. }
+- name: qald9plus-test-190
+  nl: Who are the parents of the wife of Juan Carlos I?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { res:Juan_Carlos_I_of_Spain dbo:spouse ?x . ?x dbo:parent
+    ?uri }'
+- name: qald9plus-test-174
+  nl: Who is the novelist of the work a song of ice and fire?
+  expected: 'PREFIX dbr: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    SELECT ?Novelist WHERE { dbr:A_Song_of_Ice_and_Fire dbp:author ?Novelist }'
+- name: qald9plus-test-189
+  nl: In which studio did the Beatles record their first album?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX dbr: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX db: <http://dbpedia.org/>
+    SELECT ?studio WHERE { ?album dbo:artist dbr:The_Beatles ; rdf:type dbo:Album
+    ; dbo:releaseDate ?date ; dbp:studio ?studio } ORDER BY ASC(?date) LIMIT 1'
+- name: qald9plus-test-152
+  nl: Which beer brewing companies are located in North-Rhine Westphalia?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dct: <http://purl.org/dc/terms/>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT ?company WHERE { ?company dct:subject dbc:Companies_based_in_North_Rhine-Westphalia
+    ; rdf:type dbo:Brewery }'
+- name: qald9plus-test-8
+  nl: Who founded Intel?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Intel> <http://dbpedia.org/property/founders>
+    ?uri }
+- name: qald9plus-test-95
+  nl: Who is the youngest player in the Premier League?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    SELECT DISTINCT ?uri WHERE { ?uri dbo:team ?team . ?league dbo:league res:Premier_League
+    . ?league dbo:team ?team . ?uri dbo:birthDate ?date } ORDER BY DESC(?date) LIMIT
+    1'
+- name: qald9plus-test-119
+  nl: Which instruments does Cat Stevens play?
+  expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Cat_Stevens>
+    <http://dbpedia.org/ontology/instrument> ?uri }
+- name: qald9plus-test-115
+  nl: How many rivers and lakes are in South Carolina?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dct: <http://purl.org/dc/terms/>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX dbr: <http://dbpedia.org/resource/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT (COUNT(DISTINCT
+    ?uri) AS ?count) WHERE { { ?uri dbo:location dbr:South_Carolina ; rdf:type dbo:Lake
+    } UNION { ?uri dct:subject dbc:Rivers_and_streams_of_South_Carolina } }'
+- name: qald9plus-test-116
+  nl: Who was called Rodzilla?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://xmlns.com/foaf/0.1/nick> "Rodzilla"@en
+    }
+- name: qald9plus-test-138
+  nl: Give me the capitals of all countries in Africa.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbc: <http://dbpedia.org/resource/Category:>
+    PREFIX dct: <http://purl.org/dc/terms/> SELECT DISTINCT ?uri WHERE { ?country
+    dct:subject dbc:Countries_in_Africa ; dbo:capital ?uri }'
+- name: qald9plus-test-177
+  nl: Which bridges are of the same type as the Manhattan Bridge?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    PREFIX dbr: <http://dbpedia.org/resource/> SELECT DISTINCT ?bridge WHERE { dbr:Manhattan_Bridge
+    dbo:type ?type . ?bridge dbo:type ?type ; rdf:type dbo:Bridge }'
+- name: qald9plus-test-101
+  nl: How many companies were founded by the founder of Facebook?
+  expected: SELECT (COUNT(DISTINCT ?x) AS ?c) WHERE { <http://dbpedia.org/resource/Facebook>
+    <http://dbpedia.org/ontology/foundedBy> ?uri . ?x <http://dbpedia.org/ontology/foundedBy>
+    ?uri }
+- name: qald9plus-test-14
+  nl: Show me hiking trails in the Grand Canyon where there's no danger of flash floods.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/trailheads>
+    <http://dbpedia.org/resource/Grand_Canyon> FILTER NOT EXISTS { ?uri <http://dbpedia.org/property/hazards>
+    <http://dbpedia.org/resource/Flash_flood> } }
+- name: qald9plus-test-87
+  nl: Which book has the most pages?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT DISTINCT ?uri WHERE { ?uri rdf:type dbo:Book ; dbo:numberOfPages ?n } ORDER
+    BY DESC(?n) OFFSET 0 LIMIT 1'
+- name: qald9plus-test-148
+  nl: What is the largest state in the United States?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dct: <http://purl.org/dc/terms/>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT ?uri WHERE { ?uri dct:subject dbc:States_of_the_United_States ; rdf:type
+    dbo:AdministrativeRegion ; dbo:areaTotal ?area } ORDER BY DESC(?area) OFFSET 0
+    LIMIT 1'
+- name: qald9plus-test-43
+  nl: Give me the websites of companies with more than 500000 employees.
+  expected: 'PREFIX foaf: <http://xmlns.com/foaf/0.1/> PREFIX dbo: <http://dbpedia.org/ontology/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    SELECT distinct ?web WHERE { ?sub dbo:numberOfEmployees ?obj . ?sub foaf:homepage
+    ?web FILTER( xsd:integer(?obj) > 500000 ) . }'
+- name: qald9plus-test-179
+  nl: What were the names of the three ships by Columbus?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dct: <http://purl.org/dc/terms/>
+    PREFIX dbc: <http://dbpedia.org/resource/Category:> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+    SELECT ?uri WHERE { ?uri rdf:type dbo:Ship ; dct:subject dbc:Christopher_Columbus
+    ; dct:subject dbc:Exploration_ships }'
