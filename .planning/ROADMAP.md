@@ -160,10 +160,12 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
+
 - [ ] 06.1-01-PLAN.md — Formalize arango-query-core as a real dependency in the pyproject `nl` extra + clean-import guard
 - [ ] 06.1-02-PLAN.md — Provider bridge (LLMClient→LLMProvider, per-call LLMCallRecord) + SparqlAdapter (5 seams); reproduces baseline verdicts
 
 **Wave 2** *(blocked on Wave 1)*
+
 - [ ] 06.1-03-PLAN.md — Re-point NlPipeline.run() onto NLQueryEngine + NLResult→PipelineOutcome mapping (re-translate for aql/bind_vars) + cost/audit doc + behavior-preservation gate
 
 ### Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline (INSERTED)
@@ -183,13 +185,16 @@ Plans:
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
+
 - [x] 06.2-01-PLAN.md — Harness capabilities: CorpusCase/BaselineConfig load-time gate + inverted expect_refusal judge branch [NL-EVAL-03, NL-EVAL-04]
 - [x] 06.2-02-PLAN.md — Author positive difficulty classes (OPTIONAL, aggregation, property-path, multi-hop) + ontology extension + transpilability guard [NL-EVAL-03]
 
 **Wave 2** *(blocked on Wave 1)*
+
 - [x] 06.2-03-PLAN.md — Author negative/unsupported expect_refusal cases + retain near-miss + regenerate scripted baseline.json + headroom-invariant test [NL-EVAL-03]
 
 **Wave 3** *(blocked on Wave 2)*
+
 - [x] 06.2-04-PLAN.md — Live-model baseline: reproducibility runbook + credentials-gated openai-gpt4o-mini companion (human-run sweep) + no-network structural test [NL-EVAL-04]
 
 **Status**: Planned — NEXT ACTIVE
@@ -211,13 +216,16 @@ Plans:
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
+
 - [x] 07-01-PLAN.md — Engine-side DenseRetriever + mode= dispatch + .retriever property + memoized index factory [NL-FEW-01]
 - [x] 07-02-PLAN.md — Curated disjoint few-shot bank (fewshot_bank.yml) + D-02 two-way disjointness gate [NL-FEW-01]
 
 **Wave 2** *(blocked on Wave 1)*
+
 - [x] 07-03-PLAN.md — Flip SparqlAdapter.few_shot_index() -> populated index (mode=auto) + NlPipeline few_shot_k=3 + SC2 engine-prompt gate [NL-FEW-01]
 
 **Wave 3** *(blocked on Wave 2)*
+
 - [x] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — complete (7ce312e, b2aa008, f1c327e, 3136c17, ac19edc); the credentialed human's live sweep returned a documented null on the pre-registered confirmatory test, closed per the plan's human-accepted-documented-null path — see 07-04-SUMMARY.md
 
 ### Phase 07.2: Execution-based eval judging for adopted benchmarks (CK25) (INSERTED)
@@ -230,10 +238,12 @@ variable-rename + IRI↔label normalization, vendors the CK25 instance graph, an
 CK25's first real end-to-end NL→SPARQL accuracy number as the corporate-domain anchor.
 
 **Scope (locked in 07.2-CONTEXT.md):**
+
 - CK25 now; QALD's heavier DBpedia-subset capture deferred to its own later phase.
 - Execution engine = **pyoxigraph only** (the repo's W3C ground-truth engine); no
   ArangoDB/AQL execution path this phase (transpiler AQL correctness stays covered by the
   W3C suite).
+
 - Correctness = answer-set equality up to variable renaming **+ IRI↔label normalization**
   (so a manager's name vs IRI both count); handles SELECT and ASK.
 
@@ -250,17 +260,20 @@ match this phase). Deterministic transpiler + W3C ≥ 96.4% guard untouched.
   3. `scripted-ck25` under execution judging is a green gold-vs-gold sanity gate (100%), and a live `openai-gpt4o-mini-ck25` execution-graded accuracy number is recorded in `baseline.json` (reported, NOT gated — CK25 is the directional anchor)
   4. Non-regression: `scripted` stays the no-network canonical CI default, W3C DAWG coverage ≥ 96.4% holds, transpiler untouched, no secrets/raw-prompts committed
 
-**Plans:** 4 plans
+**Plans:** 2/4 plans executed
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
-- [ ] 07.2-01-PLAN.md — Answer-set execution judge: oxi_query() form-aware helper + relaxed _judge_execution (value-set + IRI↔label norm + ASK + gold xsd:int fix + D-05 tagged buckets) + corpus data_path read, test-first [NL-EVAL-05]
-- [ ] 07.2-02-PLAN.md — Vendor full CK25 instance graph (951,747 B / 26,903 triples @ pinned commit) + extend NOTICE.md + corpus.yml data_path key [NL-EVAL-05]
+
+- [x] 07.2-01-PLAN.md — Answer-set execution judge: oxi_query() form-aware helper + relaxed _judge_execution (value-set + IRI↔label norm + ASK + gold xsd:int fix + D-05 tagged buckets) + corpus data_path read, test-first [NL-EVAL-05]
+- [x] 07.2-02-PLAN.md — Vendor full CK25 instance graph (951,747 B / 26,903 triples @ pinned commit) + extend NOTICE.md + corpus.yml data_path key [NL-EVAL-05]
 
 **Wave 2** *(blocked on Wave 1)*
+
 - [ ] 07.2-03-PLAN.md — Flip scripted-ck25 / openai-gpt4o-mini-ck25 to judge: execution in place + gold-vs-gold sanity gate (100%) + execution-graded scripted-ck25 baseline entry [NL-EVAL-05]
 
 **Wave 3** *(blocked on Wave 2)*
+
 - [ ] 07.2-04-PLAN.md — Human-run live openai-gpt4o-mini-ck25 execution sweep + fold reported-not-gated anchor number into baseline.json + README runbook [NL-EVAL-05]
 
 ### Phase 07.1: NL→SPARQL eval via public benchmarks (INSERTED)
@@ -279,14 +292,19 @@ vetted questions — and removes the template-correctness, external-validity, an
 risks that sank the synthetic approach.
 
 **Scope:**
+
 - Adopt **QALD-9-plus** (DBpedia, CC-BY-4.0, ~558 English Q w/ gold SPARQL) as the **powered
   capability gate** (~6–8pt MDE, transferable SPARQL skill).
+
 - Adopt **CK25** (`eccenca/ck25-dataset`, CC-BY-4.0, ~50 expert-curated corporate Q) as the
   **corporate-domain relevance anchor** (directional; domain-matched to CDF).
+
 - Author a **small `expect_refusal` supplement** (~a dozen cases) keyed to the transpiler's
   actual coverage — the one thing public sets can't provide.
+
 - Keep the **power-analysis module** (achieved-MDE reporting) — the sole salvage from the
   retired synthetic plan.
+
 - Wire both sets into the harness (schema subset + question filter + `configs.yml`),
   regenerate the scripted baseline; keep the W3C ≥ 96.4% guard.
 
@@ -306,15 +324,18 @@ attribution; no secrets committed.
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
+
 - [x] 07.1-01-PLAN.md — Harness foundation: power module (D-07) + additive `corpus:` config key (test-first, Pitfall 1) + glob-driven gold-transpilability guard [NL-BENCH-04, NL-BENCH-05, NL-BENCH-07]
 - [x] 07.1-02-PLAN.md — Vendored-data provenance + no-secrets static guard (T-07.1-01) [NL-BENCH-06]
 - [x] 07.1-03-PLAN.md — Refusal supplement: ~10–12 expect_refusal cases keyed to real UnsupportedSparqlError sites [NL-BENCH-03]
 
 **Wave 2** *(parallel — no file overlap; blocked on Wave 1)*
+
 - [x] 07.1-04-PLAN.md — QALD-9-plus adoption: QALD-JSON→cases, minimal phys:-annotated DBpedia subset, D-06 filter log (combined train+test pool) [NL-BENCH-01, NL-BENCH-07]
 - [x] 07.1-05-PLAN.md — CK25 adoption: questions.yml→cases, phys:-annotate the prod-inst.ttl schema, D-06 filter log [NL-BENCH-02, NL-BENCH-07]
 
 **Wave 3** *(blocked on Waves 1–2)*
+
 - [x] 07.1-06-PLAN.md — Wire per-set configs + regenerate scripted baseline (QALD/CK25 reported SEPARATELY) + achieved-MDE via power module + W3C guard + file NL-BENCH ids [NL-BENCH-01..07]
 
 ### Phase 8: Public release readiness

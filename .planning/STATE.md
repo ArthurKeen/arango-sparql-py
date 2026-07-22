@@ -2,13 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: planning
-last_updated: "2026-07-22T22:07:25.761Z"
-last_activity: 2026-07-22
+status: executing
+stopped_at: Phase 07.1 context gathered
+last_updated: "2026-07-22T23:05:02.306Z"
+last_activity: 2026-07-22 -- Phase 07.2 execution started
 progress:
   total_phases: 12
   completed_phases: 5
-  total_plans: 20
+  total_plans: 24
   completed_plans: 20
   percent: 42
 ---
@@ -20,14 +21,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 8 — public release readiness
+**Current focus:** Phase 07.2 — execution-based-eval-judging-for-adopted-benchmarks-ck25
 
 ## Current Position
 
-Phase: 8
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-07-22
+Phase: 07.2 (execution-based-eval-judging-for-adopted-benchmarks-ck25) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 07.2
+Last activity: 2026-07-22 -- Phase 07.2 execution started
 
 Progress: [██████████] 100%
 
