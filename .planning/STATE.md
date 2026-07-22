@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 status: executing
-last_updated: "2026-07-22T17:27:34.979Z"
+last_updated: "2026-07-22T19:48:38.349Z"
 last_activity: 2026-07-22 -- Phase 07.1 planning complete
 progress:
   total_phases: 11
@@ -20,7 +20,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-15)
 
 **Core value:** Deterministic W3C SPARQL→AQL correctness stays sacred (never regress); NL→SPARQL quality becomes measurable and improvable.
-**Current focus:** Phase 07.1 — NL→SPARQL synthetic eval-corpus growth
+**Current focus:** Phase 07.1 — NL→SPARQL eval via public benchmarks (pivoted from synthetic generation; QALD-9-plus gate + CK25 anchor + refusal supplement)
 
 ## Current Position
 
