@@ -453,3 +453,54 @@ cases:
         ?s a :Person .
         OPTIONAL { { ?s :name ?n } UNION { ?s :email ?n } }
       }
+
+  # =====================================================================
+  # Absent-schema-term refusals (Task 2): domain-flavored questions genuinely
+  # outside the Person/Order/knows/placed schema, using the drift-proof
+  # malformed/unparseable `scripted:` idiom (SparqlParseError -> outcome.aql
+  # == "") so they stay invariant to any future transpiler capability, same
+  # convention as neg-absent-invoice-class / neg-unexpressible-salary-relation.
+  # =====================================================================
+
+  - name: neg-absent-weather-forecast
+    # Absent-term question: no :Weather class or :forecast property exists.
+    # Drift-proof trigger — the scripted response is syntactically MALFORMED
+    # (missing closing brace) so it raises SparqlParseError -> empty AQL.
+    nl: "What is the weather forecast for tomorrow?"
+    expect_refusal: true
+    expected: |
+      Unanswerable: the ontology models people and orders, not weather or
+      forecasts, so the honest response is a refusal — not a fabricated
+      query over invented terms.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?forecast WHERE { ?w a :Weather ; :forecast ?forecast
+
+  - name: neg-absent-shipping-carrier
+    # Absent-term question: orders carry no carrier/logistics data. Drift-proof
+    # trigger — the scripted response is plain prose (not SPARQL), so it fails
+    # to parse (SparqlParseError) and the pipeline surfaces the refusal as
+    # empty AQL.
+    nl: "Which shipping carrier delivered each order?"
+    expect_refusal: true
+    expected: |
+      Unanswerable: the schema models orders without any carrier or delivery
+      data — there is no :ShippingCarrier class or delivery property, so
+      there is no honest query for this.
+    scripted: |
+      This question cannot be expressed as a query over the given ontology;
+      no carrier or delivery data is modeled.
+
+  - name: neg-absent-inventory-warehouse
+    # Absent-term question: no product/warehouse/inventory terms exist.
+    # Drift-proof trigger — the scripted response is syntactically MALFORMED
+    # (missing closing brace) so it raises SparqlParseError -> empty AQL.
+    nl: "How many units of each product are currently in stock at each warehouse?"
+    expect_refusal: true
+    expected: |
+      Unanswerable: the schema models people, orders and acquaintance links —
+      not products, warehouses or stock levels — so there is no honest query
+      for this.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?p ?w ?qty WHERE { ?p a :Product ; :stockAt ?w ; :quantity ?qty
