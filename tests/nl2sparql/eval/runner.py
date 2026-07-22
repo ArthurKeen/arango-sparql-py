@@ -144,8 +144,8 @@ class BaselineConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-def _load_corpus() -> dict[str, Any]:
-    corpus = yaml.safe_load(CORPUS_PATH.read_text())
+def _load_corpus(path: Path = CORPUS_PATH) -> dict[str, Any]:
+    corpus = yaml.safe_load(path.read_text())
     # Gate every case at load time — a malformed gold fails the load loudly
     # (raises ``ValidationError``) instead of being silently skipped. The
     # validated model is discarded; ``run()`` keeps its existing ``case[...]``
@@ -360,7 +360,12 @@ def _judge(judge_name: str, case: dict[str, Any], outcome: Any) -> bool:
 def run(config_name: str) -> Report:
     configs = _load_configs()["configs"]
     config = configs[config_name]
-    corpus = _load_corpus()
+    # Additive `corpus:` config-key read (07.1-01 / RESEARCH Pattern 1):
+    # absent `corpus:` == today's corpus.yml, byte-identical for every
+    # existing config (NL-BENCH-05). This is the ONE additive change this
+    # phase makes to run() — everything below this line is unchanged.
+    corpus_path = EVAL_DIR / config.get("corpus", "corpus.yml")
+    corpus = _load_corpus(corpus_path)
     shared_ontology = corpus.get("ontology", "")
     judge_name = config.get("judge", "canonical")
     max_repairs = config.get("max_repairs", 2)
