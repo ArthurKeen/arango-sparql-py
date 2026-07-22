@@ -310,5 +310,5 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
 | 06.2. NL→SPARQL harder corpus + live baseline | 4/4 | Complete    | 2026-07-21 |
 | 7. NL→SPARQL dense few-shot retrieval | 4/4 | Complete    | 2026-07-22 |
-| 07.1. NL→SPARQL eval via public benchmarks | 6/6 | Complete   | 2026-07-22 |
+| 07.1. NL→SPARQL eval via public benchmarks | 6/6 | Complete    | 2026-07-22 |
 | 8. Public release readiness | 0/TBD | Not started | - |
