@@ -18,9 +18,12 @@ from tests.nl2sparql.eval.power import achieved_mde, required_n
 
 def test_achieved_mde_matches_research_table_at_n335() -> None:
     # RESEARCH worked table: QALD-9-plus combined train+test (~335 estimated
-    # surviving cases) at pi=0.20 -> achieved_mde ~6.1-6.8pt.
+    # surviving cases) at pi=0.20 -> achieved_mde ~6.1-6.8pt. The exact
+    # verbatim-formula value at n=335 is ~6.845pt -- a hair above the
+    # table's rounded 6.8pt upper bound, so the assertion widens to 0.069
+    # to accommodate the true computed value rather than the rounded prose.
     mde = achieved_mde(335, 0.20)
-    assert 0.061 <= mde <= 0.068
+    assert 0.061 <= mde <= 0.069
 
 
 def test_achieved_mde_matches_research_table_at_surviving_n113() -> None:
@@ -34,9 +37,11 @@ def test_achieved_mde_matches_research_table_at_surviving_n113() -> None:
     # computed at the *surviving* case count (~113 after D-06 filtering), not
     # the raw pre-filter question count. Asserting the correct (verbatim
     # D-07 formula) value here rather than a value the formula cannot
-    # actually produce at n=150.
+    # actually produce at n=150. The exact computed value at n=113 is
+    # ~0.11786 -- a hair below the table's rounded 0.118 lower bound, so the
+    # assertion widens to 0.117 to accommodate the true computed value.
     mde = achieved_mde(113, 0.20)
-    assert 0.118 <= mde <= 0.132
+    assert 0.117 <= mde <= 0.132
 
 
 def test_required_n_achieved_mde_round_trip() -> None:
