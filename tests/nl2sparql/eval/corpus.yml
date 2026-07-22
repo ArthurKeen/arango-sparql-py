@@ -333,3 +333,123 @@ cases:
     scripted: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?o WHERE { ?s !(^:knows) ?o }
+
+  # =====================================================================
+  # Refusal supplement (Plan 07.1-03, NL-BENCH-03): real UnsupportedSparqlError
+  # triggers, keyed to CONFIRMED rejection sites (verified this session via
+  # `arango_sparql.api.translate()` against this exact ontology, both at the
+  # translate() layer and end-to-end through NlPipeline + ScriptedLLMClient —
+  # every case below was empirically observed to yield `outcome.aql == ""`).
+  # Unlike the drift-proof malformed-`scripted:` idiom above, each `scripted:`
+  # string here is syntactically VALID SPARQL that PARSES cleanly — the
+  # rejection comes from the visitor refusing the construct, not from a parse
+  # failure, so these prove genuine transpiler-coverage gaps rather than a
+  # SparqlParseError shortcut.
+  # =====================================================================
+
+  - name: neg-service-federation
+    # Confirmed trigger: no ServiceGraphPattern visitor branch exists; the
+    # generic algebra-node dispatch raises UnsupportedSparqlError (verified
+    # message: "SPARQL Algebra node 'ServiceGraphPattern' is not implemented
+    # yet"). Federated SPARQL SERVICE is explicitly out of scope (PROJECT.md
+    # "Out of Scope" — SERVICE deferred to a possible v2).
+    nl: "For each person, look up their name from the external federated SPARQL endpoint at example.org."
+    expect_refusal: true
+    expected: |
+      Unsupported: SPARQL federated query (SERVICE) has no visitor branch in
+      this transpiler and is explicitly out of scope for v1 (federation is
+      deferred); the honest response is a refusal rather than silently
+      ignoring the federated clause.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?remote WHERE {
+        ?s a :Person .
+        SERVICE <http://example.org/sparql> { ?s :name ?remote }
+      }
+
+  - name: neg-offset-without-limit
+    # Confirmed trigger: SPARQL grammar allows OFFSET without a paired LIMIT,
+    # but the visitor explicitly rejects it (verified message: "SPARQL OFFSET
+    # without LIMIT is not yet supported") rather than silently emit an
+    # unbounded skip.
+    nl: "Skip the first five people in the list and show me the rest, with no limit on how many."
+    expect_refusal: true
+    expected: |
+      Unsupported: SPARQL OFFSET without a paired LIMIT is not yet supported
+      by the transpiler ("SPARQL OFFSET without LIMIT is not yet supported");
+      the honest response is a refusal rather than dropping the OFFSET
+      silently or guessing at an implicit LIMIT.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person } OFFSET 5
+
+  - name: neg-optional-nonvariable-object
+    # Confirmed trigger: `OPTIONAL { ?o :name "Alice" }` binds a constant
+    # (non-variable) object inside an OPTIONAL block — an existence test, not
+    # a binding. Verified message: "OPTIONAL with a non-variable object is
+    # not yet supported".
+    nl: "For each person, list who they know, and note separately whether that acquaintance is specifically named Alice."
+    expect_refusal: true
+    expected: |
+      Unsupported: an OPTIONAL block whose object is a constant literal
+      ("OPTIONAL with a non-variable object is not yet supported") is an
+      existence test the transpiler explicitly refuses rather than
+      reinterpret as a FILTER.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?o WHERE {
+        ?s a :Person ; :knows ?o .
+        OPTIONAL { ?o :name "Alice" }
+      }
+
+  - name: neg-optional-variable-predicate
+    # Confirmed trigger: `OPTIONAL { ?s ?p ?v }` uses a variable predicate
+    # inside an OPTIONAL block. Verified message: "OPTIONAL with a variable
+    # predicate is not supported".
+    nl: "List each person together with every property and value on file for them, if any are recorded."
+    expect_refusal: true
+    expected: |
+      Unsupported: a variable predicate inside an OPTIONAL block
+      ("OPTIONAL with a variable predicate is not supported") is explicitly
+      rejected by the transpiler rather than emit an ATTRIBUTES fan-out
+      inside a LEFT JOIN.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?p ?v WHERE {
+        ?s a :Person .
+        OPTIONAL { ?s ?p ?v }
+      }
+
+  - name: neg-avg-distinct-aggregate
+    # Confirmed trigger: DISTINCT is only supported on COUNT aggregates in
+    # this transpiler; AVG(DISTINCT ...) is explicitly rejected. Verified
+    # message: "DISTINCT is only supported on COUNT aggregates; got DISTINCT
+    # inside 'Aggregate_Avg'".
+    nl: "What is the average of each person's distinct ages?"
+    expect_refusal: true
+    expected: |
+      Unsupported: DISTINCT is only supported on COUNT aggregates in this
+      transpiler ("DISTINCT is only supported on COUNT aggregates; got
+      DISTINCT inside 'Aggregate_Avg'"); AVG(DISTINCT ...) is explicitly
+      rejected rather than silently averaged over an implicit distinct set.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT (AVG(DISTINCT ?a) AS ?avg) WHERE { ?s a :Person ; :age ?a }
+
+  - name: neg-optional-union-body
+    # Confirmed trigger: an OPTIONAL block whose body is a UNION (not a plain
+    # BGP) is deferred pending a corpus need. Verified message: "OPTIONAL
+    # whose body is 'Union' (not a plain BGP) is not yet supported".
+    nl: "List each person's name, or their email as a fallback if the name is not known."
+    expect_refusal: true
+    expected: |
+      Unsupported: an OPTIONAL block whose body is a UNION rather than a
+      plain BGP ("OPTIONAL whose body is 'Union' (not a plain BGP) is not
+      yet supported") is deferred; the honest response is a refusal rather
+      than guessing at nested-OPTIONAL/UNION semantics.
+    scripted: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE {
+        ?s a :Person .
+        OPTIONAL { { ?s :name ?n } UNION { ?s :email ?n } }
+      }
