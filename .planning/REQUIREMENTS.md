@@ -50,6 +50,23 @@
 - [x] **NL-FEW-01**: Dense/embedding few-shot retrieval — wire the shared engine's few-shot seam through `SparqlAdapter.few_shot_index()` using a sentence-transformer (dense) retriever over the curated corpus (≤ 3 shots per rule-300), landing engine-side (`arango_query_core.nl.FewShotIndex`) so Cypher inherits it. BM25 is the fallback/ablation, not the primary. — acceptance: retrieved examples appear in the `NLQueryEngine`-built prompt's `## Examples` section; unit tests pass
 - [x] **NL-FEW-02**: Measurable accuracy lift — dense few-shot run shows a **positive NL→SPARQL pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness. — acceptance: eval report delta > 0 over the live baseline
 
+### NL to SPARQL Benchmark Adoption (ACTIVE)
+
+<!-- Phase 07.1: adopting public, human-authored NL→SPARQL benchmark sets (QALD-9-plus,
+     CK25) instead of building a synthetic-corpus generator (retired via a /grill-me
+     design review, 2026-07-22 — see 07.1-CONTEXT.md D-01..D-09). These IDs are
+     NEWLY PROPOSED for this phase; the retired synthetic-corpus-growth phase's
+     requirement ids (see 07.1-CONTEXT.md for the former prefix) are VOID and must
+     never be reused. -->
+
+- [x] **NL-BENCH-01**: QALD-9-plus adopted — `convert_qald.py` turns QALD-JSON (English DBpedia train+test) into `corpus.yml`-shaped cases; a minimal DBpedia ontology subset (Turtle, `phys:`-annotated) is authored covering exactly the kept questions' classes/properties; `filter_log.md` records kept/dropped counts and reasons (D-06). — acceptance: `tests/nl2sparql/eval/vendored/qald9plus/{corpus.yml,filter_log.md,NOTICE.md}` present; `RUN_EVAL=1 pytest tests/nl2sparql/eval/test_gold_transpilable.py -k qald9plus` green
+- [x] **NL-BENCH-02**: CK25 adopted — `convert_ck25.py` turns `questions.yml` into cases; the schema triples embedded in `graphs/prod-inst.ttl` (`owl:Class`/`owl:ObjectProperty` + `rdfs:domain`/`rdfs:range`) are extracted and `phys:`-annotated; `filter_log.md` recorded (D-06). — acceptance: `tests/nl2sparql/eval/vendored/ck25/{corpus.yml,filter_log.md,NOTICE.md}` present; `RUN_EVAL=1 pytest tests/nl2sparql/eval/test_gold_transpilable.py -k ck25` green
+- [x] **NL-BENCH-03**: Refusal supplement — 9 `expect_refusal` cases keyed to genuinely-unsupported transpiler features (drift-proof malformed-`scripted:` triggers + real `UnsupportedSparqlError` sites), matching the existing 3-case convention. — acceptance: `RUN_EVAL=1 pytest -m eval -k refusal` green; all 9 pass the inverted judge (`outcome.aql == ""`)
+- [x] **NL-BENCH-04**: Power-analysis module ported — `tests/nl2sparql/eval/power.py::required_n`/`achieved_mde` (pure-Python, Connor-1987 McNemar sizing, no scipy) with unit tests; achieved MDE computed and reported for QALD (powered gate, N=514) and CK25 (anchor, reported not gated, N=49). — acceptance: `pytest tests/nl2sparql/eval/test_power.py` green; `baseline.json`'s `scripted-qald9plus`/`scripted-ck25` entries carry `achieved_mde`
+- [x] **NL-BENCH-05**: Harness wiring — `configs.yml` gets per-set config entries (`scripted-qald9plus`, `scripted-ck25`, live `openai-gpt4o-mini-{qald9plus,ck25}` variants); `runner.py` gets the ONE additive `corpus:` config-key change (default-preserving — every pre-existing config behaves byte-identically); scripted `baseline.json` regenerated with the new, SEPARATE per-set entries (never blended with the hand-authored `scripted` entry or each other). — acceptance: `pytest tests/nl2sparql/eval/test_eval.py -k corpus_path_default` green; `RUN_EVAL=1 pytest tests/nl2sparql/eval/test_eval.py` green
+- [x] **NL-BENCH-06**: Vendored data + provenance — CC-BY-4.0 `NOTICE.md` (source URL/commit + attribution) under `tests/nl2sparql/eval/vendored/{qald9plus,ck25}/`; no secrets; no raw multilingual JSON blobs beyond the pruned English-only extract needed. — acceptance: `pytest tests/nl2sparql/eval/test_vendored_provenance.py` green
+- [x] **NL-BENCH-07**: Non-regression — deterministic SPARQL→AQL transpiler untouched; W3C DAWG query-eval coverage stays ≥ 96.4%; `scripted` remains the sole CI-reachable config (`test_ci_gate_only_ever_runs_scripted` stays green for every new `scripted-qald9plus`/`scripted-ck25` config). — acceptance: `pytest tests/nl2sparql/eval/test_eval.py -k ci_gate_only_ever_runs_scripted` green; `pytest tests/w3c/test_coverage_gate.py` green (or skips key-free when the W3C corpus isn't fetched locally)
+
 ### Release
 
 - [ ] **REQ-public-release-readiness** (PRD §3.16): Repo public; CI green on Python 3.11/3.12/3.13 + ArangoDB 3.11/3.12; MIT LICENSE + CONTRIBUTING + SECURITY + operational runbook; repeatable `docker compose up` dev loop; SBOM on the v1.0 release tag. — acceptance: GitHub releases page, CI history, `docker compose up && curl /health/ready`
@@ -98,11 +115,18 @@ Deferred to future release. Tracked but not in the current roadmap.
 | NL-EVAL-04 | Phase 06.2 | Complete |
 | NL-FEW-01 | Phase 7 | Complete |
 | NL-FEW-02 | Phase 7 | Complete |
+| NL-BENCH-01 | Phase 07.1 | Complete |
+| NL-BENCH-02 | Phase 07.1 | Complete |
+| NL-BENCH-03 | Phase 07.1 | Complete |
+| NL-BENCH-04 | Phase 07.1 | Complete |
+| NL-BENCH-05 | Phase 07.1 | Complete |
+| NL-BENCH-06 | Phase 07.1 | Complete |
+| NL-BENCH-07 | Phase 07.1 | Complete |
 | REQ-public-release-readiness | Phase 8 | Pending |
 
 **Coverage:**
-- v1 requirements: 20 total (16 PRD + 4 NL)
-- Mapped to phases: 20
+- v1 requirements: 27 total (16 PRD + 4 NL + 7 NL-BENCH)
+- Mapped to phases: 27
 - Unmapped: 0 ✓
 - Already satisfied (Complete): 10 across Phases 1–3
 
