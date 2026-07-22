@@ -666,7 +666,7 @@
         "pi_0.20": 0.179,
         "pi_0.25": 0.2001
       },
-      "note": "Scripted-mode pass_rate reflects the judge/harness plumbing (canned response == gold SPARQL, verbatim) -- NOT model accuracy; the live sweep (README.md, gated behind RUN_EVAL=1 + NL2SPARQL_API_KEY) measures real model quality on this set. Reported as its OWN separate entry -- never blended with 'scripted' or the other vendored set's numbers (RESEARCH Pitfall 3). achieved_mde computed via tests/nl2sparql/eval/power.py::achieved_mde(n, pi) at alpha=0.05, power=0.80."
+      "note": "Scripted-mode pass_rate reflects the judge/harness plumbing (canned response == gold SPARQL, verbatim) -- NOT model accuracy; the live sweep (README.md, gated behind RUN_EVAL=1 + NL2SPARQL_API_KEY) measures real model quality on this set. Reported as its OWN separate entry -- never blended with 'scripted' or the other vendored set's numbers (RESEARCH Pitfall 3). achieved_mde computed via tests/nl2sparql/eval/power.py::achieved_mde(n, pi) at alpha=0.05, power=0.80. 07.2: this config now runs under judge: execution (answer-set comparison against the vendored CK25 instance graph) rather than canonical text-match, gold-vs-gold still verified at 100%; the execution judge's rdfs:label-based entity normalization is accepted as a documented, non-gating residual risk since rdfs:label is not globally unique in the real CK25 graph (verified: Hardware 1000/837 = 163 collisions, Supplier 250/246 = 4 collisions, all other entity classes 1:1)."
     }
   },
   "phase07_dense_few_shot_sweep": {
