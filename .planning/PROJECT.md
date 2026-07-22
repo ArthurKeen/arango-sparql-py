@@ -32,6 +32,7 @@ improvable** so the natural-language layer can be tuned with confidence.
 - ✓ Config-appendix normativity gate — Phase 3
 - ✓ NL→SPARQL pipeline machinery (NlPipeline, PromptBuilder, RepairLoop, providers, cost/models) — pre-existing, feeds Phases 6–7
 - ✓ NL→SPARQL eval harness + seed corpus; checked-in `baseline.json` regression gate; scripted pass-rate now a tracked metric (0.833, 5/6) — Phase 6
+- ✓ NL→SPARQL eval corpus grown by *adopting* public benchmarks (not synthesizing): QALD-9-plus (514 golds, CC-BY-4.0) as the powered capability gate (achieved MDE ~0.055–0.062), CK25 (49 golds, CC-BY-4.0) as the corporate-domain anchor, + a 12-case `expect_refusal` supplement; per-set baselines reported SEPARATELY (never blended) with achieved-MDE; power-analysis module salvaged; transpiler untouched, W3C ≥ 96.4% held (NL-BENCH-01..07) — Phase 07.1
 
 ### Active
 
@@ -99,4 +100,4 @@ improvable** so the natural-language layer can be tuned with confidence.
 | Port eval harness + few-shot from `arango-cypher` sister repo | Proven at 93–100%; parity keeps cross-repo telemetry aligned | ⚠️ Adapted, not ported — `references/` symlinks are unreachable on this machine; Phase 6 harness was built grounded in this repo's own shipped code (docstring = spec) |
 
 ---
-*Last updated: 2026-07-15 after Phase 6 completion (NL→SPARQL eval harness + seed corpus)*
+*Last updated: 2026-07-22 after Phase 07.1 completion (NL→SPARQL eval corpus growth via QALD-9-plus + CK25 benchmark adoption)*
