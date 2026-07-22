@@ -32,7 +32,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
 - [x] **Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline** - Grow corpus to real difficulty + capture a live-model baseline so a few-shot lift is measurable (INSERTED) (NEXT ACTIVE) (completed 2026-07-21)
 - [x] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline (completed 2026-07-21)
-- [ ] **Phase 07.1: NL→SPARQL eval via public benchmarks** - Adopt public NL→SPARQL benchmark test sets (QALD-9-plus = powered capability gate; CK25 = corporate-domain anchor) + a small refusal supplement, reaching ~5–8pt MDE with real vetted questions; synthetic generation retired (INSERTED; pivoted via grill-me, former 07.2 folded in)
+- [x] **Phase 07.1: NL→SPARQL eval via public benchmarks** - Adopt public NL→SPARQL benchmark test sets (QALD-9-plus = powered capability gate; CK25 = corporate-domain anchor) + a small refusal supplement, reaching ~5–8pt MDE with real vetted questions; synthetic generation retired (INSERTED; pivoted via grill-me, former 07.2 folded in) (completed 2026-07-22)
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
 ## Phase Details
@@ -259,20 +259,20 @@ attribution; no secrets committed.
 
 **Requirements**: NL-BENCH-01, NL-BENCH-02, NL-BENCH-03, NL-BENCH-04, NL-BENCH-05, NL-BENCH-06, NL-BENCH-07
 **Depends on:** Phase 7 (eval harness + judge + the measurement finding)
-**Plans:** 6 plans
+**Plans:** 6/6 plans complete
 
 Plans:
 **Wave 1** *(parallel — no file overlap)*
-- [ ] 07.1-01-PLAN.md — Harness foundation: power module (D-07) + additive `corpus:` config key (test-first, Pitfall 1) + glob-driven gold-transpilability guard [NL-BENCH-04, NL-BENCH-05, NL-BENCH-07]
-- [ ] 07.1-02-PLAN.md — Vendored-data provenance + no-secrets static guard (T-07.1-01) [NL-BENCH-06]
-- [ ] 07.1-03-PLAN.md — Refusal supplement: ~10–12 expect_refusal cases keyed to real UnsupportedSparqlError sites [NL-BENCH-03]
+- [x] 07.1-01-PLAN.md — Harness foundation: power module (D-07) + additive `corpus:` config key (test-first, Pitfall 1) + glob-driven gold-transpilability guard [NL-BENCH-04, NL-BENCH-05, NL-BENCH-07]
+- [x] 07.1-02-PLAN.md — Vendored-data provenance + no-secrets static guard (T-07.1-01) [NL-BENCH-06]
+- [x] 07.1-03-PLAN.md — Refusal supplement: ~10–12 expect_refusal cases keyed to real UnsupportedSparqlError sites [NL-BENCH-03]
 
 **Wave 2** *(parallel — no file overlap; blocked on Wave 1)*
-- [ ] 07.1-04-PLAN.md — QALD-9-plus adoption: QALD-JSON→cases, minimal phys:-annotated DBpedia subset, D-06 filter log (combined train+test pool) [NL-BENCH-01, NL-BENCH-07]
-- [ ] 07.1-05-PLAN.md — CK25 adoption: questions.yml→cases, phys:-annotate the prod-inst.ttl schema, D-06 filter log [NL-BENCH-02, NL-BENCH-07]
+- [x] 07.1-04-PLAN.md — QALD-9-plus adoption: QALD-JSON→cases, minimal phys:-annotated DBpedia subset, D-06 filter log (combined train+test pool) [NL-BENCH-01, NL-BENCH-07]
+- [x] 07.1-05-PLAN.md — CK25 adoption: questions.yml→cases, phys:-annotate the prod-inst.ttl schema, D-06 filter log [NL-BENCH-02, NL-BENCH-07]
 
 **Wave 3** *(blocked on Waves 1–2)*
-- [ ] 07.1-06-PLAN.md — Wire per-set configs + regenerate scripted baseline (QALD/CK25 reported SEPARATELY) + achieved-MDE via power module + W3C guard + file NL-BENCH ids [NL-BENCH-01..07]
+- [x] 07.1-06-PLAN.md — Wire per-set configs + regenerate scripted baseline (QALD/CK25 reported SEPARATELY) + achieved-MDE via power module + W3C guard + file NL-BENCH ids [NL-BENCH-01..07]
 
 ### Phase 8: Public release readiness
 
@@ -310,5 +310,5 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
 | 06.2. NL→SPARQL harder corpus + live baseline | 4/4 | Complete    | 2026-07-21 |
 | 7. NL→SPARQL dense few-shot retrieval | 4/4 | Complete    | 2026-07-22 |
-| 07.1. NL→SPARQL eval via public benchmarks | 0/TBD | Re-planning (pivoted) | - |
+| 07.1. NL→SPARQL eval via public benchmarks | 6/6 | Complete   | 2026-07-22 |
 | 8. Public release readiness | 0/TBD | Not started | - |
