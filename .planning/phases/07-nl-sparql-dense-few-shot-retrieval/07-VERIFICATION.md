@@ -1,12 +1,31 @@
 ---
 phase: 07-nl-sparql-dense-few-shot-retrieval
 verified: 2026-07-21T23:40:00Z
-status: gaps_found
-score: 3/4 roadmap success criteria fully verified (1 partial); requirements NL-FEW-01 satisfied, NL-FEW-02 satisfied only via a documented null
+status: passed
+score: 3/4 roadmap success criteria fully verified; SC3 closed via human-accepted documented null; requirements NL-FEW-01 satisfied, NL-FEW-02 closed on the plan-sanctioned documented-null path
 overrides_applied: 0
+resolution:
+  resolved: 2026-07-22
+  summary: >
+    Both gaps closed after initial gaps_found verification. Gap CR-01 (flaky
+    _FakeEncoder in the sibling arango-query-core repo) FIXED — hash() -> zlib.crc32
+    (commit acb60ae, pushed to origin/main); 0 failures across 12 hash seeds; the
+    arango-sparql-py pin (both base + [dense] extra) bumped a5a42cd -> acb60ae and
+    re-locked. Gap SC3 (dense-vs-zero confirmatory NULL) ACCEPTED by the developer
+    as sufficient closure for NL-FEW-02 via the plan's pre-authorized documented-null
+    path — dense was not significant at n=25, BM25 (the designated fallback and
+    production default) carried a significant +19pt lift, and this is reported
+    honestly. A latent secondary issue surfaced while closing: the D-02 similarity
+    ceiling (which self-skips without the dense stack, so it never ran during 07-02)
+    flagged one bank question at cosine 0.9513 vs a 0.95 ceiling; reworded below the
+    ceiling (commit 230c145, gold query unchanged, gate kept strict).
+  phase_8_carry_forward: >
+    Phase 8 public-facing materials MUST NOT claim a proven dense-embedding pass-rate
+    lift. The validated, citable result is a significant BM25 (default-install) lift;
+    dense is directional-but-not-significant at n=25.
 gaps:
   - truth: "SC3 (ROADMAP): A dense few-shot eval run shows a positive pass-rate delta over the Phase 06.2 live-model baseline"
-    status: partial
+    status: accepted-null
     reason: >
       The PRE-REGISTERED confirmatory test (the phase's own single pass/fail bar per
       D-07/D-08/D-09/B1/M1/M2) — gpt-4o-mini dense-vs-freshly-run-zero, paired McNemar
@@ -33,7 +52,7 @@ gaps:
       - "An explicit developer/product decision on whether this documented null is accepted as sufficient to close NL-FEW-02 and proceed to Phase 8, or whether a higher-N re-run (to clear the ~16pt/4-case MDE ceiling that made the +12pt point estimate non-significant at n=25) is warranted before treating dense few-shot as validated."
       - "If accepted: Phase 8's public-facing materials must not claim a proven dense-embedding pass-rate lift (per 07-04-SUMMARY's own 'Next Phase Readiness' note) — this should be an explicit go/no-go check at Phase 8 kickoff, not assumed."
   - truth: "07-01 must-have: DenseRetriever ranks a relevant example above irrelevant ones, tested via an injectable fake encoder with no network / no torch on the fast CI path (D-03)"
-    status: failed
+    status: resolved
     reason: >
       The test that is supposed to prove this (test_dense_retrieval_ranks_by_relevance in
       the sibling arango-query-core repo) is non-deterministic: its _FakeEncoder fixture
@@ -61,8 +80,8 @@ human_verification:
 
 **Phase Goal:** Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline. W3C query-eval coverage must never drop below 96.4%.
 **Verified:** 2026-07-21T23:40:00Z
-**Status:** gaps_found
-**Re-verification:** No — initial verification
+**Status:** passed (initial verification found 2 gaps; both closed 2026-07-22 — see `resolution` in frontmatter)
+**Re-verification:** Gaps closed inline — CR-01 fixed (engine pin acb60ae), SC3 null accepted, similarity-ceiling reworded
 
 ## Goal Achievement
 
