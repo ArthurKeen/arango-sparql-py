@@ -31,9 +31,13 @@ from tests.helpers.aql_interp import run_aql_subset
 from tests.helpers.oxi import (
     assert_bindings_equal,
     assert_bindings_equal_ordered,
-    drop_null_bindings as _normalize_arango_row,
-    normalize_oxi_row as _normalize_oxi_row,
     oxi_bindings,
+)
+from tests.helpers.oxi import (
+    drop_null_bindings as _normalize_arango_row,
+)
+from tests.helpers.oxi import (
+    normalize_oxi_row as _normalize_oxi_row,
 )
 
 oxi = pytest.importorskip("pyoxigraph", reason="pyoxigraph required for cross tests")

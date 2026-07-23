@@ -107,6 +107,14 @@ CASES = [
     pytest.param("part-minuend", id="part_minuend"),
 ]
 
+# The W3C corpus is gitignored and only fetched by the corpus-aware CI jobs
+# (w3c-coverage / integration, via scripts/fetch_w3c.sh) — not the unit `test`
+# job. Skip cleanly when it is absent instead of raising FileNotFoundError.
+pytestmark = pytest.mark.skipif(
+    not _NEG_DIR.exists(),
+    reason="W3C corpus not on disk; run scripts/fetch_w3c.sh",
+)
+
 
 @pytest.mark.cross
 @pytest.mark.parametrize("name", CASES)

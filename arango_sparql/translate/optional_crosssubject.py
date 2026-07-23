@@ -150,7 +150,7 @@ def emit_rpt_cross_subject_optional(
 
     field_names = [f"f{i}" for i in range(len(new_bindings))]
     projection = ", ".join(
-        f"{field}: {source}" for field, (_, source) in zip(field_names, new_bindings)
+        f"{field}: {source}" for field, (_, source) in zip(field_names, new_bindings, strict=False)
     )
     child.return_scalar("{" + projection + "}")
 
@@ -166,5 +166,5 @@ def emit_rpt_cross_subject_optional(
     visitor.builder.for_inline(
         row_alias, f"(LENGTH({opt_alias}) > 0 ? {opt_alias} : [null])"
     )
-    for field, (var_name, _source) in zip(field_names, new_bindings):
+    for field, (var_name, _source) in zip(field_names, new_bindings, strict=False):
         visitor.state.var_to_expr[var_name] = f"{row_alias}.{field}"

@@ -290,7 +290,7 @@ def extract_terms(
                 if isinstance(s, Variable):
                     typed_vars.add(s)
 
-        for s, p, o in triples:
+        for _s, p, o in triples:
             if p == RDF.type or not isinstance(p, URIRef):
                 continue
             evidence = prop_evidence.setdefault(

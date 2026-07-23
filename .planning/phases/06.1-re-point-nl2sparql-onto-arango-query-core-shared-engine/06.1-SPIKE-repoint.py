@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 
 import yaml
+from arango_query_core.nl.engine import NLQueryEngine
+from arango_query_core.nl.seams import GuardrailVerdict, ValidationResult
 
 from arango_sparql.api import translate as api_translate
 from arango_sparql.errors import SparqlError
@@ -17,9 +19,6 @@ from arango_sparql.nl2sparql.client import ScriptedLLMClient
 from arango_sparql.nl2sparql.models import LLMResponse
 from arango_sparql.translate.parser import parse_sparql
 from arango_sparql.translate.resolver import SchemaResolver
-
-from arango_query_core.nl.engine import NLQueryEngine
-from arango_query_core.nl.seams import GuardrailVerdict, ValidationResult
 
 EVAL = Path("tests/nl2sparql/eval")
 corpus = yaml.safe_load((EVAL / "corpus.yml").read_text())

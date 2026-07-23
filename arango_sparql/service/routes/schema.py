@@ -53,9 +53,9 @@ from ...translate.owl import (
 )
 from ..app import app
 from ..models import (
+    OwlSchemaResponse,
     SchemaFingerprintBlock,
     SchemaForceReacquireResponse,
-    OwlSchemaResponse,
     SchemaIntrospectResponse,
     SchemaInvalidateCacheResponse,
     SchemaPropertiesResponse,
