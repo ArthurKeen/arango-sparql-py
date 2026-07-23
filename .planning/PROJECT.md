@@ -33,6 +33,7 @@ improvable** so the natural-language layer can be tuned with confidence.
 - ✓ NL→SPARQL pipeline machinery (NlPipeline, PromptBuilder, RepairLoop, providers, cost/models) — pre-existing, feeds Phases 6–7
 - ✓ NL→SPARQL eval harness + seed corpus; checked-in `baseline.json` regression gate; scripted pass-rate now a tracked metric (0.833, 5/6) — Phase 6
 - ✓ NL→SPARQL eval corpus grown by *adopting* public benchmarks (not synthesizing): QALD-9-plus (514 golds, CC-BY-4.0) as the powered capability gate (achieved MDE ~0.055–0.062), CK25 (49 golds, CC-BY-4.0) as the corporate-domain anchor, + a 12-case `expect_refusal` supplement; per-set baselines reported SEPARATELY (never blended) with achieved-MDE; power-analysis module salvaged; transpiler untouched, W3C ≥ 96.4% held (NL-BENCH-01..07) — Phase 07.1
+- ✓ Execution-based (answer-set) eval judging for adopted benchmarks: opt-in `judge: execution` runs gold + candidate SPARQL through pyoxigraph and compares ANSWERS up to variable renaming + IRI↔label normalization (SELECT + ASK), with distinct D-05 engine-reject buckets; full CK25 instance graph vendored (951,747 B / 26,903 triples, CC-BY-4.0, provenance-guarded); `scripted-ck25` gold-vs-gold sanity gate green at 100%; CK25's first real execution-graded live number recorded as the reported-not-gated anchor (`openai-gpt4o-mini-ck25` = 12.2%, 6/49); scripted canonical CI default + W3C ≥ 96.4% (96.44%) untouched (NL-EVAL-05) — Phase 07.2
 
 ### Active
 
@@ -100,4 +101,4 @@ improvable** so the natural-language layer can be tuned with confidence.
 | Port eval harness + few-shot from `arango-cypher` sister repo | Proven at 93–100%; parity keeps cross-repo telemetry aligned | ⚠️ Adapted, not ported — `references/` symlinks are unreachable on this machine; Phase 6 harness was built grounded in this repo's own shipped code (docstring = spec) |
 
 ---
-*Last updated: 2026-07-22 after Phase 07.1 completion (NL→SPARQL eval corpus growth via QALD-9-plus + CK25 benchmark adoption)*
+*Last updated: 2026-07-23 after Phase 07.2 completion (execution-based answer-set eval judging for adopted benchmarks; CK25 execution-graded anchor = 12.2%)*
