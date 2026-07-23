@@ -12,6 +12,7 @@ builder stays SPARQL-agnostic; everything SPARQL-specific lives here.
 
 from __future__ import annotations
 
+import decimal
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -187,6 +188,19 @@ class AlgebraVisitor:
     silently leaking data across tenants. Single-tenant deployments
     (no class declares ``tenant_field``) ignore this field entirely.
     See PRD §6.5.1."""
+
+    extra_projection: list[str] | None = None
+    """Variable names the caller needs in the RETURN object even when
+    the partition's own SELECT list omits them — the federation entry
+    point (:func:`arango_sparql.partition.translate_partition`) uses
+    this to project canonical-key variables so the M5 engine can join
+    legs without the planner rewriting the partition's projection.
+    Appended after (and deduplicated against) the query's own
+    projection; each var must be bound by the pattern or
+    ``AqlEmitError`` is raised, exactly like a projected var. Post-
+    COLLECT scoping caveat: a var that is neither a GROUP BY key nor
+    an aggregate result is out of scope after a COLLECT, same as it
+    would be if the user projected it themselves."""
 
     state: _BindingState = field(default_factory=_BindingState)
 
@@ -532,7 +546,7 @@ class AlgebraVisitor:
         alias = self.builder.fresh_alias(prefix="d")
         coll_ref = self.builder.bind_collection(rpt_class.collection)
         coalesce = (
-            f"COALESCE({alias}.{rpt_class.object_uri_column}, "
+            f"NOT_NULL({alias}.{rpt_class.object_uri_column}, "
             f"{alias}.{rpt_class.object_value_column})"
         )
         return (
@@ -939,15 +953,26 @@ class AlgebraVisitor:
                 # SPARQL GROUP_CONCAT defaults to a single-space
                 # separator; the user can override via ``SEPARATOR=…``,
                 # which rdflib stores as an rdflib ``Literal`` on
-                # ``agg.separator``. AQL's CONCAT_SEPARATOR takes the
-                # separator first, then the value list. Push the
-                # separator through ``_term_to_python`` so it goes into
-                # the bind-vars dict as a plain string (rdflib Literals
-                # don't JSON-encode cleanly).
+                # ``agg.separator``. Push the separator through
+                # ``_term_to_python`` so it goes into the bind-vars
+                # dict as a plain string (rdflib Literals don't
+                # JSON-encode cleanly).
+                #
+                # ``CONCAT_SEPARATOR`` is NOT a legal ``COLLECT
+                # AGGREGATE`` function (ArangoDB ERR 1574 "invalid
+                # aggregate expression" at runtime) — the AGGREGATE
+                # clause accepts only the fixed builtin set. So we
+                # aggregate the group's values with ``PUSH`` (``UNIQUE``
+                # under DISTINCT) and apply CONCAT_SEPARATOR wherever
+                # the aggregate variable is *read* (projection / HAVING),
+                # via the var_to_expr rebinding below.
                 raw_sep = agg.get("separator", " ")
                 separator = _term_to_python(raw_sep) if raw_sep is not None else " "
                 sep_bind = self.builder.bind(separator, hint="sep")
-                aggregates.append((agg_alias, f"CONCAT_SEPARATOR({sep_bind}, {arg_expr})"))
+                collect_func = "UNIQUE" if distinct else "PUSH"
+                aggregates.append((agg_alias, f"{collect_func}({arg_expr})"))
+                self.state.var_to_expr[agg_var] = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
+                continue
             else:
                 if distinct:
                     # SUM / AVG / MIN / MAX with DISTINCT: AQL doesn't
@@ -1322,7 +1347,17 @@ class AlgebraVisitor:
                 self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
-                    self._record_var_expr(o, attr_path)
+                    if self.resolver.fan_out_list_values:
+                        # RDF multi-valued semantics: a list-valued
+                        # attribute is N triples, so ``?o`` must bind
+                        # once per element. Scalars wrap into a
+                        # one-element list so the loop is uniform
+                        # (see SchemaResolver.fan_out_list_values).
+                        value_alias = self.builder.fresh_alias(prefix="lv")
+                        self.builder.for_inline(value_alias, self._fan_out_source(attr_path))
+                        self._record_var_expr(o, value_alias)
+                    else:
+                        self._record_var_expr(o, attr_path)
                 elif existing != attr_path:
                     # The variable is already bound by an earlier
                     # triple to a different AQL expression — turn the
@@ -1331,12 +1366,18 @@ class AlgebraVisitor:
                     # This is what makes multi-subject BGPs and ``Join``
                     # nodes correct: without the FILTER the engine
                     # would happily return the full Cartesian product.
-                    self.builder.filter_raw(f"{attr_path} == {existing}")
+                    # Under fan-out semantics the join is a membership
+                    # test: the bound value must be ONE OF the
+                    # attribute's values.
+                    self.builder.filter_raw(self._value_match_expr(attr_path, existing))
                 # else: the same expression is already bound — the
                 # triple just re-states what we already knew, no-op.
             elif isinstance(o, (Literal, URIRef)):
                 bind = self.builder.bind(_term_to_python(o), hint=prop.attribute)
-                self.builder.filter_eq(attr_path, bind)
+                if self.resolver.fan_out_list_values:
+                    self.builder.filter_raw(self._value_match_expr(attr_path, bind))
+                else:
+                    self.builder.filter_eq(attr_path, bind)
             else:
                 raise UnsupportedSparqlError(
                     f"object term type {type(o).__name__!r} is not supported in triple {triple!r}"
@@ -1639,7 +1680,7 @@ class AlgebraVisitor:
         legacy ``rpt-translator.js`` shape:
 
         * Variable object → bind to
-          ``COALESCE(t.object_uri, t.object_value)`` so the same var
+          ``NOT_NULL(t.object_uri, t.object_value)`` so the same var
           can later be joined against either a URI or a literal
           column from another triple.
         * IRI object → equality FILTER on either ``object_uri`` or
@@ -1672,7 +1713,7 @@ class AlgebraVisitor:
             self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
         # OBJECT — variable / IRI / literal each take a different shape.
         coalesce_expr = (
-            f"COALESCE({triples_alias}.{rpt_class.object_uri_column}, "
+            f"NOT_NULL({triples_alias}.{rpt_class.object_uri_column}, "
             f"{triples_alias}.{rpt_class.object_value_column})"
         )
         if isinstance(obj, Variable):
@@ -1877,6 +1918,27 @@ class AlgebraVisitor:
             return
         self.builder.filter_raw(f"{alias}._uri == {existing_alias}._uri")
 
+    def _value_match_expr(self, attr_path: str, value_expr: str) -> str:
+        """Equality between an attribute read and a value expression.
+
+        Plain ``==`` normally. Under ``fan_out_list_values`` a
+        list-valued attribute represents multiple triples, so the
+        match is a membership test over ``FLATTEN([attr])`` — which
+        is ``[v1, v2, …]`` for a list attribute and ``[scalar]`` for
+        a scalar, so one ``IN`` covers both cases (verified against a
+        live ArangoDB). ``FLATTEN`` (vs. an ``IS_LIST`` ternary) keeps
+        the emission free of the conditional the fan-out FOR also
+        avoids."""
+        if self.resolver.fan_out_list_values:
+            return f"{value_expr} IN FLATTEN([{attr_path}])"
+        return f"{attr_path} == {value_expr}"
+
+    def _fan_out_source(self, attr_path: str) -> str:
+        """The list a fan-out FOR iterates for *attr_path*:
+        ``FLATTEN([attr])`` — the attribute's elements when it is a
+        list, or a one-element ``[scalar]`` otherwise."""
+        return f"FLATTEN([{attr_path}])"
+
     def _record_var_expr(self, var: Variable, expr: str) -> None:
         # First binding wins, matching legacy semantics: a variable that
         # appears in two triples gets its first-seen expression and any
@@ -1921,7 +1983,7 @@ class AlgebraVisitor:
                 #   * ``FILTER(expr)`` — row is excluded (§18.5).
                 #   * ``BIND(expr AS ?v)`` — row is kept, ``?v`` is left
                 #     unbound on this row (§18.6).
-                #   * ``COALESCE(a, b, …)`` — skip to the next argument
+                #   * ``NOT_NULL(a, b, …)`` — skip to the next argument
                 #     (§17.4.1.3).
                 #   * Most other builtins (DATATYPE, arithmetic, …) —
                 #     propagate the error so the enclosing assignment
@@ -1929,7 +1991,7 @@ class AlgebraVisitor:
                 #
                 # AQL's ``null`` follows the same error-propagation
                 # semantics by construction: ``null == X`` → ``null``,
-                # ``null + 1`` → ``null``, ``COALESCE(null, x)`` → ``x``,
+                # ``null + 1`` → ``null``, ``NOT_NULL(null, x)`` → ``x``,
                 # and ``FILTER null`` excludes the row. So emitting the
                 # literal ``null`` here gives every spec-correct
                 # downstream behaviour for free — no per-operator
@@ -1943,7 +2005,7 @@ class AlgebraVisitor:
                 # disambiguation a silent ``null`` would deny them.
                 # The translation itself does NOT raise — that would
                 # block W3C-conformant queries like
-                # ``COALESCE(?z, -3)`` from translating.
+                # ``NOT_NULL(?z, -3)`` from translating.
                 self.builder.warn(
                     code="W_UNBOUND_VARIABLE_IN_EXPR",
                     message=(
@@ -2071,6 +2133,13 @@ class AlgebraVisitor:
             keys = list(self.state.var_to_expr.keys())
         else:
             keys = [str(v) for v in self.state.projection_vars]
+        # Caller-requested extras (canonical-key vars from the
+        # federation entry point) append after the query's own list so
+        # the partition's declared column order is preserved.
+        for extra in self.extra_projection or ():
+            name = extra.lstrip("?")
+            if name not in keys:
+                keys.append(name)
         mapping: list[tuple[str, str]] = []
         for key in keys:
             expr = self.state.var_to_expr.get(key)
@@ -2179,7 +2248,16 @@ def _term_to_python(term: Any) -> Any:
     type rather than as their lexical form.
     """
     if isinstance(term, Literal):
-        return term.toPython()
+        value = term.toPython()
+        # ``xsd:decimal`` round-trips through rdflib as
+        # ``decimal.Decimal``, which neither ``json`` nor python-arango
+        # can serialize as a bind value (live-execution failure:
+        # "Object of type Decimal is not JSON serializable"). AQL has
+        # no decimal type anyway — degrade to float, the same precision
+        # ArangoDB stores.
+        if isinstance(value, decimal.Decimal):
+            return float(value)
+        return value
     if isinstance(term, URIRef):
         return str(term)
     return term

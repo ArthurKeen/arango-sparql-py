@@ -234,78 +234,92 @@ SKIP_REASONS: dict[str, str] = {
     "entailment/sparqldl-11": "OWL DL reasoning required",
     "entailment/sparqldl-12": "OWL DL reasoning required",
     "entailment/sparqldl-13": "OWL DL reasoning required",
-    # Project-expression tests carry an ``(expr AS ?eq)`` slot that
-    # the visitor does not (yet) thread into the RETURN; the AQL
-    # row drops the alias even though translation succeeds.
-    "project-expression/projexp01": (
-        "(expr AS ?var) projection alias dropped from RETURN — visitor "
-        "Project node does not expose Extend-bound aliases"
-    ),
-    "project-expression/projexp02": (
-        "(expr AS ?var) projection alias dropped from RETURN — visitor "
-        "Project node does not expose Extend-bound aliases"
-    ),
-    "project-expression/projexp03": (
-        "(expr AS ?var) projection alias dropped from RETURN — visitor "
-        "Project node does not expose Extend-bound aliases"
-    ),
-    "project-expression/projexp04": (
-        "(expr AS ?var) projection alias dropped from RETURN — visitor "
-        "Project node does not expose Extend-bound aliases"
-    ),
-    # ------------------------------------------------------------------
-    # Variable-predicate carve-out (PRD §6.6 Variable predicates row).
-    #
-    # The visitor's ``_emit_variable_predicate_triple`` ATTRIBUTES()
-    # fan-out emits valid AQL for ``?s ?p ?o`` against an unbound
-    # subject, but ``?p`` binds to the attribute NAME (a string like
-    # ``"name"``) instead of the predicate IRI. Every query below
-    # depends on ``?p`` being an IRI — typically because it's used
-    # in an aggregate, a BIND expression, or a projection alias that
-    # the W3C expected results assume is in IRI form. Translation
-    # passes (these moved W3C query-evaluation coverage from 17.0 %
-    # to 27.3 % in the variable-predicate slice); live cross-
-    # validation against pyoxigraph requires the attribute-name to
-    # predicate-URI follow-up slice.
-    # ------------------------------------------------------------------
-    **{
-        sid: (
-            "variable-predicate emission binds ?p to attribute name "
-            "(string) not predicate IRI — pyoxigraph expects IRI form. "
-            "Lifts when the per-class attribute-to-URI mapping slice "
-            "lands (PRD §6.6 Variable predicates row)."
-        )
-        for sid in (
-            "aggregates/agg-avg-02",
-            "aggregates/agg-max-01",
-            "aggregates/agg-max-02",
-            "aggregates/agg-min-02",
-            "aggregates/agg-sum-02",
-            "aggregates/agg01",
-            "aggregates/agg02",
-            "aggregates/agg03",
-            "aggregates/agg04",
-            "aggregates/agg05",
-            "aggregates/agg06",
-            "aggregates/agg07",
-            "bind/bind01",
-            "bind/bind02",
-            "bind/bind03",
-            "bind/bind05",
-            "bind/bind06",
-            "bind/bind08",
-            "bind/bind10",
-            "bind/bind11",
-            "csv-tsv-res/tsv01",
-            "csv-tsv-res/tsv03",
-            "functions/ends01",
-            "functions/plus-1",
-            "functions/plus-2",
-            "functions/starts01",
-            "json-res/jsonres01",
-        )
-    },
 }
+
+
+# ---------------------------------------------------------------------------
+# Evaluation-correctness gate (WP-C1)
+# ---------------------------------------------------------------------------
+# Every case listed here is KNOWN to pass end-to-end (translate →
+# execute → binding comparison against the W3C expected results).
+# For these, a divergence is a HARD FAILURE, not an xfail — without
+# this registry a regression in a passing case would silently slide
+# back into the xfail bucket and CI would stay green. Cases not listed
+# still xfail on divergence (the harness's discovery mode).
+#
+# When new cases start passing, add them here (the suite tells you:
+# an unlisted case that passes shows up in the pass column). When a
+# translator change legitimately changes semantics, update the list
+# in the same commit and say why in the commit message.
+EXPECTED_LIVE_PASSES: frozenset[str] = frozenset(
+    {
+        "aggregates/agg-sample-01",
+        "bind/bind01",
+        "bind/bind02",
+        "bind/bind03",
+        "bind/bind04",
+        "bind/bind05",
+        "bind/bind06",
+        "bind/bind08",
+        "bind/bind11",
+        "bindings/inline1",
+        "bindings/values1",
+        "bindings/values3",
+        "construct/constructwhere01",
+        "construct/constructwhere02",
+        "construct/constructwhere03",
+        "construct/constructwhere04",
+        "entailment/owlds01",
+        "entailment/sparqldl-06",
+        "exists/exists05",
+        "functions/abs01",
+        "functions/ceil01",
+        "functions/concat01",
+        "functions/contains01",
+        "functions/day",
+        "functions/encode01",
+        "functions/ends01",
+        "functions/floor01",
+        "functions/in01",
+        "functions/in02",
+        "functions/isnumeric01",
+        "functions/lcase01",
+        "functions/length01",
+        "functions/md5-01",
+        "functions/md5-02",
+        "functions/minutes",
+        "functions/month",
+        "functions/notin01",
+        "functions/notin02",
+        "functions/replace02",
+        "functions/replace03",
+        "functions/round01",
+        "functions/seconds",
+        "functions/sha1-01",
+        "functions/sha1-02",
+        "functions/sha256-01",
+        "functions/sha256-02",
+        "functions/sha512-01",
+        "functions/sha512-02",
+        "functions/starts01",
+        "functions/struuid01",
+        "functions/substring01",
+        "functions/substring02",
+        "functions/timezone",
+        "functions/tz",
+        "functions/ucase01",
+        "functions/uuid01",
+        "functions/year",
+        "grouping/group01",
+        "grouping/group03",
+        "grouping/group05",
+        "project-expression/projexp03",
+        "project-expression/projexp06",
+        "project-expression/projexp07",
+        "property-path/pp06",
+        "subquery/subquery10",
+    }
+)
 
 
 # ---------------------------------------------------------------------------
@@ -321,14 +335,23 @@ SKIP_REASONS: dict[str, str] = {
 def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
     """End-to-end SPARQL → AQL → ArangoDB → bindings round-trip.
 
-    Every step that fails *for the test under test* (load, translate,
-    execute, compare) is captured as :func:`pytest.xfail` rather than
-    a hard failure: the live harness's job is to surface divergence,
-    not to gate the suite. Infrastructure failures (e.g. ArangoDB
-    is down mid-run) still bubble up as errors so the operator
-    notices.
+    Two regimes, split by :data:`EXPECTED_LIVE_PASSES` (WP-C1):
+
+    * **Gated cases** (listed) — any step that fails (load, translate,
+      execute, compare) is a HARD failure. These are the evaluation-
+      correctness contract; a regression must red the suite.
+    * **Discovery cases** (everything else) — failures are captured as
+      :func:`pytest.xfail` so the harness surfaces divergence without
+      gating. Infrastructure failures (e.g. ArangoDB down mid-run)
+      still bubble up as errors so the operator notices.
     """
     db = _live_arango_db
+    gated = case.short_id in EXPECTED_LIVE_PASSES
+
+    def _diverge(message: str) -> None:
+        if gated:
+            pytest.fail(f"EXPECTED_LIVE_PASSES regression ({case.short_id}): {message}")
+        pytest.xfail(message)
 
     if case.short_id in SKIP_REASONS:
         # Divergences we already know about — skip the live work,
@@ -351,17 +374,17 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
     try:
         expected = parse_results_file(case.expected_path)
     except UnsupportedResultFormat as exc:
-        pytest.xfail(f"unsupported result format: {exc}")
+        _diverge(f"unsupported result format: {exc}")
 
     try:
         ontology_ttl, _coll_map = load_w3c_data_to_arango(db, case.data_paths, prefix)
     except Exception as exc:  # noqa: BLE001 — surface the load step's reason
         # Loader failures are infra-divergent (corpus surprise,
         # pyoxigraph parse error, ArangoDB write rejection); xfail
-        # rather than fail so a single broken corpus file doesn't
-        # red the whole run. The exception message identifies the
-        # culprit for the operator.
-        pytest.xfail(f"data load failed: {exc}")
+        # (or hard-fail for gated cases) so a single broken corpus
+        # file doesn't red the whole discovery run. The exception
+        # message identifies the culprit for the operator.
+        _diverge(f"data load failed: {exc}")
 
     try:
         resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection=default_coll)
@@ -376,7 +399,8 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
             cursor = db.aql.execute(translated.aql, bind_vars=translated.bind_vars)
             actual_rows = list(cursor)
         except Exception as exc:  # noqa: BLE001 — narrow at compare time
-            pytest.xfail(f"AQL execution failed: {exc}")
+            _diverge(f"AQL execution failed: {exc}")
+            raise  # unreachable — _diverge always raises; appeases control-flow analysis
 
         if expected.is_ask:
             ok, msg = compare_ask(bool(expected.ask), actual_rows)
@@ -385,9 +409,10 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
 
         if not ok:
             # A divergence we don't already know about — surface as
-            # xfail with the diff so the operator can decide whether
-            # to add it to SKIP_REASONS or fix the translator.
-            pytest.xfail(f"binding divergence:\n{msg}\nAQL: {translated.aql}")
+            # xfail with the diff (hard failure for gated cases) so
+            # the operator can decide whether to add it to
+            # SKIP_REASONS or fix the translator.
+            _diverge(f"binding divergence:\n{msg}\nAQL: {translated.aql}")
     finally:
         # Per-test teardown — best-effort so a failed assertion
         # doesn't leave stale collections.
@@ -434,6 +459,19 @@ def test_live_execution_skip_reasons_are_known() -> None:
             "(only enforced under RUN_INTEGRATION=1)",
             sorted(stale),
         )
+
+
+def test_expected_live_passes_are_consistent() -> None:
+    """:data:`EXPECTED_LIVE_PASSES` must reference real parameterized
+    cases and never overlap :data:`SKIP_REASONS` — an entry in both
+    would be skipped before the gate could enforce it.
+    """
+    overlap = EXPECTED_LIVE_PASSES & set(SKIP_REASONS)
+    assert not overlap, f"cases both gated and skipped: {sorted(overlap)}"
+    if integration_enabled():
+        known_ids = {c.short_id for c in _LIVE_CASES}
+        stale = EXPECTED_LIVE_PASSES - known_ids
+        assert not stale, f"EXPECTED_LIVE_PASSES entries no longer parameterized: {sorted(stale)}"
 
 
 # Keep a stable handle on the env-gated state so the analyze_coverage

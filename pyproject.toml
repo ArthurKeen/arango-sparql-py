@@ -18,13 +18,23 @@ Homepage = "https://github.com/ArthurKeen/arango-sparql-py"
 Repository = "https://github.com/ArthurKeen/arango-sparql-py"
 Issues = "https://github.com/ArthurKeen/arango-sparql-py/issues"
 
+[tool.hatch.metadata]
+# The nl extra git-pins arango-query-core (deliberate, CC-9); hatchling
+# requires this flag for direct references.
+allow-direct-references = true
+
 [project.optional-dependencies]
 analyzer = [
   # Mirror arango-cypher-py: pin the schema analyzer band so
   # service installs fail fast on heuristic mappings. 0.9.0 floor: adds
   # named-graph membership (metadata.graphMembership + per-entry graphs),
   # graphScope, CSI v1, GraphRAG detection, and gold/metric-history.
-  "arangodb-schema-analyzer>=0.9.0,<0.10.0",
+  # The ``[anthropic]`` extra pulls the Anthropic client SDK so the
+  # analyzer runs its LLM-backed classification. Without a client SDK it
+  # silently degrades to deterministic baseline inference, which
+  # misclassifies LABEL-style / hybrid collections (see
+  # arango_sparql/schema/acquire.py::_resolve_analyzer_provider).
+  "arangodb-schema-analyzer[anthropic]>=0.9.0,<0.10.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",
@@ -41,11 +51,15 @@ nl = [
   "anthropic>=0.20.0",
   "rank_bm25>=0.2.2",
   "PyYAML>=6.0.0",
-  # Shared conceptual-model + NL substrate (NLQueryEngine, seam protocols) that
-  # the nl2sparql pipeline drives. First-party sibling repo, not yet on PyPI, so
-  # pinned to a specific git rev (deterministic — never a floating branch).
-  # Migrates to a PyPI version pin at the 0.2.0 milestone (2026-07-20 lane notes).
-  "arango-query-core @ git+https://github.com/arango-solutions/arango-query-core.git@acb60aeeeec2082338a9386d6aa9fd38bb903bdb",
+  # Shared NL engine + adapter seams + conceptual-model substrate
+  # (NLQueryEngine, seam protocols, DenseRetriever) driving BOTH the nl2sparql
+  # pipeline and the shared-engine _core/adapter (nl-engine-extraction, PRD
+  # §12.3). Sourced from the ArthurKeen upstream (dev'd first; arango-solutions
+  # is the synced mirror), git-pinned to an exact commit (deterministic; bump
+  # deliberately — CC-9: consumers re-run goldens). acb60ae is the ArthurKeen
+  # HEAD and a superset of the older d9af7b2 pin — it carries the Phase-7
+  # DenseRetriever/cached_few_shot_index the eval harness imports.
+  "arango-query-core @ git+https://github.com/ArthurKeen/arango-query-core@acb60aeeeec2082338a9386d6aa9fd38bb903bdb",
 ]
 # Torch-free-by-default packaging (D-05 packaging discretion, Phase 7 07-03):
 # a plain `pip install '.[nl]'` never pulls sentence-transformers/torch — the
@@ -55,12 +69,13 @@ nl = [
 # extra (sentence-transformers) on top of `[nl]`'s deps.
 dense = [
   "arango-sparql-py[nl]",
-  "arango-query-core[dense] @ git+https://github.com/arango-solutions/arango-query-core.git@acb60aeeeec2082338a9386d6aa9fd38bb903bdb",
+  "arango-query-core[dense] @ git+https://github.com/ArthurKeen/arango-query-core@acb60aeeeec2082338a9386d6aa9fd38bb903bdb",
 ]
 dev = [
   "pytest>=8.0.0",
   "pytest-cov>=5.0.0",
   "ruff>=0.6.0",
+  "mypy>=1.11",
   "httpx>=0.24.0",
   "PyYAML>=6.0.0",
   # pyoxigraph is the W3C-compliant reference triplestore for
@@ -83,6 +98,17 @@ markers = [
   "eval: NL->SPARQL evaluation harness; slow, gated behind RUN_EVAL=1",
 ]
 
+# Static typing starts where the correctness risk is highest — the
+# translate package (parser → visitor → builder → resolver). Widen the
+# `files` list as other packages are annotated; do not turn on
+# `strict` until visitor.py's algebra boundary has real types.
+[tool.mypy]
+files = ["arango_sparql/translate"]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+
 [tool.ruff]
 line-length = 110
 target-version = "py311"
@@ -102,13 +128,6 @@ ignore = [
 [build-system]
 requires = ["hatchling>=1.21.0"]
 build-backend = "hatchling.build"
-
-[tool.hatch.metadata]
-# The `nl` extra pins arango-query-core via a direct git reference (it is not
-# yet on PyPI — see the comment on that entry). Hatchling refuses direct
-# references in project metadata unless this is opted into explicitly.
-# Remove when arango-query-core migrates to a PyPI version pin at 0.2.0.
-allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["arango_sparql"]

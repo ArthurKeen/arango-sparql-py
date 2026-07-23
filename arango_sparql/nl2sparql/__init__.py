@@ -17,9 +17,17 @@ tooling. Public surface:
 * :class:`PipelineOutcome`, :class:`LLMCallRecord`, :class:`LLMResponse` —
   result envelopes.
 
-The legacy stub :func:`nl_to_sparql` returning :class:`NL2SparqlResult`
-is kept on the surface for backward compatibility with the bootstrap
-tests; new callers should use :class:`NlPipeline` directly.
+:func:`nl_to_sparql` (returning :class:`NL2SparqlResult`) is the
+library entry point backed by the SHARED engine
+(``arango_query_core.nl`` + this repo's
+:class:`~arango_sparql.nl2sparql.adapter.SparqlLanguageAdapter` — the
+five language seams). It is what external consumers (the
+contextual-data-fabric's NL front-end, M5 WP-D1) call. The service
+routes still run :class:`NlPipeline` for its richer per-call
+telemetry; the two converge once the cypher-side re-point settles the
+seam API (nl-engine-extraction proposal). The adapter is imported
+lazily (``arango_sparql.nl2sparql.adapter``) so this package stays
+import-safe without the ``nl`` extra installed.
 
 See ``.cursor/rules/300-nl2sparql.mdc``.
 """

@@ -150,3 +150,77 @@ def test_empty_physical_blocks_ok():
     assert bundle.entities() == {}
     assert bundle.relationships() == {}
     assert bundle.source is not None and bundle.source.kind == "imported_csi"
+
+
+def _owl_named_csi() -> dict:
+    """A CC-12-conforming CSI: OWL conceptual names + per-property fields.
+
+    The shape ``to_csi(..., owl_naming=True)`` (arango-schema-analyzer) and
+    r2g's convention-conforming forward emitter produce: conceptual property
+    ``accountId`` stored as document field ``account_id``.
+    """
+    return {
+        "csiVersion": "1",
+        "conceptualModel": {
+            "entities": [
+                {
+                    "name": "Document",
+                    "labels": ["Document"],
+                    "properties": [{"name": "accountId"}, {"name": "citableUrl"}],
+                }
+            ],
+            "relationships": [],
+        },
+        "arangoPhysicalMapping": {
+            "entities": {
+                "Document": {
+                    "style": "COLLECTION",
+                    "collectionName": "documents",
+                    "properties": {
+                        "accountId": {"field": "account_id", "indexed": True},
+                        "citableUrl": {"field": "citable_url"},
+                    },
+                }
+            },
+            "relationships": {},
+        },
+        "provenance": {
+            "producer": "arango-schema-analyzer",
+            "direction": "reverse",
+            "source": {"kind": "arango", "ref": "cmf", "fingerprint": None},
+        },
+    }
+
+
+def test_property_field_mapping_resolves_conceptual_to_stored_name():
+    """CC-12: ``c:accountId`` resolves to the stored ``account_id`` attribute."""
+    bundle = mapping_bundle_from_csi(_owl_named_csi())
+    resolver = SchemaResolver.from_mapping_bundle(bundle)
+
+    resolved = resolver.resolve_property(_SYNTHETIC_CONCEPT_NS["accountId"])
+    assert resolved.attribute == "account_id"
+    assert not resolved.is_object_property
+
+    resolved_url = resolver.resolve_property(_SYNTHETIC_CONCEPT_NS["citableUrl"])
+    assert resolved_url.attribute == "citable_url"
+
+    # The class still resolves to the physical collection.
+    cls = resolver.resolve_class(_SYNTHETIC_CONCEPT_NS["Document"])
+    assert cls.collection == "documents"
+
+
+def test_property_field_mapping_reaches_the_generated_aql():
+    """The generated AQL reads the stored field, not the conceptual name."""
+    from arango_sparql.api import translate
+
+    bundle = mapping_bundle_from_csi(_owl_named_csi())
+    resolver = SchemaResolver.from_mapping_bundle(bundle)
+    result = translate(
+        "PREFIX c: <urn:arango-sparql:concept#> "
+        "SELECT ?url WHERE { ?d a c:Document ; c:accountId ?acct ; c:citableUrl ?url }",
+        resolver=resolver,
+    )
+    assert "account_id" in result.aql
+    assert "citable_url" in result.aql
+    assert "accountId" not in result.aql
+    assert "citableUrl" not in result.aql

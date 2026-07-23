@@ -1,0 +1,54 @@
+name: W3C nightly
+
+# Full W3C SPARQL 1.1 DAWG sweep — the heavy harness the per-PR CI
+# skips. Two legs:
+#
+#   * translation-only (`-m w3c`) — every corpus case through
+#     arango_sparql.api.translate; catches parser/visitor regressions
+#     across the whole corpus, not just the live-executable subset.
+#   * live execution — the same SPARQL → AQL → ArangoDB → binding
+#     round-trip the per-PR `integration` job runs (kept here too so
+#     the nightly is self-contained when triggered manually).
+#
+# Scheduled rather than per-PR because the corpus is large; the
+# release-blocking evaluation gate (EXPECTED_LIVE_PASSES) already runs
+# on every PR via ci.yml's `integration` job.
+
+on:
+  schedule:
+    # 05:17 UTC daily — off the top of the hour to avoid the GitHub
+    # Actions scheduled-load spike that delays 0-minute crons.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  w3c:
+    runs-on: ubuntu-latest
+    services:
+      arangodb:
+        image: arangodb:3.12
+        env:
+          ARANGO_ROOT_PASSWORD: openSesame
+        ports:
+          - 28529:8529
+        options: >-
+          --health-cmd "wget -qO- --header='Content-Type: application/json' --post-data '{\"username\":\"root\",\"password\":\"openSesame\"}' http://127.0.0.1:8529/_open/auth >/dev/null 2>&1"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 40
+    env:
+      ARANGO_URL: http://localhost:28529
+      ARANGO_USER: root
+      ARANGO_PASSWORD: openSesame
+      RUN_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,nl,service]"
+      # Translation-only sweep over the full corpus (no DB needed, but
+      # sharing the job keeps the workflow single-runner).
+      - run: pytest -m w3c -q --tb=short
+      # Live-execution sweep, including the EXPECTED_LIVE_PASSES gate.
+      - run: pytest tests/w3c/test_w3c_live_execution.py -q --tb=short

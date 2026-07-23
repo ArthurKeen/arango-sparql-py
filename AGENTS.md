@@ -88,6 +88,27 @@ project to `arango-cypher-py`.
   (`tests/**/eval/reports/`), or vendored W3C test data.
 - Changing CI behavior to skip failing tests instead of fixing them.
 
+## Optional: dark-factory drift mode
+
+If the local `.claude/` skills are present, this project supports autonomous PRD
+drift detection:
+
+- `/pattern-search <problem>` before solving a non-trivial problem.
+- `/pattern-save` after fixing a drift gap or finding a reusable technique.
+- `/prd-sync` at the end of any session that touched implementation files.
+
+Drift policy: a MISSING requirement is a bug (not a TODO); a TEST-ONLY requirement
+(tested but not implemented) must be fixed; never mark a requirement IMPLEMENTED
+without a `file:line` reference. Shared memory lives in ArangoDB via the
+`arangodb-memory-mcp` server (`shared_patterns`, `project_registry`, `drift_alerts`).
+
+Identity for the drift skills:
+
+- PROJECT_ID: `arango-sparql-py`
+- PROJECT_TYPE: `microservice`
+- PRD_FILE: `docs/architecture/PRD.md`
+- TECH_STACK: Python, FastAPI, rdflib, ArangoDB/AQL, pyoxigraph, Vite/React
+
 ## Communication
 
 - When you cannot proceed because of an architectural ambiguity, stop

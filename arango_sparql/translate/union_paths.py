@@ -81,8 +81,7 @@ def emit_union(visitor: AlgebraVisitor, node: Any) -> None:
     AQL ``UNION(…)`` and binds each union variable to ``row.<var>``.
     """
     arms = [node.p1, node.p2]
-    drivers = [(lambda v, arm=arm: v.visit(arm)) for arm in arms]
-    _emit_union_of_arms(visitor, drivers)
+    _emit_union_of_arms(visitor, [_visit_arm_driver(arm) for arm in arms])
 
 
 def emit_alternative_path(
@@ -103,15 +102,31 @@ def emit_alternative_path(
     ``{ ?s :p ?o } UNION { ?s :q ?o }``.
     """
     arms = list(predicate.args)
-    drivers = [
-        (
-            lambda v, arm=arm: v._emit_triple(  # noqa: SLF001 - intentional
-                (subject, arm, obj)
-            )
-        )
-        for arm in arms
-    ]
-    _emit_union_of_arms(visitor, drivers)
+    _emit_union_of_arms(
+        visitor, [_triple_arm_driver(subject, arm, obj) for arm in arms]
+    )
+
+
+# Named driver factories rather than lambdas-with-defaults: mypy cannot
+# infer a lambda whose extra parameters exist only to bind loop state,
+# and the factory spells out the closure explicitly (same convention as
+# :mod:`paths`).
+
+
+def _visit_arm_driver(arm: Any) -> Callable[[AlgebraVisitor], None]:
+    def drive(v: AlgebraVisitor) -> None:
+        v.visit(arm)
+
+    return drive
+
+
+def _triple_arm_driver(
+    subject: Any, arm: Any, obj: Any
+) -> Callable[[AlgebraVisitor], None]:
+    def drive(v: AlgebraVisitor) -> None:
+        v._emit_triple((subject, arm, obj))  # noqa: SLF001 - intentional
+
+    return drive
 
 
 # ---------------------------------------------------------------------------

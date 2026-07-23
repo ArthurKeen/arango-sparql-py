@@ -20,6 +20,17 @@ from .translate.parser import parse_sparql
 from .translate.resolver import SchemaResolver
 from .translate.visitor import AlgebraVisitor
 
+__all__ = [
+    "TranslateResult",
+    "translate",
+    # Federation entry point (CDF M5 WP-C2) — implemented in
+    # arango_sparql.partition, re-exported here so the library keeps a
+    # single public surface.
+    "PartitionProvenance",
+    "PartitionResult",
+    "translate_partition",
+]
+
 _SCHEMA_WARNING_CODE_PREFIX = "W_SCHEMA_"
 
 
@@ -104,3 +115,13 @@ def translate(
         warnings=combined_warnings,
         schema_warnings=schema_warnings,
     )
+
+
+# Re-exported at module bottom (not top) to avoid a circular import:
+# arango_sparql.partition composes the same pipeline pieces this
+# module does and documents the WP-C2 federation contract.
+from .partition import (  # noqa: E402
+    PartitionProvenance,
+    PartitionResult,
+    translate_partition,
+)

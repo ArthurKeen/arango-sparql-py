@@ -5,6 +5,7 @@
 > * **Syntax (positive)** — `rdflib` accepts the query;
 > * **Syntax (negative)** — `rdflib` raises a `SparqlParseError` (the test deliberately ill-formed);
 > * **Query evaluation** — the visitor produces non-empty AQL without raising `UnsupportedSparqlError`.
+> * **Live execution** — the translated AQL was run against a real ArangoDB and the bindings matched the W3C-expected `.srx` results.
 
 Low query-evaluation coverage is *expected* in v0 and tracks our progress as visitor methods are ported from `references/arango-sparql/src/lib/`.
 
@@ -15,6 +16,7 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
 | Query evaluation | 253 | 244 | 0 | 9 | 0 | 96.4% |
+| Live execution | 191 | 68 | 0 | 126 | 0 | 35.6% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -47,6 +49,22 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | 2 | `algebra` | `SparqlParse: failed to parse SPARQL: maximum recursion depth exceeded` | port the corresponding visitor method |
 | 1 | `algebra` | `UnsupportedSparql: OPTIONAL whose body is 'ServiceGraphPattern' (not a plain BGP) is not yet suppor...` | port the corresponding visitor method |
 
+## Live-execution divergences
+
+| Count | Test ID | Divergence reason |
+| -----:| ------- | ----------------- |
+| 6 | _(see test)_ | `OWL DL reasoning required` |
+| 2 | _(see test)_ | `ASK over object-property triple — loader skips IRI→IRI triples; translator does not emit edge traversals yet` |
+| 1 | _(see test)_ | `language-tag matching ('name'@en) — loader flattens lang tags; AQL has no notion of xml:lang` |
+| 1 | _(see test)_ | `RDFS entailment required` |
+| 1 | _(see test)_ | `object-property pattern (?parent :hasChild ?child) — loader skips IRI→IRI triples; translator does not emit edge traversals yet` |
+| 1 | _(see test)_ | `RDF literal-form distinction (plain vs xsd:string)` |
+| 1 | _(see test)_ | `RDFS subPropertyOf / domain entailment required` |
+| 1 | _(see test)_ | `RDFS subPropertyOf transitivity entailment required` |
+| 1 | _(see test)_ | `RDFS subClassOf / Resource entailment required` |
+| 1 | _(see test)_ | `RDFS subClassOf reflexivity entailment required` |
+| 1 | _(see test)_ | `RDFS member / ContainerMembershipProperty entailment required` |
+
 ## How to reproduce
 
 ```bash
@@ -57,4 +75,4 @@ RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --write
                                                 # include live execution row
 ```
 
-End-to-end (live ArangoDB) coverage is computed by re-running with `--live` after `RUN_INTEGRATION=1` is set; without it the live row is omitted so the report stays reproducible without Docker.
+Live-execution numbers are scoped to the translatable subset (cases that the visitor accepts today). They surface AQL ↔ SPARQL semantic divergences caught against a real ArangoDB.

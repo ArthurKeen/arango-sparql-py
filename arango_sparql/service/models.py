@@ -240,6 +240,21 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class ReadyResponse(BaseModel):
+    """``/health/ready`` — readiness (vs. ``/health`` liveness).
+
+    ``arango`` is one of ``"ok"`` (configured default ArangoDB
+    responded), ``"unreachable"`` (configured but not responding —
+    the endpoint also returns HTTP 503), or ``"unconfigured"``
+    (BYOC deployment with no default server; readiness degrades to
+    liveness and the endpoint stays 200).
+    """
+
+    status: str
+    version: str
+    arango: str
+
+
 # ---------------------------------------------------------------------------
 # NL → SPARQL pipeline request / response surface (frozen for round-3 UI).
 # ---------------------------------------------------------------------------

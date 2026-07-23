@@ -100,7 +100,9 @@ cases:
     # SPARQL GROUP_CONCAT defaults to a single-space separator; the
     # explicit ``SEPARATOR=…`` overrides go through ``agg.separator``
     # as an rdflib Literal which we unwrap to a Python string before
-    # binding.
+    # binding. ``CONCAT_SEPARATOR`` is not a legal ``COLLECT
+    # AGGREGATE`` function (runtime ERR 1574), so the group's values
+    # are aggregated with ``PUSH`` and joined at projection time.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?d (GROUP_CONCAT(?n; SEPARATOR=", ") AS ?names) WHERE {
@@ -110,8 +112,8 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "dept")
       FILTER HAS(doc1, "name")
-      COLLECT grp2 = doc1.dept AGGREGATE agg3 = CONCAT_SEPARATOR(@_p1_sep, doc1.name)
-      RETURN { d: grp2, names: agg3 }
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.name)
+      RETURN { d: grp2, names: CONCAT_SEPARATOR(@_p1_sep, agg3) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_sep": ", "

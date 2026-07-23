@@ -145,7 +145,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "a")
       FILTER HAS(doc1, "b")
-      LET bv2 = COALESCE(doc1.a, doc1.b, @_p1)
+      LET bv2 = NOT_NULL(doc1.a, doc1.b, @_p1)
       RETURN { x: bv2 }
     expected_bind_vars:
       "@c1_Document": "Document"

@@ -205,6 +205,29 @@ class SchemaResolver:
     """Maximum repetitions when lowering ``:p+`` / ``:p*`` / ``:p?``; see
     :mod:`arango_sparql.translate.paths`."""
 
+    fan_out_list_values: bool = False
+    """Treat a list-valued document attribute as MULTIPLE triples
+    (one per element), per RDF semantics for multi-valued predicates.
+
+    The flattened document model stores ``:s :p 1, 2`` as
+    ``{p: [1, 2]}`` — a single attribute. With this knob **off**
+    (default), ``?s :p ?o`` binds ``?o`` to the whole list: one row,
+    which is right for schemas whose arrays are genuinely atomic
+    values (tags stored as an array on purpose) and keeps the emitted
+    AQL free of per-read fan-out loops. With the knob **on**, every
+    datatype attribute read emits
+    ``FOR v IN (IS_LIST(attr) ? attr : [attr])`` and constant/join
+    comparisons become membership tests — restoring SPARQL's
+    one-row-per-value semantics for RDF-loaded data. The W3C
+    live-execution harness turns this on because its loader is
+    exactly such an RDF flattener (ADR-0002-adjacent; PRD §6.6).
+
+    Scope note: applies to required BGP reads and variable-predicate
+    fan-outs. OPTIONAL's conditional-binding path keeps scalar
+    semantics for now (a multi-valued OPTIONAL needs the subquery
+    emitter) — a list-valued attribute under OPTIONAL still binds
+    the list."""
+
     permissive_class_resolution: bool = False
     """When ``True``, an unknown class IRI degrades to
     :attr:`default_collection` + a ``W_SCHEMA_UNMAPPED_CLASS`` warning,
@@ -264,6 +287,9 @@ class SchemaResolver:
 
     _class_cache: dict[str, ResolvedClass] = field(default_factory=dict)
     _property_cache: dict[str, ResolvedProperty] = field(default_factory=dict)
+    _attribute_uri_map: dict[str, str] | None = field(default=None)
+    """Lazily-built reverse property index for
+    :meth:`attribute_uri_map`; ``None`` until first use."""
     _shard_family_by_collection: dict[str, tuple[str, ...]] = field(
         default_factory=dict
     )
@@ -314,6 +340,7 @@ class SchemaResolver:
         graph_field: str = "_graph",
         default_graph_includes_named: bool = True,
         permissive_class_resolution: bool = False,
+        fan_out_list_values: bool = False,
     ) -> SchemaResolver:
         """Convenience constructor — parse *ttl* into a fresh ``rdflib.Graph``.
 
@@ -334,6 +361,7 @@ class SchemaResolver:
             graph_field=graph_field,
             default_graph_includes_named=default_graph_includes_named,
             permissive_class_resolution=permissive_class_resolution,
+            fan_out_list_values=fan_out_list_values,
         )
 
     @classmethod
@@ -557,7 +585,11 @@ class SchemaResolver:
                 mapping_style = "DEDICATED_COLLECTION"
         domain_iri = self._first_object(ref, RDFS.domain)
         range_iri = self._first_object(ref, RDFS.range)
-        attribute = local_name(ref)
+        # ``phys:attributeName`` maps an OWL-style conceptual property name to
+        # its stored document field (CDF CC-12: ``accountId`` → ``account_id``).
+        # Absent the annotation, the local name doubles as the attribute —
+        # the long-standing behavior for identity-named mappings.
+        attribute = self._physical_string(ref, "attributeName") or local_name(ref)
         resolved = ResolvedProperty(
             iri=key,
             attribute=attribute,
@@ -571,6 +603,60 @@ class SchemaResolver:
         )
         self._property_cache[key] = resolved
         return resolved
+
+    # ------------------------------------------------------------------
+    # Reverse property index (attribute name → predicate IRI)
+    # ------------------------------------------------------------------
+    def attribute_uri_map(self) -> dict[str, str]:
+        """Return ``physical attribute name → predicate IRI`` for every
+        declared ``owl:DatatypeProperty``.
+
+        This is the inverse of :meth:`resolve_property`'s
+        IRI → attribute direction, and exists for the variable-predicate
+        emitter (PRD §6.6): an ``ATTRIBUTES()`` fan-out can only bind
+        ``?p`` to a spec-correct IRI when the ontology tells us which
+        IRI a document attribute came from. Only datatype properties
+        participate — object properties live in edge collections, not
+        document attributes, so they can never surface from an
+        ``ATTRIBUTES()`` iteration.
+
+        Keys are sorted at build time so the bound map is deterministic
+        across runs (golden stability). When two declared properties
+        share a local name the lexically-smallest IRI wins and a
+        ``W_SCHEMA_AMBIGUOUS_ATTRIBUTE`` advisory is recorded — the
+        flattened document model genuinely cannot distinguish the two.
+        Empty when the ontology declares no datatype properties, which
+        callers treat as "mapping unavailable" (the emitter falls back
+        to the attribute-name carve-out rather than filtering every
+        row out).
+        """
+        if self._attribute_uri_map is not None:
+            return self._attribute_uri_map
+        mapping: dict[str, str] = {}
+        # ``key=str`` both satisfies the rdflib ``Node`` sort typing and
+        # makes the collision rule explicit: lexically-smallest IRI wins.
+        for subject in sorted(
+            set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str
+        ):
+            if not isinstance(subject, URIRef):
+                continue
+            attribute = local_name(subject)
+            existing = mapping.get(attribute)
+            if existing is not None:
+                self._warn_schema(
+                    code="W_SCHEMA_AMBIGUOUS_ATTRIBUTE",
+                    message=(
+                        f"datatype properties {existing!r} and {str(subject)!r} "
+                        f"share the physical attribute name {attribute!r}; "
+                        f"variable-predicate results bind ?p to {existing!r}"
+                    ),
+                    iri=str(subject),
+                    attribute=attribute,
+                )
+                continue
+            mapping[attribute] = str(subject)
+        self._attribute_uri_map = mapping
+        return mapping
 
     # ------------------------------------------------------------------
     # Helpers
@@ -715,6 +801,28 @@ def _synthesize_graph_from_bundle(bundle: MappingBundle) -> Graph:
             if value is None:
                 continue
             g.add((iri, _SYNTHETIC_PHYS_NS[phys_local], Literal(str(value))))
+
+        # Per-property conceptual→physical mapping (CDF CC-12): CSI producers
+        # emit OWL-style conceptual property names (``accountId``) with the
+        # stored field recorded under ``properties.<name>.field``
+        # (``account_id``). Declare each as an ``owl:DatatypeProperty`` with a
+        # ``phys:attributeName`` annotation so :meth:`resolve_property` reads
+        # the stored name instead of degrading to the IRI local name.
+        prop_map = spec.get("properties")
+        if isinstance(prop_map, dict):
+            for prop_name, prop_spec in prop_map.items():
+                if not isinstance(prop_name, str) or not prop_name:
+                    continue
+                p_iri = _synthetic_iri(prop_name)
+                g.add((p_iri, RDF.type, OWL.DatatypeProperty))
+                g.add((p_iri, RDFS.domain, iri))
+                field = (
+                    prop_spec.get("field") if isinstance(prop_spec, dict) else None
+                )
+                if isinstance(field, str) and field and field != prop_name:
+                    g.add(
+                        (p_iri, _SYNTHETIC_PHYS_NS["attributeName"], Literal(field))
+                    )
 
     for rtype, spec in bundle.relationships().items():
         if not isinstance(rtype, str) or not rtype:

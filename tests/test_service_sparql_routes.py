@@ -266,6 +266,31 @@ def test_health(client: TestClient) -> None:
     assert isinstance(body["version"], str) and body["version"]
 
 
+def test_health_ready_unconfigured_is_ok(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # BYOC deployment: no default ArangoDB configured → readiness
+    # degrades to liveness (200, arango="unconfigured").
+    monkeypatch.delenv("ARANGO_URL", raising=False)
+    resp = client.get("/health/ready")
+    assert resp.status_code == 200
+    assert resp.json()["arango"] == "unconfigured"
+
+
+def test_health_ready_unreachable_is_503(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A configured default server that doesn't answer must flip the
+    # probe to 503 so orchestrators keep the pod out of rotation.
+    # Port 9 (discard protocol) refuses connections immediately.
+    monkeypatch.setenv("ARANGO_URL", "http://127.0.0.1:9")
+    resp = client.get("/health/ready")
+    assert resp.status_code == 503
+    body = resp.json()
+    assert body["status"] == "degraded"
+    assert body["arango"] == "unreachable"
+
+
 # ---------------------------------------------------------------------------
 # /translate — the parse+visit+emit happy/error paths.
 # ---------------------------------------------------------------------------

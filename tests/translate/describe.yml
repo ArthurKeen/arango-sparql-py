@@ -96,7 +96,7 @@ cases:
       FOR doc1 IN @@c1_rdf_triples
       FILTER doc1.predicate == @_p1_rdftype
       FILTER doc1.object_uri == @_p2_cls
-      RETURN (FOR d2 IN @@c1_rdf_triples FILTER d2.subject_uri == doc1.subject_uri RETURN {subject: d2.subject_uri, predicate: d2.predicate, object: COALESCE(d2.object_uri, d2.object_value)})
+      RETURN (FOR d2 IN @@c1_rdf_triples FILTER d2.subject_uri == doc1.subject_uri RETURN {subject: d2.subject_uri, predicate: d2.predicate, object: NOT_NULL(d2.object_uri, d2.object_value)})
     expected_bind_vars:
       "@c1_rdf_triples": "rdf_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"

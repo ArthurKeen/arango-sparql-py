@@ -19,7 +19,7 @@ here:
 1. Dropping the ``LENGTH(...) > 0 ? ... : [null]`` pad — that would
    silently turn the LEFT join into an INNER join and drop outer rows
    with no optional match.
-2. A change to the ``COALESCE(object_uri, object_value)`` object shape
+2. A change to the ``NOT_NULL(object_uri, object_value)`` object shape
    or the ``subject_uri`` join column.
 3. Alias / bind-name renumbering, which the downstream pyArango client's
    bind dict depends on.
@@ -80,12 +80,12 @@ def test_rpt_cross_subject_optional_variable_predicate() -> None:
         "FILTER doc2.subject_uri == doc1.subject_uri\n"
         "LET optsub4 = (\n"
         "  FOR doc3 IN @@c2__triples\n"
-        "  FILTER doc3.subject_uri == COALESCE(doc2.object_uri, doc2.object_value)\n"
-        "  RETURN {f0: doc3.predicate, f1: COALESCE(doc3.object_uri, doc3.object_value)}\n"
+        "  FILTER doc3.subject_uri == NOT_NULL(doc2.object_uri, doc2.object_value)\n"
+        "  RETURN {f0: doc3.predicate, f1: NOT_NULL(doc3.object_uri, doc3.object_value)}\n"
         ")\n"
         "FOR optrow5 IN (LENGTH(optsub4) > 0 ? optsub4 : [null])\n"
         "RETURN { s: doc1.subject_uri, "
-        "o: COALESCE(doc2.object_uri, doc2.object_value), "
+        "o: NOT_NULL(doc2.object_uri, doc2.object_value), "
         "p2: optrow5.f0, o2: optrow5.f1 }"
     ), result.aql
     assert result.bind_vars == {
@@ -116,13 +116,13 @@ def test_rpt_cross_subject_optional_fixed_predicate() -> None:
         "FILTER doc2.subject_uri == doc1.subject_uri\n"
         "LET optsub4 = (\n"
         "  FOR doc3 IN @@c2__triples\n"
-        "  FILTER doc3.subject_uri == COALESCE(doc2.object_uri, doc2.object_value)\n"
+        "  FILTER doc3.subject_uri == NOT_NULL(doc2.object_uri, doc2.object_value)\n"
         "  FILTER doc3.predicate == @_p4_pred\n"
-        "  RETURN {f0: COALESCE(doc3.object_uri, doc3.object_value)}\n"
+        "  RETURN {f0: NOT_NULL(doc3.object_uri, doc3.object_value)}\n"
         ")\n"
         "FOR optrow5 IN (LENGTH(optsub4) > 0 ? optsub4 : [null])\n"
         "RETURN { s: doc1.subject_uri, "
-        "o: COALESCE(doc2.object_uri, doc2.object_value), "
+        "o: NOT_NULL(doc2.object_uri, doc2.object_value), "
         "email: optrow5.f0 }"
     ), result.aql
     assert result.bind_vars == {

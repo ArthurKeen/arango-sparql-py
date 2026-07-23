@@ -116,7 +116,7 @@ cases:
       )
       FILTER doc5.predicate == @_p3_pred
       FILTER doc5.subject_uri == doc1.subject_uri
-      RETURN { s: doc1.subject_uri, n: COALESCE(doc5.object_uri, doc5.object_value) }
+      RETURN { s: doc1.subject_uri, n: NOT_NULL(doc5.object_uri, doc5.object_value) }
     expected_bind_vars:
       "@c1__triples_apac": "_triples_apac"
       "@c2__triples_eu": "_triples_eu"

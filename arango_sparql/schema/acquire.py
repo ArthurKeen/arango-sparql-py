@@ -57,6 +57,7 @@ straightforward.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -330,6 +331,99 @@ def _acquire_via_strategy(
 # ---------------------------------------------------------------------------
 
 
+# Client SDK each provider needs; OpenRouter speaks the OpenAI wire protocol
+# so it rides the ``openai`` package.
+_PROVIDER_SDK_MODULE: dict[str, str] = {
+    "openai": "openai",
+    "anthropic": "anthropic",
+    "openrouter": "openai",
+}
+
+# The analyzer's bundled per-provider default model can lag the live API:
+# its Anthropic default ``claude-3-5-sonnet-latest`` now 404s. Pin a
+# current, verified id so the LLM path works out of the box; override per
+# deployment with ``SCHEMA_ANALYZER_MODEL``. Only providers whose default
+# we have verified are listed — others fall through to the analyzer's own
+# default.
+#
+# NOTE: the analyzer (v0.9) hard-codes ``temperature`` on every request,
+# which the Claude 5 family (Sonnet 5, Opus 4.8) rejects with a 400
+# ("temperature is deprecated for this model"). ``claude-haiku-4-5`` is the
+# current Anthropic model that still accepts that request shape, so it is
+# the safe default until the analyzer stops sending ``temperature``. Track
+# that upstream fix; once shipped, this can move to a Claude 5 model.
+_DEFAULT_ANALYZER_MODEL: dict[str, str] = {
+    "anthropic": "claude-haiku-4-5-20251001",
+}
+
+
+def _provider_sdk_available(provider: str) -> bool:
+    """True iff the client SDK the analyzer needs for *provider* can be
+    imported. Uses :func:`importlib.util.find_spec` so we probe without
+    paying the import cost or risking import side effects.
+    """
+
+    import importlib.util
+
+    module = _PROVIDER_SDK_MODULE.get(provider)
+    return bool(module and importlib.util.find_spec(module) is not None)
+
+
+def _resolve_analyzer_provider() -> str | None:
+    """Pick the LLM provider for the schema analyzer, or ``None`` for the
+    deterministic baseline.
+
+    With no provider, ``AgenticSchemaAnalyzer`` runs its no-LLM baseline
+    inference, which misclassifies hybrid / LABEL-style collections — e.g.
+    it treats a ``name`` column as a type discriminator and emits one OWL
+    class per value instead of a single class. Naming a provider here is
+    what lets the analyzer do the intelligent classification the PRD
+    assumes is canonical (§6.3.2).
+
+    Resolution mirrors the NL2SPARQL policy
+    (:func:`arango_sparql.nl2sparql.client.get_default_client`) so both
+    LLM-backed subsystems select the same provider from one environment:
+
+    1. Explicit ``SCHEMA_ANALYZER_PROVIDER``, then the generic
+       ``LLM_PROVIDER`` (shared with the NL pipeline).
+    2. Otherwise infer from which API key is present, but only pick a
+       provider whose client SDK is importable — selecting one whose key is
+       set but whose SDK is absent would make the analyzer silently drop
+       back to baseline, the exact failure this shim exists to prevent.
+    3. ``None`` when nothing usable is configured — the analyzer then
+       degrades to baseline, exactly as it did before this shim.
+
+    The key itself is deliberately *not* read here: the analyzer resolves
+    it from the provider's canonical env var, so passing only the provider
+    name keeps key handling in one place.
+    """
+
+    provider = (
+        os.getenv("SCHEMA_ANALYZER_PROVIDER") or os.getenv("LLM_PROVIDER") or ""
+    ).strip().lower()
+    if provider:
+        if provider not in ("openai", "anthropic", "openrouter"):
+            logger.warning(
+                "Unknown schema-analyzer provider %r; using deterministic "
+                "baseline. Set SCHEMA_ANALYZER_PROVIDER to "
+                "openai/anthropic/openrouter.",
+                provider,
+            )
+            return None
+        # Explicit request is honoured as-is; if its SDK/key is missing the
+        # analyzer logs and degrades to baseline itself.
+        return provider
+
+    for candidate, key_var in (
+        ("openai", "OPENAI_API_KEY"),
+        ("anthropic", "ANTHROPIC_API_KEY"),
+        ("openrouter", "OPENROUTER_API_KEY"),
+    ):
+        if os.getenv(key_var) and _provider_sdk_available(candidate):
+            return candidate
+    return None
+
+
 def _acquire_via_analyzer(db: Any, *, include_owl: bool) -> MappingBundle:
     """Run :class:`schema_analyzer.AgenticSchemaAnalyzer` and reshape
     its output into a :class:`MappingBundle`.
@@ -351,7 +445,29 @@ def _acquire_via_analyzer(db: Any, *, include_owl: bool) -> MappingBundle:
     except ImportError as exc:  # pragma: no cover — caller pre-checks
         raise AnalyzerNotInstalledError() from exc
 
-    analyzer = AgenticSchemaAnalyzer()
+    # Pass an LLM provider so the analyzer runs its intelligent
+    # classification instead of the deterministic baseline (which cannot
+    # tell a single-class collection from a LABEL-discriminated one). The
+    # analyzer reads the matching API key from the environment itself, and
+    # re-checks provider+key internally — a missing key or provider error
+    # degrades to baseline rather than raising, so this stays best-effort.
+    provider = _resolve_analyzer_provider()
+    model = os.getenv("SCHEMA_ANALYZER_MODEL") or (
+        _DEFAULT_ANALYZER_MODEL.get(provider) if provider else None
+    )
+    if provider:
+        logger.info(
+            "schema-analyzer using LLM provider=%s%s",
+            provider,
+            f" model={model}" if model else "",
+        )
+    else:
+        logger.info(
+            "schema-analyzer running deterministic baseline (no LLM provider "
+            "configured; set SCHEMA_ANALYZER_PROVIDER or LLM_PROVIDER to enable "
+            "intelligent classification)"
+        )
+    analyzer = AgenticSchemaAnalyzer(llm_provider=provider, model=model)
     analysis_result = analyzer.analyze_physical_schema(db)
 
     analysis_dict = {

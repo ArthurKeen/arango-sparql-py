@@ -1,18 +1,19 @@
 name: CI
 
 # Mirrors the structure of arango-cypher-py's CI so a contributor fluent
-# in one repo gets the same signals in the other. Two diffs vs. that
-# template are intentional:
+# in one repo gets the same signals in the other. One diff vs. that
+# template is intentional:
 #
-# * the integration job is omitted in v0 because the live ArangoDB
-#   harness (tests/w3c/test_w3c_live_execution.py and friends) is gated
-#   behind RUN_INTEGRATION=1 and not yet on the release-blocking path;
 # * the packaging job is omitted because we don't ship a sdist build
-#   smoke test yet (will land alongside the first PyPI release).
+#   smoke test yet (will land alongside the first PyPI release). When
+#   that gate becomes a hard release requirement, copy the job verbatim
+#   from references/arango-cypher-py/.github/workflows/ci.yml.
 #
-# When either of those gates becomes a hard release requirement, copy
-# the corresponding job verbatim from references/arango-cypher-py/.github
-# /workflows/ci.yml — that's the source of truth for the matching shape.
+# The integration job is the WP-C1 evaluation-correctness gate: it runs
+# the live-ArangoDB harnesses (tests/integration, tests/cross, and the
+# W3C live-execution suite) against a service container. The W3C suite
+# hard-fails when any case in EXPECTED_LIVE_PASSES regresses — see
+# tests/w3c/test_w3c_live_execution.py.
 
 on:
   push:
@@ -35,6 +36,18 @@ jobs:
       # this, run `ruff format .` locally and recommit.
       - run: ruff format --check .
 
+  typecheck:
+    # Scoped to arango_sparql/translate via [tool.mypy] files= —
+    # the emitter core where a type error means wrong AQL.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,nl,service]"
+      - run: mypy
+
   test:
     runs-on: ubuntu-latest
     strategy:
@@ -49,9 +62,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev,nl,service]"
       # Excludes:
-      #   * integration   — needs Docker + live ArangoDB
-      #   * w3c           — heavy translation-only harness; runs nightly,
-      #                     not per-PR (separate workflow lands later)
+      #   * integration   — covered by the `integration` job below
+      #   * w3c           — heavy translation-only harness; the live
+      #                     subset runs in `integration`, the full
+      #                     translation sweep runs nightly (w3c-nightly.yml)
       #   * eval          — NL eval harness; gated on RUN_EVAL=1
       - run: pytest -m "not integration and not w3c and not eval" --tb=short -q
 
@@ -84,3 +98,34 @@ jobs:
       # regression by design). This job needs no LLM API key or secret.
       - run: bash scripts/fetch_w3c.sh
       - run: pytest tests/w3c/test_coverage_gate.py --tb=short -q
+
+  integration:
+    # WP-C1 evaluation-correctness gate: SPARQL → AQL → live ArangoDB →
+    # binding comparison. Shape copied from arango-cypher-py's CI
+    # integration job; the password env var is spelled ARANGO_PASSWORD
+    # here (ARANGO_PASS is deprecated in this repo).
+    runs-on: ubuntu-latest
+    services:
+      arangodb:
+        image: arangodb:3.12
+        env:
+          ARANGO_ROOT_PASSWORD: openSesame
+        ports:
+          - 28529:8529
+        options: >-
+          --health-cmd "wget -qO- --header='Content-Type: application/json' --post-data '{\"username\":\"root\",\"password\":\"openSesame\"}' http://127.0.0.1:8529/_open/auth >/dev/null 2>&1"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 40
+    env:
+      ARANGO_URL: http://localhost:28529
+      ARANGO_USER: root
+      ARANGO_PASSWORD: openSesame
+      RUN_INTEGRATION: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,nl,service]"
+      - run: pytest tests/integration tests/cross tests/w3c/test_w3c_live_execution.py --tb=short -q
