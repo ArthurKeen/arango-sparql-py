@@ -47,13 +47,13 @@ __all__ = [
 UPDATE_KEYWORDS: tuple[str, ...] = (
     "INSERT",  # INSERT DATA, INSERT { … } WHERE { … }
     "DELETE",  # DELETE DATA, DELETE { … } WHERE { … }, DELETE WHERE { … }
-    "LOAD",    # LOAD <iri> INTO GRAPH <iri>
-    "CLEAR",   # CLEAR { GRAPH <iri> | DEFAULT | NAMED | ALL }
+    "LOAD",  # LOAD <iri> INTO GRAPH <iri>
+    "CLEAR",  # CLEAR { GRAPH <iri> | DEFAULT | NAMED | ALL }
     "CREATE",  # CREATE GRAPH <iri>
-    "DROP",    # DROP GRAPH <iri>
-    "COPY",    # COPY <src> TO <dst>
-    "MOVE",    # MOVE <src> TO <dst>
-    "ADD",     # ADD <src> TO <dst>
+    "DROP",  # DROP GRAPH <iri>
+    "COPY",  # COPY <src> TO <dst>
+    "MOVE",  # MOVE <src> TO <dst>
+    "ADD",  # ADD <src> TO <dst>
 )
 
 
@@ -99,6 +99,7 @@ def _strip_comments(text: str) -> str:
 
     return _COMMENT_OR_LITERAL_RE.sub(_swap, text)
 
+
 # Prologue declarations — ``BASE <iri>`` and ``PREFIX prefix: <iri>``.
 # Both are case-insensitive per the grammar. The prologue can appear
 # only at the *start* of a query (before any other keyword), so we
@@ -137,7 +138,7 @@ def strip_prologue_and_comments(query: str) -> str:
         match = _PROLOGUE_RE.match(cleaned)
         if not match:
             break
-        cleaned = cleaned[match.end():]
+        cleaned = cleaned[match.end() :]
 
     return cleaned.lstrip()
 
@@ -176,7 +177,7 @@ def is_sparql_update(query: str) -> bool:
         # leading WITH per the grammar; if the *rest* of the body
         # contains an Update keyword anywhere in its first 256
         # chars, it's an Update form.
-        rest = body[len("WITH"):]
+        rest = body[len("WITH") :]
         return bool(_UPDATE_KEYWORD_RE.search(rest[:256]))
 
     return leading.upper() in UPDATE_KEYWORDS

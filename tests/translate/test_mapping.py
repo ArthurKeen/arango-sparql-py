@@ -312,10 +312,7 @@ def test_from_wire_dict_preserves_unknown_top_level_keys() -> None:
 
 
 def test_from_wire_dict_with_inline_owl() -> None:
-    ttl = (
-        "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n"
-        "<http://example/Person> a owl:Class .\n"
-    )
+    ttl = "@prefix owl: <http://www.w3.org/2002/07/owl#> .\n<http://example/Person> a owl:Class .\n"
     b = mapping_from_wire_dict({"owlTurtle": ttl})
     assert b.owl_turtle == ttl
 
@@ -347,9 +344,7 @@ def test_from_wire_dict_rejects_non_dict_physical_mapping() -> None:
 
 def test_from_wire_dict_rejects_non_dict_entities() -> None:
     with pytest.raises(MappingError) as exc:
-        mapping_from_wire_dict(
-            {"physicalMapping": {"entities": [{"Person": {}}], "relationships": {}}}
-        )
+        mapping_from_wire_dict({"physicalMapping": {"entities": [{"Person": {}}], "relationships": {}}})
     assert "entities" in str(exc.value)
 
 

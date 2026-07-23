@@ -85,14 +85,10 @@ def test_subselect_golden(
        (key ordering, UNDEF handling) would change the bind-vars
        dict in a way the equality check catches.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -128,16 +124,11 @@ def test_subselect_class_bound_subject() -> None:
     refuse with ``SchemaResolutionError``)."""
     resolver = SchemaResolver.from_turtle(_PG_PERSON_OWL)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?s WHERE { { SELECT ?s WHERE { ?s a :Person } } }",
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { { SELECT ?s WHERE { ?s a :Person } } }",
         resolver=resolver,
     )
     assert result.aql == (
-        "FOR row2 IN (\n"
-        "  FOR doc1 IN @@c1_Person\n"
-        "  RETURN { s: doc1._uri }\n"
-        ")\n"
-        "RETURN { s: row2.s }"
+        "FOR row2 IN (\n  FOR doc1 IN @@c1_Person\n  RETURN { s: doc1._uri }\n)\nRETURN { s: row2.s }"
     ), result.aql
     assert result.bind_vars == {"@c1_Person": "Person"}
 

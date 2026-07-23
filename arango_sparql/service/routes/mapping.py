@@ -108,9 +108,7 @@ def _resolve_max_bytes() -> int:
 # ---------------------------------------------------------------------------
 
 
-async def _read_import_body(
-    request: Request, max_bytes: int
-) -> tuple[str, str | None]:
+async def _read_import_body(request: Request, max_bytes: int) -> tuple[str, str | None]:
     """Pull the raw bytes off *request*, enforce the byte ceiling,
     and decode into a ``(turtle, source_notes)`` tuple.
 
@@ -147,9 +145,7 @@ async def _read_import_body(
             },
         )
 
-    content_type = (
-        request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
-    )
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].strip().lower()
 
     # JSON envelope wins when explicit. ``application/json`` and the
     # legacy ``application/x-www-form-urlencoded`` (some fetch
@@ -179,9 +175,7 @@ async def _read_import_body(
             raise HTTPException(
                 status_code=422,
                 detail={
-                    "error": (
-                        "JSON body must be {turtle: str, source_notes?: str}"
-                    ),
+                    "error": ("JSON body must be {turtle: str, source_notes?: str}"),
                     "code": "E_OWL_BAD_JSON",
                 },
             )
@@ -196,8 +190,7 @@ async def _read_import_body(
             status_code=422,
             detail={
                 "error": (
-                    "request body is not valid UTF-8; supply Turtle as "
-                    "UTF-8 or wrap it in a JSON envelope"
+                    "request body is not valid UTF-8; supply Turtle as UTF-8 or wrap it in a JSON envelope"
                 ),
                 "code": "E_OWL_NOT_UTF8",
             },
@@ -359,10 +352,7 @@ def export_owl(
         raise HTTPException(
             status_code=422,
             detail={
-                "error": (
-                    "Either 'mapping' (wire dict) or 'ontology_ttl' "
-                    "(Turtle string) must be supplied."
-                ),
+                "error": ("Either 'mapping' (wire dict) or 'ontology_ttl' (Turtle string) must be supplied."),
                 "code": "E_OWL_EXPORT_EMPTY",
             },
         )

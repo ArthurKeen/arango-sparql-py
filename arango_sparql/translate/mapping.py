@@ -146,9 +146,7 @@ RelationshipStyle = Literal["DEDICATED_COLLECTION", "GENERIC_WITH_TYPE", "RPT_ED
 #   produced by a schema-mapping tool (e.g. r2g). Trusted like
 #   ``imported_owl`` / ``analyzer`` (deterministic, schema-derived), not
 #   refused by the heuristic guard. See :mod:`arango_sparql.translate.csi`.
-MappingSourceKind = Literal[
-    "analyzer", "heuristic", "manual", "imported_owl", "imported_csi"
-]
+MappingSourceKind = Literal["analyzer", "heuristic", "manual", "imported_owl", "imported_csi"]
 
 
 # ---------------------------------------------------------------------------
@@ -214,11 +212,7 @@ class MappingBundle:
         dict when the bundle has no relationship mappings yet.
         """
 
-        out = (
-            self.physical_mapping.get("relationships", {})
-            if self.physical_mapping
-            else {}
-        )
+        out = self.physical_mapping.get("relationships", {}) if self.physical_mapping else {}
         return out if isinstance(out, dict) else {}
 
 
@@ -289,9 +283,7 @@ def _normalise_top_level(d: dict[str, Any]) -> dict[str, Any]:
                 f"camelCase and snake_case spellings present)"
             )
         if canonical in out:
-            raise MappingError(
-                f"Mapping bundle has duplicate {canonical!r} key"
-            )
+            raise MappingError(f"Mapping bundle has duplicate {canonical!r} key")
         out[canonical] = v
     return out
 
@@ -310,10 +302,7 @@ def _normalise_spec(spec: Any, *, label: str, where: str) -> dict[str, Any]:
     """
 
     if not isinstance(spec, dict):
-        raise MappingError(
-            f"physicalMapping.{where}[{label!r}] must be a dict, got "
-            f"{type(spec).__name__!r}"
-        )
+        raise MappingError(f"physicalMapping.{where}[{label!r}] must be a dict, got {type(spec).__name__!r}")
     is_relationship = where == "relationships"
     out: dict[str, Any] = {}
     for k, v in spec.items():
@@ -334,28 +323,21 @@ def _normalise_spec(spec: Any, *, label: str, where: str) -> dict[str, Any]:
 
 def _normalise_physical_mapping(pm: Any) -> dict[str, Any]:
     if not isinstance(pm, dict):
-        raise MappingError(
-            f"physicalMapping must be a dict, got {type(pm).__name__!r}"
-        )
+        raise MappingError(f"physicalMapping must be a dict, got {type(pm).__name__!r}")
 
     entities = pm.get("entities") or {}
     relationships = pm.get("relationships") or {}
 
     if not isinstance(entities, dict):
-        raise MappingError(
-            f"physicalMapping.entities must be a dict, got "
-            f"{type(entities).__name__!r}"
-        )
+        raise MappingError(f"physicalMapping.entities must be a dict, got {type(entities).__name__!r}")
     if not isinstance(relationships, dict):
         raise MappingError(
-            f"physicalMapping.relationships must be a dict, got "
-            f"{type(relationships).__name__!r}"
+            f"physicalMapping.relationships must be a dict, got {type(relationships).__name__!r}"
         )
 
     out: dict[str, Any] = {
         "entities": {
-            label: _normalise_spec(spec, label=label, where="entities")
-            for label, spec in entities.items()
+            label: _normalise_spec(spec, label=label, where="entities") for label, spec in entities.items()
         },
         "relationships": {
             rtype: _normalise_spec(spec, label=rtype, where="relationships")
@@ -373,20 +355,13 @@ def _normalise_physical_mapping(pm: Any) -> dict[str, Any]:
 
 def _normalise_source(d: Any) -> MappingSource:
     if not isinstance(d, dict):
-        raise MappingError(
-            f"source must be a dict, got {type(d).__name__!r}"
-        )
+        raise MappingError(f"source must be a dict, got {type(d).__name__!r}")
     kind = d.get("kind")
     if kind not in _VALID_SOURCE_KINDS:
-        raise MappingError(
-            f"source.kind must be one of "
-            f"{sorted(_VALID_SOURCE_KINDS)!r}, got {kind!r}"
-        )
+        raise MappingError(f"source.kind must be one of {sorted(_VALID_SOURCE_KINDS)!r}, got {kind!r}")
     notes = d.get("notes")
     if notes is not None and not isinstance(notes, str):
-        raise MappingError(
-            f"source.notes must be a string, got {type(notes).__name__!r}"
-        )
+        raise MappingError(f"source.notes must be a string, got {type(notes).__name__!r}")
     return MappingSource(kind=kind, notes=notes)
 
 
@@ -409,18 +384,13 @@ def mapping_from_wire_dict(d: dict[str, Any] | None) -> MappingBundle:
     if d is None:
         return MappingBundle()
     if not isinstance(d, dict):
-        raise MappingError(
-            f"Mapping bundle must be a dict, got {type(d).__name__!r}"
-        )
+        raise MappingError(f"Mapping bundle must be a dict, got {type(d).__name__!r}")
 
     top = _normalise_top_level(d)
 
     conceptual_raw = top.get("conceptual_schema") or {}
     if not isinstance(conceptual_raw, dict):
-        raise MappingError(
-            f"conceptualSchema must be a dict, got "
-            f"{type(conceptual_raw).__name__!r}"
-        )
+        raise MappingError(f"conceptualSchema must be a dict, got {type(conceptual_raw).__name__!r}")
 
     physical_raw = top.get("physical_mapping")
     physical: dict[str, Any]
@@ -431,15 +401,11 @@ def mapping_from_wire_dict(d: dict[str, Any] | None) -> MappingBundle:
 
     metadata = top.get("metadata") or {}
     if not isinstance(metadata, dict):
-        raise MappingError(
-            f"metadata must be a dict, got {type(metadata).__name__!r}"
-        )
+        raise MappingError(f"metadata must be a dict, got {type(metadata).__name__!r}")
 
     owl_turtle = top.get("owl_turtle")
     if owl_turtle is not None and not isinstance(owl_turtle, str):
-        raise MappingError(
-            f"owlTurtle must be a string, got {type(owl_turtle).__name__!r}"
-        )
+        raise MappingError(f"owlTurtle must be a string, got {type(owl_turtle).__name__!r}")
 
     source_raw = top.get("source")
     source = _normalise_source(source_raw) if source_raw is not None else None

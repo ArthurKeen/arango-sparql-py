@@ -59,9 +59,7 @@ def test_rpt_golden(
     resolver = SchemaResolver.from_turtle(ontology_ttl)
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"

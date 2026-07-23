@@ -33,9 +33,7 @@ def _edge(frm: str, to: str, **extra: Any) -> dict[str, Any]:
 
 def test_dedicated_edge_traversal_binds_target_vertex_uri() -> None:
     aql = (
-        "FOR doc1 IN @@c1_Person\n"
-        "FOR v2, e3 IN OUTBOUND doc1 @@c2_knows\n"
-        "RETURN { a: doc1._uri, b: v2._uri }"
+        "FOR doc1 IN @@c1_Person\nFOR v2, e3 IN OUTBOUND doc1 @@c2_knows\nRETURN { a: doc1._uri, b: v2._uri }"
     )
     docs = {
         "Person": [_person("alice", "Alice"), _person("bob", "Bob")],
@@ -47,9 +45,7 @@ def test_dedicated_edge_traversal_binds_target_vertex_uri() -> None:
 
 def test_traversal_fans_out_over_multiple_edges() -> None:
     aql = (
-        "FOR doc1 IN @@c1_Person\n"
-        "FOR v2, e3 IN OUTBOUND doc1 @@c2_knows\n"
-        "RETURN { a: doc1._uri, b: v2._uri }"
+        "FOR doc1 IN @@c1_Person\nFOR v2, e3 IN OUTBOUND doc1 @@c2_knows\nRETURN { a: doc1._uri, b: v2._uri }"
     )
     docs = {
         "Person": [
@@ -96,9 +92,7 @@ def test_dangling_edge_is_dropped() -> None:
     # An edge whose ``_to`` points at no existing vertex yields no row,
     # matching OUTBOUND skipping endpoints it cannot resolve.
     aql = (
-        "FOR doc1 IN @@c1_Person\n"
-        "FOR v2, e3 IN OUTBOUND doc1 @@c2_knows\n"
-        "RETURN { a: doc1._uri, b: v2._uri }"
+        "FOR doc1 IN @@c1_Person\nFOR v2, e3 IN OUTBOUND doc1 @@c2_knows\nRETURN { a: doc1._uri, b: v2._uri }"
     )
     docs = {
         "Person": [_person("alice", "Alice")],
@@ -110,9 +104,7 @@ def test_dangling_edge_is_dropped() -> None:
 
 def test_start_vertex_with_no_outgoing_edges_yields_nothing() -> None:
     aql = (
-        "FOR doc1 IN @@c1_Person\n"
-        "FOR v2, e3 IN OUTBOUND doc1 @@c2_knows\n"
-        "RETURN { a: doc1._uri, b: v2._uri }"
+        "FOR doc1 IN @@c1_Person\nFOR v2, e3 IN OUTBOUND doc1 @@c2_knows\nRETURN { a: doc1._uri, b: v2._uri }"
     )
     docs = {
         "Person": [_person("alice", "Alice"), _person("bob", "Bob")],

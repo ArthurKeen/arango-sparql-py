@@ -58,9 +58,7 @@ class _MockAql:
         self.samples = samples
         self.queries_seen: list[tuple[str, dict[str, Any]]] = []
 
-    def execute(
-        self, query: str, bind_vars: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    def execute(self, query: str, bind_vars: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.queries_seen.append((query, dict(bind_vars or {})))
         if not bind_vars:
             return []
@@ -128,14 +126,8 @@ def _pg_db() -> MockDb:
     return MockDb(
         collections=[_doc("Person"), _doc("Company")],
         samples={
-            "Person": [
-                {"_key": str(i), "name": f"p{i}", "age": 20 + i}
-                for i in range(5)
-            ],
-            "Company": [
-                {"_key": str(i), "name": f"c{i}", "founded": 1990 + i}
-                for i in range(5)
-            ],
+            "Person": [{"_key": str(i), "name": f"p{i}", "age": 20 + i} for i in range(5)],
+            "Company": [{"_key": str(i), "name": f"c{i}", "founded": 1990 + i} for i in range(5)],
         },
     )
 
@@ -228,9 +220,7 @@ def _make_analyzer_mock(
         "relationships": [],
     }
     physical = physical or {
-        "entities": {
-            "Person": {"style": "COLLECTION", "collectionName": "Person"}
-        },
+        "entities": {"Person": {"style": "COLLECTION", "collectionName": "Person"}},
         "relationships": {},
     }
     metadata = metadata or {"source": "schema_analyzer_baseline"}
@@ -242,9 +232,7 @@ def _make_analyzer_mock(
             # Mirror the v0.6+ pydantic-model surface so
             # _coerce_metadata_to_dict can exercise its `.model_dump`
             # branch for at least one test.
-            self.metadata = SimpleNamespace(
-                model_dump=lambda by_alias=False: dict(metadata)
-            )
+            self.metadata = SimpleNamespace(model_dump=lambda by_alias=False: dict(metadata))
 
     class FakeAnalyzer:
         # Mirror the real ``AgenticSchemaAnalyzer`` constructor, which the
@@ -265,15 +253,11 @@ def _make_analyzer_mock(
         def analyze_physical_schema(self, _db: Any) -> _AnalysisResult:
             return _AnalysisResult()
 
-    def fake_export_mapping(
-        analysis: dict[str, Any], target: str = "cypher"
-    ) -> dict[str, Any]:
+    def fake_export_mapping(analysis: dict[str, Any], target: str = "cypher") -> dict[str, Any]:
         # Simulate the analyzer's pass-through export — for "cypher"
         # target, the conceptual + physical sub-trees come back
         # unchanged.
-        assert target == "cypher", (
-            f"acquire layer should request target=cypher, got {target!r}"
-        )
+        assert target == "cypher", f"acquire layer should request target=cypher, got {target!r}"
         return {
             "conceptualSchema": analysis["conceptualSchema"],
             "physicalMapping": analysis["physicalMapping"],
@@ -317,41 +301,29 @@ def _block_schema_analyzer(monkeypatch: pytest.MonkeyPatch) -> None:
     # import attempt has to resolve from scratch (and will fail
     # because of the meta-path finder we install below).
     for mod_name in list(sys.modules):
-        if mod_name == "schema_analyzer" or mod_name.startswith(
-            "schema_analyzer."
-        ):
+        if mod_name == "schema_analyzer" or mod_name.startswith("schema_analyzer."):
             monkeypatch.delitem(sys.modules, mod_name, raising=False)
 
     class _BlockSchemaAnalyzer:
         def find_module(self, fullname: str, path: Any = None) -> Any:
-            if fullname == "schema_analyzer" or fullname.startswith(
-                "schema_analyzer."
-            ):
+            if fullname == "schema_analyzer" or fullname.startswith("schema_analyzer."):
                 return self
             return None
 
         def load_module(self, fullname: str) -> ModuleType:
-            raise ImportError(
-                f"schema_analyzer is unavailable in this test "
-                f"(blocked at {fullname!r})"
-            )
+            raise ImportError(f"schema_analyzer is unavailable in this test (blocked at {fullname!r})")
 
         # Modern import system — the "find_spec" hook supersedes
         # "find_module"; we implement both for python 3.11.
         def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
-            if fullname == "schema_analyzer" or fullname.startswith(
-                "schema_analyzer."
-            ):
+            if fullname == "schema_analyzer" or fullname.startswith("schema_analyzer."):
                 from importlib.machinery import ModuleSpec
 
                 return ModuleSpec(fullname, self)
             return None
 
         def create_module(self, spec: Any) -> ModuleType | None:
-            raise ImportError(
-                f"schema_analyzer is unavailable in this test "
-                f"(blocked at {spec.name!r})"
-            )
+            raise ImportError(f"schema_analyzer is unavailable in this test (blocked at {spec.name!r})")
 
         def exec_module(self, module: ModuleType) -> None:
             raise ImportError("schema_analyzer is unavailable in this test")
@@ -371,12 +343,8 @@ def test_invalid_strategy_raises_value_error(bad: Any) -> None:
         acquire_mapping_bundle(_empty_db(), strategy=bad)  # type: ignore[arg-type]
 
 
-@pytest.mark.parametrize(
-    "good", ["auto", "analyzer", "heuristic"]
-)
-def test_valid_strategies_are_accepted(
-    good: Strategy, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.mark.parametrize("good", ["auto", "analyzer", "heuristic"])
+def test_valid_strategies_are_accepted(good: Strategy, monkeypatch: pytest.MonkeyPatch) -> None:
     """Each documented strategy at least dispatches without raising
     ValueError. We mock the analyzer for "analyzer"/"auto" so the
     test does not depend on a live ArangoDB.
@@ -420,9 +388,7 @@ def test_analyzer_path_passes_db_to_analyze_physical_schema(
             seen.append(db)
             return super().analyze_physical_schema(db)
 
-    _install_analyzer_mock(
-        monkeypatch, analyzer_cls=TracingAnalyzer, export_fn=fn
-    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=TracingAnalyzer, export_fn=fn)
     db = _empty_db()
     acquire_mapping_bundle(db, strategy="analyzer")
     assert seen == [db]
@@ -439,9 +405,7 @@ def test_analyzer_path_with_include_owl_carries_turtle(
         export_fn=fn,
         owl_fn=lambda _ad: owl_value,
     )
-    bundle = acquire_mapping_bundle(
-        _empty_db(), strategy="analyzer", include_owl=True
-    )
+    bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer", include_owl=True)
     assert bundle.owl_turtle == owl_value
 
 
@@ -455,12 +419,8 @@ def test_analyzer_path_with_owl_failure_returns_bundle_without_owl(
     def boom(_analysis_dict: dict[str, Any]) -> str:
         raise RuntimeError("owl export crashed")
 
-    _install_analyzer_mock(
-        monkeypatch, analyzer_cls=cls, export_fn=fn, owl_fn=boom
-    )
-    bundle = acquire_mapping_bundle(
-        _empty_db(), strategy="analyzer", include_owl=True
-    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn, owl_fn=boom)
+    bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer", include_owl=True)
     assert bundle.owl_turtle is None
 
 
@@ -480,9 +440,7 @@ def test_analyzer_path_without_include_owl_does_not_call_owl_export(
         export_fn=fn,
         owl_fn=tracing_owl,
     )
-    bundle = acquire_mapping_bundle(
-        _empty_db(), strategy="analyzer", include_owl=False
-    )
+    bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer", include_owl=False)
     assert bundle.owl_turtle is None
     assert calls == []
 
@@ -505,9 +463,7 @@ def test_analyzer_metadata_dict_shape_is_supported(
             res.metadata = {"source": "dict-shape"}
             return res
 
-    _install_analyzer_mock(
-        monkeypatch, analyzer_cls=DictMetaAnalyzer, export_fn=fn
-    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=DictMetaAnalyzer, export_fn=fn)
     bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer")
     assert bundle.metadata.get("source") == "dict-shape"
 
@@ -591,13 +547,12 @@ def test_auto_fallback_attaches_analyzer_not_installed_warning(
     bundle = acquire_mapping_bundle(_pg_db(), strategy="auto")
     warnings = bundle.metadata.get("warnings") or []
     assert any(
-        w.get("code") == W_ANALYZER_NOT_INSTALLED
-        and w.get("install_hint") == ANALYZER_INSTALL_HINT
+        w.get("code") == W_ANALYZER_NOT_INSTALLED and w.get("install_hint") == ANALYZER_INSTALL_HINT
         for w in warnings
     ), f"expected ANALYZER_NOT_INSTALLED warning, got {warnings!r}"
-    assert any(
-        w.get("code") == W_SCHEMA_HEURISTIC_FALLBACK for w in warnings
-    ), "heuristic provenance marker should still be present"
+    assert any(w.get("code") == W_SCHEMA_HEURISTIC_FALLBACK for w in warnings), (
+        "heuristic provenance marker should still be present"
+    )
 
 
 def test_explicit_heuristic_strategy_omits_install_hint_warning(
@@ -613,12 +568,8 @@ def test_explicit_heuristic_strategy_omits_install_hint_warning(
     monkeypatch.setattr(acquire_mod, "analyzer_available", lambda: True)
     bundle = acquire_mapping_bundle(_pg_db(), strategy="heuristic")
     warnings = bundle.metadata.get("warnings") or []
-    assert not any(
-        w.get("code") == W_ANALYZER_NOT_INSTALLED for w in warnings
-    )
-    assert any(
-        w.get("code") == W_SCHEMA_HEURISTIC_FALLBACK for w in warnings
-    )
+    assert not any(w.get("code") == W_ANALYZER_NOT_INSTALLED for w in warnings)
+    assert any(w.get("code") == W_SCHEMA_HEURISTIC_FALLBACK for w in warnings)
 
 
 def test_heuristic_strategy_never_calls_analyzer(
@@ -630,9 +581,7 @@ def test_heuristic_strategy_never_calls_analyzer(
     """
 
     def boom(*_: Any, **__: Any) -> Any:
-        raise AssertionError(
-            "analyzer should not have been touched in heuristic mode"
-        )
+        raise AssertionError("analyzer should not have been touched in heuristic mode")
 
     import schema_analyzer
 
@@ -693,9 +642,7 @@ def test_rpt_enrichment_tags_metadata(
     assert "rpt" in detected
     enrichment = bundle.metadata.get("enrichmentApplied") or []
     assert any(
-        e.get("kind") == "rpt_overlay"
-        and "_triples" in (e.get("collections") or [])
-        for e in enrichment
+        e.get("kind") == "rpt_overlay" and "_triples" in (e.get("collections") or []) for e in enrichment
     )
 
 
@@ -725,9 +672,7 @@ def test_rpt_enrichment_synthesizes_typed_object_property_relationships(
 
     # The synthesized relationship names are recorded for observability.
     enrichment = bundle.metadata.get("enrichmentApplied") or []
-    assert any(
-        "authored" in (e.get("relationships") or []) for e in enrichment
-    )
+    assert any("authored" in (e.get("relationships") or []) for e in enrichment)
 
 
 def test_rpt_enrichment_does_not_clobber_existing_relationship(
@@ -775,7 +720,7 @@ def _pg_edge_db() -> MockDb:
     """
 
     persons = [{"_key": str(i), "name": f"p{i}"} for i in range(5)]
-    knows = [{"_from": f"Person/{i}", "_to": f"Person/{i+1}"} for i in range(4)]
+    knows = [{"_from": f"Person/{i}", "_to": f"Person/{i + 1}"} for i in range(4)]
     return MockDb(
         collections=[_doc("Person"), _edge("knows")],
         samples={"Person": persons, "knows": knows},
@@ -811,8 +756,7 @@ def test_edge_endpoint_enrichment_fills_any_on_analyzer_bundle(
     assert knows["toEntity"] == "Person"
     enrichment = bundle.metadata.get("enrichmentApplied") or []
     assert any(
-        e.get("kind") == "edge_endpoint_inference"
-        and "knows" in (e.get("relationships") or [])
+        e.get("kind") == "edge_endpoint_inference" and "knows" in (e.get("relationships") or [])
         for e in enrichment
     )
 
@@ -857,9 +801,7 @@ def test_edge_endpoint_enrichment_noop_when_no_relationships(
     _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
     bundle = acquire_mapping_bundle(_pg_db(), strategy="analyzer")
     enrichment = bundle.metadata.get("enrichmentApplied") or []
-    assert not any(
-        e.get("kind") == "edge_endpoint_inference" for e in enrichment
-    )
+    assert not any(e.get("kind") == "edge_endpoint_inference" for e in enrichment)
 
 
 def test_rpt_enrichment_is_safe_when_detect_throws(
@@ -880,9 +822,7 @@ def test_rpt_enrichment_is_safe_when_detect_throws(
     assert isinstance(bundle, MappingBundle)
     # The analyzer-supplied entity is preserved; no RPT keys appear.
     entities = bundle.physical_mapping.get("entities") or {}
-    assert any(
-        spec.get("style") == "COLLECTION" for spec in entities.values()
-    )
+    assert any(spec.get("style") == "COLLECTION" for spec in entities.values())
 
 
 # ---------------------------------------------------------------------------
@@ -896,9 +836,7 @@ def test_acquisition_timestamp_is_stamped_on_analyzer_bundle(
     cls, fn = _make_analyzer_mock()
     _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
     when = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
-    bundle = acquire_mapping_bundle(
-        _empty_db(), strategy="analyzer", now=when
-    )
+    bundle = acquire_mapping_bundle(_empty_db(), strategy="analyzer", now=when)
     assert bundle.metadata.get("acquisitionTimestamp") == when.isoformat()
 
 
@@ -913,15 +851,9 @@ def test_force_refresh_flag_is_a_no_op_at_acquire_layer(
     cls, fn = _make_analyzer_mock()
     _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
     when = datetime(2026, 5, 1, 12, 0, 0, tzinfo=UTC)
-    a = acquire_mapping_bundle(
-        _empty_db(), strategy="analyzer", force_refresh=False, now=when
-    )
-    b = acquire_mapping_bundle(
-        _empty_db(), strategy="analyzer", force_refresh=True, now=when
-    )
-    assert a.metadata.get("acquisitionTimestamp") == b.metadata.get(
-        "acquisitionTimestamp"
-    )
+    a = acquire_mapping_bundle(_empty_db(), strategy="analyzer", force_refresh=False, now=when)
+    b = acquire_mapping_bundle(_empty_db(), strategy="analyzer", force_refresh=True, now=when)
+    assert a.metadata.get("acquisitionTimestamp") == b.metadata.get("acquisitionTimestamp")
 
 
 # ---------------------------------------------------------------------------
@@ -1006,9 +938,7 @@ def test_db_shape_fingerprint_excludes_l2_cache_collection(
         seen["exclude"] = exclude_collections
         return "ok"
 
-    monkeypatch.setattr(
-        schema_analyzer, "fingerprint_physical_shape", fake_shape
-    )
+    monkeypatch.setattr(schema_analyzer, "fingerprint_physical_shape", fake_shape)
     db_shape_fingerprint(_empty_db())
     assert seen["exclude"] == {"arango_sparql_schema_cache"}
 
@@ -1026,9 +956,7 @@ def test_db_counts_fingerprint_handles_old_analyzer_signature(
     def old_signature(_db: Any) -> str:
         return "compat-fp"
 
-    monkeypatch.setattr(
-        schema_analyzer, "fingerprint_physical_counts", old_signature
-    )
+    monkeypatch.setattr(schema_analyzer, "fingerprint_physical_counts", old_signature)
     assert db_counts_fingerprint(_empty_db()) == "compat-fp"
 
 
@@ -1044,9 +972,7 @@ def test_db_shape_fingerprint_returns_none_on_unexpected_error(
     def explode(_db: Any, exclude_collections: set[str] | None = None) -> str:
         raise RuntimeError("analyzer disk full")
 
-    monkeypatch.setattr(
-        schema_analyzer, "fingerprint_physical_shape", explode
-    )
+    monkeypatch.setattr(schema_analyzer, "fingerprint_physical_shape", explode)
     assert db_shape_fingerprint(_empty_db()) is None
 
 

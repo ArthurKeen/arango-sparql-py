@@ -33,9 +33,7 @@ _FOR_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+@@(\w+)")
 # edges whose ``_from`` equals the start's ``_id`` and binds the target
 # vertex (``v2``) and the edge (``e3``). DEDICATED_COLLECTION emits this
 # bare; GENERIC_WITH_TYPE follows it with a ``FILTER e3.<field> == @x``.
-_FOR_TRAVERSAL_RE = re.compile(
-    r"FOR\s+(\w+)\s*,\s*(\w+)\s+IN\s+OUTBOUND\s+(\w+)\s+@@(\w+)"
-)
+_FOR_TRAVERSAL_RE = re.compile(r"FOR\s+(\w+)\s*,\s*(\w+)\s+IN\s+OUTBOUND\s+(\w+)\s+@@(\w+)")
 _FILTER_RE = re.compile(r"FILTER\s+(.+)$")
 _LET_RE = re.compile(r"LET\s+(\w+)\s*=\s*(.+)$")
 _RETURN_RE = re.compile(r"RETURN(?:\s+(DISTINCT))?\s+\{\s*(.+?)\s*\}\s*$")
@@ -484,9 +482,7 @@ def run_aql_subset(
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             v_alias, e_alias, start_alias, edge_var = m.groups()
-            pre_collect_plan.append(
-                ("OUTBOUND", (v_alias, e_alias, start_alias), bind_vars[f"@{edge_var}"])
-            )
+            pre_collect_plan.append(("OUTBOUND", (v_alias, e_alias, start_alias), bind_vars[f"@{edge_var}"]))
         elif m := _FOR_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
@@ -548,10 +544,7 @@ def run_aql_subset(
     # vertex regardless of which vertex collection holds it — exactly
     # how ArangoDB resolves a traversal endpoint by document handle.
     id_index: dict[Any, dict[str, Any]] = {
-        d["_id"]: d
-        for coll_docs in docs.values()
-        for d in coll_docs
-        if isinstance(d, dict) and "_id" in d
+        d["_id"]: d for coll_docs in docs.values() for d in coll_docs if isinstance(d, dict) and "_id" in d
     }
 
     envs: list[tuple[dict[str, dict[str, Any]], dict[str, Any]]] = []
@@ -602,18 +595,14 @@ def run_aql_subset(
         elif kind == "SUBQUERY_LEN":
             # Correlated probe: run the inner query with this outer row's
             # environment in scope, bind <alias> to its row count.
-            inner_rows = run_aql_subset(
-                b, bind_vars, docs, _outer_env=env, _outer_let=let_env
-            )
+            inner_rows = run_aql_subset(b, bind_vars, docs, _outer_env=env, _outer_let=let_env)
             run_plan(idx + 1, env, {**let_env, a: len(inner_rows)})
         elif kind == "SUBQUERY_ROWS":
             # Correlated row-LIST subquery (cross-subject OPTIONAL scan):
             # run the inner query with this outer row in scope and bind
             # <alias> to the resulting list of row dicts so the following
             # FOR-inline can iterate (and ``[null]``-pad) it.
-            inner_rows = run_aql_subset(
-                b, bind_vars, docs, _outer_env=env, _outer_let=let_env
-            )
+            inner_rows = run_aql_subset(b, bind_vars, docs, _outer_env=env, _outer_let=let_env)
             run_plan(idx + 1, env, {**let_env, a: inner_rows})
         else:  # LET
             assert b is not None
@@ -658,9 +647,7 @@ def run_aql_subset(
                         break
                 elif kind == "SUBQUERY_LEN":
                     # Stored as ("SUBQUERY_LEN", alias, inner_aql).
-                    inner_rows = run_aql_subset(
-                        field_b, bind_vars, docs, _outer_env=env, _outer_let=let_env
-                    )
+                    inner_rows = run_aql_subset(field_b, bind_vars, docs, _outer_env=env, _outer_let=let_env)
                     let_env[field_a] = len(inner_rows)
                 elif kind == "SUBQUERY_ROWS":
                     # Stored as ("SUBQUERY_ROWS", alias, inner_aql) — bind

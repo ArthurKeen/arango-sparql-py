@@ -178,8 +178,7 @@ def _summary_from_bundle(bundle: MappingBundle) -> dict[str, Any]:
         entry: dict[str, Any] = {
             "label": label,
             "style": style,
-            "collection": spec.get("collectionName")
-            or spec.get("triplesCollection"),
+            "collection": spec.get("collectionName") or spec.get("triplesCollection"),
             "property_count": _count_properties(spec),
         }
         if style == "LABEL":
@@ -255,11 +254,7 @@ def _last_acquired_at(bundle: MappingBundle) -> str | None:
     """
 
     metadata = bundle.metadata or {}
-    return (
-        metadata.get("acquisitionTimestamp")
-        or metadata.get("timestamp")
-        or metadata.get("acquiredAt")
-    )
+    return metadata.get("acquisitionTimestamp") or metadata.get("timestamp") or metadata.get("acquiredAt")
 
 
 # ---------------------------------------------------------------------------
@@ -277,10 +272,7 @@ def _strategy_or_422(value: str) -> Strategy:
         raise HTTPException(
             status_code=422,
             detail={
-                "error": (
-                    f"strategy must be 'auto', 'analyzer', or "
-                    f"'heuristic', got {value!r}"
-                ),
+                "error": (f"strategy must be 'auto', 'analyzer', or 'heuristic', got {value!r}"),
                 "code": "E_SCHEMA_STRATEGY_INVALID",
             },
         )
@@ -606,9 +598,7 @@ def schema_properties(
     )
 
 
-def _sample_properties(
-    db: Any, collection_name: str, sample_size: int
-) -> dict[str, dict[str, Any]]:
+def _sample_properties(db: Any, collection_name: str, sample_size: int) -> dict[str, dict[str, Any]]:
     """Sample documents from *collection_name* and infer property
     name + dominant type + required-flag.
 
@@ -625,9 +615,7 @@ def _sample_properties(
         )
         docs = list(cursor)
     except Exception as exc:
-        logger.info(
-            "sample failed for collection %r: %s", collection_name, exc
-        )
+        logger.info("sample failed for collection %r: %s", collection_name, exc)
         return {}
 
     if not docs:
@@ -696,10 +684,7 @@ def _schema_summary_impl(
         raise HTTPException(
             status_code=422,
             detail={
-                "error": (
-                    "Either 'mapping' (wire dict) or 'ontology_ttl' "
-                    "(Turtle string) must be supplied."
-                ),
+                "error": ("Either 'mapping' (wire dict) or 'ontology_ttl' (Turtle string) must be supplied."),
                 "code": "E_SCHEMA_SUMMARY_EMPTY",
             },
         )
@@ -722,9 +707,7 @@ def _schema_summary_impl(
         raise HTTPException(
             status_code=422,
             detail={
-                "error": _sanitize_error(
-                    f"failed to parse mapping input: {exc}"
-                ),
+                "error": _sanitize_error(f"failed to parse mapping input: {exc}"),
                 "code": "E_SCHEMA_SUMMARY_PARSE",
             },
         ) from exc
@@ -849,9 +832,7 @@ def schema_statistics(
         ) from exc
 
     stats = (bundle.metadata or {}).get("statistics") or {}
-    available = bool(
-        isinstance(stats, dict) and (stats.get("relationships") or stats.get("entities"))
-    )
+    available = bool(isinstance(stats, dict) and (stats.get("relationships") or stats.get("entities")))
     log_endpoint_timing(
         "/schema/statistics",
         round((time.perf_counter() - t0) * 1000, 1),
@@ -904,9 +885,7 @@ def schema_status(
         needs_full = True
     else:
         cached_fp = cached_entry.fingerprint
-        cached_block = SchemaFingerprintBlock(
-            shape=cached_fp.shape, counts=cached_fp.counts
-        )
+        cached_block = SchemaFingerprintBlock(shape=cached_fp.shape, counts=cached_fp.counts)
         if current_shape is None or current_counts is None:
             # Cannot compute live fingerprints — degrade to "we
             # have a cache but cannot tell if it's stale". Treat
@@ -914,8 +893,7 @@ def schema_status(
             # the log so an operator notices the analyzer-down
             # condition.
             logger.info(
-                "schema_status: live fingerprints unavailable; "
-                "reporting cache as stable for db=%r",
+                "schema_status: live fingerprints unavailable; reporting cache as stable for db=%r",
                 db_name,
             )
             status = "unchanged"
@@ -933,11 +911,7 @@ def schema_status(
             unchanged = drift is FingerprintDrift.UNCHANGED
             needs_full = drift is FingerprintDrift.SHAPE_CHANGED
 
-    last_acquired = (
-        _last_acquired_at(cached_entry.bundle)
-        if cached_entry is not None
-        else None
-    )
+    last_acquired = _last_acquired_at(cached_entry.bundle) if cached_entry is not None else None
 
     log_endpoint_timing(
         "/schema/status",
@@ -950,9 +924,7 @@ def schema_status(
         status=status,
         unchanged=unchanged,
         needs_full_rebuild=needs_full,
-        current=SchemaFingerprintBlock(
-            shape=current_shape, counts=current_counts
-        ),
+        current=SchemaFingerprintBlock(shape=current_shape, counts=current_counts),
         cached=cached_block,
         last_acquired_at=last_acquired,
         db_name=db_name or None,
@@ -1029,11 +1001,7 @@ def schema_force_reacquire(
     # disabled heuristic fallback AND the analyzer is missing, we
     # cannot serve any path even when ``strategy="auto"`` would
     # normally degrade to heuristic.
-    if (
-        typed_strategy == "auto"
-        and not _allow_heuristic_fallback()
-        and not analyzer_available()
-    ):
+    if typed_strategy == "auto" and not _allow_heuristic_fallback() and not analyzer_available():
         raise HTTPException(
             status_code=503,
             detail={

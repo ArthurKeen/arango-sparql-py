@@ -223,9 +223,7 @@ def _matches(offer: str, supported: str) -> bool:
     return False
 
 
-def negotiate_media_type(
-    accept: str | None, form: QueryForm
-) -> tuple[str | None, list[MediaTypeOffer]]:
+def negotiate_media_type(accept: str | None, form: QueryForm) -> tuple[str | None, list[MediaTypeOffer]]:
     """Pick the best media type for *form* against the client's
     ``Accept`` header.
 

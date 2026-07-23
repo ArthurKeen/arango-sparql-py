@@ -84,14 +84,10 @@ def test_builtin_megabundle_golden(
        regression that minted distinct vars per occurrence
        would silently drop the implicit join and over-return.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -114,9 +110,7 @@ def test_bnode_distinct_labels_same_bgp_no_join() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        "PREFIX : <http://ex.org/> SELECT ?s ?x WHERE { "
-        "?s :p _:b0 . ?x :q _:b1 "
-        "}",
+        "PREFIX : <http://ex.org/> SELECT ?s ?x WHERE { ?s :p _:b0 . ?x :q _:b1 }",
         resolver=resolver,
     )
     # Two FORs (one per subject); no JOIN FILTER tying the two
@@ -153,9 +147,7 @@ def test_bnode_same_label_different_bgps_no_cross_scope_join() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        "PREFIX : <http://ex.org/> SELECT ?x ?y WHERE { "
-        "{ _:b0 :p ?x } UNION { _:b0 :q ?y } "
-        "}",
+        "PREFIX : <http://ex.org/> SELECT ?x ?y WHERE { { _:b0 :p ?x } UNION { _:b0 :q ?y } }",
         resolver=resolver,
     )
     # Two UNION arms; each carries one FOR for its BNode anchor.
@@ -167,13 +159,9 @@ def test_bnode_same_label_different_bgps_no_cross_scope_join() -> None:
     # No JOIN FILTER between the two arms' BNode anchors —
     # cross-BGP existentials are independent per spec.
     aql_lines = result.aql.splitlines()
-    arm_filter_lines = [
-        line for line in aql_lines
-        if line.strip().startswith("FILTER doc")
-    ]
-    assert len(arm_filter_lines) == 0, (
-        "cross-arm BNode existential incorrectly joined:\n"
-        + "\n".join(arm_filter_lines)
+    arm_filter_lines = [line for line in aql_lines if line.strip().startswith("FILTER doc")]
+    assert len(arm_filter_lines) == 0, "cross-arm BNode existential incorrectly joined:\n" + "\n".join(
+        arm_filter_lines
     )
 
 
@@ -187,8 +175,7 @@ def test_sha256_emits_native_aql_function() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        "PREFIX : <http://ex.org/> SELECT (SHA256(?n) AS ?x) "
-        "WHERE { ?s :n ?n }",
+        "PREFIX : <http://ex.org/> SELECT (SHA256(?n) AS ?x) WHERE { ?s :n ?n }",
         resolver=resolver,
     )
     assert "SHA256(doc1.n)" in result.aql

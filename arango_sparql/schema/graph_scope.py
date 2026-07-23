@@ -34,9 +34,7 @@ logger = logging.getLogger(__name__)
 __all__ = ["scope_bundle_to_graph"]
 
 
-def _membership_collections(
-    bundle: MappingBundle, graph_name: str
-) -> tuple[set[str], set[str]] | None:
+def _membership_collections(bundle: MappingBundle, graph_name: str) -> tuple[set[str], set[str]] | None:
     """Return ``(vertex, edge)`` collections from per-entry ``graphs`` tags.
 
     ``None`` when no entity or relationship in the bundle carries a
@@ -74,9 +72,7 @@ def _membership_collections(
     return vertex, edges
 
 
-def _live_graph_collections(
-    db: Any, graph_name: str
-) -> tuple[set[str], set[str]] | None:
+def _live_graph_collections(db: Any, graph_name: str) -> tuple[set[str], set[str]] | None:
     """Read a named graph's vertex/edge collections straight from *db*.
 
     Returns ``None`` when the graph is absent or the driver call fails —
@@ -122,19 +118,12 @@ def _filter_conceptual(
 
     ents = conceptual.get("entities")
     if isinstance(ents, list):
-        out["entities"] = [
-            e
-            for e in ents
-            if not isinstance(e, dict) or e.get("name") in kept_entities
-        ]
+        out["entities"] = [e for e in ents if not isinstance(e, dict) or e.get("name") in kept_entities]
 
     rels = conceptual.get("relationships")
     if isinstance(rels, list):
         out["relationships"] = [
-            r
-            for r in rels
-            if not isinstance(r, dict)
-            or (r.get("type") or r.get("name")) in kept_rels
+            r for r in rels if not isinstance(r, dict) or (r.get("type") or r.get("name")) in kept_rels
         ]
 
     return out
@@ -155,28 +144,19 @@ def _filter_bundle(
     kept_rels = {
         name
         for name, spec in bundle.relationships().items()
-        if isinstance(spec, dict)
-        and (spec.get("edgeCollectionName") or spec.get("collectionName")) in edges
+        if isinstance(spec, dict) and (spec.get("edgeCollectionName") or spec.get("collectionName")) in edges
     }
 
     physical = dict(bundle.physical_mapping or {})
-    physical["entities"] = {
-        name: spec
-        for name, spec in bundle.entities().items()
-        if name in kept_entities
-    }
+    physical["entities"] = {name: spec for name, spec in bundle.entities().items() if name in kept_entities}
     physical["relationships"] = {
-        name: spec
-        for name, spec in bundle.relationships().items()
-        if name in kept_rels
+        name: spec for name, spec in bundle.relationships().items() if name in kept_rels
     }
 
     metadata = dict(bundle.metadata or {})
     metadata["graphScope"] = graph_name
 
-    conceptual = _filter_conceptual(
-        bundle.conceptual_schema or {}, kept_entities, kept_rels
-    )
+    conceptual = _filter_conceptual(bundle.conceptual_schema or {}, kept_entities, kept_rels)
 
     return dataclasses.replace(
         bundle,
@@ -186,9 +166,7 @@ def _filter_bundle(
     )
 
 
-def scope_bundle_to_graph(
-    db: Any, bundle: MappingBundle, graph_name: str | None
-) -> MappingBundle:
+def scope_bundle_to_graph(db: Any, bundle: MappingBundle, graph_name: str | None) -> MappingBundle:
     """Down-select *bundle* to the named graph *graph_name*.
 
     A ``None`` / empty *graph_name* is a no-op (returns *bundle*
@@ -205,8 +183,7 @@ def scope_bundle_to_graph(
 
     if resolved is None:
         logger.warning(
-            "could not resolve collections for graph %r; "
-            "returning unfiltered schema bundle",
+            "could not resolve collections for graph %r; returning unfiltered schema bundle",
             graph_name,
         )
         return bundle

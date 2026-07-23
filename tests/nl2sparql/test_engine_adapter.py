@@ -60,8 +60,7 @@ WIDGET_QUERY = "PREFIX : <http://ex.org/>\nSELECT ?s WHERE { ?s a :Widget }"
 GOOD_QUERY = "PREFIX : <http://ex.org/>\nSELECT ?s WHERE { ?s a :Person }"
 BAD_QUERY = "SELECT WHERE { broken"
 UNSUPPORTED_QUERY = (
-    "PREFIX : <http://ex.org/>\n"
-    "SELECT ?s WHERE { SERVICE <http://other.example/sparql> { ?s a :Person } }"
+    "PREFIX : <http://ex.org/>\nSELECT ?s WHERE { SERVICE <http://other.example/sparql> { ?s a :Person } }"
 )
 
 

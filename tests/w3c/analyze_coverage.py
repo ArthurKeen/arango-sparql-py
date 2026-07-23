@@ -378,9 +378,7 @@ def _format_markdown(
             # other three buckets are always shown even at zero so the
             # column structure is stable across runs.
             continue
-        lines.append(
-            f"| `{bucket}` | {count} | {_BUCKET_IMPLICATION[bucket]} |"
-        )
+        lines.append(f"| `{bucket}` | {count} | {_BUCKET_IMPLICATION[bucket]} |")
     lines.append("")
 
     lines.append("## Top XFAIL reasons")
@@ -390,9 +388,7 @@ def _format_markdown(
     for reason, count in aggregate.most_common(15):
         bucket = _bucket(reason)
         implication = _BUCKET_IMPLICATION[bucket]
-        lines.append(
-            f"| {count} | `{bucket}` | `{reason}` | {implication} |"
-        )
+        lines.append(f"| {count} | `{bucket}` | `{reason}` | {implication} |")
     if not aggregate:
         lines.append("| _(none)_ |  |  |  |")
     lines.append("")

@@ -55,9 +55,7 @@ def _bundle_pg(label: str = "Person") -> MappingBundle:
 
     return MappingBundle(
         conceptual_schema={
-            "entities": [
-                {"name": label, "labels": [label], "properties": []}
-            ],
+            "entities": [{"name": label, "labels": [label], "properties": []}],
             "relationships": [],
         },
         physical_mapping={
@@ -135,9 +133,7 @@ class _FakeAql:
         self._samples = samples or {}
         self.queries_seen: list[tuple[str, dict[str, Any]]] = []
 
-    def execute(
-        self, query: str, bind_vars: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    def execute(self, query: str, bind_vars: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.queries_seen.append((query, dict(bind_vars or {})))
         if not bind_vars:
             return []
@@ -180,10 +176,7 @@ class _FakeArangoClient:
     ) -> _FakeDb:
         if name not in self._dbs:
             samples = {
-                "Person": [
-                    {"_key": str(i), "name": f"p{i}", "age": 20 + i}
-                    for i in range(10)
-                ],
+                "Person": [{"_key": str(i), "name": f"p{i}", "age": 20 + i} for i in range(10)],
             }
             self._dbs[name] = _FakeDb(name=name, samples=samples)
         return self._dbs[name]
@@ -228,9 +221,7 @@ def client() -> TestClient:
 def fake_arango(monkeypatch: pytest.MonkeyPatch):
     _FakeArangoClient.instances.clear()
     monkeypatch.setattr(svc, "ArangoClient", _FakeArangoClient)
-    monkeypatch.setenv(
-        "ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS", "localhost,127.0.0.1"
-    )
+    monkeypatch.setenv("ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS", "localhost,127.0.0.1")
     return _FakeArangoClient
 
 
@@ -287,9 +278,7 @@ def stub_acquire(monkeypatch: pytest.MonkeyPatch):
             raise state["raise_exc"]
         return state["bundle"]
 
-    monkeypatch.setattr(
-        schema_route_mod, "acquire_mapping_bundle", fake_acquire
-    )
+    monkeypatch.setattr(schema_route_mod, "acquire_mapping_bundle", fake_acquire)
     return state
 
 
@@ -346,9 +335,7 @@ def test_introspect_force_bypasses_cache(
 ) -> None:
     headers = {"X-Arango-Session": session_token}
     client.get("/schema/introspect", headers=headers)
-    resp = client.get(
-        "/schema/introspect?force=true", headers=headers
-    )
+    resp = client.get("/schema/introspect?force=true", headers=headers)
     assert resp.status_code == 200
     assert resp.json()["cache_hit"] is False
     assert len(stub_acquire["calls"]) == 2
@@ -377,9 +364,7 @@ def test_introspect_forwards_session_graph_scope(
     assert stub_acquire["calls"][-1]["graph_name"] is None
 
 
-def test_introspect_strategy_invalid_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_introspect_strategy_invalid_returns_422(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/schema/introspect?strategy=bogus",
         headers={"X-Arango-Session": session_token},
@@ -444,9 +429,7 @@ def test_introspect_warnings_are_surfaced(
 ) -> None:
     bundle = _bundle_pg()
     new_meta = dict(bundle.metadata)
-    new_meta["warnings"] = [
-        {"code": "W_SCHEMA_LOW_CONFIDENCE", "message": "review"}
-    ]
+    new_meta["warnings"] = [{"code": "W_SCHEMA_LOW_CONFIDENCE", "message": "review"}]
     stub_acquire["bundle"] = MappingBundle(
         conceptual_schema=bundle.conceptual_schema,
         physical_mapping=bundle.physical_mapping,
@@ -472,9 +455,7 @@ def test_properties_requires_session(client: TestClient) -> None:
     assert resp.status_code == 401
 
 
-def test_properties_returns_inferred_catalog(
-    client: TestClient, session_token: str
-) -> None:
+def test_properties_returns_inferred_catalog(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/schema/properties?collection=Person&sample_size=5",
         headers={"X-Arango-Session": session_token},
@@ -488,23 +469,16 @@ def test_properties_returns_inferred_catalog(
     assert "age" in props and props["age"]["type"] == "number"
 
 
-def test_properties_caps_sample_size(
-    client: TestClient, session_token: str
-) -> None:
+def test_properties_caps_sample_size(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/schema/properties?collection=Person&sample_size=99999",
         headers={"X-Arango-Session": session_token},
     )
     assert resp.status_code == 200
-    assert (
-        resp.json()["sample_size"]
-        == schema_route_mod._PROPERTIES_SAMPLE_HARD_CAP
-    )
+    assert resp.json()["sample_size"] == schema_route_mod._PROPERTIES_SAMPLE_HARD_CAP
 
 
-def test_properties_missing_collection_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_properties_missing_collection_returns_422(client: TestClient, session_token: str) -> None:
     # FastAPI will 422 on missing required query param itself.
     resp = client.get(
         "/schema/properties",
@@ -513,9 +487,7 @@ def test_properties_missing_collection_returns_422(
     assert resp.status_code == 422
 
 
-def test_properties_unknown_collection_returns_empty(
-    client: TestClient, session_token: str
-) -> None:
+def test_properties_unknown_collection_returns_empty(client: TestClient, session_token: str) -> None:
     """Sampling an unknown collection should degrade to an empty
     catalog rather than 5xx — the underlying AQL EXECUTE will
     raise, which the route swallows.
@@ -603,11 +575,7 @@ def test_summary_does_not_require_session(client: TestClient) -> None:
 
     resp = client.post(
         "/schema/summary",
-        json={
-            "mapping": {
-                "physicalMapping": {"entities": {}, "relationships": {}}
-            }
-        },
+        json={"mapping": {"physicalMapping": {"entities": {}, "relationships": {}}}},
     )
     assert resp.status_code == 200
 
@@ -664,9 +632,7 @@ def test_status_requires_session(client: TestClient) -> None:
     assert resp.status_code == 401
 
 
-def test_status_no_cache_when_nothing_introspected(
-    client: TestClient, session_token: str
-) -> None:
+def test_status_no_cache_when_nothing_introspected(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/schema/status",
         headers={"X-Arango-Session": session_token},
@@ -779,12 +745,8 @@ def test_status_degrades_to_unchanged_when_live_fingerprints_unavailable(
 
     headers = {"X-Arango-Session": session_token}
     client.get("/schema/introspect", headers=headers)
-    monkeypatch.setattr(
-        schema_route_mod, "db_shape_fingerprint", lambda _db: None
-    )
-    monkeypatch.setattr(
-        schema_route_mod, "db_counts_fingerprint", lambda _db: None
-    )
+    monkeypatch.setattr(schema_route_mod, "db_shape_fingerprint", lambda _db: None)
+    monkeypatch.setattr(schema_route_mod, "db_counts_fingerprint", lambda _db: None)
     resp = client.get("/schema/status", headers=headers)
     assert resp.status_code == 200
     body = resp.json()
@@ -820,9 +782,7 @@ def test_invalidate_drops_cached_entry(
     assert status.json()["status"] == "no_cache"
 
 
-def test_invalidate_returns_false_when_no_cache_entry(
-    client: TestClient, session_token: str
-) -> None:
+def test_invalidate_returns_false_when_no_cache_entry(client: TestClient, session_token: str) -> None:
     """No prior introspect → no entry to drop → invalidated=False."""
 
     resp = client.post(
@@ -893,9 +853,7 @@ def test_force_reacquire_503_when_analyzer_missing_and_no_fallback(
     """
 
     monkeypatch.setenv("ARANGO_SPARQL_ALLOW_HEURISTIC", "false")
-    monkeypatch.setattr(
-        schema_route_mod, "analyzer_available", lambda: False
-    )
+    monkeypatch.setattr(schema_route_mod, "analyzer_available", lambda: False)
     resp = client.post(
         "/schema/force-reacquire",
         headers={"X-Arango-Session": session_token},
@@ -906,9 +864,7 @@ def test_force_reacquire_503_when_analyzer_missing_and_no_fallback(
     assert "install_hint" in detail
 
 
-def test_force_reacquire_invalid_strategy_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_force_reacquire_invalid_strategy_returns_422(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/schema/force-reacquire?strategy=bogus",
         headers={"X-Arango-Session": session_token},
@@ -1024,9 +980,7 @@ def test_owl_empty_bundle_returns_empty_graph(
     assert body["properties"] == []
 
 
-def test_owl_strategy_invalid_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_owl_strategy_invalid_returns_422(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/schema/owl?strategy=bogus",
         headers={"X-Arango-Session": session_token},
@@ -1137,9 +1091,7 @@ def test_env_vars_default_to_true_when_unset(
         ("maybe", True),
     ],
 )
-def test_analyzer_required_env_parsing(
-    monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool
-) -> None:
+def test_analyzer_required_env_parsing(monkeypatch: pytest.MonkeyPatch, raw: str, expected: bool) -> None:
     monkeypatch.setenv("SCHEMA_ANALYZER_REQUIRED", raw)
     assert schema_route_mod._analyzer_required() is expected
 

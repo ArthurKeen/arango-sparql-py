@@ -194,12 +194,8 @@ def test_fingerprint_is_invariant_under_dict_insertion_order() -> None:
     raw_reversed["physicalMapping"]["entities"] = reversed_entities  # type: ignore[index]
 
     bundle_reversed = mapping_from_wire_dict(raw_reversed)
-    assert bundle_shape_fingerprint(bundle_natural) == bundle_shape_fingerprint(
-        bundle_reversed
-    )
-    assert bundle_counts_fingerprint(bundle_natural) == bundle_counts_fingerprint(
-        bundle_reversed
-    )
+    assert bundle_shape_fingerprint(bundle_natural) == bundle_shape_fingerprint(bundle_reversed)
+    assert bundle_counts_fingerprint(bundle_natural) == bundle_counts_fingerprint(bundle_reversed)
 
 
 # ---------------------------------------------------------------------------
@@ -208,9 +204,7 @@ def test_fingerprint_is_invariant_under_dict_insertion_order() -> None:
 
 
 @pytest.mark.parametrize("name,goldens", sorted(GOLDEN_FINGERPRINTS.items()))
-def test_corpus_fixture_matches_golden_fingerprints(
-    name: str, goldens: tuple[str, str]
-) -> None:
+def test_corpus_fixture_matches_golden_fingerprints(name: str, goldens: tuple[str, str]) -> None:
     """If this lights up red on a PR that did *not* intentionally
     change the fingerprint projection, the change has silently
     invalidated production caches. Roll back, fix, or — if the
@@ -230,13 +224,8 @@ def test_every_fixture_has_a_distinct_shape_fingerprint() -> None:
     has a structurally distinct mapping.
     """
 
-    shapes = {
-        name: bundle_shape_fingerprint(_bundle(name))
-        for name in GOLDEN_FINGERPRINTS
-    }
-    assert len(set(shapes.values())) == len(shapes), (
-        f"Shape fingerprint collision across fixtures: {shapes}"
-    )
+    shapes = {name: bundle_shape_fingerprint(_bundle(name)) for name in GOLDEN_FINGERPRINTS}
+    assert len(set(shapes.values())) == len(shapes), f"Shape fingerprint collision across fixtures: {shapes}"
 
 
 # ---------------------------------------------------------------------------
@@ -263,20 +252,18 @@ def test_renaming_a_collection_changes_shape_fingerprint() -> None:
     """
 
     raw = _load("pg")
-    mutated = _mutate(
-        raw, ["physicalMapping", "entities", "Person", "collectionName"], "people"
+    mutated = _mutate(raw, ["physicalMapping", "entities", "Person", "collectionName"], "people")
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) != bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
     )
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) != bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
 
 
 def test_switching_entity_style_changes_shape_fingerprint() -> None:
     raw = _load("pg")
     mutated = _mutate(raw, ["physicalMapping", "entities", "Person", "style"], "LABEL")
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) != bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) != bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
+    )
 
 
 def test_adding_a_relationship_changes_shape_fingerprint() -> None:
@@ -288,9 +275,9 @@ def test_adding_a_relationship_changes_shape_fingerprint() -> None:
         "fromEntity": "User",
         "toEntity": "User",
     }
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) != bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) != bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
+    )
 
 
 def test_changing_rpt_column_override_changes_shape_fingerprint() -> None:
@@ -305,9 +292,9 @@ def test_changing_rpt_column_override_changes_shape_fingerprint() -> None:
         ["physicalMapping", "entities", "Person", "objectValueColumn"],
         "obj_lit",
     )
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) != bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) != bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
+    )
 
 
 def test_changing_shard_families_changes_shape_fingerprint() -> None:
@@ -316,17 +303,17 @@ def test_changing_shard_families_changes_shape_fingerprint() -> None:
     mutated["physicalMapping"]["shardFamilies"] = [
         ["_triples_us", "_triples_eu", "_triples_apac", "_triples_aus"]
     ]
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) != bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) != bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
+    )
 
 
 def test_changing_multitenancy_strategy_changes_shape_fingerprint() -> None:
     raw = _load("multitenant")
     mutated = _mutate(raw, ["metadata", "multitenancy", "strategy"], "database")
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) != bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) != bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
+    )
 
 
 def test_shardfamilies_ordering_does_not_change_shape_fingerprint() -> None:
@@ -337,12 +324,10 @@ def test_shardfamilies_ordering_does_not_change_shape_fingerprint() -> None:
 
     raw = _load("sharded")
     mutated = copy.deepcopy(raw)
-    mutated["physicalMapping"]["shardFamilies"] = [
-        ["_triples_apac", "_triples_us", "_triples_eu"]
-    ]
-    assert bundle_shape_fingerprint(
-        mapping_from_wire_dict(raw)
-    ) == bundle_shape_fingerprint(mapping_from_wire_dict(mutated))
+    mutated["physicalMapping"]["shardFamilies"] = [["_triples_apac", "_triples_us", "_triples_eu"]]
+    assert bundle_shape_fingerprint(mapping_from_wire_dict(raw)) == bundle_shape_fingerprint(
+        mapping_from_wire_dict(mutated)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -365,9 +350,7 @@ def test_shardfamilies_ordering_does_not_change_shape_fingerprint() -> None:
         ("reviewRequired", True),
     ],
 )
-def test_transient_metadata_does_not_change_either_fingerprint(
-    field: str, new_value: object
-) -> None:
+def test_transient_metadata_does_not_change_either_fingerprint(field: str, new_value: object) -> None:
     """The whole point of separating shape and counts from the rest
     of the metadata is that *operator-noise* fields (timestamp,
     confidence, warnings) cannot trigger cache invalidations. A
@@ -475,9 +458,7 @@ def test_drift_stats_only_when_only_counts_change() -> None:
 def test_drift_shape_changed_when_topology_changes() -> None:
     raw = _load("pg")
     base = compute_bundle_fingerprint(mapping_from_wire_dict(raw))
-    mutated_raw = _mutate(
-        raw, ["physicalMapping", "entities", "Person", "collectionName"], "people"
-    )
+    mutated_raw = _mutate(raw, ["physicalMapping", "entities", "Person", "collectionName"], "people")
     drifted = compute_bundle_fingerprint(mapping_from_wire_dict(mutated_raw))
     assert drifted.drift_from(base) is FingerprintDrift.SHAPE_CHANGED
 

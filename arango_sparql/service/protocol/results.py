@@ -209,9 +209,7 @@ def _bindings_json(
     return out
 
 
-def _render_json_select(
-    rows: list[Mapping[str, Any]], vars_list: list[str]
-) -> str:
+def _render_json_select(rows: list[Mapping[str, Any]], vars_list: list[str]) -> str:
     payload = {
         "head": {"vars": vars_list},
         "results": {"bindings": _bindings_json(rows, vars_list)},
@@ -253,9 +251,7 @@ def _xml_text(value: str) -> str:
     return _xml_escape.escape(value)
 
 
-def _render_xml_select(
-    rows: list[Mapping[str, Any]], vars_list: list[str]
-) -> str:
+def _render_xml_select(rows: list[Mapping[str, Any]], vars_list: list[str]) -> str:
     parts: list[str] = ['<?xml version="1.0" encoding="UTF-8"?>\n']
     parts.append(f'<sparql xmlns="{_xml_attr(_SPARQL_XML_NS)}">\n')
     parts.append("  <head>\n")
@@ -281,10 +277,7 @@ def _render_xml_select(
                 # IRI goes on the ``literal`` element as a
                 # ``datatype`` attribute — ``typed-literal`` was
                 # the 2008 spec name and is no longer emitted.
-                parts.append(
-                    f'<literal datatype="{_xml_attr(datatype or "")}">'
-                    f"{_xml_text(lex)}</literal>"
-                )
+                parts.append(f'<literal datatype="{_xml_attr(datatype or "")}">{_xml_text(lex)}</literal>')
             else:
                 parts.append(f"<literal>{_xml_text(lex)}</literal>")
             parts.append("</binding>\n")
@@ -316,9 +309,7 @@ def _render_xml_ask(value: bool) -> str:
 #   for us, including doubling embedded ``"`` characters.
 
 
-def _render_csv_select(
-    rows: list[Mapping[str, Any]], vars_list: list[str]
-) -> str:
+def _render_csv_select(rows: list[Mapping[str, Any]], vars_list: list[str]) -> str:
     buf = io.StringIO()
     # ``\r\n`` is the spec-mandated line terminator (RFC 4180 §2.1);
     # the ``csv`` module's default ``\r\n`` matches.
@@ -386,9 +377,7 @@ def _tsv_cell(value: Any) -> str:
     return f'"{_nt_literal(lex)}"'
 
 
-def _render_tsv_select(
-    rows: list[Mapping[str, Any]], vars_list: list[str]
-) -> str:
+def _render_tsv_select(rows: list[Mapping[str, Any]], vars_list: list[str]) -> str:
     lines: list[str] = []
     lines.append("\t".join(f"?{v}" for v in vars_list))
     for row in rows:

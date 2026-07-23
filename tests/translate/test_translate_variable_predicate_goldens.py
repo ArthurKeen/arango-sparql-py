@@ -90,14 +90,10 @@ def test_variable_predicate_golden(
        downstream pyArango client's bind dict would change shape
        silently. Pinning it here makes that an explicit decision.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -148,8 +144,7 @@ def test_variable_predicate_pg_class_bound_subject() -> None:
     which would mis-emit against a non-triples collection)."""
     resolver = SchemaResolver.from_turtle(_PG_PERSON_OWL)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?s ?p ?o WHERE { ?s a :Person . ?s ?p ?o }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?p ?o WHERE { ?s a :Person . ?s ?p ?o }",
         resolver=resolver,
     )
     assert result.aql == (
@@ -180,8 +175,7 @@ def test_variable_predicate_rpt_bound_subject() -> None:
     )
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?s ?p ?o WHERE { ?s a :Triples . ?s ?p ?o }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?p ?o WHERE { ?s a :Triples . ?s ?p ?o }",
         resolver=resolver,
     )
     assert result.aql == (
@@ -195,9 +189,7 @@ def test_variable_predicate_rpt_bound_subject() -> None:
     ), result.aql
     assert result.bind_vars == {
         "@c1__triples": "_triples",
-        "_p1_rdftype": (
-            "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
-        ),
+        "_p1_rdftype": ("http://www.w3.org/1999/02/22-rdf-syntax-ns#type"),
         "_p2_cls": "http://ex.org/Triples",
     }
 
@@ -219,14 +211,10 @@ def test_variable_predicate_rpt_with_uri_object() -> None:
     )
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?s ?p WHERE { ?s a :Triples . ?s ?p :alice }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?p WHERE { ?s a :Triples . ?s ?p :alice }",
         resolver=resolver,
     )
-    assert (
-        "(doc2.object_uri == @_p3_obj || doc2.object_value == @_p3_obj)"
-        in result.aql
-    ), result.aql
+    assert "(doc2.object_uri == @_p3_obj || doc2.object_value == @_p3_obj)" in result.aql, result.aql
     assert result.bind_vars["_p3_obj"] == "http://ex.org/alice"
 
 
@@ -242,8 +230,7 @@ def test_variable_predicate_rpt_with_literal_object() -> None:
     )
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        'SELECT ?s ?p WHERE { ?s a :Triples . ?s ?p "Alice" }',
+        'PREFIX : <http://ex.org/> SELECT ?s ?p WHERE { ?s a :Triples . ?s ?p "Alice" }',
         resolver=resolver,
     )
     assert "doc2.object_value == @_p3_obj" in result.aql, result.aql

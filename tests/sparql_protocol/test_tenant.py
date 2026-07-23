@@ -71,10 +71,7 @@ _TENANT_BUNDLE = MappingBundle(
 
 _TENANT_SELECT = "SELECT ?x WHERE { ?x a <http://ex.org/Person> } LIMIT 5"
 _CROSS_TENANT_SELECT = (
-    "SELECT ?x ?a WHERE { "
-    "?x a <http://ex.org/Person> . "
-    "?a a <http://ex.org/ExternalAudit> "
-    "} LIMIT 5"
+    "SELECT ?x ?a WHERE { ?x a <http://ex.org/Person> . ?a a <http://ex.org/ExternalAudit> } LIMIT 5"
 )
 
 
@@ -111,9 +108,7 @@ def _last_call(token: str) -> tuple[str, dict]:
     return aql, bind_vars
 
 
-def test_get_sparql_forwards_tenant_header(
-    client: TestClient, tenant_session_token: str
-) -> None:
+def test_get_sparql_forwards_tenant_header(client: TestClient, tenant_session_token: str) -> None:
     """``GET /sparql?query=…`` reads ``X-Tenant-Id`` and the AQL the
     driver sees carries ``FILTER doc.tenant_id == @<bind>`` with the
     header value as the bind."""
@@ -131,9 +126,7 @@ def test_get_sparql_forwards_tenant_header(
     assert "tenant-protocol-get" in bind_vars.values()
 
 
-def test_post_sparql_forwards_tenant_header(
-    client: TestClient, tenant_session_token: str
-) -> None:
+def test_post_sparql_forwards_tenant_header(client: TestClient, tenant_session_token: str) -> None:
     """``POST /sparql`` (application/sparql-query body) threads the
     header the same way as the GET form."""
     set_aql_rows(tenant_session_token, [])
@@ -194,9 +187,7 @@ def test_sparql_without_tenant_for_scoped_class_returns_422(
     assert session.db.aql.calls == []
 
 
-def test_sparql_cross_tenant_join_returns_422(
-    client: TestClient, tenant_session_token: str
-) -> None:
+def test_sparql_cross_tenant_join_returns_422(client: TestClient, tenant_session_token: str) -> None:
     """Joining two classes with different ``phys:tenantEntity`` roots
     is structurally forbidden — no tenant header makes it valid."""
     set_aql_rows(tenant_session_token, [])

@@ -266,9 +266,7 @@ def test_health(client: TestClient) -> None:
     assert isinstance(body["version"], str) and body["version"]
 
 
-def test_health_ready_unconfigured_is_ok(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_health_ready_unconfigured_is_ok(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     # BYOC deployment: no default ArangoDB configured → readiness
     # degrades to liveness (200, arango="unconfigured").
     monkeypatch.delenv("ARANGO_URL", raising=False)
@@ -277,9 +275,7 @@ def test_health_ready_unconfigured_is_ok(
     assert resp.json()["arango"] == "unconfigured"
 
 
-def test_health_ready_unreachable_is_503(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_health_ready_unreachable_is_503(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     # A configured default server that doesn't answer must flip the
     # probe to 503 so orchestrators keep the pod out of rotation.
     # Port 9 (discard protocol) refuses connections immediately.
@@ -499,9 +495,7 @@ def _make_aql_execute_error(error_num: int, status_code: int, message: str):
     from arango.request import Request as _ArReq
     from arango.response import Response as _ArResp
 
-    raw = json.dumps(
-        {"error": True, "errorNum": error_num, "errorMessage": message, "code": status_code}
-    )
+    raw = json.dumps({"error": True, "errorNum": error_num, "errorMessage": message, "code": status_code})
     resp = _ArResp(
         method="post",
         url="http://localhost:8529/_api/cursor",
@@ -545,9 +539,7 @@ def test_execute_missing_collection_returns_400_not_500(
     the demo bug where ``Run`` against an empty database produced a 500 in
     the browser console.
     """
-    exc = _make_aql_execute_error(
-        1203, 404, "collection or view not found: Person"
-    )
+    exc = _make_aql_execute_error(1203, 404, "collection or view not found: Person")
     _patch_aql_execute_raises(monkeypatch, fake_client_factory, exc)
 
     token = _connect_session(client)
@@ -599,17 +591,13 @@ def test_execute_merges_analyzer_bundle_no_default_collection_warning(
     bundle = MappingBundle(
         conceptual_schema={"entities": [], "relationships": []},
         physical_mapping={
-            "entities": {
-                "Person": {"style": "COLLECTION", "collectionName": "people"}
-            },
+            "entities": {"Person": {"style": "COLLECTION", "collectionName": "people"}},
             "relationships": {},
         },
         metadata={"warnings": []},
         source=MappingSource(kind="analyzer", notes="merge route test"),
     )
-    monkeypatch.setattr(
-        schema_mod, "_get_or_acquire", lambda db, **kw: (bundle, False)
-    )
+    monkeypatch.setattr(schema_mod, "_get_or_acquire", lambda db, **kw: (bundle, False))
 
     # Inline ontology with NO phys:collectionName on :Person.
     ttl = """
@@ -672,9 +660,7 @@ def test_execute_unexpected_db_error_stays_500(
     """A genuine infrastructure failure (not an AQL execution error) must
     still surface as 500 — proves the 400 reclassification is scoped to
     ``AQLQueryExecuteError`` and doesn't swallow real server faults."""
-    _patch_aql_execute_raises(
-        monkeypatch, fake_client_factory, RuntimeError("connection reset by peer")
-    )
+    _patch_aql_execute_raises(monkeypatch, fake_client_factory, RuntimeError("connection reset by peer"))
 
     token = _connect_session(client)
     resp = client.post(

@@ -57,15 +57,11 @@ def _bundle(*, with_counts: int = 1, label: str = "Person") -> MappingBundle:
 
     return MappingBundle(
         conceptual_schema={
-            "entities": [
-                {"name": label, "labels": [label], "properties": []}
-            ],
+            "entities": [{"name": label, "labels": [label], "properties": []}],
             "relationships": [],
         },
         physical_mapping={
-            "entities": {
-                label: {"style": "COLLECTION", "collectionName": label.lower()}
-            },
+            "entities": {label: {"style": "COLLECTION", "collectionName": label.lower()}},
             "relationships": {},
         },
         metadata={
@@ -265,15 +261,9 @@ def test_entry_is_expired_after_ttl() -> None:
         acquired_at=when,
     )
     assert not entry.is_expired(ttl_seconds=60, now=when)
-    assert not entry.is_expired(
-        ttl_seconds=60, now=when + timedelta(seconds=59)
-    )
-    assert entry.is_expired(
-        ttl_seconds=60, now=when + timedelta(seconds=60)
-    )
-    assert entry.is_expired(
-        ttl_seconds=60, now=when + timedelta(seconds=600)
-    )
+    assert not entry.is_expired(ttl_seconds=60, now=when + timedelta(seconds=59))
+    assert entry.is_expired(ttl_seconds=60, now=when + timedelta(seconds=60))
+    assert entry.is_expired(ttl_seconds=60, now=when + timedelta(seconds=600))
 
 
 def test_entry_with_ttl_zero_never_expires_by_age() -> None:
@@ -305,9 +295,7 @@ def test_has_fresh_entry_mirrors_get() -> None:
     when = datetime(2025, 1, 1, tzinfo=UTC)
     cache.put("db1", _bundle(), now=when)
     assert cache.has_fresh_entry("db1", now=when)
-    assert not cache.has_fresh_entry(
-        "db1", now=when + timedelta(seconds=120)
-    )
+    assert not cache.has_fresh_entry("db1", now=when + timedelta(seconds=120))
 
 
 # ---------------------------------------------------------------------------
@@ -454,9 +442,7 @@ def test_l2_write_stub_does_not_raise() -> None:
     cache = SchemaCache()
     bundle = _bundle()
     fp = compute_bundle_fingerprint(bundle)
-    entry = CachedEntry(
-        bundle=bundle, fingerprint=fp, acquired_at=datetime.now(UTC)
-    )
+    entry = CachedEntry(bundle=bundle, fingerprint=fp, acquired_at=datetime.now(UTC))
     # Should never raise — the stub is a documented no-op.
     cache._persist_to_l2("any", entry)
     cache._invalidate_l2("any")
@@ -473,9 +459,7 @@ def test_l2_hydration_path_when_subclass_overrides_read(
     cache = SchemaCache()
     bundle = _bundle()
     fp = compute_bundle_fingerprint(bundle)
-    entry = CachedEntry(
-        bundle=bundle, fingerprint=fp, acquired_at=datetime.now(UTC)
-    )
+    entry = CachedEntry(bundle=bundle, fingerprint=fp, acquired_at=datetime.now(UTC))
     calls: list[str] = []
 
     def fake_read(db_name: str) -> CachedEntry | None:
@@ -516,9 +500,7 @@ def test_concurrent_put_and_get_does_not_corrupt_state() -> None:
         except BaseException as exc:  # pragma: no cover — failure path
             errors.append(exc)
 
-    threads = [
-        threading.Thread(target=hammer, args=(t,)) for t in range(8)
-    ]
+    threads = [threading.Thread(target=hammer, args=(t,)) for t in range(8)]
     for t in threads:
         t.start()
     for t in threads:

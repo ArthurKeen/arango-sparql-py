@@ -150,9 +150,7 @@ def translate_endpoint(
         req.sparql[:80] if req.sparql else "(empty)",
         len(req.ontology_ttl) if req.ontology_ttl else 0,
     )
-    resolver = _resolver_or_422(
-        req, analyzer_bundle=_analyzer_bundle_for_session(session)
-    )
+    resolver = _resolver_or_422(req, analyzer_bundle=_analyzer_bundle_for_session(session))
     tenant_id = resolve_tenant_id(request)
     t0 = time.perf_counter()
     try:
@@ -224,9 +222,7 @@ def execute_endpoint(
     into the inline ontology (inline annotations win) so an unannotated
     class resolves to its discovered collection rather than guessing.
     """
-    resolver = _resolver_or_422(
-        req, analyzer_bundle=_analyzer_bundle_for_session(session)
-    )
+    resolver = _resolver_or_422(req, analyzer_bundle=_analyzer_bundle_for_session(session))
     tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
@@ -372,9 +368,7 @@ def explain_endpoint(
     plan reflects the tenant-filtered AQL the operator would actually
     run.
     """
-    resolver = _resolver_or_422(
-        req, analyzer_bundle=_analyzer_bundle_for_session(session)
-    )
+    resolver = _resolver_or_422(req, analyzer_bundle=_analyzer_bundle_for_session(session))
     tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:
@@ -458,9 +452,7 @@ def profile_endpoint(
     the ``X-Tenant-Id`` header (PRD §6.5.1) so the profiled AQL is the
     tenant-scoped query the operator would actually run.
     """
-    resolver = _resolver_or_422(
-        req, analyzer_bundle=_analyzer_bundle_for_session(session)
-    )
+    resolver = _resolver_or_422(req, analyzer_bundle=_analyzer_bundle_for_session(session))
     tenant_id = resolve_tenant_id(request)
     t_translate = time.perf_counter()
     try:

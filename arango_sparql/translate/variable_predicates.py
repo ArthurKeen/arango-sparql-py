@@ -104,15 +104,10 @@ def emit_variable_predicate_triple(
     """
 
     if not isinstance(predicate, Variable):  # pragma: no cover - defensive
-        raise UnsupportedSparqlError(
-            "variable-predicate emitter called with non-Variable predicate"
-        )
+        raise UnsupportedSparqlError("variable-predicate emitter called with non-Variable predicate")
 
     # ---- RPT branch ---------------------------------------------------
-    if (
-        isinstance(subject, Variable)
-        and str(subject) in visitor.state.var_to_rpt_class
-    ):
+    if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
         _emit_rpt_branch(visitor, subject, predicate, obj, triple)
         return
 
@@ -143,23 +138,16 @@ def _emit_rpt_branch(
     predicate W3C tests, but the goldens prove the shape).
     """
     rpt_class = visitor.state.var_to_rpt_class[str(subject)]
-    triples_alias = visitor._open_collection(
-        rpt_class.collection, resolved=rpt_class
-    )
+    triples_alias = visitor._open_collection(rpt_class.collection, resolved=rpt_class)
     subj_expr = visitor.state.var_to_expr.get(str(subject))
     if subj_expr is None:  # pragma: no cover - defensive
-        raise AqlEmitError(
-            f"RPT variable-predicate triple references unbound "
-            f"subject ?{subject}"
-        )
+        raise AqlEmitError(f"RPT variable-predicate triple references unbound subject ?{subject}")
     new_subj_expr = f"{triples_alias}.{rpt_class.subject_column}"
     if subj_expr != new_subj_expr:
         visitor.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
     # ``?p`` binds to the predicate column — no FILTER; we want
     # EVERY predicate on this subject.
-    visitor._record_var_expr(
-        predicate, f"{triples_alias}.{rpt_class.predicate_column}"
-    )
+    visitor._record_var_expr(predicate, f"{triples_alias}.{rpt_class.predicate_column}")
     # ``?o`` follows the same NOT_NULL shape as
     # _emit_rpt_property_triple's Variable branch.
     coalesce_expr = (
@@ -187,9 +175,7 @@ def _emit_rpt_branch(
         from .visitor import _term_to_python
 
         val_bind = visitor.builder.bind(_term_to_python(obj), hint="obj")
-        visitor.builder.filter_eq(
-            f"{triples_alias}.{rpt_class.object_value_column}", val_bind
-        )
+        visitor.builder.filter_eq(f"{triples_alias}.{rpt_class.object_value_column}", val_bind)
         return
     raise UnsupportedSparqlError(
         f"variable-predicate RPT triple object term type "
@@ -233,9 +219,7 @@ def _emit_attributes_branch(
     # semantic leak ADR-0001 specifically calls out. The skip
     # list is bound through the builder so the AQL never sees
     # inlined string literals.
-    skip_list = sorted(
-        {*SYSTEM_ATTRIBUTES_TO_SKIP, visitor.resolver.graph_field}
-    )
+    skip_list = sorted({*SYSTEM_ATTRIBUTES_TO_SKIP, visitor.resolver.graph_field})
     sys_bind = visitor.builder.bind(skip_list, hint="sys_attrs")
     visitor.builder.filter_raw(f"{key_alias} NOT IN {sys_bind}")
     attr_uri_map = visitor.resolver.attribute_uri_map()

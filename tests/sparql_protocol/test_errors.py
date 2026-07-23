@@ -37,9 +37,7 @@ from .conftest import SELECT_QUERY, set_aql_rows
 # ---------------------------------------------------------------------------
 
 
-def test_post_application_sparql_update_returns_405(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_application_sparql_update_returns_405(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/sparql",
         content=b"INSERT DATA { <http://ex/A> <http://ex/p> <http://ex/B> }",
@@ -56,9 +54,7 @@ def test_post_application_sparql_update_returns_405(
     assert "SELECT" in body["supported_query_forms"]
 
 
-def test_post_sparql_query_with_insert_body_returns_405(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_sparql_query_with_insert_body_returns_405(client: TestClient, session_token: str) -> None:
     """Even with ``Content-Type: application/sparql-query``, a body
     that *parses as* an Update form must surface 405. PRD §5.2:
     "the endpoint MUST NOT silently no-op an Update request."
@@ -76,16 +72,10 @@ def test_post_sparql_query_with_insert_body_returns_405(
     assert resp.headers["Allow"] == "GET, POST, OPTIONS"
 
 
-def test_get_with_update_query_param_returns_405(
-    client: TestClient, session_token: str
-) -> None:
+def test_get_with_update_query_param_returns_405(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/sparql",
-        params={
-            "query": (
-                "INSERT DATA { <http://ex/A> <http://ex/p> <http://ex/B> }"
-            )
-        },
+        params={"query": ("INSERT DATA { <http://ex/A> <http://ex/p> <http://ex/B> }")},
         headers={"X-Arango-Session": session_token},
     )
     assert resp.status_code == 405
@@ -93,9 +83,7 @@ def test_get_with_update_query_param_returns_405(
     assert body["code"] == "E_UPDATE_UNSUPPORTED"
 
 
-def test_post_form_with_update_query_returns_405(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_form_with_update_query_returns_405(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/sparql",
         data={"query": "DROP GRAPH <http://ex.org/g>"},
@@ -109,9 +97,7 @@ def test_post_form_with_update_query_returns_405(
 # ---------------------------------------------------------------------------
 
 
-def test_malformed_sparql_returns_400(
-    client: TestClient, session_token: str
-) -> None:
+def test_malformed_sparql_returns_400(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/sparql",
         params={"query": "SELECT * WHERE { malformed garbage"},
@@ -122,9 +108,7 @@ def test_malformed_sparql_returns_400(
     assert body["code"] == "E_SPARQL_PARSE"
 
 
-def test_post_malformed_sparql_returns_400(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_malformed_sparql_returns_400(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/sparql",
         content=b"this is not sparql",
@@ -138,9 +122,7 @@ def test_post_malformed_sparql_returns_400(
     assert body["code"] == "E_SPARQL_PARSE"
 
 
-def test_empty_get_query_returns_service_description(
-    client: TestClient, session_token: str
-) -> None:
+def test_empty_get_query_returns_service_description(client: TestClient, session_token: str) -> None:
     """``GET /sparql?query=`` (empty value) is *not* an error —
     the spec says no query → service description. We honour that
     by treating an empty ``query`` parameter the same as a missing
@@ -214,9 +196,7 @@ class _TimeoutAql:
         raise exc
 
 
-def test_query_timeout_returns_504_e_timeout(
-    client: TestClient, session_token: str
-) -> None:
+def test_query_timeout_returns_504_e_timeout(client: TestClient, session_token: str) -> None:
     session = _sessions[session_token]
     session.db.aql = _TimeoutAql()
 
@@ -263,9 +243,7 @@ def test_truncated_result_emits_warning_header(
     assert len(body["results"]["bindings"]) == 3
 
 
-def test_no_warning_header_when_not_truncated(
-    client: TestClient, session_token: str
-) -> None:
+def test_no_warning_header_when_not_truncated(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [{"x": "http://ex.org/A"}])
     resp = client.get(
         "/sparql",
@@ -345,9 +323,7 @@ def test_oversized_post_body_returns_413(
 # ---------------------------------------------------------------------------
 
 
-def test_session_bound_via_query_param(
-    client: TestClient, session_token: str
-) -> None:
+def test_session_bound_via_query_param(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [])
     resp = client.get(
         "/sparql",
@@ -356,9 +332,7 @@ def test_session_bound_via_query_param(
     assert resp.status_code == 200, resp.text
 
 
-def test_session_bound_via_authorization_bearer(
-    client: TestClient, session_token: str
-) -> None:
+def test_session_bound_via_authorization_bearer(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [])
     resp = client.get(
         "/sparql",
@@ -373,9 +347,7 @@ def test_session_bound_via_authorization_bearer(
 # ---------------------------------------------------------------------------
 
 
-def test_405_response_includes_vary_accept(
-    client: TestClient, session_token: str
-) -> None:
+def test_405_response_includes_vary_accept(client: TestClient, session_token: str) -> None:
     """Even error responses must set ``Vary: Accept`` so caches
     don't conflate variants of the same URL.
     """

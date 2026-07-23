@@ -43,10 +43,7 @@ from arango_sparql.translate.mapping import MappingBundle, MappingSource
 
 SELECT_QUERY = "SELECT ?x WHERE { ?x a <http://ex.org/Person> } LIMIT 10"
 ASK_QUERY = "ASK WHERE { ?x a <http://ex.org/Person> }"
-CONSTRUCT_QUERY = (
-    "CONSTRUCT { ?x a <http://ex.org/Person> } "
-    "WHERE { ?x a <http://ex.org/Person> }"
-)
+CONSTRUCT_QUERY = "CONSTRUCT { ?x a <http://ex.org/Person> } WHERE { ?x a <http://ex.org/Person> }"
 
 
 # ---------------------------------------------------------------------------
@@ -204,9 +201,7 @@ def client() -> TestClient:
 def fake_arango(monkeypatch: pytest.MonkeyPatch):
     _FakeArangoClient.instances.clear()
     monkeypatch.setattr(svc, "ArangoClient", _FakeArangoClient)
-    monkeypatch.setenv(
-        "ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS", "localhost,127.0.0.1"
-    )
+    monkeypatch.setenv("ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS", "localhost,127.0.0.1")
     return _FakeArangoClient
 
 

@@ -65,9 +65,7 @@ def test_construct_priority_list_is_locked() -> None:
         (QueryForm.DESCRIBE, CONSTRUCT_PRIORITY),
     ],
 )
-def test_priority_for_form_dispatches_correctly(
-    form: QueryForm, expected: tuple[str, ...]
-) -> None:
+def test_priority_for_form_dispatches_correctly(form: QueryForm, expected: tuple[str, ...]) -> None:
     assert priority_for_form(form) == expected
 
 
@@ -108,9 +106,7 @@ def test_parse_default_q_is_one() -> None:
 
 
 def test_parse_explicit_q_value() -> None:
-    offers = parse_accept_header(
-        "text/csv;q=0.5, application/sparql-results+json;q=0.9"
-    )
+    offers = parse_accept_header("text/csv;q=0.5, application/sparql-results+json;q=0.9")
     # Sorted by descending q.
     assert offers[0].media_type == "application/sparql-results+json"
     assert offers[0].q == 0.9
@@ -121,17 +117,13 @@ def test_parse_explicit_q_value() -> None:
 def test_parse_filters_q_zero() -> None:
     """RFC 9110 §12.5.1: ``q=0`` means "not acceptable"."""
 
-    offers = parse_accept_header(
-        "text/csv;q=0, application/sparql-results+json"
-    )
+    offers = parse_accept_header("text/csv;q=0, application/sparql-results+json")
     assert len(offers) == 1
     assert offers[0].media_type == "application/sparql-results+json"
 
 
 def test_parse_clamps_out_of_range_q() -> None:
-    offers = parse_accept_header(
-        "text/csv;q=2.5, application/sparql-results+json;q=-0.1"
-    )
+    offers = parse_accept_header("text/csv;q=2.5, application/sparql-results+json;q=-0.1")
     # ``q=-0.1`` ⇒ clamped to 0 ⇒ filtered out.
     # ``q=2.5`` ⇒ clamped to 1.0 ⇒ kept.
     assert len(offers) == 1
@@ -161,9 +153,7 @@ def test_parse_drops_empty_chunks() -> None:
     ignore them rather than crash.
     """
 
-    offers = parse_accept_header(
-        ",text/csv,,application/sparql-results+json,,"
-    )
+    offers = parse_accept_header(",text/csv,,application/sparql-results+json,,")
     assert {o.media_type for o in offers} == {
         "text/csv",
         "application/sparql-results+json",
@@ -175,9 +165,7 @@ def test_parse_ignores_unknown_parameters() -> None:
     cares about q-value.
     """
 
-    offers = parse_accept_header(
-        "text/csv;charset=utf-8;q=0.7;level=1"
-    )
+    offers = parse_accept_header("text/csv;charset=utf-8;q=0.7;level=1")
     assert offers[0].media_type == "text/csv"
     assert offers[0].q == 0.7
 
@@ -188,9 +176,7 @@ def test_parse_ignores_unknown_parameters() -> None:
 
 
 def test_negotiate_explicit_match() -> None:
-    chosen, _ = negotiate_media_type(
-        "application/sparql-results+xml", QueryForm.SELECT
-    )
+    chosen, _ = negotiate_media_type("application/sparql-results+xml", QueryForm.SELECT)
     assert chosen == "application/sparql-results+xml"
 
 
@@ -238,11 +224,7 @@ def test_tie_breaking_uses_priority_list_order_not_header_order() -> None:
 
 def test_tie_breaking_priority_holds_with_three_way_tie() -> None:
     chosen, _ = negotiate_media_type(
-        (
-            "text/tab-separated-values;q=0.5,"
-            "text/csv;q=0.5,"
-            "application/sparql-results+xml;q=0.5"
-        ),
+        ("text/tab-separated-values;q=0.5,text/csv;q=0.5,application/sparql-results+xml;q=0.5"),
         QueryForm.SELECT,
     )
     # XML is earliest of the three in the priority list.
@@ -271,9 +253,7 @@ def test_no_match_returns_none() -> None:
     that into 406 with the supported-list body.
     """
 
-    chosen, offers = negotiate_media_type(
-        "image/png, application/pdf", QueryForm.SELECT
-    )
+    chosen, offers = negotiate_media_type("image/png, application/pdf", QueryForm.SELECT)
     assert chosen is None
     # Offers are still returned so the route can include them in
     # diagnostics.
@@ -285,9 +265,7 @@ def test_no_match_for_construct_when_only_select_offered() -> None:
     so a CONSTRUCT request that *only* offers it should 406.
     """
 
-    chosen, _ = negotiate_media_type(
-        "application/sparql-results+json", QueryForm.CONSTRUCT
-    )
+    chosen, _ = negotiate_media_type("application/sparql-results+json", QueryForm.CONSTRUCT)
     assert chosen is None
 
 

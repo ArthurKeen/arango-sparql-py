@@ -79,17 +79,12 @@ def test_bind_unbound_rhs_emits_warning() -> None:
 """
     resolver = SchemaResolver.from_turtle(ttl)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?z WHERE { ?s a :Person ; :name ?n . BIND(?nova AS ?z) }",
+        "PREFIX : <http://ex.org/> SELECT ?z WHERE { ?s a :Person ; :name ?n . BIND(?nova AS ?z) }",
         resolver=resolver,
     )
-    matching = [
-        w for w in result.warnings
-        if w.get("code") == "W_UNBOUND_VARIABLE_IN_EXPR"
-    ]
+    matching = [w for w in result.warnings if w.get("code") == "W_UNBOUND_VARIABLE_IN_EXPR"]
     assert len(matching) == 1, (
-        f"expected exactly one W_UNBOUND_VARIABLE_IN_EXPR warning, "
-        f"got {result.warnings!r}"
+        f"expected exactly one W_UNBOUND_VARIABLE_IN_EXPR warning, got {result.warnings!r}"
     )
     assert matching[0]["variable"] == "nova"
     assert "?nova" in matching[0]["message"]

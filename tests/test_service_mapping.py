@@ -31,9 +31,7 @@ def _req(ontology_ttl: str | None = None, mapping: dict | None = None):
     return SimpleNamespace(ontology_ttl=ontology_ttl, mapping=mapping)
 
 
-def _bundle(
-    entities: dict | None = None, relationships: dict | None = None
-) -> MappingBundle:
+def _bundle(entities: dict | None = None, relationships: dict | None = None) -> MappingBundle:
     return MappingBundle(
         conceptual_schema={"entities": [], "relationships": []},
         physical_mapping={
@@ -56,9 +54,7 @@ def test_without_bundle_unannotated_class_falls_back_with_warning() -> None:
     resolved = resolver.resolve_class(PERSON_IRI)
     # Local-name fallback + the advisory the user was puzzled about.
     assert resolved.collection == "Person"
-    assert any(
-        w["code"] == "W_SCHEMA_DEFAULT_COLLECTION" for w in resolver.warnings
-    )
+    assert any(w["code"] == "W_SCHEMA_DEFAULT_COLLECTION" for w in resolver.warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -71,15 +67,11 @@ def test_merge_fills_collection_name_no_warning() -> None:
     analyzer-discovered collection name — and the fallback warning is gone.
     """
     ttl = OWL_PREFIXES + "ex:Person a owl:Class .\n"
-    bundle = _bundle(
-        entities={"Person": {"style": "COLLECTION", "collectionName": "people"}}
-    )
+    bundle = _bundle(entities={"Person": {"style": "COLLECTION", "collectionName": "people"}})
     resolver = _resolver_from_request(_req(ontology_ttl=ttl), analyzer_bundle=bundle)
     resolved = resolver.resolve_class(PERSON_IRI)
     assert resolved.collection == "people"
-    assert not any(
-        w["code"] == "W_SCHEMA_DEFAULT_COLLECTION" for w in resolver.warnings
-    )
+    assert not any(w["code"] == "W_SCHEMA_DEFAULT_COLLECTION" for w in resolver.warnings)
 
 
 def test_merge_fills_edge_collection_for_object_property() -> None:
@@ -124,13 +116,8 @@ def test_merge_fills_rpt_style_and_triples_collection() -> None:
 def test_inline_annotation_overrides_bundle() -> None:
     """When the inline ontology already declares phys:collectionName, the
     analyzer bundle must not clobber it."""
-    ttl = (
-        OWL_PREFIXES
-        + 'ex:Person a owl:Class ; phys:collectionName "InlineWins" .\n'
-    )
-    bundle = _bundle(
-        entities={"Person": {"style": "COLLECTION", "collectionName": "people"}}
-    )
+    ttl = OWL_PREFIXES + 'ex:Person a owl:Class ; phys:collectionName "InlineWins" .\n'
+    bundle = _bundle(entities={"Person": {"style": "COLLECTION", "collectionName": "people"}})
     resolver = _resolver_from_request(_req(ontology_ttl=ttl), analyzer_bundle=bundle)
     assert resolver.resolve_class(PERSON_IRI).collection == "InlineWins"
 
@@ -168,9 +155,7 @@ def test_merge_only_enriches_declared_classes() -> None:
 def test_no_inline_ontology_with_bundle_is_empty_graph() -> None:
     """No inline ontology → empty graph; the bundle has no inline IRIs to
     enrich, so resolution degrades exactly as before (open-world)."""
-    bundle = _bundle(
-        entities={"Person": {"style": "COLLECTION", "collectionName": "people"}}
-    )
+    bundle = _bundle(entities={"Person": {"style": "COLLECTION", "collectionName": "people"}})
     resolver = _resolver_from_request(_req(), analyzer_bundle=bundle)
     # A property IRI degrades to local-name (unchanged baseline behaviour).
     assert resolver.resolve_property("http://example.org/name").attribute == "name"

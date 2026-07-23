@@ -82,10 +82,7 @@ _CONSTRUCT_QUERY = (
     "CONSTRUCT { ?x foaf:name ?x } WHERE { ?x a ex:Person }"
 )
 
-_DESCRIBE_VAR_QUERY = (
-    "PREFIX ex: <http://ex.org/> "
-    "DESCRIBE ?x WHERE { ?x a ex:Person }"
-)
+_DESCRIBE_VAR_QUERY = "PREFIX ex: <http://ex.org/> DESCRIBE ?x WHERE { ?x a ex:Person }"
 
 _DESCRIBE_BARE_QUERY = "DESCRIBE <http://ex.org/Alice>"
 
@@ -95,9 +92,7 @@ _DESCRIBE_BARE_QUERY = "DESCRIBE <http://ex.org/Alice>"
 # ---------------------------------------------------------------------------
 
 
-def test_construct_turtle(
-    client: TestClient, session_token: str
-) -> None:
+def test_construct_turtle(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, _CONSTRUCT_ROWS)
     resp = client.get(
         "/sparql",
@@ -114,15 +109,11 @@ def test_construct_turtle(
     g = Graph()
     g.parse(data=resp.text, format="turtle")
     foaf_name = URIRef("http://xmlns.com/foaf/0.1/name")
-    assert (URIRef("http://ex.org/Alice"), foaf_name, None) in (
-        (s, p, None) for s, p, _ in g
-    )
+    assert (URIRef("http://ex.org/Alice"), foaf_name, None) in ((s, p, None) for s, p, _ in g)
     assert len(g) == 2  # Alice + Bob
 
 
-def test_construct_n_triples(
-    client: TestClient, session_token: str
-) -> None:
+def test_construct_n_triples(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, _CONSTRUCT_ROWS)
     resp = client.get(
         "/sparql",
@@ -136,18 +127,14 @@ def test_construct_n_triples(
     assert resp.headers["Content-Type"].startswith("application/n-triples")
     # N-Triples is line-delimited; every line ends with " ." (RFC's
     # eol form). Two triples → two non-empty lines.
-    lines = [
-        line for line in resp.text.splitlines() if line.strip() and not line.startswith("#")
-    ]
+    lines = [line for line in resp.text.splitlines() if line.strip() and not line.startswith("#")]
     assert len(lines) == 2
     for line in lines:
         assert line.endswith(" .")
         assert "<http://xmlns.com/foaf/0.1/name>" in line
 
 
-def test_construct_rdf_xml(
-    client: TestClient, session_token: str
-) -> None:
+def test_construct_rdf_xml(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, _CONSTRUCT_ROWS)
     resp = client.get(
         "/sparql",
@@ -165,9 +152,7 @@ def test_construct_rdf_xml(
     assert root.tag.endswith("}RDF")
 
 
-def test_construct_ld_json(
-    client: TestClient, session_token: str
-) -> None:
+def test_construct_ld_json(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, _CONSTRUCT_ROWS)
     resp = client.get(
         "/sparql",
@@ -185,9 +170,7 @@ def test_construct_ld_json(
     assert isinstance(payload, (list, dict))
 
 
-def test_construct_default_accept_returns_turtle(
-    client: TestClient, session_token: str
-) -> None:
+def test_construct_default_accept_returns_turtle(client: TestClient, session_token: str) -> None:
     """``Accept: */*`` and an omitted Accept both resolve to the first
     entry in :data:`CONSTRUCT_PRIORITY` — text/turtle (PRD §5.2
     rule 3).
@@ -203,9 +186,7 @@ def test_construct_default_accept_returns_turtle(
     assert resp.headers["Content-Type"].startswith("text/turtle")
 
 
-def test_construct_stamps_observability_headers(
-    client: TestClient, session_token: str
-) -> None:
+def test_construct_stamps_observability_headers(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, _CONSTRUCT_ROWS)
     resp = client.get(
         "/sparql",
@@ -228,9 +209,7 @@ def test_construct_stamps_observability_headers(
 # ---------------------------------------------------------------------------
 
 
-def test_describe_var_returns_attribute_triples(
-    client: TestClient, session_token: str
-) -> None:
+def test_describe_var_returns_attribute_triples(client: TestClient, session_token: str) -> None:
     """``DESCRIBE ?x WHERE { … }`` emits attribute-fan-out triples;
     the renderer hydrates plain string values into IRIs (when shaped
     like a URI) or literals.
@@ -258,9 +237,7 @@ def test_describe_var_returns_attribute_triples(
     assert "30" in objects
 
 
-def test_describe_bare_iri_returns_turtle(
-    client: TestClient, session_token: str
-) -> None:
+def test_describe_bare_iri_returns_turtle(client: TestClient, session_token: str) -> None:
     """``DESCRIBE <iri>`` (no WHERE) emits a default-collection FOR;
     the route layer still renders to RDF the same way.
     """
@@ -280,9 +257,7 @@ def test_describe_bare_iri_returns_turtle(
     assert len(g) == 2
 
 
-def test_describe_empty_result(
-    client: TestClient, session_token: str
-) -> None:
+def test_describe_empty_result(client: TestClient, session_token: str) -> None:
     """A DESCRIBE whose WHERE binds no resources returns an empty
     graph (not a 404). The W3C protocol spec is silent on the
     distinction but every server we've audited (Fuseki, Stardog,

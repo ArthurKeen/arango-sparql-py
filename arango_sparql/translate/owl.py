@@ -234,8 +234,7 @@ def turtle_to_mapping(
         # (``E_OWL_EMPTY_BODY``); raise here so a direct library
         # call surfaces the same shape.
         raise OwlParseError(
-            "turtle input is empty; supply at least one prefix "
-            "declaration or class statement"
+            "turtle input is empty; supply at least one prefix declaration or class statement"
         )
 
     graph = Graph()
@@ -344,9 +343,7 @@ def _relationships_from_graph(
 
     relationships: dict[str, dict[str, Any]] = {}
     warnings: list[dict[str, Any]] = []
-    for prop_iri in sorted(
-        set(graph.subjects(RDF.type, OWL.ObjectProperty)), key=str
-    ):
+    for prop_iri in sorted(set(graph.subjects(RDF.type, OWL.ObjectProperty)), key=str):
         if not isinstance(prop_iri, URIRef):
             continue
         rtype = local_name(prop_iri)
@@ -411,9 +408,7 @@ def _relationships_from_graph(
     return relationships, warnings
 
 
-def _physical_literal(
-    graph: Graph, subject: URIRef, predicate_local: str
-) -> str | None:
+def _physical_literal(graph: Graph, subject: URIRef, predicate_local: str) -> str | None:
     """Lookup a ``phys:<predicate_local>`` literal on *subject*.
 
     Tolerates both shipped ``phys:`` namespaces — :data:`_PHYS_NAMESPACES`
@@ -500,11 +495,7 @@ def _classes_view_from_graph(graph: Graph) -> list[dict[str, Any]]:
         name = local_name(cls_iri)
         if not name:
             continue
-        supers = sorted(
-            str(s)
-            for s in graph.objects(cls_iri, RDFS.subClassOf)
-            if isinstance(s, URIRef)
-        )
+        supers = sorted(str(s) for s in graph.objects(cls_iri, RDFS.subClassOf) if isinstance(s, URIRef))
         item: dict[str, Any] = {
             "iri": str(cls_iri),
             "localName": name,
@@ -540,16 +531,8 @@ def _properties_view_from_graph(graph: Graph) -> list[dict[str, Any]]:
             if not name:
                 continue
             seen.add(prop_iri)
-            domain = sorted(
-                str(o)
-                for o in graph.objects(prop_iri, RDFS.domain)
-                if isinstance(o, URIRef)
-            )
-            rng = sorted(
-                str(o)
-                for o in graph.objects(prop_iri, RDFS.range)
-                if isinstance(o, URIRef)
-            )
+            domain = sorted(str(o) for o in graph.objects(prop_iri, RDFS.domain) if isinstance(o, URIRef))
+            rng = sorted(str(o) for o in graph.objects(prop_iri, RDFS.range) if isinstance(o, URIRef))
             item: dict[str, Any] = {
                 "iri": str(prop_iri),
                 "localName": name,
@@ -564,9 +547,7 @@ def _properties_view_from_graph(graph: Graph) -> list[dict[str, Any]]:
     return out
 
 
-def owl_graph_view(
-    turtle: str | None, *, max_triples: int | None = None
-) -> dict[str, list[dict[str, Any]]]:
+def owl_graph_view(turtle: str | None, *, max_triples: int | None = None) -> dict[str, list[dict[str, Any]]]:
     """Parse OWL/Turtle into the UI schema-graph shape.
 
     Returns ``{"classes": [...], "properties": [...]}`` where each class is

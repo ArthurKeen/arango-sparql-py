@@ -129,9 +129,7 @@ class SchemaCache:
         ttl_seconds: int | None = None,
         l2_collection_name: str = L2_COLLECTION_NAME,
     ) -> None:
-        self._ttl_seconds = (
-            ttl_seconds if ttl_seconds is not None else _resolve_ttl_from_env()
-        )
+        self._ttl_seconds = ttl_seconds if ttl_seconds is not None else _resolve_ttl_from_env()
         self._l2_collection_name = l2_collection_name
         self._l1: dict[str, CachedEntry] = {}
         self._lock = threading.Lock()
@@ -196,14 +194,8 @@ class SchemaCache:
             return CacheStatus(
                 db_name=db_name,
                 has_entry=entry is not None,
-                age_seconds=(
-                    entry.age().total_seconds() if entry is not None else None
-                ),
-                is_expired=(
-                    entry.is_expired(ttl_seconds=self._ttl_seconds)
-                    if entry is not None
-                    else False
-                ),
+                age_seconds=(entry.age().total_seconds() if entry is not None else None),
+                is_expired=(entry.is_expired(ttl_seconds=self._ttl_seconds) if entry is not None else False),
                 fingerprint=(entry.fingerprint if entry is not None else None),
                 ttl_seconds=self._ttl_seconds,
             )
@@ -230,9 +222,7 @@ class SchemaCache:
         """
 
         when = now if now is not None else datetime.now(UTC)
-        fp = fingerprint if fingerprint is not None else compute_bundle_fingerprint(
-            bundle, now=when
-        )
+        fp = fingerprint if fingerprint is not None else compute_bundle_fingerprint(bundle, now=when)
         entry = CachedEntry(bundle=bundle, fingerprint=fp, acquired_at=when)
         with self._lock:
             self._l1[db_name] = entry

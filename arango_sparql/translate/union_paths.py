@@ -102,9 +102,7 @@ def emit_alternative_path(
     ``{ ?s :p ?o } UNION { ?s :q ?o }``.
     """
     arms = list(predicate.args)
-    _emit_union_of_arms(
-        visitor, [_triple_arm_driver(subject, arm, obj) for arm in arms]
-    )
+    _emit_union_of_arms(visitor, [_triple_arm_driver(subject, arm, obj) for arm in arms])
 
 
 # Named driver factories rather than lambdas-with-defaults: mypy cannot
@@ -120,9 +118,7 @@ def _visit_arm_driver(arm: Any) -> Callable[[AlgebraVisitor], None]:
     return drive
 
 
-def _triple_arm_driver(
-    subject: Any, arm: Any, obj: Any
-) -> Callable[[AlgebraVisitor], None]:
+def _triple_arm_driver(subject: Any, arm: Any, obj: Any) -> Callable[[AlgebraVisitor], None]:
     def drive(v: AlgebraVisitor) -> None:
         v._emit_triple((subject, arm, obj))  # noqa: SLF001 - intentional
 
@@ -155,9 +151,7 @@ def _emit_union_of_arms(
         # Union always has p1 + p2. If a future caller hands us a
         # degenerate single-arm list, fail loudly rather than emit
         # an AQL ``UNION((x))`` that ArangoDB would reject.
-        raise ValueError(
-            f"UNION requires at least 2 arms, got {len(arm_drivers)}"
-        )
+        raise ValueError(f"UNION requires at least 2 arms, got {len(arm_drivers)}")
 
     # ---- Phase 1: probe each arm to collect its bound variables -----
     # We need the union of per-arm vars BEFORE we can decide each
@@ -168,9 +162,7 @@ def _emit_union_of_arms(
     for driver in arm_drivers:
         probe = _spawn_child(visitor)
         driver(probe)
-        arm_var_sets.append(
-            set(probe.state.var_to_expr.keys()) - outer_vars
-        )
+        arm_var_sets.append(set(probe.state.var_to_expr.keys()) - outer_vars)
 
     raw_vars = sorted(set().union(*arm_var_sets))
     if not raw_vars:

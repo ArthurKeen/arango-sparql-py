@@ -29,7 +29,7 @@ _READ_QUERIES = [
     "DESCRIBE <http://ex.org/Alice>",
     "select ?x where { ?x a <http://ex.org/Person> }",  # lowercase
     "SELECT ?x WHERE { ?x <http://ex.org/insertedAt> ?ts }",  # 'insert' is a substring
-    "SELECT ?x WHERE { ?x ?p \"INSERT INTO foo\" }",  # update keyword inside a string literal
+    'SELECT ?x WHERE { ?x ?p "INSERT INTO foo" }',  # update keyword inside a string literal
     "PREFIX ex: <http://ex.org/> SELECT * WHERE { ?s ex:p ?o }",
     """
         # this is a header comment that mentions INSERT
@@ -87,12 +87,7 @@ def test_with_clause_flagged_as_update() -> None:
     leading-WITH form per SPARQL 1.1 §3.1.3 — and it is an Update.
     """
 
-    body = (
-        "WITH <http://ex.org/g> "
-        "DELETE { ?s ?p ?o } "
-        "INSERT { ?s ?p ?new } "
-        "WHERE { ?s ?p ?o }"
-    )
+    body = "WITH <http://ex.org/g> DELETE { ?s ?p ?o } INSERT { ?s ?p ?new } WHERE { ?s ?p ?o }"
     assert is_sparql_update(body) is True
 
 
@@ -121,7 +116,8 @@ def test_update_with_comment_before_is_flagged() -> None:
 
 
 @pytest.mark.parametrize(
-    "value", [None, "", "   ", "\n\n", "# only a comment\n"],
+    "value",
+    [None, "", "   ", "\n\n", "# only a comment\n"],
     ids=["none", "empty", "ws", "newlines", "comment-only"],
 )
 def test_empty_inputs_are_not_update(value: str | None) -> None:
@@ -149,9 +145,7 @@ def test_identifier_prefix_collision_not_flagged() -> None:
     regex prevents that.
     """
 
-    body = (
-        "SELECT ?x WHERE { ?x <http://ex.org/insertable> ?y }"
-    )
+    body = "SELECT ?x WHERE { ?x <http://ex.org/insertable> ?y }"
     assert is_sparql_update(body) is False
 
 
@@ -190,10 +184,7 @@ def test_strip_does_not_eat_hash_inside_iri() -> None:
     real comment stripper has to skip over IRI references.
     """
 
-    body = (
-        "PREFIX owl: <http://www.w3.org/2002/07/owl#>\n"
-        "SELECT * WHERE { ?s a owl:Class }"
-    )
+    body = "PREFIX owl: <http://www.w3.org/2002/07/owl#>\nSELECT * WHERE { ?s a owl:Class }"
     out = strip_prologue_and_comments(body)
     assert out.startswith("SELECT")
     # The IRI's ``#>`` must survive when present inside the body, too.

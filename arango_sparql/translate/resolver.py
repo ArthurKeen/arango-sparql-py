@@ -290,9 +290,7 @@ class SchemaResolver:
     _attribute_uri_map: dict[str, str] | None = field(default=None)
     """Lazily-built reverse property index for
     :meth:`attribute_uri_map`; ``None`` until first use."""
-    _shard_family_by_collection: dict[str, tuple[str, ...]] = field(
-        default_factory=dict
-    )
+    _shard_family_by_collection: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Reverse index: physical collection name → the shard family
     tuple it belongs to. Built once in :meth:`__post_init__` so
     every ``resolve_class`` lookup is O(1)."""
@@ -428,9 +426,7 @@ class SchemaResolver:
         ref = URIRef(key)
         if (ref, RDF.type, OWL.Class) not in self.ontology:
             if not self.permissive_class_resolution:
-                raise SchemaResolutionError(
-                    f"class IRI {key!r} is not declared owl:Class in the ontology"
-                )
+                raise SchemaResolutionError(f"class IRI {key!r} is not declared owl:Class in the ontology")
             # Permissive mode (opt-in): degrade to the default
             # document collection — same shape that
             # :meth:`resolve_property` already uses for unmapped
@@ -449,9 +445,7 @@ class SchemaResolver:
                 iri=key,
                 fallback_collection=fallback_collection,
             )
-            shard_family = self._shard_family_by_collection.get(
-                fallback_collection
-            )
+            shard_family = self._shard_family_by_collection.get(fallback_collection)
             resolved = ResolvedClass(
                 iri=key,
                 collection=fallback_collection,
@@ -635,9 +629,7 @@ class SchemaResolver:
         mapping: dict[str, str] = {}
         # ``key=str`` both satisfies the rdflib ``Node`` sort typing and
         # makes the collision rule explicit: lexically-smallest IRI wins.
-        for subject in sorted(
-            set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str
-        ):
+        for subject in sorted(set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str):
             if not isinstance(subject, URIRef):
                 continue
             attribute = local_name(subject)
@@ -791,9 +783,7 @@ def _synthesize_graph_from_bundle(bundle: MappingBundle) -> Graph:
         if style == "RPT" and not collection:
             collection = spec.get("triplesCollection") or "_triples"
         if collection:
-            g.add(
-                (iri, _SYNTHETIC_PHYS_NS["collectionName"], Literal(str(collection)))
-            )
+            g.add((iri, _SYNTHETIC_PHYS_NS["collectionName"], Literal(str(collection))))
         g.add((iri, _SYNTHETIC_PHYS_NS["mappingStyle"], Literal(style)))
 
         for src_key, phys_local in _BUNDLE_ENTITY_ANNOTATIONS:
@@ -816,13 +806,9 @@ def _synthesize_graph_from_bundle(bundle: MappingBundle) -> Graph:
                 p_iri = _synthetic_iri(prop_name)
                 g.add((p_iri, RDF.type, OWL.DatatypeProperty))
                 g.add((p_iri, RDFS.domain, iri))
-                field = (
-                    prop_spec.get("field") if isinstance(prop_spec, dict) else None
-                )
+                field = prop_spec.get("field") if isinstance(prop_spec, dict) else None
                 if isinstance(field, str) and field and field != prop_name:
-                    g.add(
-                        (p_iri, _SYNTHETIC_PHYS_NS["attributeName"], Literal(field))
-                    )
+                    g.add((p_iri, _SYNTHETIC_PHYS_NS["attributeName"], Literal(field)))
 
     for rtype, spec in bundle.relationships().items():
         if not isinstance(rtype, str) or not rtype:

@@ -32,8 +32,7 @@ def test_extra_projected_column_is_not_equivalent() -> None:
     """A model that adds a column/pattern is genuinely different → NOT equal."""
     gold = _PREFIX + "SELECT ?s WHERE { ?s a :Person ; :age 30 . }"
     with_extra = (
-        _PREFIX
-        + "SELECT ?person ?name WHERE { ?person a :Person . ?person :age 30 . "
+        _PREFIX + "SELECT ?person ?name WHERE { ?person a :Person . ?person :age 30 . "
         "OPTIONAL { ?person :name ?name } }"
     )
     assert _canonical(gold) != _canonical(with_extra)

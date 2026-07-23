@@ -129,7 +129,7 @@ def _qname(iri: str) -> str:
     """
     for ns, prefix in _PREFIX_FOR_NS:
         if iri.startswith(ns):
-            return f"{prefix}:{iri[len(ns):]}"
+            return f"{prefix}:{iri[len(ns) :]}"
     return f"<{iri}>"
 
 
@@ -534,10 +534,7 @@ def main() -> None:
 
     FILTER_LOG_PATH.write_text(_render_filter_log(result, pool), encoding="utf-8")
 
-    print(
-        f"kept={len(result.cases)} dropped={result.outcome.total_dropped} "
-        f"total={result.total_input}"
-    )
+    print(f"kept={len(result.cases)} dropped={result.outcome.total_dropped} total={result.total_input}")
 
 
 if __name__ == "__main__":

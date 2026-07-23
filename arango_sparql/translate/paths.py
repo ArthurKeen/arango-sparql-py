@@ -128,9 +128,7 @@ def emit_path_triple(
     if isinstance(predicate, NegatedPath):
         _emit_negated_path(visitor, subject, predicate, obj)
         return
-    raise UnsupportedSparqlError(
-        f"property path type {type(predicate).__name__!r} is not supported"
-    )
+    raise UnsupportedSparqlError(f"property path type {type(predicate).__name__!r} is not supported")
 
 
 def _emit_sequence_path(
@@ -179,13 +177,9 @@ def _emit_sequence_path(
         if len(steps) == 1:
             visitor._emit_triple((subject, steps[0], obj))
             return
-        raise UnsupportedSparqlError(
-            "SequencePath has no steps; expected at least one"
-        )
+        raise UnsupportedSparqlError("SequencePath has no steps; expected at least one")
     if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
-        raise UnsupportedSparqlError(
-            "property paths on RPT-mapped subjects are not yet supported"
-        )
+        raise UnsupportedSparqlError("property paths on RPT-mapped subjects are not yet supported")
 
     current_subject: Any = subject
     for index, step in enumerate(steps):
@@ -246,9 +240,7 @@ def _emit_mul_path(
     # rdflib ``Literal['*','+','?']`` inference would reject.
     mod: str = predicate.mod
     if mod not in ("*", "+", "?"):
-        raise UnsupportedSparqlError(
-            f"property path modifier {mod!r} is not supported"
-        )
+        raise UnsupportedSparqlError(f"property path modifier {mod!r} is not supported")
 
     inner = predicate.path
 
@@ -274,14 +266,11 @@ def _emit_mul_path(
 
     if isinstance(inner, (AlternativePath, NegatedPath)):
         raise UnsupportedSparqlError(
-            f"nested property path {type(inner).__name__!r} inside "
-            f"MulPath (':p{mod}') is not supported"
+            f"nested property path {type(inner).__name__!r} inside MulPath (':p{mod}') is not supported"
         )
 
     if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
-        raise UnsupportedSparqlError(
-            "property paths on RPT-mapped subjects are not yet supported"
-        )
+        raise UnsupportedSparqlError("property paths on RPT-mapped subjects are not yet supported")
 
     max_depth = visitor.resolver.property_path_max_depth
     if mod == "?":
@@ -300,9 +289,7 @@ def _emit_mul_path(
 
         return drive
 
-    def _expanded_arm_driver(
-        s: Any, p: Any, o: Any
-    ) -> Callable[[AlgebraVisitor], None]:
+    def _expanded_arm_driver(s: Any, p: Any, o: Any) -> Callable[[AlgebraVisitor], None]:
         def drive(v: AlgebraVisitor) -> None:
             _emit_expanded_path_arm(v, s, p, o)
 
@@ -386,8 +373,7 @@ def _emit_negated_path(
         is_inverse = isinstance(arm, InvPath) or getattr(arm, "name", None) == "InversePath"
         if is_inverse:
             raise UnsupportedSparqlError(
-                "negated property paths with inverse arms "
-                "('!(^:p)') are not yet supported"
+                "negated property paths with inverse arms ('!(^:p)') are not yet supported"
             )
         if not isinstance(arm, URIRef):
             raise UnsupportedSparqlError(
@@ -398,9 +384,7 @@ def _emit_negated_path(
 
     # ---- Reject RPT subjects --------------------------------------
     if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
-        raise UnsupportedSparqlError(
-            "negated property paths on RPT-mapped subjects are not yet supported"
-        )
+        raise UnsupportedSparqlError("negated property paths on RPT-mapped subjects are not yet supported")
 
     # ---- Resolve negated predicates to physical attribute names ---
     # The resolver may surface a ``W_SCHEMA_UNMAPPED_IRI`` warning
@@ -418,9 +402,7 @@ def _emit_negated_path(
                 f"(nested path forms inside '!(...)' are not supported)"
             )
         negated_iris.append(arm)
-    negated_attrs = sorted(
-        {visitor.resolver.resolve_property(iri).attribute for iri in negated_iris}
-    )
+    negated_attrs = sorted({visitor.resolver.resolve_property(iri).attribute for iri in negated_iris})
 
     # ---- Open the subject FOR -------------------------------------
     # Handles both Variable and URIRef subjects; for URIRef it
@@ -473,8 +455,7 @@ def _emit_negated_path(
         visitor.builder.filter_eq(value_expr, obj_bind)
         return
     raise UnsupportedSparqlError(
-        f"negated property path object term type "
-        f"{type(obj).__name__!r} is not supported"
+        f"negated property path object term type {type(obj).__name__!r} is not supported"
     )
 
 
@@ -499,8 +480,7 @@ def _emit_zero_hop_path(
         visitor.builder.filter_eq(uri_expr, bind)
         return
     raise UnsupportedSparqlError(
-        f"zero-hop property path object term type {type(obj).__name__!r} "
-        f"is not supported"
+        f"zero-hop property path object term type {type(obj).__name__!r} is not supported"
     )
 
 
@@ -517,9 +497,7 @@ def _emit_expanded_path_arm(
     if isinstance(expanded, URIRef):
         visitor._emit_triple((subject, expanded, obj))
         return
-    raise UnsupportedSparqlError(
-        f"repeated path inner type {type(expanded).__name__!r} is not supported"
-    )
+    raise UnsupportedSparqlError(f"repeated path inner type {type(expanded).__name__!r} is not supported")
 
 
 def _combine_mul_modifiers(outer: str, inner: str) -> str:
@@ -557,9 +535,7 @@ def _repeat_inner_path(inner: Any, count: int) -> Any:
         if count == 1:
             return inner
         return SequencePath(*([inner] * count))
-    raise UnsupportedSparqlError(
-        f"cannot repeat property path inner type {type(inner).__name__!r}"
-    )
+    raise UnsupportedSparqlError(f"cannot repeat property path inner type {type(inner).__name__!r}")
 
 
 # ---------------------------------------------------------------------------

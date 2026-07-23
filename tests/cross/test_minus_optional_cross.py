@@ -42,13 +42,7 @@ oxi = pytest.importorskip("pyoxigraph", reason="pyoxigraph required for cross te
 
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 EX = "http://example/"
-_NEG_DIR = (
-    Path(__file__).resolve().parents[1]
-    / "w3c"
-    / "data"
-    / "sparql11-test-suite"
-    / "negation"
-)
+_NEG_DIR = Path(__file__).resolve().parents[1] / "w3c" / "data" / "sparql11-test-suite" / "negation"
 
 # Maps the two named classes to dedicated PG collections; every other
 # subject (the untyped ``?a`` rows in full-minuend) lands in Document.
@@ -96,9 +90,7 @@ def _docs_from_ttl(ttl_path: Path) -> dict[str, list[dict[str, Any]]]:
     subjects = set(collection_of) | set(attrs_of)
     for subject in subjects:
         collection = collection_of.get(subject, "Document")
-        docs.setdefault(collection, []).append(
-            {"_uri": subject, **attrs_of.get(subject, {})}
-        )
+        docs.setdefault(collection, []).append({"_uri": subject, **attrs_of.get(subject, {})})
     return docs
 
 
@@ -124,8 +116,7 @@ def test_minus_optional_matches_oxigraph(name: str) -> None:
 
     result = translate(query, resolver=SchemaResolver.from_turtle(ONTOLOGY))
     actual = [
-        drop_null_bindings(r)
-        for r in run_aql_subset(result.aql, result.bind_vars, _docs_from_ttl(data_path))
+        drop_null_bindings(r) for r in run_aql_subset(result.aql, result.bind_vars, _docs_from_ttl(data_path))
     ]
 
     store = load_store([data_path])

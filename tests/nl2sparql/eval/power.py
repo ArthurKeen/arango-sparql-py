@@ -26,9 +26,7 @@ _Z_BETA = {
 }
 
 
-def required_n(
-    mde: float, discordant_rate: float, *, alpha: float = 0.05, power: float = 0.80
-) -> int:
+def required_n(mde: float, discordant_rate: float, *, alpha: float = 0.05, power: float = 0.80) -> int:
     """Minimum paired-case count N to detect a paired pass-rate delta >= `mde`
     at the given `alpha` (two-sided) and `power`, assuming a discordant-pair
     proportion of `discordant_rate` (Connor 1987 approximate formula)."""
@@ -38,9 +36,7 @@ def required_n(
     return math.ceil(n)
 
 
-def achieved_mde(
-    n: int, discordant_rate: float, *, alpha: float = 0.05, power: float = 0.80
-) -> float:
+def achieved_mde(n: int, discordant_rate: float, *, alpha: float = 0.05, power: float = 0.80) -> float:
     """Inverse of `required_n` -- the minimum detectable effect actually
     achieved at case count `n` and an (observed or assumed) discordant rate."""
     z_a = _Z[alpha]

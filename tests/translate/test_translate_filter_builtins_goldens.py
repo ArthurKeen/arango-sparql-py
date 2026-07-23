@@ -82,14 +82,10 @@ def test_filter_builtins_golden(
        would re-surface the AqlEmit "no FOR clause" XFAILs
        these tests unblocked.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -109,18 +105,14 @@ def test_concat_inside_if() -> None:
     own commas inside the ``then`` arm)."""
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        'PREFIX : <http://ex.org/> '
-        'SELECT (IF(?n > 0, CONCAT(?n, "+"), "neg") AS ?x) '
-        'WHERE { ?s :n ?n }',
+        'PREFIX : <http://ex.org/> SELECT (IF(?n > 0, CONCAT(?n, "+"), "neg") AS ?x) WHERE { ?s :n ?n }',
         resolver=resolver,
     )
     # The ternary's then-arm is wrapped in parens so CONCAT's
     # commas don't get mistaken for a ternary delimiter.
     assert "? (CONCAT(" in result.aql
     # AQL well-formed: matching parens for CONCAT(...) and the ternary.
-    assert result.aql.count("(") == result.aql.count(")"), (
-        "unbalanced parens:\n" + result.aql
-    )
+    assert result.aql.count("(") == result.aql.count(")"), "unbalanced parens:\n" + result.aql
 
 
 def test_langmatches_compose_with_other_filters() -> None:
@@ -134,9 +126,9 @@ def test_langmatches_compose_with_other_filters() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        'PREFIX : <http://ex.org/> SELECT ?s WHERE { '
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { "
         '?s :n ?n . FILTER (LANGMATCHES(LANG(?n), "en") && ?n != "")'
-        ' }',
+        " }",
         resolver=resolver,
     )
     # Exactly one FILTER ((..)).
@@ -145,9 +137,7 @@ def test_langmatches_compose_with_other_filters() -> None:
     assert "STARTS_WITH(LOWER(" in result.aql
     assert "!= @" in result.aql
     # Conjunction operator present.
-    filter_line = next(
-        line for line in result.aql.splitlines() if line.startswith("FILTER ((")
-    )
+    filter_line = next(line for line in result.aql.splitlines() if line.startswith("FILTER (("))
     assert " && " in filter_line
 
 
@@ -161,9 +151,7 @@ def test_empty_bgp_with_multiple_binds() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        "PREFIX : <http://ex.org/> SELECT ?x ?y WHERE { "
-        "BIND(1 AS ?x) BIND(2 AS ?y) "
-        "}",
+        "PREFIX : <http://ex.org/> SELECT ?x ?y WHERE { BIND(1 AS ?x) BIND(2 AS ?y) }",
         resolver=resolver,
     )
     # Exactly one FOR — the empty-BGP opener.

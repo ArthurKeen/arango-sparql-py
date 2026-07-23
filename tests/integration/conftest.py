@@ -42,9 +42,7 @@ DEFAULT_ARANGO_PASSWORD = os.getenv("ARANGO_PASSWORD", "rootpw")
 # but ``_system`` so the suite never drops/recreates collections in the
 # ArangoDB catalogue database. The DB is auto-provisioned by the
 # fixtures (``ensure_test_database``) since it may not exist yet.
-DEFAULT_ARANGO_DB = (
-    os.getenv("ARANGO_TEST_DB") or os.getenv("ARANGO_DB") or "sparql-to-aql"
-)
+DEFAULT_ARANGO_DB = os.getenv("ARANGO_TEST_DB") or os.getenv("ARANGO_DB") or "sparql-to-aql"
 
 
 def ensure_test_database() -> None:

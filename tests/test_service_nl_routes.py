@@ -448,26 +448,18 @@ def test_nl_samples_rule_based_without_provider(client: TestClient) -> None:
         app.dependency_overrides.pop(_llm_client_factory, None)
 
 
-def test_nl_samples_uses_llm_when_provider_present(
-    client: TestClient, override_llm
-) -> None:
+def test_nl_samples_uses_llm_when_provider_present(client: TestClient, override_llm) -> None:
     sc = override_llm([_llm("Who has a name?\nList every person")])
-    resp = client.post(
-        "/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL, "count": 5}
-    )
+    resp = client.post("/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL, "count": 5})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["queries"] == ["Who has a name?", "List every person"]
     assert len(sc.calls) == 1
 
 
-def test_nl_samples_use_llm_false_is_rule_based_even_with_provider(
-    client: TestClient, override_llm
-) -> None:
+def test_nl_samples_use_llm_false_is_rule_based_even_with_provider(client: TestClient, override_llm) -> None:
     sc = override_llm([_llm("Should not be used")])
-    resp = client.post(
-        "/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL, "use_llm": False}
-    )
+    resp = client.post("/nl-samples", json={"ontology_ttl": ONTOLOGY_TTL, "use_llm": False})
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["queries"]

@@ -478,12 +478,8 @@ class SchemaStatusResponse(BaseModel):
     status: str
     unchanged: bool
     needs_full_rebuild: bool
-    current: SchemaFingerprintBlock = Field(
-        default_factory=SchemaFingerprintBlock
-    )
-    cached: SchemaFingerprintBlock = Field(
-        default_factory=SchemaFingerprintBlock
-    )
+    current: SchemaFingerprintBlock = Field(default_factory=SchemaFingerprintBlock)
+    cached: SchemaFingerprintBlock = Field(default_factory=SchemaFingerprintBlock)
     last_acquired_at: str | None = None
     db_name: str | None = None
 
@@ -553,9 +549,7 @@ class OwlImportRequest(BaseModel):
     """
 
     turtle: str = Field(..., min_length=1, max_length=_MAX_TURTLE_LENGTH)
-    source_notes: str | None = Field(
-        default=None, max_length=_MAX_FIELD_LENGTH
-    )
+    source_notes: str | None = Field(default=None, max_length=_MAX_FIELD_LENGTH)
 
 
 class OwlImportResponse(BaseModel):
@@ -587,9 +581,7 @@ class OwlExportRequest(BaseModel):
     """
 
     mapping: dict[str, Any] | None = None
-    ontology_ttl: str | None = Field(
-        default=None, max_length=_MAX_TURTLE_LENGTH
-    )
+    ontology_ttl: str | None = Field(default=None, max_length=_MAX_TURTLE_LENGTH)
 
 
 class OwlExportResponse(BaseModel):

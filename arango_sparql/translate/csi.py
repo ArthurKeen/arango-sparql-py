@@ -65,13 +65,9 @@ def mapping_bundle_from_csi(csi: dict[str, Any] | None) -> MappingBundle:
         raise MappingError(f"unsupported csiVersion {version!r} (expected '1')")
 
     conceptual = _require_dict(csi.get("conceptualModel") or {}, "conceptualModel")
-    physical = _require_dict(
-        csi.get("arangoPhysicalMapping") or {}, "arangoPhysicalMapping"
-    )
+    physical = _require_dict(csi.get("arangoPhysicalMapping") or {}, "arangoPhysicalMapping")
 
-    csi_entities = _require_dict(
-        physical.get("entities") or {}, "arangoPhysicalMapping.entities"
-    )
+    csi_entities = _require_dict(physical.get("entities") or {}, "arangoPhysicalMapping.entities")
     csi_relationships = _require_dict(
         physical.get("relationships") or {}, "arangoPhysicalMapping.relationships"
     )
@@ -88,9 +84,7 @@ def mapping_bundle_from_csi(csi: dict[str, Any] | None) -> MappingBundle:
         # spelling with the bundle's canonical relationship-spec fields, so
         # they copy across by name.
         endpoints[rtype] = {
-            field_name: rel[field_name]
-            for field_name in _ENDPOINT_FIELDS
-            if rel.get(field_name) is not None
+            field_name: rel[field_name] for field_name in _ENDPOINT_FIELDS if rel.get(field_name) is not None
         }
 
     # Physical entities pass through verbatim — the CSI physical entity spec
@@ -103,9 +97,7 @@ def mapping_bundle_from_csi(csi: dict[str, Any] | None) -> MappingBundle:
     # Physical relationships pass through + get endpoints grafted on.
     relationships_out: dict[str, Any] = {}
     for rtype, spec in csi_relationships.items():
-        merged = _require_dict(
-            spec, f"arangoPhysicalMapping.relationships[{rtype!r}]"
-        ).copy()
+        merged = _require_dict(spec, f"arangoPhysicalMapping.relationships[{rtype!r}]").copy()
         for field_name, value in endpoints.get(rtype, {}).items():
             merged.setdefault(field_name, value)
         relationships_out[rtype] = merged

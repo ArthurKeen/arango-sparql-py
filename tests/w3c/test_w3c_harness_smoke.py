@@ -112,9 +112,7 @@ def test_bucket_classifier_categorises_every_known_prefix() -> None:
         assert actual == expected_bucket, (
             f"reason {reason!r} expected bucket {expected_bucket!r}, got {actual!r}"
         )
-        assert actual != BUCKET_OTHER, (
-            f"reason {reason!r} fell through to 'other'; add a rule"
-        )
+        assert actual != BUCKET_OTHER, f"reason {reason!r} fell through to 'other'; add a rule"
 
 
 @pytest.mark.w3c

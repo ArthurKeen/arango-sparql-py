@@ -229,8 +229,7 @@ def test_bank_similarity_ceiling() -> None:
     report_lines = [
         "# fewshot_bank.yml <-> corpus.yml nearest-neighbor similarity",
         "",
-        f"min={min_cos:.4f} median={median_cos:.4f} max={max_cos:.4f} "
-        f"ceiling={_SIMILARITY_CEILING}",
+        f"min={min_cos:.4f} median={median_cos:.4f} max={max_cos:.4f} ceiling={_SIMILARITY_CEILING}",
         "",
         "| cosine | corpus question | nearest bank question |",
         "|---|---|---|",

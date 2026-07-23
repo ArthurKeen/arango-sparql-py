@@ -244,9 +244,7 @@ def render_construct(
 
     fmt = MEDIA_TYPE_TO_RDF_FORMAT.get(media_type)
     if fmt is None:
-        raise ValueError(
-            f"unsupported media type for CONSTRUCT/DESCRIBE: {media_type!r}"
-        )
+        raise ValueError(f"unsupported media type for CONSTRUCT/DESCRIBE: {media_type!r}")
     g = _rows_to_graph(rows)
     # JSON-LD wants ``json-ld`` format; rdflib's ``serialize`` returns
     # ``bytes`` by default — we coerce to ``str`` so the route's

@@ -4,6 +4,7 @@ drop-in for nl2sparql's private loop?
 
 Behavior-preserving check ONLY — no repo files changed. Run from repo root.
 """
+
 from __future__ import annotations
 
 import json
@@ -44,7 +45,15 @@ class ScriptedProviderBridge:
 
     def __init__(self, sparql: str) -> None:
         self._client = ScriptedLLMClient(
-            [LLMResponse(content=_wrap(sparql), prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0)],
+            [
+                LLMResponse(
+                    content=_wrap(sparql),
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    cached_tokens=0,
+                )
+            ],
             latency_ms=0,
         )
 
@@ -52,7 +61,12 @@ class ScriptedProviderBridge:
         resp = self._client.generate(
             [{"role": "system", "content": system}, {"role": "user", "content": user}]
         )
-        return resp.content, {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
+        return resp.content, {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "cached_tokens": 0,
+        }
 
 
 class SparqlAdapter:
@@ -108,13 +122,17 @@ for case in corpus["cases"]:
     baseline_pass = bool(baseline[name])
     agree = engine_pass == baseline_pass
     all_agree = all_agree and agree
-    print(f"{name:<24} {str(res.ok):<10} {str(engine_pass):<12} {str(baseline_pass):<9} {'AGREE' if agree else '*** MISMATCH ***'}")
+    print(
+        f"{name:<24} {str(res.ok):<10} {str(engine_pass):<12} {str(baseline_pass):<9} {'AGREE' if agree else '*** MISMATCH ***'}"
+    )
 
 engine_rate = sum(
     1
     for case in corpus["cases"]
     if (
-        lambda r, ce: bool(r.ok and ce is not None and _canonical(r.query) is not None and ce == _canonical(r.query))
+        lambda r, ce: bool(
+            r.ok and ce is not None and _canonical(r.query) is not None and ce == _canonical(r.query)
+        )
     )(
         NLQueryEngine(
             provider=ScriptedProviderBridge(case.get("scripted", case["expected"])),

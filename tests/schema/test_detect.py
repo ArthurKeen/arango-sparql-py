@@ -64,9 +64,7 @@ class _MockAql:
         self.samples = samples
         self.queries_seen: list[tuple[str, dict[str, Any]]] = []
 
-    def execute(
-        self, query: str, bind_vars: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    def execute(self, query: str, bind_vars: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.queries_seen.append((query, dict(bind_vars or {})))
         if not bind_vars:
             return []
@@ -77,11 +75,7 @@ class _MockAql:
         if "keys" in bind_vars:
             wanted = set(bind_vars.get("keys") or [])
             type_field = bind_vars.get("tf")
-            return [
-                {"k": d.get("_key"), "t": d.get(type_field)}
-                for d in docs
-                if d.get("_key") in wanted
-            ]
+            return [{"k": d.get("_key"), "t": d.get(type_field)} for d in docs if d.get("_key") in wanted]
         # RPT type lookup:
         # FILTER t[@pred] == @rdftype AND t[@subj] IN @uris RETURN {s, o}
         if "rdftype" in bind_vars:
@@ -161,14 +155,14 @@ def _make_rpt_docs(n: int = 10) -> list[dict[str, Any]]:
 
 
 def _make_pg_edge_docs(n: int = 10) -> list[dict[str, Any]]:
-    return [{"_from": f"persons/{i}", "_to": f"persons/{i+1}"} for i in range(n)]
+    return [{"_from": f"persons/{i}", "_to": f"persons/{i + 1}"} for i in range(n)]
 
 
 def _make_lpg_edge_docs(types: list[str], n: int = 10) -> list[dict[str, Any]]:
     return [
         {
             "_from": f"v/{i}",
-            "_to": f"v/{i+1}",
+            "_to": f"v/{i + 1}",
             "type": types[i % len(types)],
         }
         for i in range(n)
@@ -275,9 +269,7 @@ def test_rpt_treats_none_subject_as_disqualifying() -> None:
     let a malformed collection masquerade as RPT.
     """
 
-    docs = [
-        {"subject_uri": None, "predicate": "p", "object_value": "v"} for _ in range(10)
-    ]
+    docs = [{"subject_uri": None, "predicate": "p", "object_value": "v"} for _ in range(10)]
     db = MockDb(collections=[_doc_collection("nulls")], samples={"nulls": docs})
     rpt = detect_rpt_pattern(db)["nulls"]
     assert rpt.is_rpt is False
@@ -315,10 +307,7 @@ def test_tier_1_below_threshold_falls_back_to_pg_collection() -> None:
     collection should classify as plain ``COLLECTION`` (PG entity).
     """
 
-    docs = (
-        _make_lpg_tier1_docs(["Person"], n=5)
-        + [{"_key": str(i + 5)} for i in range(5)]
-    )
+    docs = _make_lpg_tier1_docs(["Person"], n=5) + [{"_key": str(i + 5)} for i in range(5)]
     db = MockDb(collections=[_doc_collection("nodes")], samples={"nodes": docs})
     assert classify_schema(db) == "pg"
 
@@ -345,9 +334,7 @@ def test_tier_2_labels_rejects_free_text_values() -> None:
     must fall back to PG.
     """
 
-    docs = [
-        {"_key": str(i), "labels": [f"this is sentence {i}"]} for i in range(10)
-    ]
+    docs = [{"_key": str(i), "labels": [f"this is sentence {i}"]} for i in range(10)]
     db = MockDb(collections=[_doc_collection("posts")], samples={"posts": docs})
     assert classify_schema(db) == "pg"
 
@@ -368,10 +355,7 @@ def test_tier_2_labels_rejects_more_than_thirty_two_distinct_values() -> None:
     sample with 33 distinct labels and verify rejection.
     """
 
-    docs = [
-        {"_key": str(i), "labels": [f"L{i}"]}
-        for i in range(TIER_2_MAX_DISTINCT + 1)
-    ]
+    docs = [{"_key": str(i), "labels": [f"L{i}"]} for i in range(TIER_2_MAX_DISTINCT + 1)]
     db = MockDb(collections=[_doc_collection("many")], samples={"many": docs})
     assert classify_schema(db) == "pg"
 
@@ -434,10 +418,7 @@ def test_edge_relation_field_alias_qualifies() -> None:
     PRD §6.3.1 step 4; it must qualify the same as ``type``.
     """
 
-    docs = [
-        {"_from": f"v/{i}", "_to": f"v/{i+1}", "relation": "MENTIONS"}
-        for i in range(10)
-    ]
+    docs = [{"_from": f"v/{i}", "_to": f"v/{i + 1}", "relation": "MENTIONS"} for i in range(10)]
     db = MockDb(
         collections=[_edge_collection("edges")],
         samples={"edges": docs},
@@ -484,8 +465,7 @@ def test_generic_edge_endpoints_resolve_via_label_discriminator() -> None:
         {"_key": f"c{i}", "type": "Company"} for i in range(4)
     ]
     works_at = [
-        {"_from": f"vertices/p{i}", "_to": f"vertices/c{i}", "relation": "WORKS_AT"}
-        for i in range(4)
+        {"_from": f"vertices/p{i}", "_to": f"vertices/c{i}", "relation": "WORKS_AT"} for i in range(4)
     ]
     db = MockDb(
         collections=[_doc_collection("vertices"), _edge_collection("edges")],
@@ -507,10 +487,7 @@ def test_hybrid_edge_endpoints_span_lpg_source_and_pg_target() -> None:
 
     vertices = [{"_key": f"p{i}", "type": "Person"} for i in range(6)]
     projects = [{"_key": f"pr{i}", "name": f"proj{i}"} for i in range(6)]
-    owns = [
-        {"_from": f"vertices/p{i}", "_to": f"Project/pr{i}", "relation": "OWNS"}
-        for i in range(6)
-    ]
+    owns = [{"_from": f"vertices/p{i}", "_to": f"Project/pr{i}", "relation": "OWNS"} for i in range(6)]
     db = MockDb(
         collections=[
             _doc_collection("vertices"),
@@ -577,7 +554,7 @@ def test_endpoints_into_unclassified_collection_stay_any() -> None:
     resolved and remain ``"Any"``.
     """
 
-    follows = [{"_from": f"ghost/{i}", "_to": f"ghost/{i+1}"} for i in range(10)]
+    follows = [{"_from": f"ghost/{i}", "_to": f"ghost/{i + 1}"} for i in range(10)]
     db = MockDb(
         collections=[_edge_collection("follows")],
         samples={"follows": follows},
@@ -692,9 +669,7 @@ def test_rpt_object_property_types_fetched_when_outside_sample() -> None:
         samples={"_triples": object_rows + type_rows},
     )
     rpt = detect_rpt_pattern(db, sample_size=len(object_rows))
-    rels = infer_rpt_object_property_relationships(
-        db, rpt, sample_size=len(object_rows)
-    )
+    rels = infer_rpt_object_property_relationships(db, rpt, sample_size=len(object_rows))
     assert rels["authored"]["fromEntity"] == "Person"
     assert rels["authored"]["toEntity"] == "Doc"
 
@@ -894,9 +869,7 @@ def test_build_heuristic_mapping_emits_pg_entity_for_collection_style() -> None:
         samples={"persons": _make_pg_docs()},
     )
     bundle = build_heuristic_mapping(db)
-    assert bundle.entities() == {
-        "persons": {"style": "COLLECTION", "collectionName": "persons"}
-    }
+    assert bundle.entities() == {"persons": {"style": "COLLECTION", "collectionName": "persons"}}
     assert bundle.metadata["detectedPatterns"] == ["PG_ENTITY_COLLECTION"]
 
 
@@ -1086,9 +1059,7 @@ def test_sampler_passes_sample_size_to_aql_limit() -> None:
         samples={"persons": _make_pg_docs(100)},
     )
     classify_schema(db, sample_size=7)
-    sample_queries = [
-        bv for q, bv in db.aql.queries_seen if "@col" in bv and bv["@col"] == "persons"
-    ]
+    sample_queries = [bv for q, bv in db.aql.queries_seen if "@col" in bv and bv["@col"] == "persons"]
     assert sample_queries
     assert all(bv["n"] == 7 for bv in sample_queries)
 

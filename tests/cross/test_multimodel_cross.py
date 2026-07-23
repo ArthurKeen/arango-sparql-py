@@ -86,15 +86,12 @@ def _data_ttl() -> str:
     lines = ["@prefix : <http://ex.org/> ."]
     for p in PEOPLE:
         lines.append(
-            f':{p["local"]} a :Person ; '
-            f':name "{p["name"]}" ; '
-            f':age {p["age"]} ; '
-            f':dept "{p["dept"]}" .'
+            f':{p["local"]} a :Person ; :name "{p["name"]}" ; :age {p["age"]} ; :dept "{p["dept"]}" .'
         )
     for pr in PROJECTS:
         triple = f':{pr["local"]} a :Project ; :title "{pr["title"]}"'
         if pr["owner"]:
-            triple += f' ; :owner :{pr["owner"]}'
+            triple += f" ; :owner :{pr['owner']}"
         lines.append(triple + " .")
     return "\n".join(lines)
 
@@ -155,9 +152,7 @@ def _rpt_docs() -> dict[str, list[dict[str, Any]]]:
     rows: list[dict[str, Any]] = []
     for p in PEOPLE:
         subject = EX + p["local"]
-        rows.append(
-            {"subject_uri": subject, "predicate": RDF_TYPE, "object_uri": PERSON_CLASS}
-        )
+        rows.append({"subject_uri": subject, "predicate": RDF_TYPE, "object_uri": PERSON_CLASS})
         for prop in _DATA_PROPS:
             rows.append(
                 {
@@ -168,12 +163,8 @@ def _rpt_docs() -> dict[str, list[dict[str, Any]]]:
             )
     for pr in PROJECTS:
         subject = EX + pr["local"]
-        rows.append(
-            {"subject_uri": subject, "predicate": RDF_TYPE, "object_uri": PROJECT_CLASS}
-        )
-        rows.append(
-            {"subject_uri": subject, "predicate": EX + "title", "object_value": pr["title"]}
-        )
+        rows.append({"subject_uri": subject, "predicate": RDF_TYPE, "object_uri": PROJECT_CLASS})
+        rows.append({"subject_uri": subject, "predicate": EX + "title", "object_value": pr["title"]})
         if pr["owner"]:
             # Object property → IRI object lands in ``object_uri``.
             rows.append(
@@ -274,10 +265,7 @@ def _run_model(ontology_ttl: str, docs_factory: Any, sparql: str) -> list[dict[s
     resolver = SchemaResolver.from_turtle(ontology_ttl)
     result = translate(sparql, resolver=resolver)
     docs = docs_factory()
-    return [
-        drop_null_bindings(r)
-        for r in run_aql_subset(result.aql, result.bind_vars, docs)
-    ]
+    return [drop_null_bindings(r) for r in run_aql_subset(result.aql, result.bind_vars, docs)]
 
 
 # ----------------------------------------------------------------------
@@ -323,7 +311,7 @@ BAG_CASES = [
     ),
     pytest.param(
         "PREFIX : <http://ex.org/> SELECT ?s ?n ?d WHERE { "
-        "?s a :Person ; :name ?n ; :dept ?d . FILTER(?d = \"eng\") }",
+        '?s a :Person ; :name ?n ; :dept ?d . FILTER(?d = "eng") }',
         id="three_property_bgp_with_filter",
     ),
 ]

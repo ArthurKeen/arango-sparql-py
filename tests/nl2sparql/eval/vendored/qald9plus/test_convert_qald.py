@@ -127,9 +127,7 @@ def test_no_yaml_load_in_converter() -> None:
     """Security guard (V5 input validation): only `yaml.safe_load`/`safe_dump`,
     never the unsafe `yaml.load`."""
     source = (ONTOLOGY_PATH.parent / "convert_qald.py").read_text(encoding="utf-8")
-    non_comment_lines = [
-        line for line in source.splitlines() if not line.strip().startswith("#")
-    ]
+    non_comment_lines = [line for line in source.splitlines() if not line.strip().startswith("#")]
     assert "yaml.load(" not in "\n".join(non_comment_lines)
 
 

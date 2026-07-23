@@ -91,14 +91,10 @@ def test_named_graphs_golden(
        ``graph_variable_with_wildcard_predicate`` golden pins
        both halves.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -130,7 +126,8 @@ def test_strict_default_graph_adds_null_filter() -> None:
     mechanically.
     """
     resolver = SchemaResolver.from_turtle(
-        "", default_collection="Document",
+        "",
+        default_collection="Document",
         default_graph_includes_named=False,
     )
     result = translate(
@@ -155,18 +152,17 @@ def test_strict_default_graph_no_filter_inside_graph_wrapper() -> None:
     AND ``_graph == @g`` simultaneously).
     """
     resolver = SchemaResolver.from_turtle(
-        "", default_collection="Document",
+        "",
+        default_collection="Document",
         default_graph_includes_named=False,
     )
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?n WHERE { GRAPH <http://ex.org/g1> { ?s :name ?n } }",
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { GRAPH <http://ex.org/g1> { ?s :name ?n } }",
         resolver=resolver,
     )
     assert "_graph == null" not in result.aql, (
         "strict mode must NOT emit `_graph == null` inside a GRAPH "
-        "wrapper (the wrapper already constrains the graph):\n"
-        + result.aql
+        "wrapper (the wrapper already constrains the graph):\n" + result.aql
     )
     assert "doc1._graph == @_p1_graph" in result.aql, result.aql
 
@@ -191,22 +187,20 @@ def test_custom_graph_field_propagates_into_filter_and_skip_list() -> None:
     invariant that catches such a regression.
     """
     resolver = SchemaResolver.from_turtle(
-        "", default_collection="Document",
+        "",
+        default_collection="Document",
         graph_field="_quad_graph",
     )
     # Half 1: visit_Graph emits the filter on the custom field.
     result_const = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?n WHERE { GRAPH <http://ex.org/g1> { ?s :name ?n } }",
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { GRAPH <http://ex.org/g1> { ?s :name ?n } }",
         resolver=resolver,
     )
     assert "doc1._quad_graph == @_p1_graph" in result_const.aql, (
-        "GRAPH filter must use the configured graph_field name:\n"
-        + result_const.aql
+        "GRAPH filter must use the configured graph_field name:\n" + result_const.aql
     )
     assert "doc1._graph" not in result_const.aql, (
-        "default `_graph` name must not leak when graph_field is "
-        "overridden:\n" + result_const.aql
+        "default `_graph` name must not leak when graph_field is overridden:\n" + result_const.aql
     )
 
     # Half 2: the wildcard-predicate skip list includes the
@@ -219,8 +213,6 @@ def test_custom_graph_field_propagates_into_filter_and_skip_list() -> None:
     assert result_wild.bind_vars["_p1_sys_attrs"] == [
         "_quad_graph",
         "_uri",
-    ], (
-        "wildcard-predicate skip list must include the configured "
-        "graph_field name:\n"
-        + str(result_wild.bind_vars)
+    ], "wildcard-predicate skip list must include the configured graph_field name:\n" + str(
+        result_wild.bind_vars
     )

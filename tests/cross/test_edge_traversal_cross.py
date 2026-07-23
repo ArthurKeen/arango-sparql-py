@@ -65,13 +65,11 @@ PROJECTS = [
 def _data_ttl() -> str:
     lines = ["@prefix : <http://ex.org/> ."]
     for p in PEOPLE:
-        lines.append(
-            f':{p["local"]} a :Person ; :name "{p["name"]}" ; :age {p["age"]} .'
-        )
+        lines.append(f':{p["local"]} a :Person ; :name "{p["name"]}" ; :age {p["age"]} .')
     for pr in PROJECTS:
         triple = f':{pr["local"]} a :Project ; :title "{pr["title"]}"'
         if pr["owner"]:
-            triple += f' ; :owner :{pr["owner"]}'
+            triple += f" ; :owner :{pr['owner']}"
         lines.append(triple + " .")
     return "\n".join(lines)
 
@@ -90,13 +88,10 @@ def _pg_dedicated_docs() -> dict[str, list[dict[str, Any]]]:
         for p in PEOPLE
     ]
     projects = [
-        {"_id": f"Project/{pr['local']}", "_uri": EX + pr["local"], "title": pr["title"]}
-        for pr in PROJECTS
+        {"_id": f"Project/{pr['local']}", "_uri": EX + pr["local"], "title": pr["title"]} for pr in PROJECTS
     ]
     owner_edges = [
-        {"_from": f"Project/{pr['local']}", "_to": f"Person/{pr['owner']}"}
-        for pr in PROJECTS
-        if pr["owner"]
+        {"_from": f"Project/{pr['local']}", "_to": f"Person/{pr['owner']}"} for pr in PROJECTS if pr["owner"]
     ]
     return {"Person": persons, "Project": projects, "owner": owner_edges}
 
@@ -172,8 +167,7 @@ MODELS = [
 # only difference under test is the physical edge representation.
 JOIN_CASES = [
     pytest.param(
-        "PREFIX : <http://ex.org/> SELECT ?prj ?p WHERE { "
-        "?prj a :Project ; :owner ?p }",
+        "PREFIX : <http://ex.org/> SELECT ?prj ?p WHERE { ?prj a :Project ; :owner ?p }",
         id="traverse_to_owner_uri",
     ),
     pytest.param(
@@ -208,10 +202,7 @@ def _run_model(ontology_ttl: str, docs_factory: Any, sparql: str) -> list[dict[s
     resolver = SchemaResolver.from_turtle(ontology_ttl)
     result = translate(sparql, resolver=resolver)
     docs = docs_factory()
-    return [
-        drop_null_bindings(r)
-        for r in run_aql_subset(result.aql, result.bind_vars, docs)
-    ]
+    return [drop_null_bindings(r) for r in run_aql_subset(result.aql, result.bind_vars, docs)]
 
 
 @pytest.mark.cross

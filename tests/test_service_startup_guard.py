@@ -54,9 +54,7 @@ def test_cell_1_required_and_importable_succeeds(
 
 
 @pytest.mark.parametrize("raw", ["true", "True", "1", "yes", "TRUE"])
-def test_cell_1_explicit_true_values_succeed(
-    monkeypatch: pytest.MonkeyPatch, raw: str
-) -> None:
+def test_cell_1_explicit_true_values_succeed(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
     monkeypatch.setenv("SCHEMA_ANALYZER_REQUIRED", raw)
     app_mod._require_analyzer_unless_opted_out()
 
@@ -79,9 +77,7 @@ def _block_schema_analyzer(monkeypatch: pytest.MonkeyPatch) -> None:
 
     class _Blocker:
         def find_module(self, fullname: str, path: Any = None) -> Any:
-            if fullname == "schema_analyzer" or fullname.startswith(
-                "schema_analyzer."
-            ):
+            if fullname == "schema_analyzer" or fullname.startswith("schema_analyzer."):
                 return self
             return None
 
@@ -89,9 +85,7 @@ def _block_schema_analyzer(monkeypatch: pytest.MonkeyPatch) -> None:
             raise ImportError(f"blocked: {fullname}")
 
         def find_spec(self, fullname: str, path: Any = None, target: Any = None) -> Any:
-            if fullname == "schema_analyzer" or fullname.startswith(
-                "schema_analyzer."
-            ):
+            if fullname == "schema_analyzer" or fullname.startswith("schema_analyzer."):
                 from importlib.machinery import ModuleSpec
 
                 return ModuleSpec(fullname, self)
@@ -152,9 +146,7 @@ def test_cell_2_install_hint_carries_version_range_and_opt_out_hint(
 
 
 @pytest.mark.parametrize("raw", ["false", "False", "0", "no", "FALSE"])
-def test_cell_3_opt_out_succeeds_when_analyzer_missing(
-    monkeypatch: pytest.MonkeyPatch, raw: str
-) -> None:
+def test_cell_3_opt_out_succeeds_when_analyzer_missing(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
     monkeypatch.setenv("SCHEMA_ANALYZER_REQUIRED", raw)
     _block_schema_analyzer(monkeypatch)
     # Should not raise — the opt-out is a conscious operator
@@ -179,9 +171,7 @@ def test_cell_3_opt_out_succeeds_when_analyzer_present(
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "maybe", "definitely-not", "1.5"])
-def test_garbage_env_value_defaults_to_required(
-    monkeypatch: pytest.MonkeyPatch, raw: str
-) -> None:
+def test_garbage_env_value_defaults_to_required(monkeypatch: pytest.MonkeyPatch, raw: str) -> None:
     """Unknown / malformed values fall back to the safe default
     (required=True). A typo in a deployment YAML must not silently
     disable the analyzer requirement.
@@ -265,10 +255,12 @@ def test_skip_guard_env_var_constant_form() -> None:
     # The variable name itself is part of the contract; we assert
     # against the literal so a refactor that renames it without
     # updating callers fails loudly.
-    assert "ARANGO_SPARQL_SKIP_STARTUP_GUARD" in (
-        app_mod._require_analyzer_unless_opted_out.__code__.co_consts
-        + app_mod._require_analyzer_unless_opted_out.__code__.co_names
-        + tuple(app_mod.__dict__.keys())
-    ) or "ARANGO_SPARQL_SKIP_STARTUP_GUARD" in open(
-        app_mod.__file__ or "", encoding="utf-8"
-    ).read()
+    assert (
+        "ARANGO_SPARQL_SKIP_STARTUP_GUARD"
+        in (
+            app_mod._require_analyzer_unless_opted_out.__code__.co_consts
+            + app_mod._require_analyzer_unless_opted_out.__code__.co_names
+            + tuple(app_mod.__dict__.keys())
+        )
+        or "ARANGO_SPARQL_SKIP_STARTUP_GUARD" in open(app_mod.__file__ or "", encoding="utf-8").read()
+    )

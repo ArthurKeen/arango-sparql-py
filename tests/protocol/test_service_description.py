@@ -149,12 +149,8 @@ def test_named_graphs_sorted_for_stable_etag() -> None:
             },
         }
     )
-    body_1 = render_service_description(
-        endpoint_url="http://localhost/sparql", bundle=bundle
-    )
-    body_2 = render_service_description(
-        endpoint_url="http://localhost/sparql", bundle=bundle
-    )
+    body_1 = render_service_description(endpoint_url="http://localhost/sparql", bundle=bundle)
+    body_2 = render_service_description(endpoint_url="http://localhost/sparql", bundle=bundle)
     assert body_1 == body_2
     # And the entries appear in lexicographic order in the source.
     assert body_1.find("graph:A") < body_1.find("graph:B") < body_1.find("graph:C")

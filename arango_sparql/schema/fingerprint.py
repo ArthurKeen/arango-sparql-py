@@ -136,9 +136,7 @@ _FINGERPRINT_EXCLUDED_KEYS: frozenset[str] = frozenset(
 # ---------------------------------------------------------------------------
 
 
-def _project_spec(
-    spec: dict[str, Any] | None, field_order: tuple[str, ...]
-) -> list[tuple[str, Any]]:
+def _project_spec(spec: dict[str, Any] | None, field_order: tuple[str, ...]) -> list[tuple[str, Any]]:
     """Project a single entity- or relationship-spec dict onto the
     canonical field order, dropping keys that are not in the
     projection and preserving ``None`` for keys that the spec
@@ -160,10 +158,7 @@ def _project_entities(physical: dict[str, Any]) -> list[list[Any]]:
     entities = physical.get("entities") or {}
     if not isinstance(entities, dict):
         return []
-    return [
-        [label, _project_spec(spec, _SHAPE_ENTITY_FIELDS)]
-        for label, spec in sorted(entities.items())
-    ]
+    return [[label, _project_spec(spec, _SHAPE_ENTITY_FIELDS)] for label, spec in sorted(entities.items())]
 
 
 def _project_relationships(physical: dict[str, Any]) -> list[list[Any]]:
@@ -303,8 +298,7 @@ def _json_fallback(obj: Any) -> Any:
     if isinstance(obj, (set, frozenset)):
         return sorted(obj, key=repr)
     raise TypeError(
-        f"Cannot canonically serialise value of type "
-        f"{type(obj).__name__!r} into a fingerprint payload"
+        f"Cannot canonically serialise value of type {type(obj).__name__!r} into a fingerprint payload"
     )
 
 
@@ -394,9 +388,7 @@ class BundleFingerprint:
         return self.drift_from(other) is FingerprintDrift.UNCHANGED
 
 
-def compute_bundle_fingerprint(
-    bundle: MappingBundle, *, now: datetime | None = None
-) -> BundleFingerprint:
+def compute_bundle_fingerprint(bundle: MappingBundle, *, now: datetime | None = None) -> BundleFingerprint:
     """Compute both fingerprints in one pass.
 
     *now* is injectable so tests can pin the timestamp; production

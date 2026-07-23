@@ -93,14 +93,10 @@ def test_union_paths_golden(
        routing through the shared emitter, the two forms would
        diverge.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -131,8 +127,7 @@ def test_altpath_matches_explicit_union_byte_for_byte() -> None:
         resolver=resolver,
     )
     union = translate(
-        "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE "
-        "{ { ?s :p ?o } UNION { ?s :q ?o } }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { { ?s :p ?o } UNION { ?s :q ?o } }",
         resolver=resolver,
     )
     assert altpath.aql == union.aql, (
@@ -172,14 +167,8 @@ def test_union_nested_inside_subselect() -> None:
     assert "FOR doc1 IN @@c1_Document" in result.aql
     assert "FOR doc2 IN @@c2_Document" in result.aql
     # No alias appears twice.
-    aliases = [
-        line.split()[1]
-        for line in result.aql.splitlines()
-        if line.strip().startswith("FOR ")
-    ]
-    assert len(aliases) == len(set(aliases)), (
-        f"alias collision detected: {aliases}"
-    )
+    aliases = [line.split()[1] for line in result.aql.splitlines() if line.strip().startswith("FOR ")]
+    assert len(aliases) == len(set(aliases)), f"alias collision detected: {aliases}"
 
 
 def test_union_arms_have_independent_filters() -> None:
@@ -194,21 +183,14 @@ def test_union_arms_have_independent_filters() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { "
-        "{ ?s :p ?o FILTER (?o > 0) } UNION { ?s :q ?o } "
-        "}",
+        "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { { ?s :p ?o FILTER (?o > 0) } UNION { ?s :q ?o } }",
         resolver=resolver,
     )
     # Exactly one FILTER on ``> 0`` — and it lives inside the
     # arm1 block, not at the outer scope.
     filter_count = result.aql.count("> ")
-    assert filter_count == 1, (
-        f"expected exactly one '> 0' filter; got {filter_count}\n"
-        + result.aql
-    )
+    assert filter_count == 1, f"expected exactly one '> 0' filter; got {filter_count}\n" + result.aql
     # arm2 has no FILTER on its inner FOR.
     arm2_idx = result.aql.index("doc2.q")
     arm2_block = result.aql[arm2_idx : result.aql.index(")", arm2_idx)]
-    assert "FILTER" not in arm2_block, (
-        f"arm2 unexpectedly carries a FILTER:\n{arm2_block}"
-    )
+    assert "FILTER" not in arm2_block, f"arm2 unexpectedly carries a FILTER:\n{arm2_block}"

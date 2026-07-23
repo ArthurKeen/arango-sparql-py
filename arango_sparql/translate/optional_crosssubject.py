@@ -83,15 +83,10 @@ def is_rpt_cross_subject_optional(visitor: AlgebraVisitor, p2: Any, node: Any) -
     if not isinstance(subject, Variable):
         return False
     name = str(subject)
-    return (
-        name in visitor.state.var_to_expr
-        and name not in visitor.state.var_to_doc_alias
-    )
+    return name in visitor.state.var_to_expr and name not in visitor.state.var_to_doc_alias
 
 
-def emit_rpt_cross_subject_optional(
-    visitor: AlgebraVisitor, triple: tuple[Any, Any, Any], node: Any
-) -> None:
+def emit_rpt_cross_subject_optional(visitor: AlgebraVisitor, triple: tuple[Any, Any, Any], node: Any) -> None:
     """Emit the RPT left-join scan for a cross-subject OPTIONAL triple.
 
     See the module docstring for the emitted AQL shape. ``node`` is
@@ -103,9 +98,7 @@ def emit_rpt_cross_subject_optional(
         # ``OPTIONAL { ?o :p <const> }`` is an existence test, not a
         # binding; AQL can express it but the semantics differ enough to
         # warrant its own slice. Refuse rather than guess.
-        raise UnsupportedSparqlError(
-            "cross-subject OPTIONAL with a non-variable object is not yet supported"
-        )
+        raise UnsupportedSparqlError("cross-subject OPTIONAL with a non-variable object is not yet supported")
 
     # Any RPT class gives us the triples collection + column overrides;
     # a pure-RPT dataset keeps every triple in one collection, so the
@@ -123,25 +116,19 @@ def emit_rpt_cross_subject_optional(
     # Join the OPTIONAL subject to the outer-bound value. The outer
     # alias referenced by ``subject_value_expr`` is in lexical scope
     # inside this subquery (same as the MINUS/EXISTS probe).
-    child.filter_raw(
-        f"{triples_alias}.{rpt_class.subject_column} == {subject_value_expr}"
-    )
+    child.filter_raw(f"{triples_alias}.{rpt_class.subject_column} == {subject_value_expr}")
 
     # One projection field per *new* variable (predicate if it's a
     # variable, plus the object). Fields are positional (``f0``, ``f1``)
     # so the downstream binding doesn't depend on SPARQL var names.
     new_bindings: list[tuple[str, str]] = []  # (sparql_var, source_expr)
     if isinstance(predicate, Variable):
-        new_bindings.append(
-            (str(predicate), f"{triples_alias}.{rpt_class.predicate_column}")
-        )
+        new_bindings.append((str(predicate), f"{triples_alias}.{rpt_class.predicate_column}"))
     elif isinstance(predicate, URIRef):
         pred_bind = child.bind(str(predicate), hint="pred")
         child.filter_eq(f"{triples_alias}.{rpt_class.predicate_column}", pred_bind)
     else:
-        raise UnsupportedSparqlError(
-            "cross-subject OPTIONAL predicate must be a variable or an IRI"
-        )
+        raise UnsupportedSparqlError("cross-subject OPTIONAL predicate must be a variable or an IRI")
     object_expr = (
         f"NOT_NULL({triples_alias}.{rpt_class.object_uri_column}, "
         f"{triples_alias}.{rpt_class.object_value_column})"
@@ -163,8 +150,6 @@ def emit_rpt_cross_subject_optional(
     # ``[null]`` pad ⇒ LEFT join: zero matches still yield one row whose
     # field reads are ``null`` (SPARQL unbound), so the outer solution
     # survives. Multiple matches fan out — correct multiset OPTIONAL.
-    visitor.builder.for_inline(
-        row_alias, f"(LENGTH({opt_alias}) > 0 ? {opt_alias} : [null])"
-    )
+    visitor.builder.for_inline(row_alias, f"(LENGTH({opt_alias}) > 0 ? {opt_alias} : [null])")
     for field, (var_name, _source) in zip(field_names, new_bindings, strict=False):
         visitor.state.var_to_expr[var_name] = f"{row_alias}.{field}"

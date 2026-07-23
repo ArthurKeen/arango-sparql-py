@@ -255,9 +255,7 @@ def test_mapping_to_turtle_synthesises_from_bundle_without_owl() -> None:
 
     bundle = MappingBundle(
         physical_mapping={
-            "entities": {
-                "Person": {"style": "COLLECTION", "collectionName": "Person"}
-            },
+            "entities": {"Person": {"style": "COLLECTION", "collectionName": "Person"}},
             "relationships": {},
         },
         source=MappingSource(kind="manual", notes="hand built"),
@@ -349,9 +347,7 @@ def test_triple_cap_default_allows_normal_fixtures() -> None:
         ("   ", DEFAULT_MAPPING_IMPORT_MAX_TRIPLES),
     ],
 )
-def test_resolve_max_triples_env_parsing(
-    monkeypatch: pytest.MonkeyPatch, raw: str, expected: int
-) -> None:
+def test_resolve_max_triples_env_parsing(monkeypatch: pytest.MonkeyPatch, raw: str, expected: int) -> None:
     monkeypatch.setenv(MAPPING_IMPORT_MAX_TRIPLES_ENV, raw)
     assert resolve_max_triples() == expected
 

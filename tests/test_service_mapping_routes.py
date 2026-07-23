@@ -47,9 +47,7 @@ from arango_sparql.service import _sessions, app
 
 
 class _FakeAql:
-    def execute(
-        self, query: str, bind_vars: dict[str, Any] | None = None
-    ) -> list[dict[str, Any]]:
+    def execute(self, query: str, bind_vars: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         return []
 
 
@@ -141,9 +139,7 @@ def client() -> TestClient:
 def fake_arango(monkeypatch: pytest.MonkeyPatch):
     _FakeArangoClient.instances.clear()
     monkeypatch.setattr(svc, "ArangoClient", _FakeArangoClient)
-    monkeypatch.setenv(
-        "ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS", "localhost,127.0.0.1"
-    )
+    monkeypatch.setenv("ARANGO_SPARQL_CONNECT_ALLOWED_HOSTS", "localhost,127.0.0.1")
     return _FakeArangoClient
 
 
@@ -189,9 +185,7 @@ def test_export_requires_session(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_import_raw_turtle_body(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_raw_turtle_body(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         content=PG_TURTLE.encode("utf-8"),
@@ -211,9 +205,7 @@ def test_import_raw_turtle_body(
     assert pm["relationships"]["knows"]["fromEntity"] == "Person"
 
 
-def test_import_json_envelope(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_json_envelope(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         json={"turtle": PG_TURTLE, "source_notes": "ui upload"},
@@ -226,9 +218,7 @@ def test_import_json_envelope(
     assert body["source"]["notes"] == "ui upload"
 
 
-def test_import_response_includes_elapsed_ms(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_response_includes_elapsed_ms(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         json={"turtle": PG_TURTLE},
@@ -240,9 +230,7 @@ def test_import_response_includes_elapsed_ms(
     assert body["elapsed_ms"] >= 0
 
 
-def test_import_records_triple_count(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_records_triple_count(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         content=PG_TURTLE.encode("utf-8"),
@@ -264,9 +252,7 @@ def test_import_records_triple_count(
 # ---------------------------------------------------------------------------
 
 
-def test_import_empty_body_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_empty_body_returns_422(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         content=b"",
@@ -280,9 +266,7 @@ def test_import_empty_body_returns_422(
     assert detail["code"] == "E_OWL_EMPTY_BODY"
 
 
-def test_import_malformed_turtle_returns_422_parse(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_malformed_turtle_returns_422_parse(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         content=b"@prefix this is not Turtle",
@@ -296,9 +280,7 @@ def test_import_malformed_turtle_returns_422_parse(
     assert detail["code"] == "E_OWL_PARSE"
 
 
-def test_import_json_shape_mismatch_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_json_shape_mismatch_returns_422(client: TestClient, session_token: str) -> None:
     """JSON content-type with an unrecognised body shape (e.g.
     ``{not_turtle: ...}``) must fail loudly rather than silently
     falling back to "treat the JSON bytes as Turtle".
@@ -313,9 +295,7 @@ def test_import_json_shape_mismatch_returns_422(
     assert resp.json()["detail"]["code"] == "E_OWL_BAD_JSON"
 
 
-def test_import_non_utf8_body_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_non_utf8_body_returns_422(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/import-owl",
         content=b"\xff\xfe not utf8 bytes",
@@ -328,9 +308,7 @@ def test_import_non_utf8_body_returns_422(
     assert resp.json()["detail"]["code"] == "E_OWL_NOT_UTF8"
 
 
-def test_import_empty_json_envelope_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_empty_json_envelope_returns_422(client: TestClient, session_token: str) -> None:
     """``{turtle: ""}`` must fail with E_OWL_EMPTY_BODY rather
     than silently importing an empty bundle.
     """
@@ -359,7 +337,7 @@ def test_byte_ceiling_returns_413(
     """
 
     monkeypatch.setenv("MAPPING_IMPORT_MAX_BYTES", "100")
-    big_body = (b"a" * 200)
+    big_body = b"a" * 200
     resp = client.post(
         "/mapping/import-owl",
         content=big_body,
@@ -400,9 +378,7 @@ def test_triple_cap_returns_422(
     assert "MAPPING_IMPORT_MAX_TRIPLES" in detail["error"]
 
 
-def test_byte_ceiling_default_does_not_block_normal_imports(
-    client: TestClient, session_token: str
-) -> None:
+def test_byte_ceiling_default_does_not_block_normal_imports(client: TestClient, session_token: str) -> None:
     """Sanity check — the 2 MB default must not block a small
     fixture (regression guard against someone setting the default
     to 1).
@@ -464,9 +440,7 @@ def test_byte_ceiling_env_parsing(
 # ---------------------------------------------------------------------------
 
 
-def test_export_json_envelope(
-    client: TestClient, session_token: str
-) -> None:
+def test_export_json_envelope(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/export-owl",
         json={"ontology_ttl": PG_TURTLE},
@@ -481,9 +455,7 @@ def test_export_json_envelope(
     assert isinstance(body["elapsed_ms"], (int, float))
 
 
-def test_export_turtle_content_negotiation(
-    client: TestClient, session_token: str
-) -> None:
+def test_export_turtle_content_negotiation(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/export-owl",
         json={"ontology_ttl": PG_TURTLE},
@@ -500,9 +472,7 @@ def test_export_turtle_content_negotiation(
     assert int(resp.headers["x-triple-count"]) > 0
 
 
-def test_export_with_mapping_dict(
-    client: TestClient, session_token: str
-) -> None:
+def test_export_with_mapping_dict(client: TestClient, session_token: str) -> None:
     """The preferred input shape is the ``mapping`` wire dict —
     test it round-trips through the synthesizer to a non-empty
     Turtle blob."""
@@ -530,9 +500,7 @@ def test_export_with_mapping_dict(
     assert body["triple_count"] >= 2  # at least owl:Class + phys:collectionName
 
 
-def test_export_without_mapping_or_ttl_returns_422(
-    client: TestClient, session_token: str
-) -> None:
+def test_export_without_mapping_or_ttl_returns_422(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/export-owl",
         json={},
@@ -561,9 +529,7 @@ def test_export_propagates_owl_bomb_via_ontology_ttl(
     assert resp.json()["detail"]["code"] == "E_OWL_TOO_LARGE"
 
 
-def test_export_malformed_ontology_ttl_returns_422_parse(
-    client: TestClient, session_token: str
-) -> None:
+def test_export_malformed_ontology_ttl_returns_422_parse(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/mapping/export-owl",
         json={"ontology_ttl": "@@ not Turtle @@"},
@@ -578,9 +544,7 @@ def test_export_malformed_ontology_ttl_returns_422_parse(
 # ---------------------------------------------------------------------------
 
 
-def test_import_export_import_round_trip(
-    client: TestClient, session_token: str
-) -> None:
+def test_import_export_import_round_trip(client: TestClient, session_token: str) -> None:
     """Import → Export → Import must yield the same entity surface."""
 
     headers = {"X-Arango-Session": session_token}

@@ -120,11 +120,7 @@ def _emit_subselect(
     # ``inner`` subtree so the wrappers' own AQL (LIMIT, SORT,
     # DISTINCT) lands in the inner sub-query block.
     project = inner
-    while (
-        project is not None
-        and getattr(project, "name", None)
-        in ("Slice", "OrderBy", "Distinct")
-    ):
+    while project is not None and getattr(project, "name", None) in ("Slice", "OrderBy", "Distinct"):
         project = getattr(project, "p", None)
     if project is None or getattr(project, "name", None) != "Project":
         inner_name = getattr(inner, "name", None)
@@ -142,9 +138,7 @@ def _emit_subselect(
         # have no way to join the inner result back to the
         # outer scope. The W3C corpus doesn't exercise this
         # shape; defer rather than ship empty-row semantics.
-        raise UnsupportedSparqlError(
-            "sub-SELECT with empty projection list is not supported"
-        )
+        raise UnsupportedSparqlError("sub-SELECT with empty projection list is not supported")
 
     # Local import to avoid circular dependency at module import
     # time — :mod:`visitor` already imports this module.

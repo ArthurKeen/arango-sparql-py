@@ -304,7 +304,7 @@ def test_tsv_select_header_uses_question_mark() -> None:
 def test_tsv_select_literal_quoted_with_nt_escapes() -> None:
     body = render_select(
         "text/tab-separated-values",
-        [{"x": "Alice\nO'Reilly\t\"escaped\""}],
+        [{"x": 'Alice\nO\'Reilly\t"escaped"'}],
     )
     lines = body.split("\n")
     # ``\n``, ``\t``, ``"`` all escaped per N-Triples; the literal

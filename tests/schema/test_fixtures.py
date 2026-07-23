@@ -143,8 +143,7 @@ def test_fixture_parses_through_wire_dict(name: str) -> None:
     # not silently truncated — confirm at least one of the two halves
     # is non-empty for every named fixture.
     assert bundle.entities() or bundle.relationships(), (
-        f"Fixture {name!r} produced an empty bundle; expected at least "
-        "one entity or relationship."
+        f"Fixture {name!r} produced an empty bundle; expected at least one entity or relationship."
     )
 
 
@@ -239,8 +238,7 @@ def test_fixture_resolves_every_conceptual_entity(name: str) -> None:
         # expected to have a physical home, so a missing entry here
         # is a real defect.
         assert ename in physical_entities, (
-            f"Fixture {name!r}: conceptual entity {ename!r} has no "
-            f"entry in physicalMapping.entities"
+            f"Fixture {name!r}: conceptual entity {ename!r} has no entry in physicalMapping.entities"
         )
         iri = _synthetic_iri(ename)
         resolved = resolver.resolve_class(iri)
@@ -248,8 +246,7 @@ def test_fixture_resolves_every_conceptual_entity(name: str) -> None:
         # For RPT entities the collection falls back to the triples
         # table; for everything else it is the explicit collectionName.
         assert resolved.collection, (
-            f"Resolver returned empty collection for entity {ename!r} in "
-            f"fixture {name!r}"
+            f"Resolver returned empty collection for entity {ename!r} in fixture {name!r}"
         )
 
 
@@ -305,13 +302,11 @@ def test_pg_fixture_uses_collection_style_throughout() -> None:
     bundle = mapping_from_wire_dict(_load_fixture("pg"))
     for label, spec in bundle.entities().items():
         assert spec.get("style") == "COLLECTION", (
-            f"pg fixture entity {label!r} must be COLLECTION; got "
-            f"{spec.get('style')!r}"
+            f"pg fixture entity {label!r} must be COLLECTION; got {spec.get('style')!r}"
         )
     for rtype, spec in bundle.relationships().items():
         assert spec.get("style") == "DEDICATED_COLLECTION", (
-            f"pg fixture relationship {rtype!r} must be DEDICATED_COLLECTION;"
-            f" got {spec.get('style')!r}"
+            f"pg fixture relationship {rtype!r} must be DEDICATED_COLLECTION; got {spec.get('style')!r}"
         )
 
 
@@ -364,16 +359,10 @@ def test_rpt_fixtures_preserve_legacy_column_overrides(name: str) -> None:
     """
 
     bundle = mapping_from_wire_dict(_load_fixture(name))
-    rpt_entities = [
-        (label, spec)
-        for label, spec in bundle.entities().items()
-        if spec.get("style") == "RPT"
-    ]
+    rpt_entities = [(label, spec) for label, spec in bundle.entities().items() if spec.get("style") == "RPT"]
     assert rpt_entities, f"Fixture {name!r} declares RPT in PRD §13.3 but has no RPT entity"
     for label, spec in rpt_entities:
-        assert spec.get("triplesCollection"), (
-            f"RPT entity {label!r} missing triplesCollection"
-        )
+        assert spec.get("triplesCollection"), f"RPT entity {label!r} missing triplesCollection"
         assert spec.get("subjectColumn") == "subject_uri", (
             f"RPT entity {label!r} subjectColumn should match legacy Foxx 'subject_uri'"
         )
@@ -391,8 +380,7 @@ def test_rpt_pg_lpg_hybrid_contains_all_three_styles() -> None:
     bundle = mapping_from_wire_dict(_load_fixture("rpt_pg_lpg_hybrid"))
     styles = {spec.get("style") for spec in bundle.entities().values()}
     assert {"COLLECTION", "LABEL", "RPT"} <= styles, (
-        f"rpt_pg_lpg_hybrid fixture missing one of {{COLLECTION, LABEL, RPT}}: "
-        f"{styles}"
+        f"rpt_pg_lpg_hybrid fixture missing one of {{COLLECTION, LABEL, RPT}}: {styles}"
     )
 
 
@@ -409,17 +397,11 @@ def test_multitenant_fixture_carries_tenant_metadata() -> None:
     assert mt.get("strategy") in {"field", "database", "none"}
     assert mt.get("tenantRootEntity")
 
-    scoped = [
-        label
-        for label, spec in bundle.entities().items()
-        if spec.get("tenantField")
-    ]
+    scoped = [label for label, spec in bundle.entities().items() if spec.get("tenantField")]
     assert scoped, "multitenant fixture has no entity with phys:tenantField"
     for label in scoped:
         spec = bundle.entities()[label]
-        assert spec.get("tenantEntity"), (
-            f"Entity {label!r} declares tenantField but missing tenantEntity"
-        )
+        assert spec.get("tenantEntity"), f"Entity {label!r} declares tenantField but missing tenantEntity"
 
 
 def test_multitenant_fixture_resolver_carries_tenant_annotations() -> None:
@@ -466,10 +448,7 @@ def test_sharded_fixture_preserves_shard_families() -> None:
     assert families == raw["physicalMapping"]["shardFamilies"]
     # And via round-trip
     re_emitted = mapping_to_wire_dict(bundle)
-    assert (
-        re_emitted["physicalMapping"]["shardFamilies"]
-        == raw["physicalMapping"]["shardFamilies"]
-    )
+    assert re_emitted["physicalMapping"]["shardFamilies"] == raw["physicalMapping"]["shardFamilies"]
 
 
 # ---------------------------------------------------------------------------
@@ -527,9 +506,7 @@ def test_translator_emits_aql_per_entity_in_every_fixture(name: str) -> None:
         sparql = f"SELECT ?s WHERE {{ ?s a <{iri}> }}"
         result = translate(sparql, resolver=resolver, tenant_id=tenant_id)
 
-        assert result.aql, (
-            f"Fixture {name!r} entity {ename!r}: translator returned empty AQL"
-        )
+        assert result.aql, f"Fixture {name!r} entity {ename!r}: translator returned empty AQL"
         # The emission must open the entity's physical home. The first
         # clause is FOR (single/sharded-via-subquery) or WITH (sharded
         # cross-collection) — never an empty or RETURN-only body.
@@ -565,14 +542,8 @@ def test_rpt_translator_references_legacy_columns_in_emitted_aql(name: str) -> N
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     tenant_id = _tenant_id_for(bundle)
 
-    rpt_entities = [
-        (label, spec)
-        for label, spec in bundle.entities().items()
-        if spec.get("style") == "RPT"
-    ]
-    assert rpt_entities, (
-        f"Fixture {name!r} is in RPT_FIXTURE_NAMES but declares no RPT entity"
-    )
+    rpt_entities = [(label, spec) for label, spec in bundle.entities().items() if spec.get("style") == "RPT"]
+    assert rpt_entities, f"Fixture {name!r} is in RPT_FIXTURE_NAMES but declares no RPT entity"
 
     for label, spec in rpt_entities:
         iri = _synthetic_iri(label)

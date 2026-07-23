@@ -138,8 +138,7 @@ class AnalyzerStartupGuardError(RuntimeError):
 
     def __init__(self, *, install_hint: str = ANALYZER_INSTALL_HINT) -> None:
         super().__init__(
-            "SCHEMA_ANALYZER_REQUIRED=true but arangodb-schema-analyzer "
-            f"is not installed. {install_hint}"
+            f"SCHEMA_ANALYZER_REQUIRED=true but arangodb-schema-analyzer is not installed. {install_hint}"
         )
         self.install_hint = install_hint
 
@@ -167,8 +166,7 @@ def _require_analyzer_unless_opted_out() -> None:
     explicit_opt_out = raw in ("false", "0", "no")
     if explicit_opt_out:
         _svc_logger.info(
-            "Startup guard: SCHEMA_ANALYZER_REQUIRED=%r — analyzer extra "
-            "is optional for this deployment.",
+            "Startup guard: SCHEMA_ANALYZER_REQUIRED=%r — analyzer extra is optional for this deployment.",
             raw,
         )
         return
@@ -177,8 +175,7 @@ def _require_analyzer_unless_opted_out() -> None:
         import schema_analyzer  # noqa: F401
     except ImportError as exc:
         _svc_logger.error(
-            "Startup guard: arangodb-schema-analyzer is not importable "
-            "and SCHEMA_ANALYZER_REQUIRED=%r. %s",
+            "Startup guard: arangodb-schema-analyzer is not importable and SCHEMA_ANALYZER_REQUIRED=%r. %s",
             raw,
             ANALYZER_INSTALL_HINT,
         )

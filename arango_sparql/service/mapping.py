@@ -147,9 +147,7 @@ def _enrich_graph_with_bundle(graph: Graph, bundle: MappingBundle) -> None:
                 continue
             spec = entities.get(local_name(cls_iri))
             if isinstance(spec, dict):
-                _apply_phys_annotations(
-                    graph, cls_iri, spec, _ENTITY_FIELD_TO_PHYS_LOCAL
-                )
+                _apply_phys_annotations(graph, cls_iri, spec, _ENTITY_FIELD_TO_PHYS_LOCAL)
 
     relationships = bundle.relationships()
     if relationships:
@@ -158,9 +156,7 @@ def _enrich_graph_with_bundle(graph: Graph, bundle: MappingBundle) -> None:
                 continue
             spec = relationships.get(local_name(prop_iri))
             if isinstance(spec, dict):
-                _apply_phys_annotations(
-                    graph, prop_iri, spec, _REL_FIELD_TO_PHYS_LOCAL
-                )
+                _apply_phys_annotations(graph, prop_iri, spec, _REL_FIELD_TO_PHYS_LOCAL)
 
 
 def _graph_from_request(req: Any) -> Graph:
@@ -187,9 +183,7 @@ def _graph_from_request(req: Any) -> Graph:
     return Graph()
 
 
-def _resolver_from_request(
-    req: Any, *, analyzer_bundle: MappingBundle | None = None
-) -> SchemaResolver:
+def _resolver_from_request(req: Any, *, analyzer_bundle: MappingBundle | None = None) -> SchemaResolver:
     """Build a :class:`SchemaResolver` from the request envelope.
 
     Accepts any request model carrying an ``ontology_ttl`` (str | None)

@@ -238,21 +238,15 @@ class AqlQueryBuilder:
         if not _AQL_IDENT_RE.match(alias):
             raise ValueError(f"invalid FOR alias: {alias!r}")
         if not shard_collections:
-            raise AqlEmitError(
-                "for_sharded requires at least one member collection"
-            )
+            raise AqlEmitError("for_sharded requires at least one member collection")
         members = list(shard_collections)
         if len(set(members)) != len(members):
-            raise AqlEmitError(
-                f"for_sharded members must be unique, got {members!r}"
-            )
+            raise AqlEmitError(f"for_sharded members must be unique, got {members!r}")
         sub_scans: list[str] = []
         for member in members:
             inner = self.fresh_alias()
             coll_ref = self.bind_collection(member)
-            sub_scans.append(
-                f"(FOR {inner} IN {coll_ref} RETURN {inner})"
-            )
+            sub_scans.append(f"(FOR {inner} IN {coll_ref} RETURN {inner})")
             if member not in self._with_collections:
                 self._with_collections.append(member)
         # Indent the inner scans for readability — the AQL planner is
@@ -261,9 +255,7 @@ class AqlQueryBuilder:
         # the rendered query (the operator reading EXPLAIN output
         # should be able to spot each shard at a glance).
         body = ",\n  ".join(sub_scans)
-        clause = (
-            f"FOR {alias} IN UNION_DISTINCT(\n  {body}\n)"
-        )
+        clause = f"FOR {alias} IN UNION_DISTINCT(\n  {body}\n)"
         self._body_clauses.append(_Clause(_ClauseKind.FOR, clause))
         return self
 
@@ -384,9 +376,7 @@ class AqlQueryBuilder:
         parts.append("LIMIT 1")
         parts.append(f"RETURN {v_alias}._uri")
         subquery = " ".join(parts)
-        self._body_clauses.append(
-            _Clause(_ClauseKind.LET, f"LET {let_alias} = ({subquery})[0]")
-        )
+        self._body_clauses.append(_Clause(_ClauseKind.LET, f"LET {let_alias} = ({subquery})[0]"))
         return self
 
     def let(self, alias: str, expression: str) -> AqlQueryBuilder:
@@ -521,20 +511,14 @@ class AqlQueryBuilder:
         if not _AQL_IDENT_RE.match(row_alias):
             raise ValueError(f"invalid FOR alias: {row_alias!r}")
         if len(arm_aqls) < 2:
-            raise AqlEmitError(
-                f"for_union requires at least 2 arms, got {len(arm_aqls)}"
-            )
+            raise AqlEmitError(f"for_union requires at least 2 arms, got {len(arm_aqls)}")
         for i, arm in enumerate(arm_aqls):
             if not arm or not arm.strip():
                 raise AqlEmitError(
-                    f"for_union arm {i} is empty; every UNION arm must "
-                    f"be a non-empty AQL block"
+                    f"for_union arm {i} is empty; every UNION arm must be a non-empty AQL block"
                 )
         arm_blocks = ",\n".join(
-            "(\n"
-            + "\n".join("  " + line for line in arm.splitlines())
-            + "\n)"
-            for arm in arm_aqls
+            "(\n" + "\n".join("  " + line for line in arm.splitlines()) + "\n)" for arm in arm_aqls
         )
         self._body_clauses.append(
             _Clause(
@@ -585,9 +569,7 @@ class AqlQueryBuilder:
         if not _AQL_IDENT_RE.match(row_alias):
             raise ValueError(f"invalid FOR alias: {row_alias!r}")
         if not inline_expr or not inline_expr.strip():
-            raise AqlEmitError(
-                "for_inline requires a non-empty AQL expression"
-            )
+            raise AqlEmitError("for_inline requires a non-empty AQL expression")
         self._body_clauses.append(
             _Clause(
                 _ClauseKind.FOR,
@@ -615,13 +597,8 @@ class AqlQueryBuilder:
         if not _AQL_IDENT_RE.match(row_alias):
             raise ValueError(f"invalid FOR alias: {row_alias!r}")
         if not values_bind.startswith("@") or values_bind.startswith("@@"):
-            raise ValueError(
-                f"expected a value bind placeholder (@name), got: "
-                f"{values_bind!r}"
-            )
-        self._body_clauses.append(
-            _Clause(_ClauseKind.FOR, f"FOR {row_alias} IN {values_bind}")
-        )
+            raise ValueError(f"expected a value bind placeholder (@name), got: {values_bind!r}")
+        self._body_clauses.append(_Clause(_ClauseKind.FOR, f"FOR {row_alias} IN {values_bind}"))
         return self
 
     def for_subquery(self, row_alias: str, inner_aql: str) -> AqlQueryBuilder:
@@ -641,9 +618,7 @@ class AqlQueryBuilder:
         if not _AQL_IDENT_RE.match(row_alias):
             raise ValueError(f"invalid FOR alias: {row_alias!r}")
         if not inner_aql or not inner_aql.strip():
-            raise AqlEmitError(
-                "for_subquery requires a non-empty inner AQL block"
-            )
+            raise AqlEmitError("for_subquery requires a non-empty inner AQL block")
         indented = "\n".join("  " + line for line in inner_aql.splitlines())
         self._body_clauses.append(
             _Clause(
@@ -687,9 +662,7 @@ class AqlQueryBuilder:
         if not _AQL_IDENT_RE.match(key_alias):
             raise ValueError(f"invalid FOR alias: {key_alias!r}")
         if not _AQL_IDENT_RE.match(document_alias):
-            raise ValueError(
-                f"invalid document alias: {document_alias!r}"
-            )
+            raise ValueError(f"invalid document alias: {document_alias!r}")
         self._body_clauses.append(
             _Clause(
                 _ClauseKind.FOR,
@@ -775,20 +748,11 @@ class AqlQueryBuilder:
         """
 
         if self._return_clause is not None:
-            raise AqlEmitError(
-                "RETURN already emitted; only one RETURN per query"
-            )
+            raise AqlEmitError("RETURN already emitted; only one RETURN per query")
         if not triple_exprs:
-            raise AqlEmitError(
-                "return_triples requires at least one triple template entry"
-            )
-        items = ", ".join(
-            f"{{subject: {s}, predicate: {p}, object: {o}}}"
-            for s, p, o in triple_exprs
-        )
-        self._return_clause = _Clause(
-            _ClauseKind.RETURN, f"RETURN [{items}]"
-        )
+            raise AqlEmitError("return_triples requires at least one triple template entry")
+        items = ", ".join(f"{{subject: {s}, predicate: {p}, object: {o}}}" for s, p, o in triple_exprs)
+        self._return_clause = _Clause(_ClauseKind.RETURN, f"RETURN [{items}]")
         return self
 
     def return_triples_subquery(self, subquery: str) -> AqlQueryBuilder:
@@ -807,16 +771,10 @@ class AqlQueryBuilder:
         """
 
         if self._return_clause is not None:
-            raise AqlEmitError(
-                "RETURN already emitted; only one RETURN per query"
-            )
+            raise AqlEmitError("RETURN already emitted; only one RETURN per query")
         if not subquery or not subquery.strip():
-            raise AqlEmitError(
-                "return_triples_subquery requires a non-empty subquery"
-            )
-        self._return_clause = _Clause(
-            _ClauseKind.RETURN, f"RETURN ({subquery})"
-        )
+            raise AqlEmitError("return_triples_subquery requires a non-empty subquery")
+        self._return_clause = _Clause(_ClauseKind.RETURN, f"RETURN ({subquery})")
         return self
 
     def set_ask_mode(self) -> AqlQueryBuilder:
@@ -858,9 +816,7 @@ class AqlQueryBuilder:
             # placeholder — :meth:`bind_collection` is idempotent so
             # we always end up referencing the SAME bind name that
             # the per-shard FOR sub-scans use, never a new one.
-            refs = ", ".join(
-                self.bind_collection(name) for name in self._with_collections
-            )
+            refs = ", ".join(self.bind_collection(name) for name in self._with_collections)
             ordered.append(_Clause(_ClauseKind.RAW, f"WITH {refs}"))
         ordered.extend(self._body_clauses)
         if self._sort_keys:

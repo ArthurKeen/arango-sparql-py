@@ -259,9 +259,7 @@ def _sample_collection(db: Any, name: str, sample_size: int) -> list[dict[str, A
 # ---------------------------------------------------------------------------
 
 
-def _classify_rpt_from_sample(
-    name: str, sample: list[dict[str, Any]]
-) -> RptDetectionResult:
+def _classify_rpt_from_sample(name: str, sample: list[dict[str, Any]]) -> RptDetectionResult:
     """Apply the RPT-pattern-matching rules to a sampled collection.
 
     Returns a populated :class:`RptDetectionResult` regardless of the
@@ -347,9 +345,7 @@ def _matches_rpt_columns(doc: dict[str, Any], cols: dict[str, str]) -> bool:
     return obj_uri is not None or obj_val is not None
 
 
-def detect_rpt_pattern(
-    db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE
-) -> dict[str, RptDetectionResult]:
+def detect_rpt_pattern(db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE) -> dict[str, RptDetectionResult]:
     """Run RPT detection against every non-system collection in *db*
     (plus the legacy ``_triples`` system bucket if present).
 
@@ -443,9 +439,7 @@ def _detect_discriminator(
 # ---------------------------------------------------------------------------
 
 
-def _classify_collection(
-    name: str, is_edge: bool, sample: list[dict[str, Any]]
-) -> CollectionClassification:
+def _classify_collection(name: str, is_edge: bool, sample: list[dict[str, Any]]) -> CollectionClassification:
     """Apply all PRD §6.3.1 rules to a single collection's sample,
     returning the per-collection conclusion.
     """
@@ -510,9 +504,7 @@ def _classify_collection(
     )
 
 
-def _classify_all(
-    db: Any, *, sample_size: int
-) -> list[CollectionClassification]:
+def _classify_all(db: Any, *, sample_size: int) -> list[CollectionClassification]:
     """Classify every user collection in *db*. Output is sorted by
     collection name so two runs against the same database produce
     bit-identical classifications, simplifying caching.
@@ -530,9 +522,7 @@ def _classify_all(
 # ---------------------------------------------------------------------------
 
 
-def classify_schema(
-    db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE
-) -> SchemaType:
+def classify_schema(db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE) -> SchemaType:
     """Return the database's overall schema-shape classification.
 
     One of ``"pg"``, ``"lpg"``, ``"rpt"``, ``"hybrid"``, or
@@ -549,9 +539,7 @@ def classify_schema(
     entity_styles = {c.style for c in classifications if not c.is_edge}
     edge_styles = {c.style for c in classifications if c.is_edge}
 
-    is_pg = entity_styles <= {"COLLECTION"} and edge_styles <= {
-        "DEDICATED_COLLECTION"
-    }
+    is_pg = entity_styles <= {"COLLECTION"} and edge_styles <= {"DEDICATED_COLLECTION"}
     is_lpg = entity_styles <= {"LABEL"} and edge_styles <= {"GENERIC_WITH_TYPE"}
     is_rpt = entity_styles <= {"RPT"} and not edge_styles
 
@@ -706,8 +694,7 @@ def _resolve_edge_handle_labels(
             continue
         try:
             rows = db.aql.execute(
-                "FOR d IN @@col FILTER d._key IN @keys "
-                "RETURN {k: d._key, t: d[@tf]}",
+                "FOR d IN @@col FILTER d._key IN @keys RETURN {k: d._key, t: d[@tf]}",
                 bind_vars={"@col": coll, "keys": sorted(keys), "tf": type_field},
             )
         except Exception:
@@ -781,18 +768,13 @@ def infer_edge_endpoint_index(
                 type_value = e.get(c.type_field)
                 if isinstance(type_value, str) and type_value:
                     groups[type_value].append(e)
-            index[c.name] = {
-                tv: _endpoints_from_edges(grp, handle_labels)
-                for tv, grp in groups.items()
-            }
+            index[c.name] = {tv: _endpoints_from_edges(grp, handle_labels) for tv, grp in groups.items()}
         else:
             index[c.name] = {None: _endpoints_from_edges(edges, handle_labels)}
     return index
 
 
-def infer_edge_endpoints_from_db(
-    db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE
-) -> EndpointIndex:
+def infer_edge_endpoints_from_db(db: Any, *, sample_size: int = DEFAULT_SAMPLE_SIZE) -> EndpointIndex:
     """Classify *db* and infer the edge-endpoint index in one call.
 
     Convenience wrapper over :func:`infer_edge_endpoint_index` that does
@@ -836,9 +818,7 @@ def _emit_relationships(
             for type_value in sorted(c.type_values):
                 if not type_value:
                     continue
-                from_entity, to_entity = per_type.get(
-                    type_value, (ANY_ENTITY, ANY_ENTITY)
-                )
+                from_entity, to_entity = per_type.get(type_value, (ANY_ENTITY, ANY_ENTITY))
                 relationships[type_value] = {
                     "style": "GENERIC_WITH_TYPE",
                     "edgeCollectionName": c.name,
@@ -909,9 +889,7 @@ def _fetch_rpt_subject_types(
     if not uris:
         return {}
     rows = db.aql.execute(
-        "FOR t IN @@col "
-        "FILTER t[@pred] == @rdftype AND t[@subj] IN @uris "
-        "RETURN {s: t[@subj], o: t[@obj]}",
+        "FOR t IN @@col FILTER t[@pred] == @rdftype AND t[@subj] IN @uris RETURN {s: t[@subj], o: t[@obj]}",
         bind_vars={
             "@col": triples_collection,
             "pred": predicate_column,
@@ -1008,22 +986,10 @@ def infer_rpt_object_property_relationships(
             )
 
         for predicate, pairs in by_predicate.items():
-            from_classes = {
-                subject_type[s] for s, _o in pairs if s in subject_type
-            }
-            to_classes = {
-                subject_type[o] for _s, o in pairs if o in subject_type
-            }
-            from_entity = (
-                _local_name(next(iter(from_classes)))
-                if len(from_classes) == 1
-                else ANY_ENTITY
-            )
-            to_entity = (
-                _local_name(next(iter(to_classes)))
-                if len(to_classes) == 1
-                else ANY_ENTITY
-            )
+            from_classes = {subject_type[s] for s, _o in pairs if s in subject_type}
+            to_classes = {subject_type[o] for _s, o in pairs if o in subject_type}
+            from_entity = _local_name(next(iter(from_classes))) if len(from_classes) == 1 else ANY_ENTITY
+            to_entity = _local_name(next(iter(to_classes))) if len(to_classes) == 1 else ANY_ENTITY
             relationships[_local_name(predicate)] = {
                 "style": "RPT_EDGE",
                 "predicate": predicate,
@@ -1043,8 +1009,7 @@ def _emit_conceptual(physical: dict[str, Any]) -> dict[str, Any]:
     """
 
     entities = [
-        {"name": name, "labels": [name], "properties": []}
-        for name in sorted(physical.get("entities", {}))
+        {"name": name, "labels": [name], "properties": []} for name in sorted(physical.get("entities", {}))
     ]
     rels = []
     for rtype, spec in sorted(physical.get("relationships", {}).items()):

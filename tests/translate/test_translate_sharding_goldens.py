@@ -69,9 +69,7 @@ def test_sharding_golden(
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     result = translate(sparql, resolver=resolver, tenant_id=tenant_id)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"

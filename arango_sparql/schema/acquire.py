@@ -105,9 +105,7 @@ W_SCHEMA_HEURISTIC_FALLBACK: str = "W_SCHEMA_HEURISTIC_FALLBACK"
 # Pin matches pyproject.toml extras and the README install hint.
 # When this gets bumped, update both call sites in lockstep.
 ANALYZER_VERSION_RANGE: str = ">=0.6.1,<0.7"
-ANALYZER_INSTALL_HINT: str = (
-    f"pip install 'arangodb-schema-analyzer{ANALYZER_VERSION_RANGE}'"
-)
+ANALYZER_INSTALL_HINT: str = f"pip install 'arangodb-schema-analyzer{ANALYZER_VERSION_RANGE}'"
 
 Strategy = Literal["auto", "analyzer", "heuristic"]
 _VALID_STRATEGIES: tuple[Strategy, ...] = ("auto", "analyzer", "heuristic")
@@ -179,9 +177,7 @@ def acquire_mapping_bundle(
     """
 
     if strategy not in _VALID_STRATEGIES:
-        raise ValueError(
-            f"strategy must be one of {_VALID_STRATEGIES!r}, got {strategy!r}"
-        )
+        raise ValueError(f"strategy must be one of {_VALID_STRATEGIES!r}, got {strategy!r}")
 
     when = now if now is not None else datetime.now(UTC)
     # `force_refresh` is accepted for signature compat with the
@@ -276,10 +272,7 @@ class AnalyzerNotInstalledError(RuntimeError):
     """
 
     def __init__(self, *, install_hint: str = ANALYZER_INSTALL_HINT) -> None:
-        super().__init__(
-            "arangodb-schema-analyzer is not installed; "
-            f"install it with: {install_hint}"
-        )
+        super().__init__(f"arangodb-schema-analyzer is not installed; install it with: {install_hint}")
         self.install_hint = install_hint
 
 
@@ -398,9 +391,7 @@ def _resolve_analyzer_provider() -> str | None:
     name keeps key handling in one place.
     """
 
-    provider = (
-        os.getenv("SCHEMA_ANALYZER_PROVIDER") or os.getenv("LLM_PROVIDER") or ""
-    ).strip().lower()
+    provider = (os.getenv("SCHEMA_ANALYZER_PROVIDER") or os.getenv("LLM_PROVIDER") or "").strip().lower()
     if provider:
         if provider not in ("openai", "anthropic", "openrouter"):
             logger.warning(
@@ -548,9 +539,7 @@ def _acquire_via_heuristic(db: Any, *, when: datetime) -> MappingBundle:
 # ---------------------------------------------------------------------------
 
 
-def _apply_rpt_enrichment(
-    db: Any, bundle: MappingBundle, *, when: datetime
-) -> MappingBundle:
+def _apply_rpt_enrichment(db: Any, bundle: MappingBundle, *, when: datetime) -> MappingBundle:
     """Run the RPT detector over *db* and merge any RPT-classified
     collections into the bundle's physical mapping.
 
@@ -672,9 +661,7 @@ def _apply_rpt_enrichment(
 # ---------------------------------------------------------------------------
 
 
-def _apply_edge_endpoint_enrichment(
-    db: Any, bundle: MappingBundle, *, when: datetime
-) -> MappingBundle:
+def _apply_edge_endpoint_enrichment(db: Any, bundle: MappingBundle, *, when: datetime) -> MappingBundle:
     """Fill ``fromEntity`` / ``toEntity`` on edge relationships that are
     still ``"Any"`` (or absent), using ``_from`` / ``_to`` sampling.
 
@@ -866,9 +853,7 @@ def _normalize_bundle_warnings(bundle: MappingBundle) -> MappingBundle:
     )
 
 
-def _stamp_acquisition_timestamp(
-    bundle: MappingBundle, *, when: datetime
-) -> MappingBundle:
+def _stamp_acquisition_timestamp(bundle: MappingBundle, *, when: datetime) -> MappingBundle:
     """Stamp ``metadata.acquisitionTimestamp`` so cache layers and
     the ``/schema/info`` route can surface "when did we last
     acquire?" without consulting an external clock.
@@ -930,16 +915,14 @@ def _live_fingerprint(db: Any, *, kind: Literal["shape", "counts"]) -> str | Non
             return fn(db)
         except Exception:
             logger.warning(
-                "Live DB fingerprint (%s) failed; cache will fall back "
-                "to bundle-side fingerprints.",
+                "Live DB fingerprint (%s) failed; cache will fall back to bundle-side fingerprints.",
                 kind,
                 exc_info=True,
             )
             return None
     except Exception:
         logger.warning(
-            "Live DB fingerprint (%s) failed; cache will fall back to "
-            "bundle-side fingerprints.",
+            "Live DB fingerprint (%s) failed; cache will fall back to bundle-side fingerprints.",
             kind,
             exc_info=True,
         )

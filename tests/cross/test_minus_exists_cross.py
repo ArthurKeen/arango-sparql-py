@@ -59,18 +59,15 @@ def _docs() -> dict[str, list[dict[str, Any]]]:
 
 CASES = [
     pytest.param(
-        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n "
-        "MINUS { ?s :hidden true } }",
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n MINUS { ?s :hidden true } }",
         id="minus_shared_subject",
     ),
     pytest.param(
-        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n "
-        "FILTER NOT EXISTS { ?s :hidden true } }",
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n FILTER NOT EXISTS { ?s :hidden true } }",
         id="not_exists_shared_subject",
     ),
     pytest.param(
-        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n "
-        "FILTER EXISTS { ?s :hidden true } }",
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n FILTER EXISTS { ?s :hidden true } }",
         id="exists_shared_subject",
     ),
     pytest.param(
@@ -79,8 +76,7 @@ CASES = [
         id="not_exists_and_exists_combined",
     ),
     pytest.param(
-        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { ?s :name ?n "
-        "MINUS { ?s :hidden true } }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { ?s :name ?n MINUS { ?s :hidden true } }",
         id="minus_projects_extra_var",
     ),
 ]
@@ -94,14 +90,9 @@ def oxi_store() -> Any:
 
 
 def _run(sparql: str) -> list[dict[str, Any]]:
-    resolver = SchemaResolver.from_turtle(
-        "", default_collection="Document", permissive_class_resolution=True
-    )
+    resolver = SchemaResolver.from_turtle("", default_collection="Document", permissive_class_resolution=True)
     result = translate(sparql, resolver=resolver)
-    return [
-        drop_null_bindings(r)
-        for r in run_aql_subset(result.aql, result.bind_vars, _docs())
-    ]
+    return [drop_null_bindings(r) for r in run_aql_subset(result.aql, result.bind_vars, _docs())]
 
 
 @pytest.mark.cross

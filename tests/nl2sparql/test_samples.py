@@ -28,9 +28,7 @@ ONTOLOGY_TTL = """
 
 
 def _resp(content: str) -> LLMResponse:
-    return LLMResponse(
-        content=content, prompt_tokens=10, completion_tokens=10, total_tokens=20
-    )
+    return LLMResponse(content=content, prompt_tokens=10, completion_tokens=10, total_tokens=20)
 
 
 # ---------------------------------------------------------------------------
@@ -89,9 +87,7 @@ def test_classes_without_object_properties_still_yield_questions() -> None:
 
 
 def test_llm_path_used_when_client_and_use_llm_true() -> None:
-    client = ScriptedLLMClient(
-        [_resp("Who works where?\nList all organizations")], latency_ms=0
-    )
+    client = ScriptedLLMClient([_resp("Who works where?\nList all organizations")], latency_ms=0)
     out = suggest_nl_queries(ONTOLOGY_TTL, use_llm=True, client=client)
     assert out == ["Who works where?", "List all organizations"]
     # The model was actually consulted (one generate call).

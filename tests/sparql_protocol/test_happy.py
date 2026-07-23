@@ -46,9 +46,7 @@ SD = Namespace("http://www.w3.org/ns/sparql-service-description#")
 # ---------------------------------------------------------------------------
 
 
-def test_get_sparql_no_query_returns_service_description(
-    client: TestClient, session_token: str
-) -> None:
+def test_get_sparql_no_query_returns_service_description(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/sparql",
         headers={"X-Arango-Session": session_token},
@@ -77,9 +75,7 @@ def test_get_sparql_no_query_works_without_session_in_default_mode(
     assert resp.headers["Content-Type"].startswith("text/turtle")
 
 
-def test_service_description_advertises_vary_accept(
-    client: TestClient, session_token: str
-) -> None:
+def test_service_description_advertises_vary_accept(client: TestClient, session_token: str) -> None:
     resp = client.get(
         "/sparql",
         headers={"X-Arango-Session": session_token},
@@ -92,9 +88,7 @@ def test_service_description_advertises_vary_accept(
 # ---------------------------------------------------------------------------
 
 
-def test_get_sparql_select_default_returns_results_json(
-    client: TestClient, session_token: str
-) -> None:
+def test_get_sparql_select_default_returns_results_json(client: TestClient, session_token: str) -> None:
     set_aql_rows(
         session_token,
         [
@@ -108,18 +102,14 @@ def test_get_sparql_select_default_returns_results_json(
         headers={"X-Arango-Session": session_token},
     )
     assert resp.status_code == 200, resp.text
-    assert resp.headers["Content-Type"].startswith(
-        "application/sparql-results+json"
-    )
+    assert resp.headers["Content-Type"].startswith("application/sparql-results+json")
     payload = json.loads(resp.text)
     assert payload["head"]["vars"] == ["x"]
     assert len(payload["results"]["bindings"]) == 2
     assert payload["results"]["bindings"][0]["x"]["type"] == "uri"
 
 
-def test_select_observability_headers_are_stamped(
-    client: TestClient, session_token: str
-) -> None:
+def test_select_observability_headers_are_stamped(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [{"x": "http://ex.org/A"}])
     resp = client.get(
         "/sparql",
@@ -142,9 +132,7 @@ def test_select_observability_headers_are_stamped(
         assert h in expose
 
 
-def test_select_show_aql_emits_base64_header(
-    client: TestClient, session_token: str
-) -> None:
+def test_select_show_aql_emits_base64_header(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [])
     resp = client.get(
         "/sparql",
@@ -161,9 +149,7 @@ def test_select_show_aql_emits_base64_header(
     assert session.db.aql.calls[0][0] == aql
 
 
-def test_select_omits_show_aql_header_when_param_missing(
-    client: TestClient, session_token: str
-) -> None:
+def test_select_omits_show_aql_header_when_param_missing(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [])
     resp = client.get(
         "/sparql",
@@ -178,9 +164,7 @@ def test_select_omits_show_aql_header_when_param_missing(
 # ---------------------------------------------------------------------------
 
 
-def test_post_application_sparql_query_body(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_application_sparql_query_body(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [{"x": "http://ex.org/A"}])
     resp = client.post(
         "/sparql",
@@ -195,9 +179,7 @@ def test_post_application_sparql_query_body(
     assert len(payload["results"]["bindings"]) == 1
 
 
-def test_post_form_urlencoded_body(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_form_urlencoded_body(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [{"x": "http://ex.org/A"}])
     resp = client.post(
         "/sparql",
@@ -209,9 +191,7 @@ def test_post_form_urlencoded_body(
     assert len(payload["results"]["bindings"]) == 1
 
 
-def test_post_form_urlencoded_missing_query_returns_400(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_form_urlencoded_missing_query_returns_400(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/sparql",
         data={"notquery": SELECT_QUERY},
@@ -222,9 +202,7 @@ def test_post_form_urlencoded_missing_query_returns_400(
     assert body["code"] == "E_SPARQL_PARSE"
 
 
-def test_post_with_no_body_returns_400(
-    client: TestClient, session_token: str
-) -> None:
+def test_post_with_no_body_returns_400(client: TestClient, session_token: str) -> None:
     resp = client.post(
         "/sparql",
         headers={"X-Arango-Session": session_token},
@@ -266,9 +244,7 @@ def test_ask_false_in_json(client: TestClient, session_token: str) -> None:
     assert payload["boolean"] is False
 
 
-def test_ask_empty_cursor_treated_as_false(
-    client: TestClient, session_token: str
-) -> None:
+def test_ask_empty_cursor_treated_as_false(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [])
     resp = client.get(
         "/sparql",
@@ -319,9 +295,7 @@ def test_ask_in_other_formats(
 # ---------------------------------------------------------------------------
 
 
-def test_execute_passes_max_runtime_kwarg(
-    client: TestClient, session_token: str
-) -> None:
+def test_execute_passes_max_runtime_kwarg(client: TestClient, session_token: str) -> None:
     set_aql_rows(session_token, [])
     resp = client.get(
         "/sparql",

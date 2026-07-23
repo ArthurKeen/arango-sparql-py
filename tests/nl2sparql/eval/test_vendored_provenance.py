@@ -69,9 +69,7 @@ def _vendored_dataset_dirs() -> list[Path]:
     """
     if not VENDORED.is_dir():
         return []
-    return sorted(
-        p for p in VENDORED.iterdir() if p.is_dir() and not p.name.startswith("__")
-    )
+    return sorted(p for p in VENDORED.iterdir() if p.is_dir() and not p.name.startswith("__"))
 
 
 def test_every_vendored_dataset_has_a_cc_by_notice() -> None:

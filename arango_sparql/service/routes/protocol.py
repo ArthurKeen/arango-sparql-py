@@ -181,9 +181,7 @@ def _error_response(
     response_headers = {"Vary": "Accept"}
     if headers:
         response_headers.update(headers)
-    return JSONResponse(
-        status_code=status_code, content=body, headers=response_headers
-    )
+    return JSONResponse(status_code=status_code, content=body, headers=response_headers)
 
 
 # ---------------------------------------------------------------------------
@@ -227,8 +225,7 @@ async def _extract_query_from_post(request: Request) -> tuple[str, bytes | None]
             status_code=413,
             detail={
                 "error": (
-                    f"Request body exceeds {_max_body_bytes()} bytes "
-                    "(SPARQL_PROTOCOL_MAX_BODY_BYTES)."
+                    f"Request body exceeds {_max_body_bytes()} bytes (SPARQL_PROTOCOL_MAX_BODY_BYTES)."
                 ),
                 "code": "E_REQUEST_TOO_LARGE",
             },
@@ -266,10 +263,7 @@ async def _extract_query_from_post(request: Request) -> tuple[str, bytes | None]
             raise HTTPException(
                 status_code=400,
                 detail={
-                    "error": (
-                        "POST application/x-www-form-urlencoded requires a "
-                        "non-empty 'query' field."
-                    ),
+                    "error": ("POST application/x-www-form-urlencoded requires a non-empty 'query' field."),
                     "code": "E_SPARQL_PARSE",
                 },
             )
@@ -471,10 +465,7 @@ def _resolver_for_session(session: _Session) -> tuple[SchemaResolver, list[dict[
         raise HTTPException(
             status_code=503,
             detail={
-                "error": (
-                    "Schema acquisition is currently unavailable. "
-                    "See /schema/status for details."
-                ),
+                "error": ("Schema acquisition is currently unavailable. See /schema/status for details."),
                 "code": "E_SCHEMA_UNAVAILABLE",
             },
             headers={"Retry-After": "30"},
@@ -488,9 +479,7 @@ def _resolver_for_session(session: _Session) -> tuple[SchemaResolver, list[dict[
         raise HTTPException(
             status_code=503,
             detail={
-                "error": _sanitize_error(
-                    f"Schema acquisition failed: {exc}"
-                ),
+                "error": _sanitize_error(f"Schema acquisition failed: {exc}"),
                 "code": "E_SCHEMA_UNAVAILABLE",
             },
             headers={"Retry-After": "30"},
@@ -591,10 +580,7 @@ def _not_acceptable_response(form: QueryForm, accept: str | None) -> JSONRespons
     return JSONResponse(
         status_code=406,
         content={
-            "error": (
-                f"No supported media type matches Accept "
-                f"{accept or '(unset)'!r} for {form.value}."
-            ),
+            "error": (f"No supported media type matches Accept {accept or '(unset)'!r} for {form.value}."),
             "code": "E_NOT_ACCEPTABLE",
             "supported_types": supported_types_for_form(form),
             "query_form": form.value,
@@ -633,14 +619,10 @@ def _add_observability_headers(
         # Base64 keeps the AQL safe to put in a header (no CRLF,
         # no non-token characters). Clients decode with
         # ``atob(headers["X-Aql-Query-B64"])``.
-        response.headers["X-Aql-Query-B64"] = base64.b64encode(
-            aql.encode("utf-8")
-        ).decode("ascii")
+        response.headers["X-Aql-Query-B64"] = base64.b64encode(aql.encode("utf-8")).decode("ascii")
     if truncated:
         # The ``Warning`` value must be quoted per RFC 9110.
-        response.headers["Warning"] = (
-            f'299 - "W_RESULT_TRUNCATED row cap {_MAX_RESULT_DOCS} reached"'
-        )
+        response.headers["Warning"] = f'299 - "W_RESULT_TRUNCATED row cap {_MAX_RESULT_DOCS} reached"'
 
 
 def _materialise(cursor: Any, cap: int) -> tuple[list[Any], bool]:
@@ -722,9 +704,7 @@ def _http_exception_to_flat_response(exc: HTTPException) -> JSONResponse:
     )
 
 
-def _execute_protocol_query(
-    request: Request, query: str
-) -> Response:
+def _execute_protocol_query(request: Request, query: str) -> Response:
     """End-to-end pipeline for a SPARQL query body.
 
     1. Rate-limit guard.
@@ -915,9 +895,7 @@ def _execute_protocol_query(
     # per cursor row); the renderer flattens and dedupes via
     # :class:`rdflib.Graph`'s set semantics.
     explicit_vars = (
-        [str(v) for v in parsed.explicit_projection]
-        if parsed.explicit_projection is not None
-        else None
+        [str(v) for v in parsed.explicit_projection] if parsed.explicit_projection is not None else None
     )
     if form is QueryForm.ASK:
         ask_value = _coerce_ask_value(bindings)
@@ -983,9 +961,7 @@ def _coerce_ask_value(rows: list[Any]) -> bool:
     return bool(head)
 
 
-def _execute_with_timeout(
-    db: Any, aql: str, bind_vars: dict[str, Any], timeout_s: float
-) -> Any:
+def _execute_with_timeout(db: Any, aql: str, bind_vars: dict[str, Any], timeout_s: float) -> Any:
     """Execute *aql* with a server-side ``max_runtime`` cap. Maps
     the ArangoDB query-killed error (code 1500) to an
     ``HTTPException(504, E_TIMEOUT)`` so the route layer can shape

@@ -159,9 +159,9 @@ def list_graphs(session: _Session = Depends(_get_session)):
             coll = ed.get("collection")
             if coll:
                 edges.add(coll)
-            for v in (ed.get("from") or []):
+            for v in ed.get("from") or []:
                 vertex.add(v)
-            for v in (ed.get("to") or []):
+            for v in ed.get("to") or []:
                 vertex.add(v)
         orphans = g.get("orphanCollections") or g.get("orphan_collections") or []
         for o in orphans:

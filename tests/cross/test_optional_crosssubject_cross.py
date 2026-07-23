@@ -103,13 +103,11 @@ def _triples_store() -> dict[str, list[dict[str, Any]]]:
 
 CASES = [
     pytest.param(
-        "SELECT ?s ?o ?p2 ?o2 WHERE { ?s a :Person ; :knows ?o . "
-        "OPTIONAL { ?o ?p2 ?o2 } }",
+        "SELECT ?s ?o ?p2 ?o2 WHERE { ?s a :Person ; :knows ?o . OPTIONAL { ?o ?p2 ?o2 } }",
         id="variable_predicate",
     ),
     pytest.param(
-        "SELECT ?s ?o ?email WHERE { ?s a :Person ; :knows ?o . "
-        "OPTIONAL { ?o :email ?email } }",
+        "SELECT ?s ?o ?email WHERE { ?s a :Person ; :knows ?o . OPTIONAL { ?o :email ?email } }",
         id="fixed_predicate",
     ),
 ]
@@ -121,10 +119,7 @@ def test_rpt_cross_subject_optional_matches_oxigraph(where: str) -> None:
     query = "PREFIX : <http://ex.org/> " + where
 
     result = translate(query, resolver=_rpt_resolver())
-    actual = [
-        drop_null_bindings(r)
-        for r in run_aql_subset(result.aql, result.bind_vars, _triples_store())
-    ]
+    actual = [drop_null_bindings(r) for r in run_aql_subset(result.aql, result.bind_vars, _triples_store())]
 
     store = load_store_from_string(DATA)
     expected = [normalize_oxi_row(r) for r in oxi_bindings(store, query)]

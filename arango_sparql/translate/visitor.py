@@ -302,9 +302,7 @@ class AlgebraVisitor:
             # CONSTRUCT WHERE {} with no pattern is grammatically legal
             # but produces no bindings → no triples. Refuse so the
             # operator notices rather than emit unbound AQL.
-            raise UnsupportedSparqlError(
-                "CONSTRUCT with an empty WHERE pattern is not supported"
-            )
+            raise UnsupportedSparqlError("CONSTRUCT with an empty WHERE pattern is not supported")
 
         if not template:
             # ``CONSTRUCT WHERE { … }`` (template-less, SPARQL 1.1
@@ -321,8 +319,7 @@ class AlgebraVisitor:
             template = _collect_bgp_triples(inner)
             if not template:
                 raise UnsupportedSparqlError(
-                    "CONSTRUCT WHERE pattern has no BGP triples to "
-                    "synthesise a template from"
+                    "CONSTRUCT WHERE pattern has no BGP triples to synthesise a template from"
                 )
 
         self.visit(inner)
@@ -373,8 +370,7 @@ class AlgebraVisitor:
         if isinstance(term, BNode):
             return self.builder.bind(f"_:{term}", hint="bnode")
         raise UnsupportedSparqlError(
-            f"CONSTRUCT/DESCRIBE template {position} term type "
-            f"{type(term).__name__!r} is not supported"
+            f"CONSTRUCT/DESCRIBE template {position} term type {type(term).__name__!r} is not supported"
         )
 
     # ------------------------------------------------------------------
@@ -419,9 +415,7 @@ class AlgebraVisitor:
         else:
             pv = list(getattr(node, "PV", []) or [])
         if not pv:
-            raise UnsupportedSparqlError(
-                "DESCRIBE without a resource list is not supported"
-            )
+            raise UnsupportedSparqlError("DESCRIBE without a resource list is not supported")
 
         inner = node.p
         if inner is None:
@@ -448,9 +442,7 @@ class AlgebraVisitor:
                 # piggy-back its alias context.
                 described.append(self._describe_uri_subquery(term))
                 continue
-            raise UnsupportedSparqlError(
-                f"DESCRIBE term type {type(term).__name__!r} is not supported"
-            )
+            raise UnsupportedSparqlError(f"DESCRIBE term type {type(term).__name__!r} is not supported")
 
         if len(described) == 1:
             self.builder.return_triples_subquery(described[0])
@@ -476,8 +468,7 @@ class AlgebraVisitor:
             subj_expr = self.state.var_to_expr.get(name)
             if subj_expr is None:
                 raise AqlEmitError(
-                    f"DESCRIBE ?{name} on an RPT-bound variable is missing "
-                    f"its subject expression"
+                    f"DESCRIBE ?{name} on an RPT-bound variable is missing its subject expression"
                 )
             return self._describe_rpt_subquery(subj_expr, rpt_class)
         alias = self.state.var_to_doc_alias.get(name)
@@ -545,10 +536,7 @@ class AlgebraVisitor:
 
         alias = self.builder.fresh_alias(prefix="d")
         coll_ref = self.builder.bind_collection(rpt_class.collection)
-        coalesce = (
-            f"NOT_NULL({alias}.{rpt_class.object_uri_column}, "
-            f"{alias}.{rpt_class.object_value_column})"
-        )
+        coalesce = f"NOT_NULL({alias}.{rpt_class.object_uri_column}, {alias}.{rpt_class.object_value_column})"
         return (
             f"FOR {alias} IN {coll_ref} "
             f"FILTER {alias}.{rpt_class.subject_column} == {subject_expr} "
@@ -576,9 +564,7 @@ class AlgebraVisitor:
 
         alias = self._open_collection(self.resolver.default_collection)
         iri_binds = [self.builder.bind(str(r), hint="uri") for r in resources]
-        self.builder.filter_raw(
-            f"{alias}._uri IN [{', '.join(iri_binds)}]"
-        )
+        self.builder.filter_raw(f"{alias}._uri IN [{', '.join(iri_binds)}]")
         subquery = self._describe_pg_attributes_subquery(alias)
         self.builder.return_triples_subquery(subquery)
 
@@ -746,8 +732,7 @@ class AlgebraVisitor:
                 # (§8.3.4) is assembled by ``emit_minus`` from the sink.
                 bound_expr = self.state.var_to_expr[o_name]
                 self.builder.filter_raw(
-                    f"({value_expr} == null || {bound_expr} == null "
-                    f"|| {value_expr} == {bound_expr})"
+                    f"({value_expr} == null || {bound_expr} == null || {value_expr} == {bound_expr})"
                 )
                 assert self.state.optional_rebind_sink is not None
                 self.state.optional_rebind_sink.append((o_name, value_expr, bound_expr))
@@ -1317,10 +1302,7 @@ class AlgebraVisitor:
             # we don't want to materialise an UNMAPPED-IRI warning
             # for predicates that exist only as triple-store
             # ``predicate`` column values.
-            if (
-                isinstance(s, Variable)
-                and str(s) in self.state.var_to_rpt_class
-            ):
+            if isinstance(s, Variable) and str(s) in self.state.var_to_rpt_class:
                 self._emit_rpt_property_triple(s, p, o, triple)
                 return
             prop = self.resolver.resolve_property(p)
@@ -1567,9 +1549,7 @@ class AlgebraVisitor:
                 f"ARANGO_SPARQL_DEFAULT_TENANT env)"
             )
         if self.state.tenant_bind_placeholder is None:
-            self.state.tenant_bind_placeholder = self.builder.bind(
-                self.tenant_id, hint="tenant"
-            )
+            self.state.tenant_bind_placeholder = self.builder.bind(self.tenant_id, hint="tenant")
         self.builder.filter_eq(
             f"{alias}.{resolved.tenant_field}",
             self.state.tenant_bind_placeholder,
@@ -1597,9 +1577,7 @@ class AlgebraVisitor:
         Mirrors the legacy ``rpt-translator.js`` ``translateSelectRPT``
         loop's first branch.
         """
-        triples_alias = self._open_collection(
-            resolved.collection, resolved=resolved
-        )
+        triples_alias = self._open_collection(resolved.collection, resolved=resolved)
         if resolved.tenant_field is not None:
             # RPT rows live in a denormalised triples table whose
             # columns are fixed (subject_uri / predicate / object_uri
@@ -1616,12 +1594,8 @@ class AlgebraVisitor:
             )
         rdf_type_bind = self.builder.bind(str(RDF.type), hint="rdftype")
         class_bind = self.builder.bind(str(class_iri), hint="cls")
-        self.builder.filter_eq(
-            f"{triples_alias}.{resolved.predicate_column}", rdf_type_bind
-        )
-        self.builder.filter_eq(
-            f"{triples_alias}.{resolved.object_uri_column}", class_bind
-        )
+        self.builder.filter_eq(f"{triples_alias}.{resolved.predicate_column}", rdf_type_bind)
+        self.builder.filter_eq(f"{triples_alias}.{resolved.object_uri_column}", class_bind)
         if isinstance(subject, Variable):
             name = str(subject)
             subj_expr = f"{triples_alias}.{resolved.subject_column}"
@@ -1656,13 +1630,10 @@ class AlgebraVisitor:
             return
         if isinstance(subject, URIRef):
             uri_bind = self.builder.bind(str(subject), hint="uri")
-            self.builder.filter_eq(
-                f"{triples_alias}.{resolved.subject_column}", uri_bind
-            )
+            self.builder.filter_eq(f"{triples_alias}.{resolved.subject_column}", uri_bind)
             return
         raise UnsupportedSparqlError(
-            f"RPT type pattern subject term type {type(subject).__name__!r} "
-            f"is not supported"
+            f"RPT type pattern subject term type {type(subject).__name__!r} is not supported"
         )
 
     def _emit_rpt_property_triple(
@@ -1691,23 +1662,17 @@ class AlgebraVisitor:
           since RDF literals never live in the URI column.
         """
         rpt_class = self.state.var_to_rpt_class[str(subject)]
-        triples_alias = self._open_collection(
-            rpt_class.collection, resolved=rpt_class
-        )
+        triples_alias = self._open_collection(rpt_class.collection, resolved=rpt_class)
         # Record the per-class metadata so the OBJECT variable, if
         # bound here, joins through the same column overrides the
         # subject's class declared.
         pred_bind = self.builder.bind(str(predicate), hint="pred")
-        self.builder.filter_eq(
-            f"{triples_alias}.{rpt_class.predicate_column}", pred_bind
-        )
+        self.builder.filter_eq(f"{triples_alias}.{rpt_class.predicate_column}", pred_bind)
         # Join on subject URI: the subject's value lives in
         # ``var_to_expr`` already (set by the type pattern emitter).
         subj_expr = self.state.var_to_expr.get(str(subject))
         if subj_expr is None:
-            raise AqlEmitError(
-                f"RPT property triple references unbound subject ?{subject}"
-            )
+            raise AqlEmitError(f"RPT property triple references unbound subject ?{subject}")
         new_subj_expr = f"{triples_alias}.{rpt_class.subject_column}"
         if subj_expr != new_subj_expr:
             self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
@@ -1743,9 +1708,7 @@ class AlgebraVisitor:
             return
         if isinstance(obj, Literal):
             val_bind = self.builder.bind(_term_to_python(obj), hint="obj")
-            self.builder.filter_eq(
-                f"{triples_alias}.{rpt_class.object_value_column}", val_bind
-            )
+            self.builder.filter_eq(f"{triples_alias}.{rpt_class.object_value_column}", val_bind)
             return
         raise UnsupportedSparqlError(
             f"RPT property triple object term type {type(obj).__name__!r} "
@@ -1789,18 +1752,12 @@ class AlgebraVisitor:
         subject_alias = self._ensure_subject_alias(subject)
         v_alias = self.builder.fresh_alias(prefix="v")
         e_alias = self.builder.fresh_alias(prefix="e")
-        self.builder.for_traversal(
-            v_alias, e_alias, subject_alias, prop.edge_collection
-        )
+        self.builder.for_traversal(v_alias, e_alias, subject_alias, prop.edge_collection)
         # ``GENERIC_WITH_TYPE`` shares one edge collection across many
         # relationship types; the discriminator FILTER is what keeps an
         # ``?a :knows ?b`` traversal from also returning ``:worksAt``
         # / ``:livesIn`` rows that happen to ride the same collection.
-        if (
-            prop.mapping_style == "GENERIC_WITH_TYPE"
-            and prop.type_field
-            and prop.type_value
-        ):
+        if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
             bind = self.builder.bind(prop.type_value, hint=prop.type_field)
             self.builder.filter_eq(f"{e_alias}.{prop.type_field}", bind)
         # We track the edge alias on the builder for the rare query that
@@ -1826,13 +1783,9 @@ class AlgebraVisitor:
             # an equality filter on ``_uri`` so the cross-product gets
             # pruned to the SPARQL join semantics, mirroring the
             # ``_bind_subject`` branch for repeat type patterns.
-            existing_uri_expr = (
-                f"{existing_alias}._uri" if existing_alias else existing_expr
-            )
+            existing_uri_expr = f"{existing_alias}._uri" if existing_alias else existing_expr
             if existing_uri_expr != target_uri_expr:
-                self.builder.filter_raw(
-                    f"{target_uri_expr} == {existing_uri_expr}"
-                )
+                self.builder.filter_raw(f"{target_uri_expr} == {existing_uri_expr}")
             return
 
         if isinstance(obj, URIRef):
@@ -1845,8 +1798,7 @@ class AlgebraVisitor:
         # iff the literal IS the IRI — vanishingly rare in practice and
         # ill-defined for our document model. Refuse for now.
         raise UnsupportedSparqlError(
-            f"object property {prop.iri!r} with non-IRI object is not supported "
-            f"(triple {triple!r})"
+            f"object property {prop.iri!r} with non-IRI object is not supported (triple {triple!r})"
         )
 
     def _ensure_subject_alias(self, subject: Any) -> str:
@@ -2194,10 +2146,7 @@ def _is_empty_bgp(node: Any) -> bool:
     no-op (``visit_BGP``'s degenerate-FOR opener only fires when
     no other FOR has been emitted yet).
     """
-    return (
-        getattr(node, "name", None) == "BGP"
-        and not getattr(node, "triples", None)
-    )
+    return getattr(node, "name", None) == "BGP" and not getattr(node, "triples", None)
 
 
 def _collect_bgp_triples(node: Any) -> list[tuple[Any, Any, Any]]:

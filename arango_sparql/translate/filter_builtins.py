@@ -76,11 +76,7 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         flags_node = expr.get("flags")
         flag_str = ""
         if flags_node is not None:
-            flag_str = (
-                flags_node.toPython()
-                if isinstance(flags_node, Literal)
-                else str(flags_node)
-            )
+            flag_str = flags_node.toPython() if isinstance(flags_node, Literal) else str(flags_node)
         case_insensitive = "true" if "i" in flag_str.lower() else "false"
         unsupported_flags = set(flag_str.lower()) - {"i", ""}
         if unsupported_flags:
@@ -93,15 +89,9 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
             )
         return f"REGEX_TEST({text}, {pattern}, {case_insensitive})"
     if name == "Builtin_CONTAINS":
-        return (
-            f"CONTAINS({visitor._translate_expr(expr.arg1)}, "
-            f"{visitor._translate_expr(expr.arg2)})"
-        )
+        return f"CONTAINS({visitor._translate_expr(expr.arg1)}, {visitor._translate_expr(expr.arg2)})"
     if name == "Builtin_STRSTARTS":
-        return (
-            f"STARTS_WITH({visitor._translate_expr(expr.arg1)}, "
-            f"{visitor._translate_expr(expr.arg2)})"
-        )
+        return f"STARTS_WITH({visitor._translate_expr(expr.arg1)}, {visitor._translate_expr(expr.arg2)})"
     if name == "Builtin_STRENDS":
         # AQL has STARTS_WITH but no ENDS_WITH builtin (live execution
         # fails with ERR 1540 "unknown function"); compare the string's
@@ -247,11 +237,7 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         flags_node = expr.get("flags")
         flag_str = ""
         if flags_node is not None:
-            flag_str = (
-                flags_node.toPython()
-                if isinstance(flags_node, Literal)
-                else str(flags_node)
-            )
+            flag_str = flags_node.toPython() if isinstance(flags_node, Literal) else str(flags_node)
         case_insensitive = "true" if "i" in flag_str.lower() else "false"
         unsupported_flags = set(flag_str.lower()) - {"i", ""}
         if unsupported_flags:
@@ -354,21 +340,13 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         # not-found guard.
         a = visitor._translate_expr(expr.arg1)
         b = visitor._translate_expr(expr.arg2)
-        return (
-            f"(FIND_FIRST({a}, {b}) >= 0 ? "
-            f"SUBSTRING({a}, 0, FIND_FIRST({a}, {b})) : "
-            f'"")'
-        )
+        return f'(FIND_FIRST({a}, {b}) >= 0 ? SUBSTRING({a}, 0, FIND_FIRST({a}, {b})) : "")'
     if name == "Builtin_STRAFTER":
         # ``STRAFTER(str, sep)`` — substring after the first
         # occurrence of ``sep``, or ``""`` if not found.
         a = visitor._translate_expr(expr.arg1)
         b = visitor._translate_expr(expr.arg2)
-        return (
-            f"(FIND_FIRST({a}, {b}) >= 0 ? "
-            f"SUBSTRING({a}, FIND_FIRST({a}, {b}) + LENGTH({b})) : "
-            f'"")'
-        )
+        return f'(FIND_FIRST({a}, {b}) >= 0 ? SUBSTRING({a}, FIND_FIRST({a}, {b}) + LENGTH({b})) : "")'
     if name == "Builtin_ENCODE_FOR_URI":
         # ``ENCODE_FOR_URI(str)`` — percent-encode every char that
         # SPARQL 1.1 §17.4.2.8 considers reserved/unsafe. AQL's
@@ -471,10 +449,10 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         # builtin dispatcher takes (cf. ``Builtin_LANG``).
         arg = visitor._translate_expr(expr.arg)
         return (
-            f"(REGEX_TEST(TO_STRING({arg}), \"Z$\") ? \"Z\" : "
-            f"(REGEX_TEST(TO_STRING({arg}), \"[+-][0-9]{{2}}:[0-9]{{2}}$\") "
+            f'(REGEX_TEST(TO_STRING({arg}), "Z$") ? "Z" : '
+            f'(REGEX_TEST(TO_STRING({arg}), "[+-][0-9]{{2}}:[0-9]{{2}}$") '
             f"? SUBSTRING(TO_STRING({arg}), LENGTH(TO_STRING({arg})) - 6) "
-            f": \"\"))"
+            f': ""))'
         )
     if name == "Builtin_TIMEZONE":
         # SPARQL 1.1 §17.4.5.10 — ``TIMEZONE(?dt)`` returns the time-zone

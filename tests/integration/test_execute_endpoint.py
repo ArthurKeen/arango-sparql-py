@@ -144,9 +144,7 @@ def _seeded_collection(_live_arango: None) -> Iterator[list[dict]]:
     # Provision the dedicated test database if it doesn't exist yet so a
     # fresh ``sparql-to-aql`` works without a manual setup step.
     if _ARANGO_DB != "_system":
-        ensure_database(
-            client, _ARANGO_DB, username=_ARANGO_USER, password=_ARANGO_PASSWORD
-        )
+        ensure_database(client, _ARANGO_DB, username=_ARANGO_USER, password=_ARANGO_PASSWORD)
     db = client.db(_ARANGO_DB, username=_ARANGO_USER, password=_ARANGO_PASSWORD)
 
     if db.has_collection(_TEST_COLLECTION):

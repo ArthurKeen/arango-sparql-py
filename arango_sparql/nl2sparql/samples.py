@@ -103,14 +103,10 @@ def _dedupe_cap(candidates: list[str], count: int) -> list[str]:
     return out
 
 
-def _rule_based_suggest(
-    view: dict[str, list[dict[str, Any]]], count: int
-) -> list[str]:
+def _rule_based_suggest(view: dict[str, list[dict[str, Any]]], count: int) -> list[str]:
     """Generate template questions from a parsed OWL graph view."""
     classes = view.get("classes", [])
-    object_props = [
-        p for p in view.get("properties", []) if p.get("kind") == "object"
-    ]
+    object_props = [p for p in view.get("properties", []) if p.get("kind") == "object"]
 
     suggestions: list[str] = []
 

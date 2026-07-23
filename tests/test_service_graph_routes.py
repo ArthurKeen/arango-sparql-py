@@ -151,9 +151,7 @@ def test_list_graphs_without_session_is_401(client: TestClient) -> None:
     assert client.get("/graphs").status_code == 401
 
 
-def test_list_graphs_returns_named_graphs(
-    client: TestClient, fake_client_factory
-) -> None:
+def test_list_graphs_returns_named_graphs(client: TestClient, fake_client_factory) -> None:
     token = _connect(client)
     resp = client.get("/graphs", headers={"X-Arango-Session": token})
     assert resp.status_code == 200, resp.text
@@ -166,9 +164,7 @@ def test_list_graphs_returns_named_graphs(
     assert g["collectionCount"] == 2
 
 
-def test_list_graphs_empty_when_db_has_none(
-    client: TestClient, fake_client_factory
-) -> None:
+def test_list_graphs_empty_when_db_has_none(client: TestClient, fake_client_factory) -> None:
     _FakeArangoClient.db_factory = lambda name: _FakeDb(name, graphs={})
     token = _connect(client)
     resp = client.get("/graphs", headers={"X-Arango-Session": token})
@@ -176,9 +172,7 @@ def test_list_graphs_empty_when_db_has_none(
     assert resp.json()["graphs"] == []
 
 
-def test_list_graphs_degrades_when_graphs_call_raises(
-    client: TestClient, fake_client_factory
-) -> None:
+def test_list_graphs_degrades_when_graphs_call_raises(client: TestClient, fake_client_factory) -> None:
     _FakeArangoClient.db_factory = lambda name: _ExplodingGraphsDb(name, graphs=_social_graph())
     token = _connect(client)
     resp = client.get("/graphs", headers={"X-Arango-Session": token})
@@ -191,9 +185,7 @@ def test_list_graphs_degrades_when_graphs_call_raises(
 # ---------------------------------------------------------------------------
 
 
-def test_bind_graph_success_sets_session_scope(
-    client: TestClient, fake_client_factory
-) -> None:
+def test_bind_graph_success_sets_session_scope(client: TestClient, fake_client_factory) -> None:
     token = _connect(client)
     resp = client.post(
         "/session/graph",

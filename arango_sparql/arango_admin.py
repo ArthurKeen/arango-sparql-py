@@ -115,12 +115,12 @@ def ensure_configured_database(
         # No explicit database, or it's ``_system`` — nothing to
         # provision. This is the common case for translation-only
         # deployments, so it is silent (debug, not warning).
-        log.debug(
-            "ensure_configured_database: ARANGO_DB=%r needs no provisioning", name
-        )
+        log.debug("ensure_configured_database: ARANGO_DB=%r needs no provisioning", name)
         return None
 
-    url = (read_arango_url(default="http://localhost:8529", caller="ensure_configured_database") or "").rstrip("/")
+    url = (
+        read_arango_url(default="http://localhost:8529", caller="ensure_configured_database") or ""
+    ).rstrip("/")
     username = read_arango_username(default="root", caller="ensure_configured_database") or "root"
     password = read_arango_password(caller="ensure_configured_database") or ""
 
@@ -131,9 +131,7 @@ def ensure_configured_database(
             client_factory = ArangoClient
         client = client_factory(hosts=url)
         try:
-            created = ensure_database(
-                client, name, username=username, password=password
-            )
+            created = ensure_database(client, name, username=username, password=password)
         finally:
             close = getattr(client, "close", None)
             if callable(close):

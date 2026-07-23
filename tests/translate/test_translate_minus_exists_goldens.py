@@ -90,14 +90,10 @@ def test_minus_exists_golden(
        a different order or scope, the synthesised template would
        reorder or balloon visibly.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -123,9 +119,7 @@ def test_minus_multiple_shared_vars() -> None:
     ``?s`` alone (regardless of ``?n``)."""
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { "
-        "?s :name ?n MINUS { ?s :nickname ?n }"
-        " }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { ?s :name ?n MINUS { ?s :nickname ?n } }",
         resolver=resolver,
     )
     # Inner block must constrain both shared variables.
@@ -146,7 +140,7 @@ def test_not_exists_in_compound_filter() -> None:
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
-        'PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n . '
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s :name ?n . "
         'FILTER (?n != "alice" && NOT EXISTS { ?s :hidden true }) }',
         resolver=resolver,
     )
@@ -154,16 +148,11 @@ def test_not_exists_in_compound_filter() -> None:
     assert "LET not_exists_probe" in result.aql
     let_pos = result.aql.index("LET not_exists_probe")
     filter_pos = result.aql.index("FILTER ((")
-    assert let_pos < filter_pos, (
-        "LET clause must precede the FILTER that consumes it:\n"
-        + result.aql
-    )
+    assert let_pos < filter_pos, "LET clause must precede the FILTER that consumes it:\n" + result.aql
     # The NOT-EXISTS comparator is spliced into the outer FILTER as
     # part of the larger boolean — appears alongside ``&&`` and the
     # neighbouring conjunct, never as its own separate FILTER clause.
-    filter_line = next(
-        line for line in result.aql.splitlines() if line.startswith("FILTER ((")
-    )
+    filter_line = next(line for line in result.aql.splitlines() if line.startswith("FILTER (("))
     assert "&&" in filter_line
     assert "not_exists_probe" in filter_line
     # Only ONE FILTER ((... clause — confirms the NOT EXISTS didn't

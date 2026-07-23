@@ -42,6 +42,7 @@ from arango_sparql.translate.resolver import SchemaResolver  # noqa: E402
 
 GOLDEN_DIR = REPO_ROOT / "tests" / "translate"
 
+
 # Regex matching a single case's ``expected_aql`` block scalar. Anchored
 # on the case's ``- name: <name>`` line so cases inside the same file
 # don't bleed into one another.
@@ -175,21 +176,13 @@ def regen_file(path: Path, *, dry_run: bool) -> tuple[int, int]:
         bind_m = bind_re.search(updated_text)
         if bind_m:
             try:
-                existing_bv = (
-                    yaml.safe_load(bind_m.group(2)) or {}
-                    if bind_m.group(2).strip()
-                    else {}
-                )
+                existing_bv = yaml.safe_load(bind_m.group(2)) or {} if bind_m.group(2).strip() else {}
             except yaml.YAMLError:
                 existing_bv = None
             new_bv = dict(result.bind_vars)
             if existing_bv != new_bv:
                 new_bv_block = _format_bind_vars(new_bv)
-                updated_text = (
-                    updated_text[: bind_m.start(2)]
-                    + new_bv_block
-                    + updated_text[bind_m.end(2) :]
-                )
+                updated_text = updated_text[: bind_m.start(2)] + new_bv_block + updated_text[bind_m.end(2) :]
 
         n_updated += 1
 

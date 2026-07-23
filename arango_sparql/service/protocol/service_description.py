@@ -186,11 +186,11 @@ def render_service_description(
 
     parts: list[str] = []
     parts.append("@prefix sd: <" + SD_NAMESPACE + "> .\n")
-    parts.append('@prefix dcterms: <http://purl.org/dc/terms/> .\n')
+    parts.append("@prefix dcterms: <http://purl.org/dc/terms/> .\n")
     parts.append("\n")
 
     parts.append("<> a sd:Service ;\n")
-    parts.append(f'    sd:endpoint <{endpoint_url}> ;\n')
+    parts.append(f"    sd:endpoint <{endpoint_url}> ;\n")
 
     # Supported languages — only SPARQL 1.1 Query for v1.x. Update
     # is explicitly *not* listed so spec-compliant clients won't
@@ -217,7 +217,7 @@ def render_service_description(
     parts.append("        a sd:Dataset ;\n")
     parts.append("        sd:defaultGraph [\n")
     parts.append("            a sd:Graph ;\n")
-    parts.append(f'            dcterms:identifier <{_DEFAULT_GRAPH_IRI}>\n')
+    parts.append(f"            dcterms:identifier <{_DEFAULT_GRAPH_IRI}>\n")
     parts.append("        ]")
     if named_graphs:
         # Repeating ``sd:namedGraph`` blank-node objects: use ``;``
@@ -237,6 +237,6 @@ def render_service_description(
 
     # PRD link as a dcterms:description so spec-compliant clients
     # can deep-link to the human-readable contract.
-    parts.append(f'    dcterms:description <{_PRD_LINK}> .\n')
+    parts.append(f"    dcterms:description <{_PRD_LINK}> .\n")
 
     return "".join(parts)

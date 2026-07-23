@@ -85,9 +85,7 @@ _DEFAULT_ROWS: list[Any] = [
     ],
     ids=RDF_FORMAT_NAMES,
 )
-def test_render_construct_roundtrip(
-    media_type: str, parse_format: str
-) -> None:
+def test_render_construct_roundtrip(media_type: str, parse_format: str) -> None:
     body = render_construct(media_type, _DEFAULT_ROWS)
     g = Graph()
     g.parse(data=body, format=parse_format)
@@ -189,9 +187,7 @@ def test_bnode_string_becomes_bnode_term() -> None:
         ]
     ]
     g = Graph()
-    g.parse(
-        data=render_construct("application/n-triples", rows), format="nt"
-    )
+    g.parse(data=render_construct("application/n-triples", rows), format="nt")
     subjects = list({s for s, _, _ in g})
     assert len(subjects) == 1
     assert isinstance(subjects[0], BNode)
@@ -213,12 +209,8 @@ def test_dict_with_uri_or_id_becomes_iri() -> None:
         ]
     ]
     g = Graph()
-    g.parse(
-        data=render_construct("text/turtle", rows), format="turtle"
-    )
-    assert (URIRef("http://ex.org/Alice"), None, None) in (
-        (s, None, None) for s, _, _ in g
-    )
+    g.parse(data=render_construct("text/turtle", rows), format="turtle")
+    assert (URIRef("http://ex.org/Alice"), None, None) in ((s, None, None) for s, _, _ in g)
 
 
 # ---------------------------------------------------------------------------
@@ -325,9 +317,7 @@ def test_duplicate_triples_dedupe_via_graph_set_semantics() -> None:
         ],
     ]
     g = Graph()
-    g.parse(
-        data=render_construct("application/n-triples", rows), format="nt"
-    )
+    g.parse(data=render_construct("application/n-triples", rows), format="nt")
     assert len(g) == 1
 
 

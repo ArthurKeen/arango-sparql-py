@@ -97,16 +97,12 @@ def test_property_path_supported_golden(
     on. A separate inline test below covers the typed-class
     composition.
     """
-    resolver = SchemaResolver.from_turtle(
-        ontology_ttl, default_collection="Document"
-    )
+    resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection="Document")
     if max_depth is not None:
         resolver.property_path_max_depth = max_depth
     result = translate(sparql, resolver=resolver)
     assert result.aql == expected_aql, (
-        f"AQL mismatch for {name!r}:\n"
-        f"--- expected ---\n{expected_aql}\n"
-        f"--- actual ---\n{result.aql}"
+        f"AQL mismatch for {name!r}:\n--- expected ---\n{expected_aql}\n--- actual ---\n{result.aql}"
     )
     assert result.bind_vars == expected_bind_vars, (
         f"bind_vars mismatch for {name!r}:\n"
@@ -138,8 +134,7 @@ def test_property_path_unsupported_golden(
     with pytest.raises(UnsupportedSparqlError) as exc_info:
         translate(sparql, resolver=resolver)
     assert expected_substring in str(exc_info.value), (
-        f"error message for {name!r} did not contain "
-        f"{expected_substring!r}; got {str(exc_info.value)!r}"
+        f"error message for {name!r} did not contain {expected_substring!r}; got {str(exc_info.value)!r}"
     )
 
 
@@ -172,8 +167,7 @@ def test_sequence_path_composes_with_type_pattern() -> None:
     know which class the inner step's object lives in."""
     resolver = SchemaResolver.from_turtle(_TYPED_PERSON_OWL)
     result = translate(
-        "PREFIX : <http://ex.org/> "
-        "SELECT ?s ?o WHERE { ?s a :Person . ?s :p/:q ?o }",
+        "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { ?s a :Person . ?s :p/:q ?o }",
         resolver=resolver,
     )
     assert result.aql == (
@@ -216,8 +210,7 @@ def test_property_path_on_rpt_subject_refuses() -> None:
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     with pytest.raises(UnsupportedSparqlError) as exc_info:
         translate(
-            "PREFIX : <http://ex.org/> "
-            "SELECT ?s ?o WHERE { ?s a :Triples . ?s :p/:q ?o }",
+            "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { ?s a :Triples . ?s :p/:q ?o }",
             resolver=resolver,
         )
     assert "property paths on RPT-mapped subjects" in str(exc_info.value)
@@ -248,9 +241,7 @@ def test_property_path_on_rpt_subject_refuses() -> None:
         ("((:P+)*)?", "(:P)*"),
     ],
 )
-def test_nested_mul_path_collapses_to_equivalent_modifier(
-    nested: str, equivalent: str
-) -> None:
+def test_nested_mul_path_collapses_to_equivalent_modifier(nested: str, equivalent: str) -> None:
     """Nested transitive modifiers fold to a single equivalent
     modifier (SPARQL 1.1 §18.4).
 
@@ -266,12 +257,8 @@ def test_nested_mul_path_collapses_to_equivalent_modifier(
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     prefix = "prefix : <http://example.org/> "
-    nested_aql = translate(
-        f"{prefix}SELECT ?X WHERE {{ :A0 {nested} ?X }}", resolver=resolver
-    ).aql
-    equiv_aql = translate(
-        f"{prefix}SELECT ?X WHERE {{ :A0 {equivalent} ?X }}", resolver=resolver
-    ).aql
+    nested_aql = translate(f"{prefix}SELECT ?X WHERE {{ :A0 {nested} ?X }}", resolver=resolver).aql
+    equiv_aql = translate(f"{prefix}SELECT ?X WHERE {{ :A0 {equivalent} ?X }}", resolver=resolver).aql
     assert nested_aql == equiv_aql, (
         f"{nested} should translate identically to {equivalent}:\n"
         f"--- nested ---\n{nested_aql}\n--- equivalent ---\n{equiv_aql}"

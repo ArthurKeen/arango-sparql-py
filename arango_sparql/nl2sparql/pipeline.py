@@ -222,8 +222,7 @@ class NlPipeline:
                 {
                     "code": "W_NL_REPAIRED",
                     "message": (
-                        f"NL → SPARQL translation succeeded after {result.retries} "
-                        f"repair attempt(s)."
+                        f"NL → SPARQL translation succeeded after {result.retries} repair attempt(s)."
                     ),
                 }
             )

@@ -160,9 +160,7 @@ def emit_exists_filter(
     inner_pattern = exists_node.graph
     inner_aql = _translate_probe(visitor, inner_pattern)
 
-    probe_alias = visitor.builder.fresh_alias(
-        prefix=("not_exists_probe" if negated else "exists_probe")
-    )
+    probe_alias = visitor.builder.fresh_alias(prefix=("not_exists_probe" if negated else "exists_probe"))
     visitor.builder.let(probe_alias, f"LENGTH((\n{_indent(inner_aql)}\n))")
 
     return f"{probe_alias} == 0" if negated else f"{probe_alias} > 0"
@@ -262,8 +260,7 @@ def _translate_probe(
         # is optional-bound must we add the §8.3.4 disjoint-domain guard.
         if not (overlap_var_names - soft_vars):
             terms = [
-                f"({value} != null && {bound} != null && {value} == {bound})"
-                for _, value, bound in sink
+                f"({value} != null && {bound} != null && {value} == {bound})" for _, value, bound in sink
             ]
             overlap = terms[0] if len(terms) == 1 else "(" + " || ".join(terms) + ")"
             child_builder.filter_raw(overlap)
@@ -317,9 +314,7 @@ def _walk_for_vars(node: Any, out: set[Variable]) -> None:
 
     for attr in ("p", "p1", "p2", "graph", "expr", "other"):
         child = getattr(node, attr, None)
-        if child is not None and (
-            isinstance(child, Variable) or hasattr(child, "name")
-        ):
+        if child is not None and (isinstance(child, Variable) or hasattr(child, "name")):
             _walk_for_vars(child, out)
 
 

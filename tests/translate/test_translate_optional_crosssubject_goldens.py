@@ -154,8 +154,6 @@ def test_non_rpt_cross_subject_optional_still_rejected() -> None:
     (ADR-0002 Options B/C remain deferred)."""
     with pytest.raises(UnsupportedSparqlError, match="cross-subject"):
         translate(
-            "PREFIX : <http://ex.org/> "
-            "SELECT ?s ?o ?p2 ?o2 WHERE { ?s :knows ?o . "
-            "OPTIONAL { ?o ?p2 ?o2 } }",
+            "PREFIX : <http://ex.org/> SELECT ?s ?o ?p2 ?o2 WHERE { ?s :knows ?o . OPTIONAL { ?o ?p2 ?o2 } }",
             resolver=SchemaResolver.from_turtle("", default_collection="Document"),
         )
