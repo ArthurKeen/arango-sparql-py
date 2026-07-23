@@ -438,6 +438,71 @@ Fold in as sibling `configs['openai-gpt4o-mini-qald9plus']` /
 exactly as §5 documents for the root corpus — never touching the
 `scripted-*` entries.
 
+#### 8.5.1 Execution-graded CK25 runbook (07.2, `judge: execution`)
+
+07.2 flipped `scripted-ck25` / `openai-gpt4o-mini-ck25` from
+`judge: canonical` to **`judge: execution`** in place (D-06): both gold and
+candidate SPARQL now run against the vendored CK25 instance graph
+(`vendored/ck25/raw/prod-inst.ttl`) via pyoxigraph, and pass/fail is decided
+by comparing the resulting **answer sets** (up to variable renaming and
+`rdfs:label`↔IRI normalization), not by comparing SPARQL text. This is an
+opt-in per-config setting — every other config (`scripted`,
+`openai-gpt4o-mini`, `scripted-qald9plus`, `openai-gpt4o-mini-qald9plus`,
+all `few_shot` configs) stays on `judge: canonical`, untouched.
+
+Environment, same Pitfall 1 as §3 — **`NL2SPARQL_API_KEY`, NOT
+`OPENAI_API_KEY`** — plus the extras this judge needs:
+
+```bash
+# dev provides pyoxigraph (the W3C-reference execution engine the judge runs
+# gold + candidate SPARQL against); nl provides the openai client the live
+# candidate-generation path needs. Both are required for this sweep.
+uv sync --extra dev --extra nl
+
+export NL2SPARQL_API_KEY=sk-...          # your OpenAI key — this shell only, never OPENAI_API_KEY
+```
+
+Capture the corpus revision (the vendored CK25 corpus, not the root one):
+
+```bash
+git log -1 --format=%h -- tests/nl2sparql/eval/vendored/ck25/corpus.yml
+```
+
+Run the live, execution-judged sweep. It writes
+`reports/openai-gpt4o-mini-ck25.{json,md}` (**gitignored**,
+`tests/nl2sparql/eval/reports/` in `.gitignore`) and prints the aggregate +
+per-case verdicts, including each failing case's `judge_note` (the D-05
+bucket tag, e.g. `candidate_engine_rejected: ...` / `gold_engine_limitation:
+...`, or `None` for an ordinary wrong-answer mismatch):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-ck25'); write_report(r); print('pass_rate', r.pass_rate); [print(c.name, c.passed, c.judge_note) for c in r.cases]"
+```
+
+Fold in by hand exactly as §8.5 / §5 document — a **new**, separate
+`configs['openai-gpt4o-mini-ck25']` entry (never touching `scripted-ck25`
+or any other entry, RESEARCH Pitfall 4), carrying `pass_rate` / `passed` /
+`total` / `cases` + `model: "gpt-4o-mini"` / `temperature: 0.1` /
+`corpus_sha`, plus:
+
+- `role: "anchor_reported_not_gated"` — this number is **reported, not
+  gated**: at N=49 the achieved MDE is ~18-20pt (§8.3), too small to detect
+  a regression with statistical confidence, so it must never be wired into
+  a CI gate or a promotion decision (D-07).
+- A `note` recording the **D-05 buckets distinctly** — the count of failing
+  cases whose `judge_note` starts `candidate_engine_rejected` and the count
+  starting `gold_engine_limitation` — so engine-side rejections are never
+  silently blended into ordinary wrong-answer failures (RESEARCH Pitfall 3).
+- The same `rdfs:label` collision caveat as `scripted-ck25`'s note (Open
+  Q1): `Hardware` 1000/837 = 163 collisions, `Supplier` 250/246 = 4
+  collisions, all other entity classes 1:1 — a documented, non-gating
+  residual risk of the execution judge's label-based normalization.
+
+This is a **human checkpoint, not a CI step**: the sweep needs
+`NL2SPARQL_API_KEY`, which the agent/CI must never hold, and the fold-in
+into `baseline.json` is always a manual, human-reviewed copy — CI never
+auto-regenerates it (same discipline as §5/§7.9).
+
 ### 8.6 Non-regression invariants (unchanged)
 
 - `scripted` remains the sole CI-reachable config
