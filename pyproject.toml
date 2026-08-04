@@ -29,12 +29,13 @@ analyzer = [
   # service installs fail fast on heuristic mappings. 0.9.0 floor: adds
   # named-graph membership (metadata.graphMembership + per-entry graphs),
   # graphScope, CSI v1, GraphRAG detection, and gold/metric-history.
-  # The ``[anthropic]`` extra pulls the Anthropic client SDK so the
-  # analyzer runs its LLM-backed classification. Without a client SDK it
-  # silently degrades to deterministic baseline inference, which
-  # misclassifies LABEL-style / hybrid collections (see
-  # arango_sparql/schema/acquire.py::_resolve_analyzer_provider).
-  "arangodb-schema-analyzer[anthropic]>=0.9.0,<0.10.0",
+  # The ``[anthropic,openai]`` extras pull both client SDKs so the analyzer
+  # runs its LLM-backed classification with whichever provider the
+  # environment supplies a key for (resolved by
+  # arango_sparql/schema/acquire.py::_resolve_analyzer_provider). Without a
+  # client SDK it silently degrades to deterministic baseline inference,
+  # which misclassifies LABEL-style / hybrid collections.
+  "arangodb-schema-analyzer[anthropic,openai]>=0.9.0,<0.10.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",
@@ -58,10 +59,11 @@ nl = [
   # is the synced mirror), git-pinned to an exact commit (deterministic; bump
   # deliberately — CC-9: consumers re-run goldens). acb60ae is the pin this
   # main is written against. NOTE: query-core main (ccfe56c) is ahead — it adds
-  # a *required* grounding_index seam (seam 6) that this main does not implement
-  # yet, so bumping to ccfe56c breaks `[nl]` (adapter has no grounding_index).
-  # The grounding-seam integration lives on the fix/unroutable-subject-error
-  # branch; bump this pin to ccfe56c only when that branch merges.
+  # a *required* grounding_index seam (seam 6). Both SPARQL adapters now
+  # implement seams 6 & 7 (ungrounded stubs — see
+  # nl2sparql/{adapter,engine_adapter}.py), so bumping this pin to ccfe56c is
+  # unblocked. Do it as a deliberate CC-9 step (re-run goldens) when moving
+  # query-core forward; until then acb60ae remains the tested pin.
   "arango-query-core @ git+https://github.com/ArthurKeen/arango-query-core@acb60aeeeec2082338a9386d6aa9fd38bb903bdb",
 ]
 # Torch-free-by-default packaging (D-05 packaging discretion, Phase 7 07-03):

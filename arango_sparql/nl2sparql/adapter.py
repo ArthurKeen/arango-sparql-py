@@ -31,9 +31,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from arango_query_core.nl import FewShotIndex, GuardrailVerdict, ValidationResult
+
+if TYPE_CHECKING:
+    # Seam 6/7 index types exist only in query-core >= ccfe56c. They are used
+    # solely in (lazy, __future__) annotations here, so importing them at
+    # runtime would break `[nl]` against the pinned acb60ae — guard behind
+    # TYPE_CHECKING so the adapter loads on either query-core version.
+    from arango_query_core.nl import LabelIndex, PredicateIndex
 
 from ..errors import SparqlError
 from ..translate.resolver import SchemaResolver
@@ -65,9 +72,7 @@ class SparqlLanguageAdapter:
     # (safe default, no breakage); "dense" forces PJ's DenseRetriever and
     # hard-raises if the [dense] extra is missing (measurement integrity for the
     # eval sweep); "bm25" forces lexical. Override via ARANGO_SPARQL_FEWSHOT_MODE.
-    few_shot_mode: str = field(
-        default_factory=lambda: os.environ.get("ARANGO_SPARQL_FEWSHOT_MODE", "auto")
-    )
+    few_shot_mode: str = field(default_factory=lambda: os.environ.get("ARANGO_SPARQL_FEWSHOT_MODE", "auto"))
     _few_shot: FewShotIndex | None = field(default=None, repr=False)
 
     def grammar_prompt_section(self, schema_context: str) -> str:
@@ -79,9 +84,7 @@ class SparqlLanguageAdapter:
 
     def few_shot_index(self) -> FewShotIndex | None:
         if self._few_shot is None:
-            self._few_shot = FewShotIndex.from_corpus_files(
-                list(self.corpus_paths), mode=self.few_shot_mode
-            )
+            self._few_shot = FewShotIndex.from_corpus_files(list(self.corpus_paths), mode=self.few_shot_mode)
         return self._few_shot
 
     def validate(self, query: str) -> ValidationResult:
@@ -102,3 +105,24 @@ class SparqlLanguageAdapter:
 
     def guardrails(self, query: str, context: dict[str, Any]) -> GuardrailVerdict:
         return GuardrailVerdict(allowed=True)
+
+    def grounding_index(self) -> LabelIndex | None:  # seam 6
+        # Run ungrounded: no instance/entity label index for SPARQL yet.
+        # Required by the QueryLanguageAdapter protocol (added with seam 7);
+        # returning None is the documented "ungrounded" default. Without it
+        # the engine's ``adapter.grounding_index()`` call AttributeErrors and
+        # every NL translation fails.
+        return None
+
+    def grounding_prompt_section(  # seam 6 (renderer)
+        self, question: str, index: LabelIndex, k: int = 20
+    ) -> str:
+        return ""
+
+    def predicate_index(self) -> PredicateIndex | None:  # seam 7
+        return None
+
+    def predicate_prompt_section(  # seam 7 (renderer)
+        self, question: str, index: PredicateIndex, k: int = 20
+    ) -> str:
+        return ""
