@@ -36,7 +36,12 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from arango_query_core.nl import FewShotIndex, cached_few_shot_index
+from arango_query_core.nl import (
+    FewShotIndex,
+    LabelIndex,
+    PredicateIndex,
+    cached_few_shot_index,
+)
 from arango_query_core.nl.seams import GuardrailVerdict, ValidationResult
 
 from ..api import translate as _api_translate
@@ -225,3 +230,28 @@ class SparqlAdapter:
     def guardrails(self, query: str, context: dict) -> GuardrailVerdict:  # seam 5
         # Allow-all — no tenant/write-op checks this phase.
         return GuardrailVerdict(allowed=True)
+
+    def grounding_index(self) -> LabelIndex | None:  # seam 6
+        # Run ungrounded: no instance/entity label index is built for
+        # SPARQL yet, so the engine skips the "use these EXACT IRIs" block.
+        # Required by the QueryLanguageAdapter protocol (added with seam 7);
+        # returning None is the documented "ungrounded" default. Without it
+        # the engine's ``adapter.grounding_index()`` call AttributeErrors and
+        # every NL translation fails.
+        return None
+
+    def grounding_prompt_section(  # seam 6 (renderer)
+        self, question: str, index: LabelIndex, k: int = 20
+    ) -> str:
+        # Never reached while grounding_index() returns None, but the
+        # protocol requires it; inject nothing.
+        return ""
+
+    def predicate_index(self) -> PredicateIndex | None:  # seam 7
+        # Run ungrounded on predicates too — no TBox predicate index yet.
+        return None
+
+    def predicate_prompt_section(  # seam 7 (renderer)
+        self, question: str, index: PredicateIndex, k: int = 20
+    ) -> str:
+        return ""

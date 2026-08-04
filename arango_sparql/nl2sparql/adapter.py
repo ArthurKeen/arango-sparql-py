@@ -33,7 +33,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from arango_query_core.nl import FewShotIndex, GuardrailVerdict, ValidationResult
+from arango_query_core.nl import (
+    FewShotIndex,
+    GuardrailVerdict,
+    LabelIndex,
+    PredicateIndex,
+    ValidationResult,
+)
 
 from ..errors import SparqlError
 from ..translate.resolver import SchemaResolver
@@ -102,3 +108,24 @@ class SparqlLanguageAdapter:
 
     def guardrails(self, query: str, context: dict[str, Any]) -> GuardrailVerdict:
         return GuardrailVerdict(allowed=True)
+
+    def grounding_index(self) -> LabelIndex | None:  # seam 6
+        # Run ungrounded: no instance/entity label index for SPARQL yet.
+        # Required by the QueryLanguageAdapter protocol (added with seam 7);
+        # returning None is the documented "ungrounded" default. Without it
+        # the engine's ``adapter.grounding_index()`` call AttributeErrors and
+        # every NL translation fails.
+        return None
+
+    def grounding_prompt_section(  # seam 6 (renderer)
+        self, question: str, index: LabelIndex, k: int = 20
+    ) -> str:
+        return ""
+
+    def predicate_index(self) -> PredicateIndex | None:  # seam 7
+        return None
+
+    def predicate_prompt_section(  # seam 7 (renderer)
+        self, question: str, index: PredicateIndex, k: int = 20
+    ) -> str:
+        return ""
