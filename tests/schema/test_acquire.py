@@ -250,9 +250,7 @@ def _make_analyzer_mock(
             self.llm_provider = llm_provider
             self.model = model
 
-        def analyze_physical_schema(
-            self, _db: Any, **_kwargs: Any
-        ) -> _AnalysisResult:
+        def analyze_physical_schema(self, _db: Any, **_kwargs: Any) -> _AnalysisResult:
             # Accept timeout_ms (and any future kwargs) the acquire layer
             # now passes through to the real analyzer.
             return _AnalysisResult()

@@ -31,15 +31,16 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from arango_query_core.nl import (
-    FewShotIndex,
-    GuardrailVerdict,
-    LabelIndex,
-    PredicateIndex,
-    ValidationResult,
-)
+from arango_query_core.nl import FewShotIndex, GuardrailVerdict, ValidationResult
+
+if TYPE_CHECKING:
+    # Seam 6/7 index types exist only in query-core >= ccfe56c. They are used
+    # solely in (lazy, __future__) annotations here, so importing them at
+    # runtime would break `[nl]` against the pinned acb60ae — guard behind
+    # TYPE_CHECKING so the adapter loads on either query-core version.
+    from arango_query_core.nl import LabelIndex, PredicateIndex
 
 from ..errors import SparqlError
 from ..translate.resolver import SchemaResolver
@@ -71,9 +72,7 @@ class SparqlLanguageAdapter:
     # (safe default, no breakage); "dense" forces PJ's DenseRetriever and
     # hard-raises if the [dense] extra is missing (measurement integrity for the
     # eval sweep); "bm25" forces lexical. Override via ARANGO_SPARQL_FEWSHOT_MODE.
-    few_shot_mode: str = field(
-        default_factory=lambda: os.environ.get("ARANGO_SPARQL_FEWSHOT_MODE", "auto")
-    )
+    few_shot_mode: str = field(default_factory=lambda: os.environ.get("ARANGO_SPARQL_FEWSHOT_MODE", "auto"))
     _few_shot: FewShotIndex | None = field(default=None, repr=False)
 
     def grammar_prompt_section(self, schema_context: str) -> str:
@@ -85,9 +84,7 @@ class SparqlLanguageAdapter:
 
     def few_shot_index(self) -> FewShotIndex | None:
         if self._few_shot is None:
-            self._few_shot = FewShotIndex.from_corpus_files(
-                list(self.corpus_paths), mode=self.few_shot_mode
-            )
+            self._few_shot = FewShotIndex.from_corpus_files(list(self.corpus_paths), mode=self.few_shot_mode)
         return self._few_shot
 
     def validate(self, query: str) -> ValidationResult:
