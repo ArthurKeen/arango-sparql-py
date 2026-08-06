@@ -519,13 +519,21 @@ def run(config_name: str) -> Report:
     few_shot_cfg = config.get("few_shot", {})
     few_shot_mode = few_shot_cfg.get("mode", "zero")
     few_shot_k = few_shot_cfg.get("k", 0)
+    # Additive `few_shot.bank:` sub-key (07.5-05 / RESEARCH OQ-3): mirrors
+    # the corpus:/data_path: additive precedent — an arm names its OWN bank
+    # file (e.g. a generated query-first-synthetic bank) without
+    # monkeypatching `BANK_PATH`. Absent `bank:` == today's curated
+    # `fewshot_bank.yml`, byte-identical for every existing few_shot arm.
+    few_shot_bank_path = (
+        EVAL_DIR / few_shot_cfg["bank"] if few_shot_cfg.get("bank") else BANK_PATH
+    )
 
     # Build the index ONCE per arm, outside the per-case loop (Pitfall 1 —
     # never per-case; a fresh FewShotIndex would reload the SentenceTransformer
     # model + re-embed the whole bank on every one of the 25 corpus cases).
     few_shot_index: FewShotIndex | None = None
     if few_shot_mode in ("dense", "bm25"):
-        few_shot_index = cached_few_shot_index(str(BANK_PATH), few_shot_mode)
+        few_shot_index = cached_few_shot_index(str(few_shot_bank_path), few_shot_mode)
         if few_shot_mode == "dense":
             # D-06 belt-and-suspenders: a wrong-mode/degraded retriever must
             # never be silently filed as a dense number.
@@ -536,6 +544,54 @@ def run(config_name: str) -> Report:
                 "installed/importable (install `.[dense]` before running this arm) — "
                 "never record this as a dense-mode measurement."
             )
+
+    # Additive `grounding:` config read (07.3-05 / RESEARCH Pattern 3): entity/
+    # instance grounding (seam 6) mirrors the `few_shot:` precedent exactly.
+    # Absent `grounding:` == today's ungrounded behavior (`grounding_index=None`
+    # is the honest no-op NlPipeline already understands). The global default
+    # `label_predicates` MUST stay schema-agnostic (`rdfs:label`) so the
+    # mechanism transfers to CDF unchanged — any dataset-specific predicate
+    # lives ONLY in that config entry's `label_predicates:` list, never
+    # hardcoded here (Pitfall 2).
+    grounding_cfg = config.get("grounding", {})
+    grounding_k = grounding_cfg.get("k", 0)
+    grounding_index = None
+    if grounding_cfg and data_ttl:
+        # Build the LabelIndex ONCE here, outside the per-case loop below
+        # (Pitfall 3 — never per-case; mirrors the few_shot_index build-once
+        # block above). Imported function-locally so pyoxigraph stays off
+        # runner.py's module import path (mirrors the existing lazy
+        # `from tests.helpers.oxi import ...` pattern used elsewhere in this
+        # file).
+        from tests.nl2sparql.eval.grounding_index_builder import build_label_index
+
+        label_predicates = grounding_cfg.get("label_predicates", ["rdfs:label"])
+        # WR-01: `grounding.prefixes:` (optional) lets a corpus config
+        # register/override prefix->IRI mappings for its own
+        # `label_predicates:` entries without a code change to
+        # grounding_index_builder.py — absent, `build_label_index` falls
+        # back to its built-in CK25-shaped default.
+        prefixes = grounding_cfg.get("prefixes")
+        grounding_index = build_label_index(data_ttl, label_predicates, prefixes=prefixes)
+
+    # Additive `predicate_grounding:` config read (Phase 07.4 seam 7 / RESEARCH
+    # Pitfall 5): predicate/schema-convention grounding mirrors the `grounding:`
+    # (seam 6) precedent exactly, EXCEPT the gate — this builds from the
+    # corpus's TBox (`shared_ontology`, always present) not its instance graph
+    # (`data_ttl`, CK25-only; QALD has no `data_path`). Absent
+    # `predicate_grounding:` == today's ungrounded behavior (`predicate_index=
+    # None` is the honest no-op NlPipeline already understands).
+    predicate_cfg = config.get("predicate_grounding", {})
+    predicate_k = predicate_cfg.get("k", 0)
+    predicate_index = None
+    if predicate_cfg and shared_ontology:
+        # Build the PredicateIndex ONCE here, outside the per-case loop below
+        # (same build-once discipline as few_shot_index/grounding_index above).
+        # Imported function-locally so pyoxigraph stays off runner.py's module
+        # import path (mirrors the grounding_index_builder import above).
+        from tests.nl2sparql.eval.grounding_index_builder import build_predicate_index
+
+        predicate_index = build_predicate_index(shared_ontology)
 
     cases: list[CaseResult] = []
     for case in corpus["cases"]:
@@ -549,6 +605,10 @@ def run(config_name: str) -> Report:
             max_repairs=max_repairs,
             few_shot_k=few_shot_k,
             few_shot_index=few_shot_index,
+            grounding_k=grounding_k,
+            grounding_index=grounding_index,
+            predicate_k=predicate_k,
+            predicate_index=predicate_index,
         )
 
         t0 = time.perf_counter()
@@ -686,7 +746,10 @@ def write_report(report: Report, *, out_dir: Path = REPORTS_DIR) -> tuple[Path, 
     payload = {
         "config": report.config,
         "pass_rate": report.pass_rate,
-        "cases": [{"name": c.name, "passed": c.passed, "elapsed_ms": c.elapsed_ms} for c in report.cases],
+        "cases": [
+            {"name": c.name, "passed": c.passed, "elapsed_ms": c.elapsed_ms, "sparql": c.actual}
+            for c in report.cases
+        ],
     }
     json_path.write_text(json.dumps(payload, indent=2) + "\n")
 

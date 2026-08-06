@@ -15,6 +15,14 @@
 # (added Phase 7 07-04) is likewise config-only data (mode + k) — it never
 # carries a bank path override or any credential; the bank file itself lives
 # at tests/nl2sparql/eval/fewshot_bank.yml (07-02), trusted repo data.
+#
+# The optional `grounding:` block (added Phase 07.3-05) is the entity/instance
+# grounding seam's config-only data (k + label_predicates) — runner.py builds
+# a LabelIndex from the corpus's `data_path:` instance graph ONCE per run and
+# threads it into every case's NlPipeline. Absent `grounding:` == today's
+# ungrounded behavior. `label_predicates:` is declarative, reviewable config
+# — any dataset-specific predicate (e.g. CK25's product-vocab name predicate)
+# lives ONLY here, never hardcoded in runner.py.
 
 configs:
   # The CI default: no network, deterministic, gates baseline.json.
@@ -82,11 +90,228 @@ configs:
     corpus: vendored/ck25/corpus.yml
 
   # --------------------------------------------------------------------
+  # Phase 07.3-05: entity/instance grounding (seam 6) additive `grounding:`
+  # block on top of the CK25 execution-judged configs above. `pv:name`
+  # appears ONLY in this `label_predicates:` list (declarative, reviewable
+  # config) — never hardcoded in runner.py (grep gate == 0). scripted-
+  # ck25-grounded is a PLUMBING gate only (config -> build_label_index ->
+  # seam -> prompt -> judge does not crash) — it is NOT accuracy evidence
+  # (RESEARCH Pitfall 5); scripted stays the CI default regardless.
+  # --------------------------------------------------------------------
+
+  # CK25 grounded — no network, deterministic; plumbing gate (Pitfall 5).
+  scripted-ck25-grounded:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates: ["rdfs:label", "pv:name"]
+
+  # Live CK25 grounded sweep — same discipline as openai-gpt4o-mini-ck25
+  # above. Not run in CI — gated behind RUN_EVAL=1 + NL2SPARQL_API_KEY,
+  # human-run.
+  #
+  # Plan 07.3-06 Task 1 (RESEARCH Open Question 1) — temperature provenance:
+  # this config has no `temperature:` key (none is read anywhere in this
+  # file); runner.py::_client_for() constructs OpenAICompatibleClient(
+  # provider=ptype, model=provider.get("model")) with no explicit
+  # `temperature=` argument, so it falls through to
+  # OpenAICompatibleClient.__init__'s hardcoded default `temperature: float
+  # = 0.1` (arango_sparql/nl2sparql/client.py). gpt-4o-mini is not a
+  # _is_reasoning_model() match, so 0.1 IS sent explicitly on every call.
+  # This is the SAME 0.1 already recorded in baseline.json's committed
+  # openai-gpt4o-mini-ck25 entry -- so a live re-run of that config this
+  # session (the fresh zero arm) and this grounded config both run at 0.1,
+  # not the spike's temperature=0 (grounding_spike.py hardcoded 0 in its raw
+  # HTTP call). A non-reproduction of the spike's exact 6/49->12/49 numbers
+  # is therefore attributable to this temperature delta, not to grounding
+  # failing -- record `"temperature": 0.1` in the baseline.json fold-in
+  # (Task 3), not the spike's 0.
+  openai-gpt4o-mini-ck25-grounded:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates: ["rdfs:label", "pv:name"]
+
+  # --------------------------------------------------------------------
   # Phase 7 07-04: 3-arm (zero/dense/bm25) x 3-model (gpt-4o-mini anchor,
   # gpt-5-mini, gpt-5) matrix. All additive; `few_shot` absent == today's
   # zero-shot behavior. Not run in CI — gated behind RUN_EVAL=1 +
   # NL2SPARQL_API_KEY per the Task 4 human-run sweep (README §7).
   # --------------------------------------------------------------------
+
+  # --------------------------------------------------------------------
+  # Phase 07.4: predicate/schema-convention grounding (seam 7) additive
+  # `predicate_grounding` config block. Unlike `grounding:` (seam 6, gated on the
+  # corpus's instance graph `data_path`), this is gated on the corpus's TBox
+  # (`shared_ontology`) — every corpus has one, so both CK25 and QALD-9-plus
+  # get a `-predicate-grounded` config (Pitfall 5). `k` is per-corpus: CK25's
+  # 30 properties sit under PREDICATE_DUMP_THRESHOLD=40 (dump mode; k=40 is
+  # a headroom bound, not a retrieval cap), QALD-9-plus's 250 properties
+  # exceed it (genuine retrieve mode; k=20 mirrors seam 6's QALD-shaped k).
+  # scripted-*-predicate-grounded configs are PLUMBING gates only (config ->
+  # build_predicate_index -> seam 7 -> prompt -> judge does not crash) — NOT
+  # accuracy evidence (mirrors the seam-6 scripted-ck25-grounded precedent).
+  # Do NOT add/modify `openai-gpt4o-mini-qald9plus` above — it already
+  # exists as the zero-shot live config (Pitfall 4).
+  # --------------------------------------------------------------------
+
+  # CK25 predicate-grounded — no network, deterministic; plumbing gate.
+  scripted-ck25-predicate-grounded:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    predicate_grounding:
+      k: 40
+
+  # Live CK25 predicate-grounded sweep — same discipline as
+  # openai-gpt4o-mini-ck25-grounded above. Not run in CI — gated behind
+  # RUN_EVAL=1 + NL2SPARQL_API_KEY, human-run (Plan 05).
+  openai-gpt4o-mini-ck25-predicate-grounded:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    predicate_grounding:
+      k: 40
+
+  # --------------------------------------------------------------------
+  # Phase 07.4 Plan 05 checkpoint ADDITIVE arm: entity grounding (seam 6)
+  # AND predicate grounding (seam 7) composed in ONE config. The live sweep
+  # showed predicate-grounding ALONE (openai-gpt4o-mini-ck25-predicate-grounded)
+  # regressed vs entity-grounding ALONE (openai-gpt4o-mini-ck25-grounded, 12/49):
+  # predicate-only dropped the confirmed entity-grounding lever. This arm tests
+  # the real NL-ACC-02 hypothesis — does seam-7 predicate grounding ADD lift ON
+  # TOP OF the entity-grounded baseline. The runner already composes both indexes
+  # (runner.py passes grounding_index AND predicate_index to NlPipeline); this is
+  # a pure config addition, no runner change. `grounding:` mirrors the
+  # openai-gpt4o-mini-ck25-grounded arm byte-for-byte; `predicate_grounding:`
+  # mirrors the predicate-grounded arm.
+  # --------------------------------------------------------------------
+
+  # Additive (entity + predicate) — no network, deterministic; plumbing gate.
+  scripted-ck25-grounded-predicate-grounded:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates: ["rdfs:label", "pv:name"]
+    predicate_grounding:
+      k: 40
+
+  # Live CK25 additive (entity + predicate) sweep — RUN_EVAL=1 + NL2SPARQL_API_KEY,
+  # human-run (Plan 05 checkpoint). Confirmatory arm for the additive hypothesis.
+  openai-gpt4o-mini-ck25-grounded-predicate-grounded:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates: ["rdfs:label", "pv:name"]
+    predicate_grounding:
+      k: 40
+
+  # QALD-9-plus predicate-grounded — no network, deterministic; plumbing gate.
+  scripted-qald9plus-predicate-grounded:
+    provider:
+      type: scripted
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/qald9plus/corpus.yml
+    predicate_grounding:
+      k: 20
+
+  # Live QALD-9-plus predicate-grounded sweep — same discipline as
+  # openai-gpt4o-mini-qald9plus above. Not run in CI — gated behind
+  # RUN_EVAL=1 + NL2SPARQL_API_KEY, human-run (Plan 05).
+  openai-gpt4o-mini-qald9plus-predicate-grounded:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/qald9plus/corpus.yml
+    predicate_grounding:
+      k: 20
+
+  # --------------------------------------------------------------------
+  # Phase 07.5 Plan 05 (D-05/REQ-4/REQ-6): additive GENERATED-bank few-shot
+  # arms. Unlike the curated fewshot_bank.yml arms below (openai-gpt4o-
+  # mini-{dense,bm25}), these point `few_shot:` at the query-first
+  # SYNTHETIC (generator-authored) bank via the additive `bank:` sub-key
+  # (mirrors the corpus:/data_path: precedent) — absent `bank:` stays
+  # today's curated-bank behavior for every existing few_shot arm
+  # (byte-identical). scripted-ck25-generated-fewshot is a PLUMBING gate
+  # only (config -> BM25 retrieval over the generated bank -> prompt ->
+  # judge does not crash) — NOT accuracy evidence; scripted stays the CI
+  # default regardless (mirrors the seam-6/seam-7 scripted-*-grounded
+  # precedent). k=20 (not the curated arms' k=3) per the Plan 05 spec —
+  # the generated CK25 bank has 77 examples across 9 shapes, a wider pool
+  # than the curated bank's 23.
+  # --------------------------------------------------------------------
+
+  # CK25 generated-fewshot — no network, deterministic; plumbing gate.
+  scripted-ck25-generated-fewshot:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # Live CK25 generated-fewshot sweep — human-run credentialed adopt/kill
+  # measurement (Plan 05 Task 3 checkpoint). Not run in CI — gated behind
+  # RUN_EVAL=1 + NL2SPARQL_API_KEY.
+  openai-gpt4o-mini-ck25-generated-fewshot:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # Live QALD-9-plus generated-fewshot sweep — non-regression arm (Plan 05
+  # Task 3 step 2). QALD's generated bank is empty (0 examples, Plan 04
+  # honest TBox-only finding), so BM25 retrieval trivially returns nothing
+  # and this arm is EXPECTED to reproduce the flat
+  # `openai-gpt4o-mini-qald9plus` zero-shot number exactly — a PASS per
+  # RESEARCH OQ-4, not a failure.
+  openai-gpt4o-mini-qald9plus-generated-fewshot:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: canonical
+    max_repairs: 2
+    corpus: vendored/qald9plus/corpus.yml
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/qald9plus/generated_fewshot_bank.yml
 
   # gpt-4o-mini — the anchor model (06.2's committed live baseline).
   openai-gpt4o-mini-dense:

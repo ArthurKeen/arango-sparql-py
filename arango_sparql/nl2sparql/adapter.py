@@ -21,6 +21,12 @@ inventing parallel ones:
   inside ``translate()`` (``CrossTenantJoinError``). A SPARQL-algebra
   tenant-scope validator (the analog of cypher-py's ``tenant_ast_*``)
   slots in here when multi-tenant NL arrives.
+* **Entity/instance grounding** (seam 6) — explicit-injection-only, same
+  design as :class:`~arango_sparql.nl2sparql.engine_adapter.SparqlAdapter`
+  (07.3): no production-default source of instance/entity label data
+  exists yet, so this adapter defaults to ungrounded (``None``) unless a
+  caller injects a ``LabelIndex``. The prompt wording is the verbatim
+  spike text, kept byte-identical to ``engine_adapter.SparqlAdapter``'s.
 
 This module is why the adapter lives in THIS repo and not in
 arango-query-core: seam 3 needs the whole transpiler stack.
@@ -34,6 +40,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from arango_query_core.nl import FewShotIndex, GuardrailVerdict, ValidationResult
+from arango_query_core.nl.grounding import LabelIndex
 
 if TYPE_CHECKING:
     # Seam 6/7 index types exist only in query-core >= ccfe56c. They are used
@@ -47,7 +54,21 @@ from ..translate.resolver import SchemaResolver
 from .prompt import PromptBuilder
 from .repair import format_repair_context
 
+if TYPE_CHECKING:
+    # Seam 7 (predicate/schema-convention grounding, 07.4) — PredicateIndex is
+    # only added to arango_query_core.nl.grounding at the seam-7 SHA Plan 02
+    # Task 2 pins. Guard the import so this module still loads cleanly against
+    # the still-old pin between Task 1 (this file) and Task 2 (the pin bump) —
+    # mirrors engine_adapter.py's identical guard for the identical reason.
+    from arango_query_core.nl.grounding import PredicateIndex
+
 _CORPORA_DIR = Path(__file__).resolve().parent / "corpora"
+
+# Dump-vs-retrieve mode threshold (D-01) — mirrors engine_adapter.py's
+# PREDICATE_DUMP_THRESHOLD byte-for-byte (both adapters must apply the same
+# mode-selection rule so predicate_prompt_section's rendered output stays
+# byte-identical across adapters for the same index/k).
+PREDICATE_DUMP_THRESHOLD = 40
 
 
 @dataclass
@@ -65,6 +86,8 @@ class SparqlLanguageAdapter:
     ontology_ttl: str = ""
     tenant_id: str | None = None
     corpus_paths: list[Path] = field(default_factory=lambda: sorted(_CORPORA_DIR.glob("*.yml")))
+    _grounding_index: LabelIndex | None = field(default=None, repr=False)
+    _predicate_index: PredicateIndex | None = field(default=None, repr=False)
 
     language: str = "sparql"
     # Few-shot retrieval backend (arango-query-core FewShotIndex.mode): "auto"
@@ -107,22 +130,64 @@ class SparqlLanguageAdapter:
         return GuardrailVerdict(allowed=True)
 
     def grounding_index(self) -> LabelIndex | None:  # seam 6
-        # Run ungrounded: no instance/entity label index for SPARQL yet.
-        # Required by the QueryLanguageAdapter protocol (added with seam 7);
-        # returning None is the documented "ungrounded" default. Without it
-        # the engine's ``adapter.grounding_index()`` call AttributeErrors and
-        # every NL translation fails.
-        return None
+        # Explicit injection only — mirrors engine_adapter.SparqlAdapter's
+        # seam 6 (07.3): no production-default source of instance/entity
+        # label data exists yet, so a caller that never injects one runs
+        # ungrounded.
+        return self._grounding_index
 
-    def grounding_prompt_section(  # seam 6 (renderer)
+    def grounding_prompt_section(
         self, question: str, index: LabelIndex, k: int = 20
-    ) -> str:
-        return ""
+    ) -> str:  # seam 6 (renderer)
+        # Verbatim wording from the spike's entity_block, byte-identical to
+        # engine_adapter.SparqlAdapter.grounding_prompt_section — do not
+        # paraphrase (empirically measured +12.2pt lift).
+        return index.format_prompt_section(
+            question,
+            k=k,
+            header="## Known entities (use these EXACT IRIs)",
+            instruction=(
+                "The question may refer to specific named individuals/things below. When it "
+                "does, use the entity's EXACT IRI directly in your query (e.g. `<IRI> pv:... ?x`) "
+                "instead of matching on a name literal. Not all listed entities are relevant."
+            ),
+            id_prefix="<",
+            id_suffix=">",
+        )
 
     def predicate_index(self) -> PredicateIndex | None:  # seam 7
-        return None
+        # Explicit injection only — mirrors engine_adapter.SparqlAdapter's
+        # seam 7 (07.4): no production-default source of TBox predicate
+        # data exists yet, so a caller that never injects one runs
+        # ungrounded.
+        return self._predicate_index
 
-    def predicate_prompt_section(  # seam 7 (renderer)
+    def predicate_prompt_section(
         self, question: str, index: PredicateIndex, k: int = 20
-    ) -> str:
-        return ""
+    ) -> str:  # seam 7 (renderer)
+        # D-01 mode selection + wording byte-identical to
+        # engine_adapter.SparqlAdapter.predicate_prompt_section — do not
+        # diverge (Plan 04's parity test enforces this). Wording is
+        # provisional this phase (RESEARCH Open Question 2); no "do not
+        # paraphrase" freeze yet, unlike seam 6's empirically-measured text.
+        #
+        # CR-01 fix: widening k to total alone is NOT dump mode — the
+        # shared scorer's zero-hit filter drops every predicate that shares
+        # no label/domain/range token with the question regardless of k.
+        # Pass the pinned arango_query_core dump=True kwarg (upstream
+        # b669320, CR-01) so a schema at/under the threshold genuinely
+        # dumps every predicate, not just the question-matching subset.
+        total = len(getattr(index, "_predicates", ()))
+        is_dump = 0 < total <= PREDICATE_DUMP_THRESHOLD
+        effective_k = total if is_dump else k
+        return index.format_prompt_section(
+            question,
+            k=effective_k,
+            header="## Known schema predicates (bind to these EXACT predicates in this EXACT shape)",
+            instruction=(
+                "Use only the predicates listed below, with the exact direction and shape shown. "
+                "Predicates marked VALUE OBJECT or CATEGORY require an extra hop — do not flatten "
+                "them into a single triple or invent a class not listed here."
+            ),
+            dump=is_dump,
+        )

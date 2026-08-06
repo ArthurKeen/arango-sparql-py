@@ -515,3 +515,639 @@ auto-regenerates it (same discipline as §5/§7.9).
 - No secrets, raw prompts/completions, or full multilingual JSON blobs are
   vendored — only the CC-BY-4.0-licensed English question/gold-SPARQL pairs
   the harness needs, plus the required attribution `NOTICE.md` per set.
+
+---
+
+## 9. CK25 entity/instance grounding sweep — NL-ACC-01 (Phase 07.3)
+
+This section documents the credentialed, human-run measurement behind
+NL-ACC-01: does injecting retrieved instance IRIs+labels ("Known entities —
+use these EXACT IRIs") for entities named in the question produce a
+**statistically significant** execution-graded pass-rate lift on CK25 over a
+freshly-run zero-shot arm? Same discipline as §§3–6 and §8.5.1 (key-gated,
+`scripted` stays the CI default, manual human-reviewed fold-in), with one
+addition specific to grounding: the confirmatory comparison is always
+**grounded-vs-a-fresh-zero-arm run in the SAME session**, never grounded vs
+the already-committed `openai-gpt4o-mini-ck25` baseline entry — that entry
+was captured in a prior session (07.2-04) and model drift across sessions is
+a real confound (RESEARCH Pitfall / 07-04 M2), exactly the same discipline
+§7.2 established for the dense few-shot sweep.
+
+### 9.1 Design
+
+Both arms use `judge: execution` (07.2's answer-set judge against the
+vendored CK25 instance graph) and share the same model/temperature:
+
+- **`openai-gpt4o-mini-ck25`** — the fresh zero arm. Re-run THIS session
+  (not read from the already-committed `baseline.json` entry).
+- **`openai-gpt4o-mini-ck25-grounded`** — the grounded arm. Seam 6
+  (`grounding_index` / `GroundedEntity`, wired through the eval runner in
+  Plan 07.3-05) retrieves top-k label-matched instance IRIs per question and
+  injects them into the prompt; everything else (model, temperature, corpus,
+  judge) is identical to the zero arm.
+
+### 9.2 Temperature provenance (Plan 07.3-06 Task 1)
+
+`OpenAICompatibleClient` has no `configs.yml` temperature override path —
+`runner.py::_client_for()` never passes `temperature=`, so both
+`openai-gpt4o-mini-ck25` and `openai-gpt4o-mini-ck25-grounded` run at the
+constructor's hardcoded default `temperature=0.1` (same value already
+recorded on the committed `openai-gpt4o-mini-ck25` entry), **not** the
+07.3 pre-planning spike's explicit `temperature=0`
+(`grounding_spike.py` hardcoded 0 in its raw HTTP call). A non-reproduction
+of the spike's exact 6/49→12/49 numbers is therefore attributable to this
+temperature delta, not to grounding failing (RESEARCH Open Question 1,
+resolved) — record `"temperature": 0.1` in the fold-in, not the spike's 0.
+
+### 9.3 Run both arms in ONE session
+
+```bash
+uv sync --extra dev --extra nl   # dev: pyoxigraph judge; nl: openai client
+export NL2SPARQL_API_KEY=sk-...  # your OpenAI key — this shell only, never OPENAI_API_KEY (Pitfall 1)
+```
+
+Capture the vendored CK25 corpus revision:
+
+```bash
+git log -1 --format=%h -- tests/nl2sparql/eval/vendored/ck25/corpus.yml
+```
+
+Run both arms fresh, THIS session, then compute the paired McNemar test and
+bootstrap delta over the same 49 cases:
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... python -c "
+from tests.nl2sparql.eval.runner import run, write_report, paired_mcnemar, bootstrap_paired_delta
+
+zero = run('openai-gpt4o-mini-ck25')            # freshly run THIS session
+grounded = run('openai-gpt4o-mini-ck25-grounded')
+write_report(zero)
+write_report(grounded)
+
+zero_cases = {c.name: c.passed for c in zero.cases}
+grounded_cases = {c.name: c.passed for c in grounded.cases}
+
+print('zero pass_rate', zero.pass_rate)
+print('grounded pass_rate', grounded.pass_rate)
+b, c, p = paired_mcnemar(zero_cases, grounded_cases)
+delta, lo, hi = bootstrap_paired_delta(zero_cases, grounded_cases)
+print(f'b={b} c={c} p={p:.4f} delta={delta:.4f} CI=({lo:.4f}, {hi:.4f})')
+"
+```
+
+Writes `reports/openai-gpt4o-mini-ck25.{json,md}` and
+`reports/openai-gpt4o-mini-ck25-grounded.{json,md}` (both **gitignored**).
+
+**The lift PASSES iff McNemar `p < 0.05` with zero regressions (`c=0` or a
+non-negative net flip count)** — this is THE confirmatory bar for NL-ACC-01,
+mirroring §7.3's dense/zero bar exactly. Report `b`, `c`, the exact p-value,
+the bootstrap paired-delta 95% CI, and the per-case gained/regressed case
+names.
+
+### 9.4 MANUAL fold-in into `baseline.json` (never CI-auto-regenerated)
+
+Same discipline as §5/§7.9/§8.5 — a human-reviewed copy. Add a **new**,
+separate `configs['openai-gpt4o-mini-ck25-grounded']` entry (never touching
+`scripted-ck25` or the existing `openai-gpt4o-mini-ck25` entry — RESEARCH
+Pitfall 4/3) carrying the aggregate `pass_rate`/`passed`/`total`/`cases` +
+`model: "gpt-4o-mini"` / `temperature: 0.1` / `corpus_sha`, plus:
+
+- `role: "anchor_reported_not_gated"` — same N=49 achieved-MDE caveat as
+  `openai-gpt4o-mini-ck25` (§8.3): never gate CI or a promotion decision on
+  this pass_rate alone.
+- A `confirmatory_test` object recording the fresh zero arm's pass_rate,
+  `b`/`c`/`p_value`, the bootstrap `paired_delta`/`ci_95`, the
+  `gained_0_to_1`/`regressed_1_to_0` case-name lists, and the
+  `nl_acc_01_disposition` (significant-lift vs documented-null — mirror the
+  `phase07_dense_few_shot_sweep.primary_confirmatory_test` shape in §7.9).
+- If Task 2's live sweep instead returns a null/inconclusive result, record
+  it via the documented-null path (mirroring NL-FEW-02, §7.3) — never claim
+  a passed confirmatory test that didn't clear `p < 0.05`.
+
+Same secret hygiene as §6: never commit a key or raw prompts/completions —
+only aggregate numbers + provenance cross into `baseline.json`.
+
+### 9.5 Non-regression (unchanged, re-confirm before closing NL-ACC-01)
+
+- `pytest tests/w3c/test_coverage_gate.py -q` green (QUERY_EVAL ≥ 96.4%) or
+  skips key-free when the W3C corpus isn't fetched locally.
+- `git diff --stat -- arango_sparql/translate/` empty across every phase
+  commit — the transpiler is untouched by NL-ACC-01.
+- `scripted`/`scripted-ck25` remain the only CI-reachable configs
+  (`test_ci_gate_only_ever_runs_scripted`); the grounded config is reachable
+  only via an explicit, human-run `run("openai-gpt4o-mini-ck25-grounded")`
+  call, never from the default test path.
+
+### 9.6 Post-review builder correction + clean-builder re-sweep (07.3-REVIEW.md CR-01/CR-02)
+
+Code review (`07.3-REVIEW.md`) of this phase found 2 **blocker-level** bugs in
+`tests/nl2sparql/eval/grounding_index_builder.py` — the eval-only helper that
+built the `LabelIndex` behind the §9 sweep above — neither caught by the
+existing recall-only test:
+
+- **CR-01** — `build_label_index()`'s SPARQL query had no filter excluding
+  ontology-level subjects, so CK25's OWL vocabulary header (classes/
+  properties, each carrying its own `rdfs:label`) leaked into the "Known
+  entities" prompt block as if they were groundable instances: 45/2618
+  indexed "entities" were schema terms, retrieved by 43/49 (88%) of CK25
+  questions.
+- **CR-02** — label-literal stripping stripped quotes *before* splitting off
+  the `^^<datatype>`/`@lang` suffix, corrupting every language-tagged label
+  (e.g. `"Manager"@en` → `'Manager"@en'` instead of `'Manager'`) that
+  survived verbatim into the LLM prompt.
+
+Both were **fixed** (commits `f932360` CR-01, `6c72b37` CR-02): the index
+now excludes `owl:Class`/`owl:ObjectProperty`/`owl:DatatypeProperty`/
+`owl:AnnotationProperty`/`rdf:Property`/`rdfs:Class`/`owl:Ontology`/
+`void:Dataset`-typed subjects plus structurally-schema subjects (used as an
+`rdf:type` object or as a predicate anywhere), and label normalization now
+mirrors `runner.py::_strip_execution_literal`'s split-then-strip order.
+Verified against the real vendored CK25 corpus: index size drops
+2618 → 2573 (the 45 schema terms), zero entities carry a stray `"` in their
+label, and the offline recall guard (`test_grounding_recall.py`) still
+passes at 0.96 (≥ the 0.90 spike floor).
+
+The full §9.3 grounded-vs-fresh-zero same-session sweep was **re-run in
+full on the corrected builder**. Result — the aggregate reproduces
+**identically**: 14/49 (28.6%) grounded vs 5/49 (10.2%) fresh zero,
+McNemar b=9/c=0/p=0.0039, bootstrap paired delta +0.1837 (95% CI
+[0.0816, 0.3061]) — but the per-case **gained-case set shifted**: the
+pre-fix sweep gained `ck25-9`/`ck25-46`; the clean-builder sweep instead
+gained `ck25-10`/`ck25-11` (both sets still 9 cases, still zero
+regressions). This is the headline evidence: removing the schema-IRI
+noise and the label corruption did **not** inflate or manufacture the
+measured lift — the same conclusion holds on a demonstrably cleaner index.
+
+`baseline.json`'s `openai-gpt4o-mini-ck25-grounded` entry (`cases` map and
+`confirmatory_test.gained_0_to_1`) has been updated in place to these
+clean-builder values, superseding the pre-fix per-case data; the full
+before/after comparison is recorded in
+`confirmatory_test.clean_builder_reconfirmation`. NL-ACC-01 remains closed
+via the significant-lift path — this re-sweep *strengthens*, not weakens,
+that disposition.
+
+---
+
+## 10. CK25 predicate/schema-convention grounding sweep — NL-ACC-02 (Phase 07.4)
+
+This section documents the credentialed, human-run measurement behind
+NL-ACC-02: does injecting a mechanically-derived TBox predicate index (seam
+7 — label + domain + range + object-vs-datatype + usage-shape, walked purely
+from `rdfs:domain`/`rdfs:range` declarations, D-02) produce a **statistically
+significant** execution-graded CK25 pass-rate lift over the NL-ACC-01
+entity-grounded baseline (`openai-gpt4o-mini-ck25-grounded` = 14/49)? Same
+discipline as §§3–6/§9 (key-gated, `scripted` stays the CI default, manual
+human-reviewed fold-in), with the same "confirmatory pairing is always a
+same-session fresh arm, never a stale committed entry" rule §9 established
+for entity grounding, extended here to predicate grounding.
+
+**D-03 also adds a directional-only, non-gating check**: the first-ever live
+run of the QALD-9-plus powered gate (514 cases, never run against a live
+model before this phase) — zero-shot vs. predicate-grounded — as a
+generalization signal that the lever transfers beyond the 49-case corporate
+anchor. QALD is explicitly **not** a hard gate this phase (§8.3's achieved-MDE
+table already documents CK25 as "anchor, reported NOT gated" and QALD as the
+"powered gate" for capability, not for this specific lever's pass/fail bar).
+
+### 10.1 Design (D-01/D-02, mechanical, no hand-curation)
+
+Seam 7 (`predicate_index()` / `predicate_prompt_section()` on
+`QueryLanguageAdapter`, mirroring seam 6 exactly) is built once per corpus
+from `corpus["ontology"]` (`shared_ontology` in `runner.py` — always present,
+unlike entity grounding's `data_ttl` which only CK25 vendors) via a
+function-local-pyoxigraph TBox walk (`build_predicate_index()`,
+`grounding_index_builder.py`). For every `owl:ObjectProperty`/
+`owl:DatatypeProperty`, the corrected 3-way shape rule classifies the
+rendering shape purely from declared `rdfs:domain`/`rdfs:range` (exact-match
+children only, never `rdfs:subClassOf`-inherited) — `value_object` (e.g.
+`pv:price`→`pv:Price`, both children datatype), `category_instance` (e.g.
+`pv:hasCategory`→`pv:ProductCategory`, zero children), `linked_entity`
+(ordinary object link, e.g. `pv:hasManager`→`pv:Manager`), or `literal`
+(datatype property). No predicate/shape is ever hand-listed in code (D-02) —
+the mechanical rule is the sole source of the classification, verified
+against the real CK25 TBox in 07.4-RESEARCH.md.
+
+A size threshold (`PREDICATE_DUMP_THRESHOLD = 40`) picks dump-vs-retrieve
+mode per corpus (D-01): CK25's 30 predicates dump in full; QALD-9-plus's 250
+retrieve top-k. Composition order is grammar → few-shot → entities →
+predicates (D-07), all after the cacheable `grammar_prompt_section`
+boundary — `predicate_grounding:` is gated on `shared_ontology` (always
+truthy), never on `data_ttl` (RESEARCH Pitfall 5), so QALD's predicate-
+grounded config is not silently a no-op.
+
+**CR-01 correction (07.4-06):** widening `k` to the total predicate count
+alone does NOT achieve dump mode — the shared `arango_query_core` scorer
+drops any predicate with zero label/domain/range token overlap against the
+question regardless of `k`. Both adapters now pass the pinned
+`arango_query_core.nl.grounding.PredicateIndex`'s explicit `dump=True`
+kwarg (upstream commit `b669320`) when `0 < total <= PREDICATE_DUMP_THRESHOLD`,
+which bypasses that zero-hit filter and genuinely renders every predicate.
+The NL-ACC-02 CK25 predicate-grounded sweep originally recorded in
+`baseline.json` (07.4-05) predated this fix and was confounded; a
+credentialed human RE-RAN the full live sweep on the fixed dump mode
+(07.4-06 re-fold) and `baseline.json` now carries the clean, valid numbers
+(standalone 7/49 p=0.1250, additive 10/49 vs a fresh 12/49 entity-alone
+arm p=0.6875) — see
+`phase07_4_predicate_grounding_sweep.ck25_additive_arm` and
+`configs.openai-gpt4o-mini-ck25-predicate-grounded.confirmatory_test`.
+NL-ACC-02 stays closed via the documented-null path, now on a valid,
+unconfounded experiment.
+
+### 10.2 The four live arms (exact commands)
+
+> **Pitfall 1 reminder — the runner's live path reads `NL2SPARQL_API_KEY`,
+> NOT `OPENAI_API_KEY`** (§3). Export it into this shell only, never commit
+> it, never paste it back into any file or chat.
+
+```bash
+uv sync --extra dev --extra nl   # dev: pyoxigraph (TBox walk + execution judge); nl: openai client
+export NL2SPARQL_API_KEY=sk-...  # your OpenAI key — this shell only, never OPENAI_API_KEY (Pitfall 1)
+```
+
+Capture both corpora's revisions (the corpus_sha provenance fields):
+
+```bash
+git log -1 --format=%h -- tests/nl2sparql/eval/vendored/ck25/corpus.yml
+git log -1 --format=%h -- tests/nl2sparql/eval/vendored/qald9plus/corpus.yml
+```
+
+**Arm 1 — CK25 predicate-grounded** (the new lever under test):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-ck25-predicate-grounded'); write_report(r); print('pred', r.pass_rate); [print(c.name, c.passed) for c in r.cases]"
+```
+
+**Arm 2 — a FRESH, same-session CK25 entity-grounded arm** (the confirmatory
+baseline — never the stale committed `openai-gpt4o-mini-ck25-grounded`
+entry from 07.3-06; §9's same-session discipline applies identically here):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-ck25-grounded'); write_report(r); print('grounded', r.pass_rate); [print(c.name, c.passed) for c in r.cases]"
+```
+
+**Arm 3 — QALD-9-plus zero-shot** (directional only; the config already
+exists from Phase 07.1 — RESEARCH Pitfall 4 — this is its first-ever live
+run, not a new config to author):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-qald9plus'); write_report(r); print('qald_zero', r.pass_rate)"
+```
+
+**Arm 4 — QALD-9-plus predicate-grounded** (directional only, the new
+sibling arm):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-qald9plus-predicate-grounded'); write_report(r); print('qald_pred', r.pass_rate)"
+```
+
+Writes `reports/openai-gpt4o-mini-ck25-predicate-grounded.{json,md}`,
+`reports/openai-gpt4o-mini-ck25-grounded.{json,md}`,
+`reports/openai-gpt4o-mini-qald9plus.{json,md}`, and
+`reports/openai-gpt4o-mini-qald9plus-predicate-grounded.{json,md}` (all
+**gitignored**). Both CK25 arms print full per-case `name`/`passed`
+verdicts — required for the paired McNemar below; the QALD arms only need
+the aggregate `pass_rate` (directional, not paired-tested this phase).
+
+Compute the CK25 paired McNemar + bootstrap delta over the same 49 cases,
+same session, immediately after running arms 1 and 2:
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "
+from tests.nl2sparql.eval.runner import run, paired_mcnemar, bootstrap_paired_delta
+
+grounded = run('openai-gpt4o-mini-ck25-grounded')            # freshly run THIS session
+predicate = run('openai-gpt4o-mini-ck25-predicate-grounded')
+
+grounded_cases = {c.name: c.passed for c in grounded.cases}
+predicate_cases = {c.name: c.passed for c in predicate.cases}
+
+print('grounded pass_rate', grounded.pass_rate)
+print('predicate pass_rate', predicate.pass_rate)
+b, c, p = paired_mcnemar(grounded_cases, predicate_cases)
+delta, lo, hi = bootstrap_paired_delta(grounded_cases, predicate_cases)
+print(f'b={b} c={c} p={p:.4f} delta={delta:.4f} CI=({lo:.4f}, {hi:.4f})')
+"
+```
+
+For the QALD directional MDE, report `achieved_mde` from `power.py` at the
+surviving-N already committed in §8.3 (514 for the combined pool; use the
+QALD live run's own discordant rate if computing a fresh MDE against the
+zero-vs-predicate pairing, though QALD is not paired-tested this phase —
+report the two aggregate pass_rates and the §8.3 achieved_mde table
+unchanged as the honest power context).
+
+### 10.3 The CK25 hard-gate criterion (D-03) — THE pass/fail bar
+
+**The lift PASSES iff McNemar `p < 0.05` with zero regressions (`c=0` or a
+non-negative net flip count), comparing the predicate-grounded arm against
+the FRESH same-session entity-grounded arm (never the stale committed
+14/49 `openai-gpt4o-mini-ck25-grounded` entry from a prior session)** — this
+mirrors §9.3's confirmatory bar exactly, one level up the grounding stack.
+Report `b`, `c`, the exact p-value, the bootstrap paired-delta 95% CI, and
+the per-case gained/regressed case names.
+
+If the gate returns null (`p >= 0.05`), do **not** report a passed
+confirmatory test — close via the human-accepted-documented-null path
+(the NL-FEW-02 precedent, §7.3/README): record the honest null with exact
+`b`/`c`/`p`, the achieved MDE at n=49 (§8.3: ~18-20pt), and name the
+documented follow-up (expanding the two-tier render's detail level to all
+predicates, not just value-object/category-instance ones — RESEARCH
+Assumption A4).
+
+### 10.4 QALD framed as directional-only (never a gate)
+
+The QALD zero-shot-vs-predicate-grounded delta is recorded as a
+**generalization signal only** — it is never wired into a CI gate or a
+promotion/closure decision for NL-ACC-02 (mirrors §8.3's "do not gate CI or
+promotion decisions on a CK25 McNemar/MDE result" framing, inverted: here
+CK25 is the gate and QALD is the anchor-style directional check). Report
+both arms' aggregate pass_rate plus the achieved MDE already committed at
+n=514 (§8.3: ~5.5-6.2pt) so a reader can judge how much signal a QALD delta
+of any given size actually carries.
+
+### 10.5 D-04's honest ceiling
+
+Predicate grounding plausibly converts the 17 convention-bound CK25
+failures and contributes to the 13 mixed-failure cases; the realistic CK25
+target is **~14 → ~20-25 out of 49, not all 35** (the remaining ~13-15
+failures are structural — superlatives/ORDER BY-LIMIT, aggregation/GROUP BY,
+computed quantities, compatibility cycles — explicitly deferred, D-04/
+RESEARCH Deferred Ideas). Record the actual achieved pass count against this
+honest ceiling in the fold-in note, whichever side of it the live number
+lands on.
+
+### 10.6 MANUAL fold-in into `baseline.json` (never CI-auto-regenerated)
+
+Same discipline as §5/§7.9/§8.5/§9.4 — a human-reviewed copy. Add a **new**,
+separate `configs['openai-gpt4o-mini-ck25-predicate-grounded']` entry (never
+touching `scripted-ck25-predicate-grounded` or the existing
+`openai-gpt4o-mini-ck25-grounded`/`openai-gpt4o-mini-ck25` entries — RESEARCH
+Pitfall 4/3, D-01 separation) carrying the aggregate
+`pass_rate`/`passed`/`total`/`cases` + `model: "gpt-4o-mini"` /
+`temperature: 0.1` / `corpus_sha`, plus:
+
+- `role: "anchor_reported_not_gated"` — same N=49 achieved-MDE caveat as
+  `openai-gpt4o-mini-ck25-grounded` (§8.3): the CK25 anchor's own pass_rate
+  is never gated in isolation; the **confirmatory pairing** (below) is the
+  gate, not this entry's raw pass_rate alone.
+- A `confirmatory_test` object recording the fresh entity-grounded arm's
+  pass_rate, `b`/`c`/`p_value`, the bootstrap `paired_delta`/`ci_95`, the
+  `gained_0_to_1`/`regressed_1_to_0` case-name lists, `corpus_sha`,
+  `temperature: 0.1`, and the `nl_acc_02_disposition` (significant-lift vs.
+  documented-null — mirrors §9.4's `confirmatory_test` shape exactly, one
+  level up the grounding stack).
+- A `d04_honest_ceiling` note recording the actual achieved pass count
+  against the ~20-25 target range.
+
+Add the QALD arms as **separate directional** entries —
+`configs['openai-gpt4o-mini-qald9plus']` (first-ever live fold-in of the
+Phase 07.1 zero-shot config) and
+`configs['openai-gpt4o-mini-qald9plus-predicate-grounded']` — each carrying
+`pass_rate`/`passed`/`total`/`cases` + `model`/`temperature`/`corpus_sha` +
+`role: "directional_generalization_check"` + `achieved_mde` (from §8.3's
+already-committed n=514 table) + a note stating explicitly these are NOT
+gated and NOT paired-tested against each other this phase.
+
+Same secret hygiene as §6: **never commit a key or raw prompts/completions**
+— only aggregate numbers + provenance cross into `baseline.json`.
+
+### 10.7 Non-regression re-confirm (unchanged, re-confirm before closing NL-ACC-02)
+
+- `pytest tests/w3c/test_coverage_gate.py -q` green (QUERY_EVAL ≥ 96.4%) or
+  skips key-free when the W3C corpus isn't fetched locally.
+- `git diff --stat -- arango_sparql/translate/` empty across every phase
+  commit — the transpiler is untouched by NL-ACC-02.
+- `scripted`/`scripted-ck25-predicate-grounded`/
+  `scripted-qald9plus-predicate-grounded` remain the only CI-reachable
+  configs (`test_ci_gate_only_ever_runs_scripted`); every predicate-grounded
+  live config is reachable only via an explicit, human-run
+  `run("openai-gpt4o-mini-...-predicate-grounded")` call, never from the
+  default test path.
+
+## 11. Generated-bank paraphrase regeneration + generalization adopt/kill sweep — NL-GEN-01 (Phase 07.5 Plan 05)
+
+This section documents the credentialed, human-run measurement behind
+NL-GEN-01's terminal question: does the **GENERATED** (query-first
+synthetic, mechanically authored by `bank_generator.py` — never
+hand-curated) CK25 few-shot bank reproduce Spike 001's directional lift
+(§ Spike 001, `.planning/spikes/001-ck25-thin-fewshot-signal/`) on the
+held-out corpus? Same discipline as §§3–10 (key-gated, `scripted` stays the
+CI default, manual human-reviewed fold-in, fresh same-session zero arm as
+the ONLY confirmatory comparator — never a stale committed number, Pitfall
+7), plus a NEW blocking prerequisite (step 0) this phase adds.
+
+**Everything up to the live calls below is already committed and green,
+offline, with no key:** the 9-shape generator (`bank_generator.py`), the
+77-example CK25 bank + empty (honest, TBox-only) QALD bank, the
+`verify_generated_bank.py` validity gate, the shape+entity overlap audit
+(`test_fewshot_bank_disjoint.py::shape_overlap_indices`/`entity_overlap`/
+`overlapping_case_names` — D-05), the additive `configs.yml` generated-bank
+arms + `few_shot.bank:` config key, and `run_generated_sweep.py`
+(`--dry-run` proven: the generated bank loads via BM25 and injects a real
+`## Examples` prompt block, REQ-4). The agent has **not** run the live
+sweep — `NL2SPARQL_API_KEY` is human-held only (07.3-06/07.4-05
+precedent) — and is **forbidden** from fabricating paraphrases, McNemar/
+bootstrap numbers, per-case verdicts, or the faithfulness-judge output.
+
+### 11.0 STEP 0 (BLOCKER, do this FIRST) — regenerate CK25's paraphrases for REAL
+
+The committed `vendored/ck25/generated_fewshot_bank.yml` carries
+**SCRIPTED/PLACEHOLDER** paraphrases (Plan 03's offline, deterministic
+`_EchoParaphraseClient` double — see the bank file's own header comment
+and `test_bank_generator.py`'s docstring) — echo-style text, never a real
+LLM paraphrase. REQ-3's full target (≥3 **genuine** paraphrases/example,
+≥95% faithful on ≥20 judged pairs) is not met until this step regenerates
+them against the live `OpenAICompatibleClient`. No subsequent step (§11.1+)
+may be measured against the placeholder bank.
+
+`bank_generator.paraphrase()`'s default path (`client=None`) already
+constructs a real `OpenAICompatibleClient(provider="openai",
+model="gpt-4o-mini")` from `NL2SPARQL_API_KEY` when the env var is set —
+no explicit client wiring needed:
+
+Write a small one-off script (do NOT commit it — it's a throwaway
+regeneration tool, not part of the harness) rather than an inline `-c`
+one-liner, to avoid shell-quoting hazards around the header text:
+
+```bash
+uv sync --extra dev --extra nl   # dev: pyoxigraph (execution filter); nl: openai client
+export NL2SPARQL_API_KEY=sk-...  # your OpenAI key — this shell only, never OPENAI_API_KEY (Pitfall 1)
+
+cat > /tmp/regen_ck25_paraphrases.py <<'PYEOF'
+from pathlib import Path
+import yaml
+from tests.nl2sparql.eval.bank_generator import generate_bank
+
+EVAL_DIR = Path("tests/nl2sparql/eval")
+ontology_ttl = (EVAL_DIR / "vendored/ck25/ontology.ttl").read_text()
+data_ttl = (EVAL_DIR / "vendored/ck25/raw/prod-inst.ttl").read_text()
+
+# client=None -> generate_bank's paraphrase() step auto-builds a REAL
+# OpenAICompatibleClient from NL2SPARQL_API_KEY (bank_generator.py
+# docstring) -- this is NOT the scripted _EchoParaphraseClient double.
+bank = generate_bank(ontology_ttl, data_ttl, seed=0, k_paraphrases=3)
+
+n = len(bank["examples"])
+min_k = min(len(e["paraphrases"]) for e in bank["examples"])
+print(f"examples={n} min_paraphrases_per_example={min_k}")
+assert min_k >= 3, "REQ-3 full target requires K>=3 genuine paraphrases per example"
+
+header = (
+    "# REAL paraphrases (Phase 07.5 Plan 05, credentialed provenance):\n"
+    "# every example's paraphrases list below was regenerated against the\n"
+    "# LIVE OpenAICompatibleClient (gpt-4o-mini, human-held NL2SPARQL_API_KEY)\n"
+    "# -- superseding Plan 03's SCRIPTED/PLACEHOLDER echo-double bank. Slot-\n"
+    "# preservation was enforced at generation time via slot_preserving().\n"
+)
+out_path = EVAL_DIR / "vendored/ck25/generated_fewshot_bank.yml"
+out_path.write_text(header + yaml.safe_dump(bank, sort_keys=False, allow_unicode=True))
+print(f"wrote {out_path}")
+PYEOF
+
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python /tmp/regen_ck25_paraphrases.py
+```
+
+Then confirm REQ-1/REQ-2 still hold on the regenerated bank (paraphrases
+never touch the `query` field, so this should be unaffected, but re-verify
+rather than assume):
+
+```bash
+uv run python tests/nl2sparql/eval/verify_generated_bank.py \
+  --bank tests/nl2sparql/eval/vendored/ck25/generated_fewshot_bank.yml \
+  --corpus tests/nl2sparql/eval/vendored/ck25/corpus.yml \
+  --data tests/nl2sparql/eval/vendored/ck25/raw/prod-inst.ttl
+# expect exit 0 / ALL GREEN
+```
+
+**Known follow-up test update (do this in the same commit as step 0):**
+`tests/nl2sparql/eval/test_bank_generator.py::test_committed_ck25_bank_matches_
+fresh_regeneration` asserts the committed bank equals a FRESH regeneration
+using the scripted `_EchoParaphraseClient()` double — that assertion is
+true only while the committed bank's own paraphrases are the scripted
+placeholder. Once step 0 regenerates with REAL paraphrases, this exact
+equality will (correctly) fail, since a fresh scripted-double regen no
+longer matches the committed, now-real-paraphrase artifact. Update that
+test to compare everything EXCEPT the `paraphrases` list per example (e.g.
+`question`/`query`/`shape` equality, plus `len(paraphrases) >= 3` and
+`slot_preserving` re-verification on the committed paraphrases) rather than
+relaxing or deleting the regression gate outright — the intent (committed
+bank must not silently drift from the generator's slot-fill/sampling
+logic) still holds; only the paraphrase-text equality no longer applies
+once paraphrases come from a live, non-reproducible LLM call.
+
+### 11.1 The three live arms (exact commands)
+
+Capture the corpus revision (the `corpus_sha` provenance field):
+
+```bash
+git log -1 --format=%h -- tests/nl2sparql/eval/vendored/ck25/corpus.yml
+```
+
+**Arm 1 — CK25 generated-fewshot** (the lever under test; run this 3x per
+REQ-6's "delta>0 across 3 runs" — each run is a fresh process invocation):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-ck25-generated-fewshot'); write_report(r); print('generated', r.pass_rate); [print(c.name, c.passed) for c in r.cases]"
+```
+
+**Arm 2 — a FRESH, same-session CK25 zero arm** (the confirmatory
+baseline — never the stale committed `openai-gpt4o-mini-ck25` entry from a
+prior session; §9/§10's same-session discipline applies identically here):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-ck25'); write_report(r); print('zero', r.pass_rate); [print(c.name, c.passed) for c in r.cases]"
+```
+
+**Arm 3 — QALD-9-plus generated-fewshot** (non-regression check only; the
+generated QALD bank is empty so this is EXPECTED to reproduce the flat
+`openai-gpt4o-mini-qald9plus` zero-shot number exactly — a PASS per
+RESEARCH OQ-4, not a failure):
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python -c "from tests.nl2sparql.eval.runner import run, write_report; r=run('openai-gpt4o-mini-qald9plus-generated-fewshot'); write_report(r); print('qald_generated', r.pass_rate)"
+```
+
+The easiest way to run Arms 1+2 together with the paired stats (raw AND
+overlap-excluded, REQ-6) in one session is the harness itself:
+
+```bash
+RUN_EVAL=1 NL2SPARQL_API_KEY=... uv run python tests/nl2sparql/eval/run_generated_sweep.py --sweep
+```
+
+This prints `b`/`c`/`p` + bootstrap delta both RAW and with the
+shape+entity overlap-audited cases excluded (via
+`test_fewshot_bank_disjoint.py::overlapping_case_names` — Task 1's exact
+source of truth), the QALD non-regression arm's pass_rate, and writes
+`generated_sweep_result.json` next to the script (gitignored — never
+committed as-is; the numbers below are what cross into `baseline.json`).
+**Run this 3 times** (REQ-6) — each invocation is a fresh process, so each
+one is a genuine independent same-session zero-vs-generated pairing.
+
+### 11.2 The REQ-6 adopt/kill bar
+
+Per `07.5-SPEC.md`, **ADOPT** requires ALL of:
+
+- Shape-coverage ≥70% of held-out failing cases' gold shapes.
+- CK25 net pass-delta > 0 across all 3 runs, with **zero regressions**
+  (`c == 0`, or at minimum `b > c` on every run).
+- The delta stays > 0 after excluding the shape+entity overlap-audited
+  cases (`generated_sweep_result.json`'s `bootstrap_delta_overlap_excluded.
+  delta`).
+- QALD non-regression (Arm 3's pass_rate does not drop below the existing
+  committed `openai-gpt4o-mini-qald9plus` zero-shot number).
+
+**KILL** if the CK25 delta ≤ 0 post-exclusion on any run, or only one
+ontology shows any signal. If the bar is not met, close via the
+human-accepted-documented-null path (NL-FEW-02/07.4 precedent) — record
+the honest `b`/`c`/`p` and delta, never reframe a null as a pass.
+
+Also run the secondary faithfulness judge on ≥20 random (question, query)
+pairs from the REGENERATED bank (REQ-3 secondary): an LLM-judge call
+(same `OpenAICompatibleClient` shape as `paraphrase()`) asking "does this
+SPARQL query correctly answer this question, preserving every named
+entity/value/filter/count/ordering?" — confirm ≥95% match. Compute
+shape-coverage of held-out failing cases' gold shapes (REQ-6 ≥70%) by
+cross-referencing the gains/regressions case names against
+`bank_generator.SHAPE_CATALOG`.
+
+### 11.3 MANUAL fold-in into `baseline.json` (never CI-auto-regenerated)
+
+Same discipline as §§5/7.9/8.5/9.4/10.6 — a human-reviewed copy, never an
+automated script. Add a **new sibling key**
+(`phase07_5_generated_fewshot_sweep`, mirroring the
+`phase07_dense_few_shot_sweep`/`phase07_4_predicate_grounding_sweep`
+precedent) — do **not** overwrite the existing
+`configs.openai-gpt4o-mini-ck25` zero entry — carrying:
+
+- The 3 CK25 run results: each run's generated-arm pass_rate, the fresh
+  zero-arm pass_rate from that same run, `b`/`c`/`p_value` (raw), the
+  bootstrap `paired_delta`/`ci_95` (raw AND overlap-excluded), the
+  `excluded_case_names` list, `model: "gpt-4o-mini"`, `temperature: 0.1`,
+  `corpus_sha`.
+- The QALD non-regression arm's pass_rate + `role:
+  "directional_generalization_check"`.
+- The shape-coverage percentage + the ≥20-pair faithfulness-judge result
+  (match rate, sample pairs).
+- The `nl_gen_01_disposition` (adopt vs. documented-null/kill) per §11.2's
+  bar.
+
+Commit the regenerated `vendored/ck25/generated_fewshot_bank.yml` (real
+paraphrases, step 0) alongside the `baseline.json` fold-in and the
+`test_bank_generator.py` test-comparison update (step 0's follow-up note).
+Update `REQUIREMENTS.md`'s `NL-GEN-01` disposition. Same secret hygiene as
+§6: **never commit a key or raw prompts/completions** — only aggregate
+numbers, per-case verdicts, and provenance cross into `baseline.json`.
+
+### 11.4 Non-regression re-confirm (unchanged, re-confirm before closing NL-GEN-01)
+
+- `pytest tests/w3c/test_coverage_gate.py -q` green (QUERY_EVAL ≥ 96.4%) or
+  skips key-free when the W3C corpus isn't fetched locally.
+- `git diff --stat -- arango_sparql/translate/` empty across every phase
+  commit — the transpiler is untouched by NL-GEN-01.
+- `scripted`/`scripted-ck25-generated-fewshot`/
+  `scripted-qald9plus-predicate-grounded`-style plumbing configs remain the
+  only CI-reachable configs (`test_ci_gate_only_ever_runs_scripted`); every
+  generated-fewshot live config is reachable only via an explicit,
+  human-run `run("openai-gpt4o-mini-...-generated-fewshot")` call or
+  `run_generated_sweep.py --sweep`, never from the default test path.
+- `RUN_EVAL=1 uv run pytest tests/nl2sparql/eval/test_fewshot_bank_disjoint.py tests/nl2sparql/eval/test_eval.py -q` green.

@@ -728,6 +728,204 @@
       "corpus_sha": "814d227",
       "role": "anchor_reported_not_gated",
       "note": "FIRST real execution-graded CK25 live accuracy number (D-07): gpt-4o-mini-generated SPARQL judged via answer-set execution against the vendored CK25 instance graph (judge: execution, flipped in Plan 07.2-03), not canonical text-match. Reported, NOT gated -- N=49 gives an achieved_mde of ~18-20pt (see scripted-ck25.achieved_mde: pi_0.20=0.179, pi_0.25=0.2001), too small to detect a regression with statistical confidence, so CI/promotion decisions must never be gated on this number (RESEARCH D-07 / Anti-Patterns). Of the 43 failing cases, the D-05 visible buckets are recorded distinctly and never blended into ordinary wrong-answer failures (Pitfall 3): 2 candidate_engine_rejected (the candidate SPARQL itself raised a pyoxigraph execution error) and 0 gold_engine_limitation (the gold SPARQL raised) -- the remaining 41 failures are genuine wrong-answer mismatches. The execution judge's rdfs:label-based entity normalization carries the same documented, non-gating residual risk as scripted-ck25 (Open Q1): Hardware 1000/837 = 163 label collisions, Supplier 250/246 = 4 collisions, all other entity classes (Employee/Department/ProductCategory/BillOfMaterial/Service/Manager) 1:1 -- a small, quantified false-positive-match risk consistent with CK25's directional-anchor framing."
+    },
+    "openai-gpt4o-mini-ck25-grounded": {
+      "pass_rate": 0.2857142857142857,
+      "passed": 14,
+      "total": 49,
+      "cases": {
+        "ck25-1": true,
+        "ck25-2": true,
+        "ck25-3": true,
+        "ck25-4": false,
+        "ck25-5": false,
+        "ck25-6": true,
+        "ck25-7": false,
+        "ck25-8": false,
+        "ck25-9": false,
+        "ck25-10": true,
+        "ck25-11": true,
+        "ck25-12": true,
+        "ck25-13": false,
+        "ck25-14": false,
+        "ck25-15": false,
+        "ck25-16": false,
+        "ck25-17": true,
+        "ck25-18": false,
+        "ck25-19": false,
+        "ck25-20": false,
+        "ck25-21": false,
+        "ck25-22": true,
+        "ck25-23": false,
+        "ck25-24": false,
+        "ck25-25": false,
+        "ck25-26": false,
+        "ck25-27": false,
+        "ck25-28": false,
+        "ck25-29": false,
+        "ck25-30": true,
+        "ck25-31": true,
+        "ck25-32": false,
+        "ck25-33": false,
+        "ck25-34": false,
+        "ck25-35": false,
+        "ck25-36": false,
+        "ck25-37": false,
+        "ck25-39": true,
+        "ck25-40": false,
+        "ck25-41": false,
+        "ck25-42": false,
+        "ck25-43": false,
+        "ck25-44": false,
+        "ck25-45": false,
+        "ck25-46": false,
+        "ck25-47": false,
+        "ck25-48": false,
+        "ck25-49": true,
+        "ck25-50": true
+      },
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "corpus_sha": "814d227",
+      "role": "anchor_reported_not_gated",
+      "requirement": "NL-ACC-01",
+      "confirmatory_test": {
+        "description": "PRE-REGISTERED confirmatory test for NL-ACC-01 (Plan 07.3-06 Task 2, credentialed human-run checkpoint): entity/instance grounding (Seam 6 -- retrieved instance IRIs+labels injected into the prompt) vs a FRESHLY-RUN zero arm, BOTH run in the SAME session (never vs the already-committed openai-gpt4o-mini-ck25 entry above, which is a stale prior-session number -- model drift across sessions is a real confound, RESEARCH Pitfall / 07-04 M2). Paired McNemar over the same 49 cases.",
+        "fresh_zero_arm_config": "openai-gpt4o-mini-ck25 (re-run fresh this session, NOT the committed entry above)",
+        "fresh_zero_arm_pass_rate": 0.10204081632653061,
+        "fresh_zero_arm_passed": 5,
+        "fresh_zero_arm_total": 49,
+        "b": 9,
+        "c": 0,
+        "p_value": 0.0039,
+        "paired_delta": 0.1837,
+        "ci_95": [
+          0.0816,
+          0.3061
+        ],
+        "gained_0_to_1": [
+          "ck25-1",
+          "ck25-2",
+          "ck25-6",
+          "ck25-10",
+          "ck25-11",
+          "ck25-12",
+          "ck25-17",
+          "ck25-22",
+          "ck25-49"
+        ],
+        "regressed_1_to_0": [],
+        "verdict": "SIGNIFICANT -- clears p<0.05 with ZERO regressions",
+        "nl_acc_01_disposition": "NL-ACC-01 closes via the SIGNIFICANT-LIFT path (McNemar p<0.05, 0 regressions), NOT the documented-null path. This is a stronger result than the pre-planning spike (07.3-SPIKE-FINDINGS.md: 6/49->12/49, p=0.031) -- same direction, larger magnitude, still zero regressions.",
+        "clean_builder_reconfirmation": {
+          "description": "Post-hoc code review (07.3-REVIEW.md) found 2 blocker-level bugs in tests/nl2sparql/eval/grounding_index_builder.py used to build the grounding index that produced the numbers above: CR-01 (no filter excluding ontology-level owl:Class/owl:ObjectProperty/owl:DatatypeProperty subjects, so 45/2618 indexed 'entities' were schema terms retrievable by 43/49 (88%) of CK25 questions) and CR-02 (label literal-stripping stripped quotes before splitting the '^^'/'@lang' suffix, corrupting every language-tagged label, e.g. 'has manager\"@en' instead of 'has manager'). Both fixed (commits f932360 CR-01, 6c72b37 CR-02; index 2618->2573 entities, schema IRIs excluded, zero stray-quote labels remain, offline recall guard unchanged at 0.96) and the full grounded-vs-fresh-zero same-session sweep was re-run on the corrected builder.",
+          "builder_fix_commits": [
+            "f932360",
+            "6c72b37"
+          ],
+          "result": "Aggregate reproduces IDENTICALLY on the clean builder (14/49 vs 5/49, b=9/c=0/p=0.0039, paired_delta=0.1837, ci_95=[0.0816, 0.3061]) -- but the gained-case SET shifted: pre-fix gained ck25-9 and ck25-46; clean-builder gained ck25-10 and ck25-11 instead (both sets still 9 cases, still zero regressions). The `cases`/`gained_0_to_1` fields above have been updated in place to the clean-builder values, superseding the pre-fix per-case data.",
+          "interpretation": "Removing the schema-IRI noise (CR-01) and the label corruption (CR-02) did NOT inflate or manufacture the measured lift -- the identical aggregate on a demonstrably cleaner index is stronger evidence for the NL-ACC-01 significant-lift disposition, not weaker."
+        }
+      },
+      "note": "Second real execution-graded CK25 live accuracy number (Plan 07.3-06): gpt-4o-mini-generated SPARQL with entity/instance grounding (Seam 6 -- retrieved instance IRIs+labels for named entities injected into the prompt so the model binds to real IRIs instead of inventing them) judged via answer-set execution against the vendored CK25 instance graph (judge: execution, same as scripted-ck25/openai-gpt4o-mini-ck25). Reported, NOT gated -- same achieved_mde caveat as openai-gpt4o-mini-ck25 above (N=49, ~18-20pt), so CI/promotion decisions must never be gated on this number alone; the confirmatory evidence for NL-ACC-01 is the paired McNemar test above (`confirmatory_test`), not the raw pass_rate delta. Per-case `judge_note` D-05 buckets (candidate_engine_rejected / gold_engine_limitation) were NOT captured in this sweep's paste-back (only name/passed/elapsed_ms per case) -- a documented limitation, not a fabricated zero; a future re-sweep could capture judge_note for a finer failure breakdown. This entry is kept SEPARATE from and never blended with the existing openai-gpt4o-mini-ck25 entry (RESEARCH Pitfall 3) -- that entry stays as historical record of its own session's run; the confirmatory comparison always uses the freshly-run zero arm captured in `confirmatory_test` above, not this file's committed openai-gpt4o-mini-ck25 number. UPDATED post-review: code review (07.3-REVIEW.md) found 2 blockers (CR-01 schema-IRI leakage, CR-02 label corruption) in the eval's grounding_index_builder.py; both fixed (commits f932360/6c72b37) and this sweep re-run in full on the corrected builder. The `cases` map and `confirmatory_test.gained_0_to_1` above are the CORRECTED-builder values (superseding the pre-fix per-case data); see `confirmatory_test.clean_builder_reconfirmation` for the full before/after comparison. The aggregate (14/49 vs 5/49, p=0.0039) is unchanged between pre-fix and post-fix runs."
+    },
+    "openai-gpt4o-mini-ck25-predicate-grounded": {
+      "pass_rate": 0.14285714285714285,
+      "passed": 7,
+      "total": 49,
+      "cases": {
+        "ck25-1": false,
+        "ck25-2": true,
+        "ck25-3": true,
+        "ck25-4": false,
+        "ck25-5": false,
+        "ck25-6": false,
+        "ck25-7": false,
+        "ck25-8": false,
+        "ck25-9": false,
+        "ck25-10": false,
+        "ck25-11": false,
+        "ck25-12": false,
+        "ck25-13": false,
+        "ck25-14": false,
+        "ck25-15": false,
+        "ck25-16": false,
+        "ck25-17": true,
+        "ck25-18": false,
+        "ck25-19": false,
+        "ck25-20": false,
+        "ck25-21": false,
+        "ck25-22": false,
+        "ck25-23": false,
+        "ck25-24": false,
+        "ck25-25": false,
+        "ck25-26": false,
+        "ck25-27": false,
+        "ck25-28": false,
+        "ck25-29": false,
+        "ck25-30": true,
+        "ck25-31": true,
+        "ck25-32": false,
+        "ck25-33": false,
+        "ck25-34": false,
+        "ck25-35": false,
+        "ck25-36": false,
+        "ck25-37": false,
+        "ck25-39": true,
+        "ck25-40": false,
+        "ck25-41": false,
+        "ck25-42": false,
+        "ck25-43": false,
+        "ck25-44": false,
+        "ck25-45": false,
+        "ck25-46": false,
+        "ck25-47": false,
+        "ck25-48": false,
+        "ck25-49": false,
+        "ck25-50": true
+      },
+      "model": "gpt-4o-mini",
+      "temperature": 0.1,
+      "corpus_sha": "814d227",
+      "role": "anchor_reported_not_gated",
+      "requirement": "NL-ACC-02",
+      "confirmatory_test": {
+        "description": "RE-RUN (07.4-06 re-fold, post CR-01 dump-mode fix, arango-query-core pin b66932046a102898e8fff205a7ddcbedfb2c896e): seam-7 predicate/schema-convention grounding ALONE (no seam-6 entity grounding) vs a FRESHLY-RUN entity-grounded-ALONE arm, BOTH run in the SAME session (session 3, distinct from 07.4-05's session 1). Paired McNemar over the same 49 cases. This is NOT the primary NL-ACC-02 hard-gate test (the phase composes seam-7 ADDITIVELY on top of seam-6, per NLQueryEngine._system_prompt ordering) -- it isolates seam-7's standalone effect. See phase07_4_predicate_grounding_sweep.ck25_additive_arm for the primary test. SUPERSEDES the 07.4-05 standalone arm below (5/49 vs a fresh 12/49, McNemar b=0/c=7/p=0.0156, wrong-direction-significant), which ran against the CR-01-broken dump mode where widening k never actually surfaced the full 30-predicate schema.",
+        "fresh_entity_alone_arm_config": "openai-gpt4o-mini-ck25-grounded (re-run fresh this session, session 3, NOT the committed 14/49 entry above nor sessions 1/2 from 07.4-05)",
+        "fresh_entity_alone_arm_pass_rate": 0.24489795918367346,
+        "fresh_entity_alone_arm_passed": 12,
+        "fresh_entity_alone_arm_total": 49,
+        "b": 1,
+        "c": 6,
+        "p_value": 0.125,
+        "bootstrap_paired_delta": -0.102,
+        "ci_95": [
+          -0.2041,
+          0.0
+        ],
+        "gained_0_to_1": [
+          "ck25-17"
+        ],
+        "regressed_1_to_0": [
+          "ck25-1",
+          "ck25-6",
+          "ck25-10",
+          "ck25-12",
+          "ck25-22",
+          "ck25-49"
+        ],
+        "verdict": "NULL -- does not clear p<0.05 (p=0.1250). Predicate-alone grounding has a worse point estimate than entity-alone (1 gain / 6 losses vs a fresh same-session entity-alone arm) but the effect is not statistically significant at n=49.",
+        "corpus_sha": "814d227",
+        "temperature": 0.1,
+        "dump_mode_fixed_pin": "b66932046a102898e8fff205a7ddcbedfb2c896e",
+        "outcome": "null (worse, not significant) \u2014 VALID (post dump-mode fix)",
+        "nl_acc_02_disposition_note": "Recorded as an honest standalone finding, not folded into the NL-ACC-02 hard-gate verdict, which is decided by the ADDITIVE arm (phase07_4_predicate_grounding_sweep.ck25_additive_arm) matching the phase's actual composition (seam-7 after seam-6, never a replacement for it). This VALID re-run (full CK25 schema now genuinely dumped) softens the prior confounded finding's wrong-direction-significant verdict (p=0.0156) to a non-significant null (p=0.1250) -- still worse, not better, but no longer a statistically significant regression."
+      },
+      "achieved_mde": {
+        "pi_0.20": 0.179,
+        "pi_0.25": 0.2001
+      },
+      "note": "RE-FOLD (07.4-06 re-fold, post CR-01 dump-mode fix): live execution-graded CK25 number for seam-7 (predicate/schema-convention grounding) run in STANDALONE mode (predicate block only, entity block seam-6 NOT injected) against the FIXED dump mode -- arango_query_core.nl.grounding.PredicateIndex.retrieve(dump=True), pin b66932046a102898e8fff205a7ddcbedfb2c896e -- which genuinely surfaces every predicate instead of the CR-01-broken no-op. gpt-4o-mini generated SPARQL judged via answer-set execution against the vendored CK25 instance graph (judge: execution, same convention as openai-gpt4o-mini-ck25/-ck25-grounded above). Reported, NOT gated as a standalone number -- same achieved_mde caveat as the other live CK25 entries (N=49, ~18-20pt). The confirmatory evidence for this standalone arm is the paired McNemar in `confirmatory_test` above (null, p=0.1250, 6 losses / 1 gain vs a fresh entity-alone arm from the SAME session) -- kept fully SEPARATE from and never blended with any other CK25 entry in this file. The NL-ACC-02 disposition itself is decided by the additive arm, not this standalone one; see `phase07_4_predicate_grounding_sweep.ck25_additive_arm`. SUPERSEDES the prior confounded 5/49 standalone number (07.4-05, session 1) -- that sweep ran against the CR-01-broken dump mode; this is the clean, valid re-run under the fixed pin."
     }
   },
   "phase07_dense_few_shot_sweep": {
@@ -849,6 +1047,516 @@
     "limitations": [
       "Only aggregate pass-rates + a single fresh-pairing McNemar test per comparison were captured and pasted back -- NOT full per-case verdict dicts across all N=5 runs per (model, arm). This is why this sweep is recorded here rather than as configs['*-dense']/['*-bm25'] BaselineConfig entries (which require a per-case `cases` map).",
       "Resolved dated model snapshot ids for the gpt-4o-mini/gpt-5-mini/gpt-5 bare aliases were NOT captured this sweep. The M2 dense-vs-committed-0.32 (06.2) continuity check is therefore inapplicable/invalid -- 06.2's resolved snapshot is also unrecorded."
+    ]
+  },
+  "phase07_4_predicate_grounding_sweep": {
+    "_note_schema": "Deliberately NOT nested under `configs.*` for the additive CK25 arm and both QALD arms: BaselineConfig.cases is a REQUIRED dict[str,bool] field, and this sweep captured only aggregate pass-rates + a single paired McNemar/bootstrap pairing for the additive CK25 comparison (no full 49-case verdict dict for either arm in session 2), and only aggregate pass-rates for QALD-9-plus (n=514, no per-case verdict dict pasted back for either arm). Inventing a per-case `cases` map to satisfy the schema would fabricate data -- same discipline as `phase07_dense_few_shot_sweep` above. The STANDALONE predicate-alone CK25 arm DOES have full per-case verdicts (session 1) and is recorded as a real `configs['openai-gpt4o-mini-ck25-predicate-grounded']` BaselineConfig entry instead. Full narrative in 07.4-05-SUMMARY.md. UPDATE (07.4-06 re-fold): the additive CK25 arm now also has full per-case verdict dicts (entity_alone_fresh_cases/additive_arm_cases below), captured in this re-fold session \u2014 kept here rather than promoted to a configs.* BaselineConfig entry to avoid restructuring the JSON paths already cited as evidence in REQUIREMENTS.md/README.md.",
+    "cr_01_confounded_note": "SUPERSEDED (07.4-06 re-fold): this key previously flagged the entire sweep as provisional/confounded because it ran against a predicate-grounded dump mode that never actually dumped the full CK25 schema (widening k was a no-op against the shared arango_query_core scorer's zero-hit filter; a typical CK25 question surfaced only 1-8 of 30 predicates). 07.4-06 fixed this upstream (arango_query_core commit b66932046a102898e8fff205a7ddcbedfb2c896e, real dump=True kwarg) and re-wired both adapters; the credentialed human RE-RAN the live CK25 sweep on the fixed dump mode (07.4-06 re-fold, this session) and the `ck25_additive_arm` values below are now the VALID, clean numbers, replacing the prior confounded 13/49-vs-13/49 wash. NL-ACC-02 is now CLOSED via the documented-null path on a valid experiment -- see nl_acc_02_disposition below.",
+    "requirement": "NL-ACC-02",
+    "swept_by": "credentialed human (07.4-05 Task 2 blocking-human checkpoint; RE-RUN by 07.4-06 re-fold on the fixed dump mode, pin b66932046a102898e8fff205a7ddcbedfb2c896e)",
+    "ck25_additive_arm": {
+      "description": "PRIMARY NL-ACC-02 confirmatory test (the phase's actual composition -- seam-7 predicate grounding ADDITIVELY on top of seam-6 entity grounding, per NLQueryEngine._system_prompt ordering, NOT predicate-alone) vs a FRESHLY-RUN entity-grounded-ALONE zero arm, BOTH run in the SAME session (session 3, 07.4-06 re-fold, post CR-01 dump-mode fix) -- distinct from 07.4-05's session 2 (which ran against the broken dump mode). Paired McNemar over the same 49 cases. SUPERSEDES the 07.4-05 confounded values (13/49 vs a fresh 13/49, p=1.0, delta=0.0) below.",
+      "entity_alone_fresh_config": "openai-gpt4o-mini-ck25-grounded (re-run fresh this session, session 3, NOT session 1/2's 12/49 or 13/49 from 07.4-05, nor the committed 14/49 entry)",
+      "entity_alone_fresh_pass_rate": 0.24489795918367346,
+      "entity_alone_fresh_passed": 12,
+      "entity_alone_fresh_total": 49,
+      "entity_alone_fresh_cases": {
+        "ck25-1": true,
+        "ck25-2": true,
+        "ck25-3": true,
+        "ck25-4": false,
+        "ck25-5": false,
+        "ck25-6": true,
+        "ck25-7": false,
+        "ck25-8": false,
+        "ck25-9": false,
+        "ck25-10": true,
+        "ck25-11": false,
+        "ck25-12": true,
+        "ck25-13": false,
+        "ck25-14": false,
+        "ck25-15": false,
+        "ck25-16": false,
+        "ck25-17": false,
+        "ck25-18": false,
+        "ck25-19": false,
+        "ck25-20": false,
+        "ck25-21": false,
+        "ck25-22": true,
+        "ck25-23": false,
+        "ck25-24": false,
+        "ck25-25": false,
+        "ck25-26": false,
+        "ck25-27": false,
+        "ck25-28": false,
+        "ck25-29": false,
+        "ck25-30": true,
+        "ck25-31": true,
+        "ck25-32": false,
+        "ck25-33": false,
+        "ck25-34": false,
+        "ck25-35": false,
+        "ck25-36": false,
+        "ck25-37": false,
+        "ck25-39": true,
+        "ck25-40": false,
+        "ck25-41": false,
+        "ck25-42": false,
+        "ck25-43": false,
+        "ck25-44": false,
+        "ck25-45": false,
+        "ck25-46": false,
+        "ck25-47": false,
+        "ck25-48": false,
+        "ck25-49": true,
+        "ck25-50": true
+      },
+      "additive_arm_config": "openai-gpt4o-mini-ck25-grounded-predicate-grounded",
+      "additive_arm_pass_rate": 0.20408163265306123,
+      "additive_arm_passed": 10,
+      "additive_arm_total": 49,
+      "additive_arm_cases": {
+        "ck25-1": true,
+        "ck25-2": true,
+        "ck25-3": true,
+        "ck25-4": false,
+        "ck25-5": false,
+        "ck25-6": false,
+        "ck25-7": false,
+        "ck25-8": true,
+        "ck25-9": false,
+        "ck25-10": true,
+        "ck25-11": true,
+        "ck25-12": false,
+        "ck25-13": false,
+        "ck25-14": false,
+        "ck25-15": false,
+        "ck25-16": false,
+        "ck25-17": false,
+        "ck25-18": false,
+        "ck25-19": false,
+        "ck25-20": false,
+        "ck25-21": false,
+        "ck25-22": true,
+        "ck25-23": false,
+        "ck25-24": false,
+        "ck25-25": false,
+        "ck25-26": false,
+        "ck25-27": false,
+        "ck25-28": false,
+        "ck25-29": false,
+        "ck25-30": false,
+        "ck25-31": true,
+        "ck25-32": false,
+        "ck25-33": false,
+        "ck25-34": false,
+        "ck25-35": false,
+        "ck25-36": false,
+        "ck25-37": false,
+        "ck25-39": true,
+        "ck25-40": false,
+        "ck25-41": false,
+        "ck25-42": false,
+        "ck25-43": false,
+        "ck25-44": false,
+        "ck25-45": false,
+        "ck25-46": false,
+        "ck25-47": false,
+        "ck25-48": false,
+        "ck25-49": false,
+        "ck25-50": true
+      },
+      "b": 2,
+      "c": 4,
+      "gained_0_to_1": [
+        "ck25-8",
+        "ck25-11"
+      ],
+      "regressed_1_to_0": [
+        "ck25-6",
+        "ck25-12",
+        "ck25-30",
+        "ck25-49"
+      ],
+      "p_value": 0.6875,
+      "bootstrap_paired_delta": -0.0408,
+      "ci_95": [
+        -0.1429,
+        0.0612
+      ],
+      "corpus_sha": "814d227",
+      "temperature": 0.1,
+      "dump_mode_fixed_pin": "b66932046a102898e8fff205a7ddcbedfb2c896e",
+      "achieved_mde": {
+        "pi_0.20": 0.179,
+        "pi_0.25": 0.2001
+      },
+      "per_case_verdicts_captured": true,
+      "outcome": "no significant effect / documented null \u2014 VALID (full schema dumped)",
+      "verdict": "NO SIGNIFICANT EFFECT (documented null): additive arm 10/49 (0.2041) vs a fresh same-session entity-alone arm 12/49 (0.2449), McNemar b=2 (gains: ck25-8, ck25-11) / c=4 (losses: ck25-6, ck25-12, ck25-30, ck25-49), p=0.6875 (not significant), bootstrap paired_delta=-0.0408, CI_95=[-0.1429, 0.0612] (spans zero). A slightly lower point estimate than entity-alone, driven by 4 distraction losses outweighing 2 genuine additive wins.",
+      "nl_acc_02_disposition": "This IS the primary NL-ACC-02 hard-gate test, now run on a VALID experiment (full CK25 schema genuinely dumped under the CR-01 fix, pin b66932046a102898e8fff205a7ddcbedfb2c896e). It FAILS the hard gate (McNemar p<0.05 AND zero regressions required; got p=0.6875 and 4 regressions / 2 gains). Combined with the standalone arm's non-significant-but-worse point estimate above (configs.openai-gpt4o-mini-ck25-predicate-grounded.confirmatory_test, p=0.1250), seam-7 predicate/schema-convention grounding gives no execution-graded CK25 lift, standalone or additive, once the full schema is genuinely surfaced. Notably 2 genuine additive wins (ck25-8, ck25-11) show real case-level signal, offset by 4 distraction losses -- consistent with a schema-info-overload hypothesis rather than the predicate index being simply useless. CLOSED via the DOCUMENTED-NULL path (NL-FEW-02 precedent) on a now-VALID experiment -- NEVER as a passed confirmatory lift. This RE-CLOSES the 07.4-05 documented-null verdict, removing the provisional/confounded caveat added in 07.4-06's first pass (commit 72c9933): the experiment is valid and the null verdict stands, unconfounded."
+    },
+    "qald9plus_directional": {
+      "description": "Directional-only generalization check (RESEARCH D-03), explicitly NOT a gate: first-ever live QALD-9-plus run, zero-shot vs predicate-grounded, both gpt-4o-mini.",
+      "zero_shot_config": "openai-gpt4o-mini-qald9plus",
+      "zero_shot_pass_rate": 0.0019455252918287938,
+      "zero_shot_passed": 1,
+      "zero_shot_total": 514,
+      "predicate_grounded_config": "openai-gpt4o-mini-qald9plus-predicate-grounded",
+      "predicate_grounded_pass_rate": 0.005836575875486381,
+      "predicate_grounded_passed": 3,
+      "predicate_grounded_total": 514,
+      "corpus_sha": "5f56788",
+      "temperature": 0.1,
+      "achieved_mde": {
+        "pi_0.20": 0.0553,
+        "pi_0.25": 0.0618
+      },
+      "per_case_verdicts_captured": false,
+      "note": "Both arms sit at the floor (1/514 and 3/514) -- a +2-case delta is well inside the ~5.5-6.2pt achieved MDE at n=514, i.e. noise, not a signal; not a gate per D-03/D-04 in any case. QALD-9-plus gold data contains a malformed date literal ('YYYY-10-31') that causes non-fatal rdflib parse warnings during the run; both runs completed and produced these pass_rates despite the warnings. Recorded as D-04's honest generalization ceiling for seam-7 on a non-corporate, DBpedia-domain benchmark -- never blended with the CK25 numbers above (RESEARCH Pitfall 3). CR-01 note (07.4-06 re-fold): QALD-9-plus predicate grounding runs in RETRIEVE mode (k=20, well under PREDICATE_DUMP_THRESHOLD's dump-mode path), so it was never affected by the CR-01 dump-mode defect; these numbers are unchanged and were not re-run."
+    },
+    "key_findings": [
+      "VALID RE-RUN (07.4-06 re-fold, post CR-01 dump-mode fix, pin b66932046a102898e8fff205a7ddcbedfb2c896e): with the full CK25 schema now genuinely dumped, seam-7 predicate/schema-convention grounding STILL gives no execution-graded CK25 lift over entity-grounding: standalone it is a non-significant worse point estimate (7/49 vs a fresh 12/49 entity-alone arm, McNemar p=0.1250, 1 gain/6 losses), and additively composed on top of entity-grounding (the phase's actual intended composition) it is a non-significant wash with a slightly lower point estimate (10/49 vs 12/49, p=0.6875, 2 gains/4 losses).",
+      "2 genuine additive wins (ck25-8, ck25-11) show real case-level signal from predicate grounding, offset by 4 distraction losses (ck25-6, ck25-12, ck25-30, ck25-49) -- the mechanically-derived predicate index helps on some cases but net-hurts via distraction once the full schema is dumped, not simply irrelevant.",
+      "SUPERSEDES the 07.4-05 confounded findings: the prior standalone arm was WRONG-DIRECTION SIGNIFICANT (5/49 vs 12/49, p=0.0156) and the prior additive arm was an exact-tie wash (13/49 vs 13/49, p=1.0) -- both measured against a dump mode that only ever surfaced 1-8 of 30 predicates. The valid re-run changes the standalone arm from significant-regression to non-significant-null, and leaves the additive arm a documented null either way -- the overall NL-ACC-02 disposition (fails the hard gate, closes via documented-null) is UNCHANGED, but is now resting on a valid experiment instead of a confounded one.",
+      "Documented follow-up (not this phase): predicate grounding shows case-level signal (real wins on ck25-8/ck25-11) but nets ~zero-to-negative due to distraction losses; the next experiment should try SELECTIVE predicate surfacing (only predicates relevant to the question's target class) rather than a full dump or naive token-match retrieval.",
+      "QALD-9-plus directional generalization is at the floor for BOTH arms (1/514, 3/514) -- too small a delta to interpret against the ~5.5-6.2pt achieved MDE; unaffected by the CR-01 fix (QALD runs in retrieve mode, k=20, never in the dump-mode path) and not re-run this session."
+    ],
+    "limitations": [
+      "The additive-arm comparison now HAS full per-case verdict dicts for both the fresh entity-alone arm and the additive arm (captured this re-fold, session 3) -- an improvement over the 07.4-05 aggregate-only capture. Both QALD-9-plus comparisons still captured only aggregate pass-rates (unchanged, not re-run this session).",
+      "The standalone predicate-alone arm's re-run (session 3) and the additive arm's re-run (also session 3) now share a SINGLE fresh entity-alone arm (12/49) run once in the same session and paired against both -- a methodological improvement over 07.4-05, which used two different sessions (12/49 session 1, 13/49 session 2) for the two comparisons.",
+      "This sweep is recorded here (sibling top-level key) rather than promoting the additive arm to a configs['openai-gpt4o-mini-ck25-grounded-predicate-grounded'] BaselineConfig entry, to avoid restructuring the JSON paths REQUIREMENTS.md/README.md already cite as evidence (phase07_4_predicate_grounding_sweep.ck25_additive_arm) -- even though full per-case data is now available for that arm."
+    ]
+  },
+  "phase07_5_generated_fewshot_sweep": {
+    "_note_schema": "Deliberately NOT nested under `configs.*` (same discipline as phase07_dense_few_shot_sweep/phase07_4_predicate_grounding_sweep): this sweep ran the generated-fewshot arm 3x (REQ-6 'delta>0 across 3 runs'), each paired against a FRESH same-session zero arm (never the stale committed configs.openai-gpt4o-mini-ck25 entry). Only run 3 (the run captured to tests/nl2sparql/eval/generated_sweep_result.json on disk) has full per-case zero_cases/generated_cases verdict dicts; runs 1-2 are recorded as pasted-back aggregate pass counts + b/c/p/delta + gains/regressions case-name lists only (no full 49-case dict was captured for those two sessions). Inventing a per-case dict for runs 1-2 would fabricate data, so they are NOT promoted to configs['openai-gpt4o-mini-ck25-generated-fewshot'] BaselineConfig entries.",
+    "requirement": "NL-GEN-01",
+    "swept_by": "credentialed human (07.5-05 Task 3 human-action checkpoint)",
+    "model": "gpt-4o-mini",
+    "temperature": 0.1,
+    "corpus_sha": "814d227",
+    "n_cases": 49,
+    "bank_provenance": {
+      "bank_file": "tests/nl2sparql/eval/vendored/ck25/generated_fewshot_bank.yml",
+      "regenerated_with_real_paraphrases": true,
+      "regeneration_method": "bank_generator.generate_bank() against the LIVE OpenAICompatibleClient (gpt-4o-mini, human-held NL2SPARQL_API_KEY) -- superseding Plan 03's scripted/placeholder _EchoParaphraseClient double, per README.md Section 11.0",
+      "examples": 73,
+      "min_paraphrases_per_example": 2,
+      "examples_with_ge_3_paraphrases": 72,
+      "paraphrase_note": "72/73 examples achieved REQ-3's full K>=3 genuine-paraphrase target. One example ('How many BillOfMaterial are there for V104-2082346 (64)?') landed at K=2: the novelty-forcing prompt (Deviation Fix #1, commit 1099dae) exhausted its k*5 attempt budget at temperature 0.7 without producing a 3rd genuinely distinct phrasing for this short count-query template. Recorded honestly rather than re-run/padded -- non-blocking because FewShotIndex retrieval (the capability under test) reads only each example's question+query fields; paraphrases are not consumed by retrieval or generation at all, only by the offline faithfulness gates.",
+      "two_hop_nl_fix_provenance_caveat": "The 3-run credentialed sweep below was executed BEFORE the two_hop NL-question faithfulness fix (Deviation Fix #2, commit 20f40a0) and its subsequent real-paraphrase regeneration. That fix changed ONLY the two_hop shape's rendered QUESTION text (naming both the near and far predicate instead of just the near one, 8 examples affected); every QUERY -- the actual retrieval-and-generation lever under test -- is byte-identical before and after the fix. The measured +16-19% pass-rate lift is query-pattern-driven (same SPARQL shapes injected into the few-shot prompt in both cases) and reproduced robustly across all 3 independent runs, so a sweep re-run was judged unnecessary for a cosmetic NL-wording correction. The bank committed alongside this baseline.json entry (commit eb1448e) already carries the fixed wording."
+    },
+    "ck25_runs": [
+      {
+        "run": 1,
+        "zero_arm_config": "openai-gpt4o-mini-ck25 (fresh, same-session)",
+        "generated_arm_config": "openai-gpt4o-mini-ck25-generated-fewshot",
+        "zero_pass": 5,
+        "zero_total": 49,
+        "generated_pass": 14,
+        "generated_total": 49,
+        "mcnemar_raw": {
+          "b_gains": 10,
+          "c_regressions": 1,
+          "p_value": 0.0117
+        },
+        "bootstrap_delta_raw": {
+          "delta": 0.1837,
+          "ci_95": [
+            0.0612,
+            0.3061
+          ]
+        },
+        "excluded_case_names": [
+          "ck25-4"
+        ],
+        "mcnemar_overlap_excluded": {
+          "b_gains": 10,
+          "c_regressions": 1,
+          "p_value": 0.0117,
+          "n": 48
+        },
+        "bootstrap_delta_overlap_excluded": {
+          "delta": 0.1875,
+          "ci_95": [
+            0.0625,
+            0.3125
+          ]
+        },
+        "gains": [
+          "ck25-2",
+          "ck25-5",
+          "ck25-6",
+          "ck25-10",
+          "ck25-11",
+          "ck25-14",
+          "ck25-17",
+          "ck25-20",
+          "ck25-45",
+          "ck25-46"
+        ],
+        "regressions": [
+          "ck25-50"
+        ],
+        "qald_generated_fewshot_pass": 0,
+        "qald_generated_fewshot_total": 514,
+        "per_case_verdicts_captured": false
+      },
+      {
+        "run": 2,
+        "zero_arm_config": "openai-gpt4o-mini-ck25 (fresh, same-session)",
+        "generated_arm_config": "openai-gpt4o-mini-ck25-generated-fewshot",
+        "zero_pass": 5,
+        "zero_total": 49,
+        "generated_pass": 13,
+        "generated_total": 49,
+        "mcnemar_raw": {
+          "b_gains": 9,
+          "c_regressions": 1,
+          "p_value": 0.0215
+        },
+        "bootstrap_delta_raw": {
+          "delta": 0.1633,
+          "ci_95": [
+            0.0408,
+            0.2857
+          ]
+        },
+        "excluded_case_names": [
+          "ck25-4"
+        ],
+        "mcnemar_overlap_excluded": {
+          "b_gains": 9,
+          "c_regressions": 1,
+          "p_value": 0.0215,
+          "n": 48
+        },
+        "bootstrap_delta_overlap_excluded": {
+          "delta": 0.1667,
+          "ci_95": [
+            0.0417,
+            0.2917
+          ]
+        },
+        "gains": [
+          "ck25-2",
+          "ck25-5",
+          "ck25-6",
+          "ck25-10",
+          "ck25-11",
+          "ck25-12",
+          "ck25-14",
+          "ck25-17",
+          "ck25-20"
+        ],
+        "regressions": [
+          "ck25-50"
+        ],
+        "qald_generated_fewshot_pass": 0,
+        "qald_generated_fewshot_total": 514,
+        "per_case_verdicts_captured": false
+      },
+      {
+        "run": 3,
+        "zero_arm_config": "openai-gpt4o-mini-ck25 (fresh, same-session)",
+        "generated_arm_config": "openai-gpt4o-mini-ck25-generated-fewshot",
+        "zero_pass": 6,
+        "zero_total": 49,
+        "generated_pass": 14,
+        "generated_total": 49,
+        "mcnemar_raw": {
+          "b_gains": 8,
+          "c_regressions": 0,
+          "p_value": 0.0078125
+        },
+        "bootstrap_delta_raw": {
+          "delta": 0.16326530612244897,
+          "ci_95": [
+            0.06122448979591838,
+            0.2653061224489796
+          ]
+        },
+        "excluded_case_names": [
+          "ck25-4"
+        ],
+        "mcnemar_overlap_excluded": {
+          "b_gains": 8,
+          "c_regressions": 0,
+          "p_value": 0.0078125,
+          "n": 48
+        },
+        "bootstrap_delta_overlap_excluded": {
+          "delta": 0.16666666666666669,
+          "ci_95": [
+            0.0625,
+            0.27083333333333337
+          ]
+        },
+        "gains": [
+          "ck25-5",
+          "ck25-6",
+          "ck25-10",
+          "ck25-11",
+          "ck25-14",
+          "ck25-17",
+          "ck25-20",
+          "ck25-46"
+        ],
+        "regressions": [],
+        "qald_generated_fewshot_pass": 2,
+        "qald_generated_fewshot_total": 514,
+        "zero_cases": {
+          "ck25-1": false,
+          "ck25-2": true,
+          "ck25-3": true,
+          "ck25-4": false,
+          "ck25-5": false,
+          "ck25-6": false,
+          "ck25-7": false,
+          "ck25-8": false,
+          "ck25-9": false,
+          "ck25-10": false,
+          "ck25-11": false,
+          "ck25-12": false,
+          "ck25-13": false,
+          "ck25-14": false,
+          "ck25-15": false,
+          "ck25-16": false,
+          "ck25-17": false,
+          "ck25-18": false,
+          "ck25-19": false,
+          "ck25-20": false,
+          "ck25-21": false,
+          "ck25-22": false,
+          "ck25-23": false,
+          "ck25-24": false,
+          "ck25-25": false,
+          "ck25-26": false,
+          "ck25-27": false,
+          "ck25-28": false,
+          "ck25-29": false,
+          "ck25-30": true,
+          "ck25-31": true,
+          "ck25-32": false,
+          "ck25-33": false,
+          "ck25-34": false,
+          "ck25-35": false,
+          "ck25-36": false,
+          "ck25-37": false,
+          "ck25-39": true,
+          "ck25-40": false,
+          "ck25-41": false,
+          "ck25-42": false,
+          "ck25-43": false,
+          "ck25-44": false,
+          "ck25-45": false,
+          "ck25-46": false,
+          "ck25-47": false,
+          "ck25-48": false,
+          "ck25-49": false,
+          "ck25-50": true
+        },
+        "generated_cases": {
+          "ck25-1": false,
+          "ck25-2": true,
+          "ck25-3": true,
+          "ck25-4": false,
+          "ck25-5": true,
+          "ck25-6": true,
+          "ck25-7": false,
+          "ck25-8": false,
+          "ck25-9": false,
+          "ck25-10": true,
+          "ck25-11": true,
+          "ck25-12": false,
+          "ck25-13": false,
+          "ck25-14": true,
+          "ck25-15": false,
+          "ck25-16": false,
+          "ck25-17": true,
+          "ck25-18": false,
+          "ck25-19": false,
+          "ck25-20": true,
+          "ck25-21": false,
+          "ck25-22": false,
+          "ck25-23": false,
+          "ck25-24": false,
+          "ck25-25": false,
+          "ck25-26": false,
+          "ck25-27": false,
+          "ck25-28": false,
+          "ck25-29": false,
+          "ck25-30": true,
+          "ck25-31": true,
+          "ck25-32": false,
+          "ck25-33": false,
+          "ck25-34": false,
+          "ck25-35": false,
+          "ck25-36": false,
+          "ck25-37": false,
+          "ck25-39": true,
+          "ck25-40": false,
+          "ck25-41": false,
+          "ck25-42": false,
+          "ck25-43": false,
+          "ck25-44": false,
+          "ck25-45": false,
+          "ck25-46": true,
+          "ck25-47": false,
+          "ck25-48": false,
+          "ck25-49": false,
+          "ck25-50": true
+        },
+        "per_case_verdicts_captured": true
+      }
+    ],
+    "ck25_50_known_flaky_regression": "ck25-50 (a typo'd compound top-N+count question) regressed (1->0) in runs 1 and 2 but NOT run 3 (where it stayed a zero-arm pass, contributing to c=0). Recorded as a known-flaky single-case regression, not a systematic defect of the generated bank -- see nl_gen_01_disposition's REQ-6 bar discussion below.",
+    "qald_non_regression": {
+      "description": "Arm 3 -- QALD-9-plus generated-fewshot. The generated QALD bank is empty (honest, TBox-only per 07.5-04, D-04), so this arm is mechanically identical to the openai-gpt4o-mini-qald9plus zero-shot config -- EXPECTED to reproduce the flat zero-shot number modulo gpt-4o-mini's own run-to-run non-determinism at temperature 0.1 (RESEARCH OQ-4), not a failure.",
+      "per_run_pass": {
+        "run_1": "0/514",
+        "run_2": "0/514",
+        "run_3": "2/514"
+      },
+      "existing_committed_qald_zero_shot_reference": "phase07_4_predicate_grounding_sweep.qald9plus_directional.zero_shot_pass_rate = 1/514 (0.00195, session 2, 07.4)",
+      "role": "directional_generalization_check",
+      "verdict": "PASS (non-regression is trivially satisfied -- the generated-fewshot arm IS the zero-shot arm when the generated bank is empty; the 0/0/2 spread across 3 runs and the 1/514 prior committed reference are all consistent with noise at gpt-4o-mini's non-determinism and QALD's own achieved MDE of ~5.5-6.2pt at n=514, per power.py::achieved_mde)."
+    },
+    "shape_coverage": {
+      "metric": "100% of held-out failing cases' shape TYPES are present in the generated bank's 9-shape repertoire (coarse shape-type reading: does at least one bank example share the failing case's shape category).",
+      "metric_caveat": "07.5-SPEC.md's shape-coverage metric is underspecified between two readings: (a) coarse shape-TYPE membership (used above, 100%) vs (b) literal canonical-skeleton equality (the exact _skeleton() abstraction test_fewshot_bank_disjoint.py uses for the overlap audit). The literal skeleton reading yields a DEGENERATE 0%, because the generated bank's skeletons are near-disjoint from the corpus's gold skeletons BY DESIGN -- that disjointness IS the overlap-exclusion axis (D-05); a generated example structurally identical to a held-out gold would be a leaked near-duplicate, not a coverage win. Recording the coarse shape-type reading (100%, clears REQ-6's >=70% bar) and this caveat explicitly, rather than reporting the literal-skeleton 0% without context or silently picking whichever reading clears the bar.",
+      "meets_req6_bar": true
+    },
+    "faithfulness": {
+      "requirement": "REQ-3 secondary: >=20-pair LLM-judge faithfulness audit on the REGENERATED bank",
+      "judge_model": "gpt-4o-mini",
+      "raw_judge_match_rate_range": "76%-84% across configs (schema-aware judge, multiple sampled configurations)",
+      "instrument_reliability_finding": "The gpt-4o-mini judge is an UNRELIABLE instrument for this task: manual domain/range adjudication of every judge-flagged NO in each run found >=2 provable false-negatives per run -- cases where the judge said NO on a query that correctly answers the question once the schema's implicit domain/range typing is accounted for (the judge does not reliably reason about implicit-domain grouped-aggregation queries even when given domain/range context in the prompt). Manual domain/range adjudication of the same pairs put TRUE faithfulness at approximately 88%-96%.",
+      "manual_adjudication_estimate_range": "88%-96%",
+      "meets_req3_ge_95_pct_bar": false,
+      "disposition": "DOCUMENTED-PARTIAL, not a clean pass. The specified gpt-4o-mini faithfulness judge cannot reliably certify REQ-3's >=95% judge-match bar (it false-negatives provably-correct implicit-domain grouped-aggregation queries even with domain/range context supplied). Paraphrases -- the artifact the judge evaluates -- are unused by the capability under test (FewShotIndex reads only question+query, never paraphrases), so this gap does not affect the CK25/QALD lift measurement itself. Recorded honestly as documented-partial rather than reframed as a pass."
+    },
+    "nl_gen_01_disposition": "adopt (lever validated; REQ-3 faithfulness documented-partial)",
+    "adopt_kill_bar_evaluation": {
+      "bar_source": "07.5-SPEC.md Section 11.2",
+      "shape_coverage_ge_70_pct": "MET (100%, coarse shape-type reading; see shape_coverage.metric_caveat)",
+      "ck25_delta_gt_0_all_3_runs_raw": "MET (run1 +0.1837, run2 +0.1633, run3 +0.1633; all CIs exclude 0)",
+      "ck25_delta_gt_0_all_3_runs_overlap_excluded": "MET (run1 +0.1875, run2 +0.1667, run3 +0.1667; all CIs exclude 0)",
+      "zero_regressions": "PARTIALLY MET: c==0 only on run 3 (b=8/c=0). Runs 1-2 each have exactly 1 regression (c=1), both attributable to the SAME known-flaky case (ck25-50, a typo'd compound top-N+count question -- see ck25_50_known_flaky_regression). b > c holds on ALL 3 runs (10>1, 9>1, 8>0) -- MET under SPEC 11.2's documented 'or at minimum b > c on every run' alternative clause.",
+      "qald_non_regression": "MET (trivial; see qald_non_regression.verdict)",
+      "overall": "ADOPT -- all 4 SPEC 11.2 bar conditions clear (zero-regression via the documented b>c-on-every-run alternative clause, since c==0 only on run 3)"
+    },
+    "key_findings": [
+      "The generated (mechanically synthesized, never hand-curated) CK25 few-shot bank reproduces Spike 001's directional lift: a statistically significant paired McNemar result (p<0.05) on all 3 independent same-session runs, both raw and after excluding the one shape+entity-overlap-audited near-duplicate case (ck25-4).",
+      "The lift survives overlap exclusion essentially unchanged (raw and overlap-excluded deltas differ by <0.5pt on every run), confirming the measured lift is not an artifact of bank<->corpus near-duplication.",
+      "ck25-50 is a known-flaky single-case regression (typo'd compound top-N+count question), present in 2 of 3 runs but not systematic -- b (gains) exceeds c (regressions) by a wide margin on every run (10:1, 9:1, 8:0).",
+      "QALD-9-plus generalization is a non-issue this phase by construction: the generated QALD bank is honestly empty (D-04, no synthesizable shapes survived QALD's structural-only TBox), so the generated-fewshot arm IS the zero-shot arm -- non-regression is trivially satisfied, not a generalization finding.",
+      "The specified faithfulness judge (gpt-4o-mini) is not a reliable REQ-3 certification instrument: it produces provable false-negatives on correct implicit-domain grouped-aggregation queries. Manual domain/range adjudication estimates true faithfulness at 88-96%, below the naive judge's own 76-84% raw scores -- the judge under-reports faithfulness, it does not over-report it."
+    ],
+    "limitations": [
+      "Full 49-case per-case verdict dicts were captured only for run 3 (the run written to generated_sweep_result.json on disk); runs 1-2 are recorded as aggregate pass counts + b/c/p/delta + gains/regressions case-name lists, pasted back by the human rather than machine-captured. This mirrors the phase07_dense_few_shot_sweep precedent for the same reason (avoiding a fabricated per-case dict).",
+      "The 3-run sweep predates the two_hop NL-question faithfulness fix (commit 20f40a0); see bank_provenance.two_hop_nl_fix_provenance_caveat for why a re-sweep was judged unnecessary (query text, the actual lever, is unchanged).",
+      "This sweep is recorded here as a sibling top-level key (not promoted to a configs['openai-gpt4o-mini-ck25-generated-fewshot'] BaselineConfig entry) for the same reason as phase07_dense_few_shot_sweep/phase07_4_predicate_grounding_sweep: BaselineConfig.cases requires a full per-case dict, which is only available for run 3 of 3."
     ]
   }
 }

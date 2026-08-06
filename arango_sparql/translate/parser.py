@@ -28,6 +28,18 @@ from rdflib.plugins.sparql.parser import parseQuery
 
 from ..errors import SparqlParseError
 
+# NOTE (known issue — see .planning/phases/04-.../deferred-items.md):
+# rdflib's SPARQL grammar uses module-level singleton pyparsing
+# ``ParserElement`` objects with no thread-safety guarantee, so
+# concurrent ``parseQuery``/``translateQuery`` calls can race under
+# FastAPI's threaded dispatch (observed as a spurious
+# ``<lambda>() missing 1 required positional argument: 'x'`` under
+# concurrent load in ``tests/perf/test_concurrency.py``). A module-level
+# lock was trialled but reverted (Phase 04): acquiring it from the async
+# ``/sparql`` routes stalled the asyncio event loop. A proper fix
+# (offloading parse to a threadpool executor, or a per-thread grammar)
+# is deferred to a dedicated plan.
+
 
 @dataclass
 class ParsedSparql:

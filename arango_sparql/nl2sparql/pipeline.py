@@ -56,10 +56,18 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from arango_query_core.nl import FewShotIndex
 from arango_query_core.nl.engine import NLQueryEngine
+from arango_query_core.nl.grounding import LabelIndex
+
+if TYPE_CHECKING:
+    # Seam 7 (predicate/schema-convention grounding, 07.4) — PredicateIndex is
+    # only added to arango_query_core.nl.grounding at the seam-7 SHA Plan 02
+    # Task 2 pins. Guard the import so this module still loads cleanly against
+    # the still-old pin between Task 1 (this file) and Task 2 (the pin bump).
+    from arango_query_core.nl.grounding import PredicateIndex
 
 from ..api import TranslateResult
 from ..api import translate as _translate
@@ -92,12 +100,28 @@ class NlPipeline:
     can vary per call). Call :meth:`run` for ``/nl-translate`` and
     :meth:`explain` for ``/nl-explain``.
 
-    Multitenancy / few-shot / entity-resolution hooks listed in rule
-    300 are deliberately deferred — they will land as separate
-    submodules (``tenant_guardrail.py``, ``fewshot.py``,
-    ``entity_resolution.py``) once the deterministic translator is far
-    enough along to validate the LLM's output against a real schema.
-    The pipeline shape exposed here will absorb those hooks via
+    Multitenancy / entity-resolution hooks listed in rule 300 are
+    deliberately deferred — they will land as separate submodules
+    (``tenant_guardrail.py``, ``entity_resolution.py``) once the
+    deterministic translator is far enough along to validate the LLM's
+    output against a real schema. Few-shot (``fewshot.py``) has landed
+    (Phase 7). Entity/instance grounding (seam 6) also lands here: this
+    pipeline threads ``grounding_k``/``grounding_index`` through to the
+    ``SparqlAdapter``/``NLQueryEngine`` construction in :meth:`run`, but
+    only the eval-harness-injected path is wired this phase — production
+    ``db``-handle-backed grounding (building a ``LabelIndex`` from a
+    live ArangoDB instance graph) remains deferred (RESEARCH Open
+    Question 2), so production callers that omit ``grounding_index``
+    get the honest degraded no-op (``grounding_index=None`` ->
+    ungrounded prompts, byte-identical to pre-Phase-07.3 behavior).
+    Predicate/schema-convention grounding (seam 7, 07.4) follows the exact
+    same pattern one level up the stack: this pipeline threads
+    ``predicate_k``/``predicate_index`` through to the
+    ``SparqlAdapter``/``NLQueryEngine`` construction in :meth:`run`,
+    explicit-injection-only (no production-default TBox predicate index
+    exists yet), so callers that omit ``predicate_index`` get the same
+    honest degraded no-op.
+    The pipeline shape exposed here will absorb the remaining hooks via
     constructor args without breaking the API contract.
     """
 
@@ -110,6 +134,10 @@ class NlPipeline:
         max_repairs: int = 2,
         few_shot_k: int = 3,
         few_shot_index: FewShotIndex | None = None,
+        grounding_k: int = 20,
+        grounding_index: LabelIndex | None = None,
+        predicate_k: int = 20,
+        predicate_index: PredicateIndex | None = None,
     ) -> None:
         self.client = client
         self.resolver = resolver
@@ -120,6 +148,19 @@ class NlPipeline:
         # without needing to edit this file again.
         self.few_shot_k = few_shot_k
         self.few_shot_index = few_shot_index
+        # Entity/instance grounding (seam 6, 07.3) — explicit-injection-only
+        # this phase (mirrors few_shot_index's injection branch); production
+        # callers that omit grounding_index get grounding_index=None, which
+        # SparqlAdapter.grounding_index() returns as-is (ungrounded, no-op).
+        self.grounding_k = grounding_k
+        self.grounding_index = grounding_index
+        # Predicate/schema-convention grounding (seam 7, 07.4) —
+        # explicit-injection-only this phase (mirrors grounding_index's
+        # injection branch); production callers that omit predicate_index
+        # get predicate_index=None, which SparqlAdapter.predicate_index()
+        # returns as-is (ungrounded, no-op).
+        self.predicate_k = predicate_k
+        self.predicate_index = predicate_index
 
     # ------------------------------------------------------------------
     # Public surface
@@ -145,11 +186,15 @@ class NlPipeline:
             resolver=self.resolver,
             ontology_ttl=self.ontology_ttl,
             few_shot_index=self.few_shot_index,
+            grounding_index=self.grounding_index,
+            predicate_index=self.predicate_index,
         )
         engine = NLQueryEngine(
             provider=bridge,
             adapter=adapter,
             few_shot_k=self.few_shot_k,
+            grounding_k=self.grounding_k,
+            predicate_k=self.predicate_k,
             max_retries=self.repair_loop.max_repairs,
         )
         t0 = time.perf_counter()
