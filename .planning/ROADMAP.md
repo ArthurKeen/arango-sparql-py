@@ -25,8 +25,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Deterministic transpiler core** - SPARQL 1.1 → AQL across all physical models; W3C 96.4% (COMPLETE, pre-GSD)
 - [x] **Phase 2: SPARQL 1.1 Protocol service + schema HTTP surface** - Conformant `/sparql` endpoint + 9 schema routes (COMPLETE, pre-GSD)
-- [x] **Phase 3: Operational, security & privacy parity** - Session/CORS/SSRF/redaction/STRIDE/log-envelope/config-gate (COMPLETE, pre-GSD)
-- [ ] **Phase 4: Interoperability & performance verification** - Foxx roundtrip, third-party tools, ontoextract, perf SLOs
+- [ ] **Phase 3: Operational, security & privacy parity** - Runtime session/CORS/SSRF/redaction surfaces exist; required parity/security/privacy/config gates remain incomplete (REOPENED by PRD sync)
+- [ ] **Phase 4: Interoperability & performance verification** - Archived-Foxx semantic inventory started; third-party tools, ontoextract, perf SLOs remain
 - [ ] **Phase 5: UI workbench parity completion** - Playwright/a11y CI harness + 3 backend-blocked WPs
 - [x] **Phase 6: NL→SPARQL eval harness + seed corpus** - Make NL quality measurable; check in `baseline.json` gate (FIRST ACTIVE) (completed 2026-07-15)
 - [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
@@ -45,7 +45,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Success Criteria** (what must be TRUE):
 
   1. W3C DAWG query-eval coverage ≥ 96.4% (244/253 pass), regenerable via `analyze_coverage.py --write`
-  2. Correct AQL emitted for PG / LPG / RPT / DOCUMENT + PG-LPG hybrids + both edge styles
+  2. Correct AQL emitted for PG / LPG / RPT / DOCUMENT + PG-LPG and PG-RPT hybrids + both edge styles
   3. One BGP spanning ≥ 2 physical models produces a single AQL query joined on subject URI (not split, not rejected)
   4. Both schema detectors ship; analyzer wins on `strategy="auto"` with zero false negatives on the fixture corpus
 
@@ -81,22 +81,27 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Adding an env var without updating Appendix A fails CI
 
 **Plans**: Shipped pre-GSD (no plans authored)
-**Status**: COMPLETE — held as no-regression gate
+**Status**: PARTIAL — runtime surfaces exist, but the PRD-required per-surface
+parity tests, STRIDE test matrix, default JSON log contract, no-body logging
+test, and configuration-appendix CI guard remain open.
 
 ### Phase 4: Interoperability & performance verification
 
-**Goal**: Prove drop-in compatibility with the legacy Foxx service, third-party SPARQL tools, `arango-ontoextract`, and the performance budgets.
+**Goal**: Preserve archived Foxx translator semantics and prove compatibility
+with third-party SPARQL tools, `arango-ontoextract`, and the performance budgets.
 **Depends on**: Phase 3
 **Requirements**: REQ-foxx-parity, REQ-thirdparty-tool-compat, REQ-ontoextract-integration, REQ-performance-slos
 **Success Criteria** (what must be TRUE):
 
-  1. ≥ 90% of translatable legacy Foxx fixtures pass a golden emitting semantically equivalent AQL (`test_foxx_roundtrip.py`, Docker-gated)
+  1. ≥ 90% of inventoried translatable legacy Foxx fixtures pass static semantic parity (`tests/legacy/test_legacy_semantic_parity.py`); Foxx is archived/deprecated and is not a runtime dependency
   2. Each §11.1 verified-compatible tool (Protégé, YASGUI, SPARQLWrapper, MS Ontology Playground) passes a smoke test (SELECT + ASK + Service Description)
   3. `arango-ontoextract` completes the Q7 roundtrip via `/mapping/export-owl` + `/mapping/import-owl` (Docker-gated, both services live)
   4. Every §9.4 performance budget row passes within ≤ 25% of its stated p95
 
 **Plans**: TBD
-**Status**: Not started
+**Status**: In progress — static archived-Foxx semantic parity harness has an
+initial three-query inventory; the ≥90% inventory target and the remaining
+interoperability/performance criteria are still open.
 
 ### Phase 5: UI workbench parity completion
 

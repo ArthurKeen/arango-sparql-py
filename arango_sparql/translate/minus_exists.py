@@ -237,6 +237,7 @@ def _translate_probe(
         builder=child_builder,
         resolver=visitor.resolver,
         tenant_id=visitor.tenant_id,
+        base_iri=visitor.base_iri,
     )
     # Pre-seed the child's var_to_expr with the outer scope's
     # bindings so shared variables turn into equality FILTERs

@@ -28,6 +28,18 @@ def test_maps_datatype_properties_by_local_name() -> None:
     }
 
 
+def test_maps_datatype_property_by_declared_attribute_name() -> None:
+    resolver = SchemaResolver.from_turtle(
+        _OWL_PREFIX
+        + "@prefix phys: <https://arango.solutions/phys#> .\n"
+        + "<http://ex.org/displayName> a owl:DatatypeProperty ; "
+        + 'phys:attributeName "display_name" .\n'
+    )
+    assert resolver.attribute_uri_map() == {
+        "display_name": "http://ex.org/displayName",
+    }
+
+
 def test_object_properties_are_excluded() -> None:
     # Object properties live in edge collections, never in document
     # attributes, so they must not shadow a datatype property's slot
@@ -38,6 +50,23 @@ def test_object_properties_are_excluded() -> None:
         + "<http://ex.org/name> a owl:DatatypeProperty .\n"
     )
     assert resolver.attribute_uri_map() == {"name": "http://ex.org/name"}
+
+
+def test_edge_properties_returns_only_materialized_object_properties() -> None:
+    resolver = SchemaResolver.from_turtle(
+        _OWL_PREFIX
+        + "@prefix phys: <https://arango.solutions/phys#> .\n"
+        + "<http://ex.org/title> a owl:DatatypeProperty .\n"
+        + "<http://ex.org/owner> a owl:ObjectProperty ; "
+        + 'phys:edgeCollectionName "owners" .\n'
+        + "<http://ex.org/unmapped> a owl:ObjectProperty .\n"
+    )
+
+    properties = resolver.edge_properties()
+
+    assert [(p.iri, p.edge_collection) for p in properties] == [
+        ("http://ex.org/owner", "owners"),
+    ]
 
 
 def test_empty_ontology_yields_empty_map() -> None:

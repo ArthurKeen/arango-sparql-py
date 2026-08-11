@@ -82,6 +82,8 @@ class AqlQueryBuilder:
     """When set, :meth:`finalize` wraps the assembled body in
     ``RETURN LENGTH(<body>) > 0`` so an ASK query produces a single
     boolean row rather than a SELECT-style projection."""
+    _empty_result_fallback: bool = False
+    """Emit one empty binding when a grouped aggregate has no input rows."""
     warnings: list[dict[str, Any]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
@@ -485,25 +487,29 @@ class AqlQueryBuilder:
         self,
         row_alias: str,
         arm_aqls: list[str],
+        *,
+        distinct: bool = False,
     ) -> AqlQueryBuilder:
-        """Emit ``FOR <row_alias> IN UNION((<arm1>), (<arm2>), …)``.
+        """Emit ``FOR <row_alias> IN UNION[|_DISTINCT]((<arm1>), …)``.
 
         Used by :mod:`arango_sparql.translate.union_paths` for SPARQL
-        ``UNION`` and for property-path ``AlternativePath`` (``:p|:q``).
+        ``UNION`` (multiset — ``distinct=False``) and for property-path
+        ``AlternativePath`` / ``MulPath`` expansions (set — ``distinct=True``).
         Each arm is a complete AQL block (its own FOR / FILTER / SORT /
         LIMIT / RETURN) that the union helper produced via a child
         builder; wrapping each in ``(...)`` makes it an expression
         that evaluates to a list, which is what AQL's ``UNION`` /
         ``UNION_DISTINCT`` consume.
 
-        Why ``UNION`` (not ``UNION_DISTINCT``):
+        Why the ``distinct`` switch:
 
-        * SPARQL 1.1 §18.5 defines ``UNION`` over multisets — duplicate
-          solutions are preserved. ``UNION_DISTINCT`` would collapse
-          them, violating bag semantics. Callers that want distinct
-          rows wrap the surrounding SELECT in ``DISTINCT`` (which the
-          visitor lowers to ``RETURN DISTINCT``), keeping the AQL
-          plan aligned with the SPARQL spec one level up.
+        * SPARQL 1.1 §18.5 defines pattern ``UNION`` over multisets —
+          duplicate solutions are preserved. ``UNION_DISTINCT`` would
+          collapse them.
+        * SPARQL 1.1 §9 / §18.4 property paths evaluate to **sets of
+          nodes** (ALP); a path of length two that matches several
+          walks must contribute each endpoint only once. MulPath /
+          AlternativePath therefore pass ``distinct=True``.
 
         Indentation is two spaces per arm line for EXPLAIN-output
         readability, matching :meth:`for_subquery`.
@@ -520,10 +526,11 @@ class AqlQueryBuilder:
         arm_blocks = ",\n".join(
             "(\n" + "\n".join("  " + line for line in arm.splitlines()) + "\n)" for arm in arm_aqls
         )
+        op = "UNION_DISTINCT" if distinct else "UNION"
         self._body_clauses.append(
             _Clause(
                 _ClauseKind.FOR,
-                f"FOR {row_alias} IN UNION(\n{arm_blocks}\n)",
+                f"FOR {row_alias} IN {op}(\n{arm_blocks}\n)",
             )
         )
         return self
@@ -788,6 +795,24 @@ class AqlQueryBuilder:
         self._ask_mode = True
         return self
 
+    def set_empty_result_fallback(self) -> AqlQueryBuilder:
+        """Preserve SPARQL's empty solution for grouped aggregates.
+
+        AQL ``COLLECT key = expr`` produces no row when its input is empty;
+        SPARQL's grouped aggregate evaluation retains one empty solution.
+        Finalization wraps the complete grouped query once and substitutes
+        ``{}`` only when its result list is empty.
+        """
+
+        self._empty_result_fallback = True
+        return self
+
+    def clear_empty_result_fallback(self) -> AqlQueryBuilder:
+        """Disable the grouped fallback when a later HAVING may remove rows."""
+
+        self._empty_result_fallback = False
+        return self
+
     def warn(self, *, code: str, message: str, **extra: Any) -> None:
         self.warnings.append({"code": code, "message": message, **extra})
 
@@ -808,7 +833,7 @@ class AqlQueryBuilder:
             raise AqlEmitError("finalize() called without a RETURN; every query must terminate in RETURN")
         if not any(c.kind == _ClauseKind.FOR for c in self._body_clauses):
             raise AqlEmitError("query has no FOR clause; every BGP/SELECT translation needs at least one")
-        ordered: list[_Clause] = []
+        with_clause: str | None = None
         if self._with_collections:
             # ArangoDB cluster mode: ``WITH`` must be the FIRST clause
             # so the planner knows which collections to lock at parse
@@ -817,14 +842,32 @@ class AqlQueryBuilder:
             # we always end up referencing the SAME bind name that
             # the per-shard FOR sub-scans use, never a new one.
             refs = ", ".join(self.bind_collection(name) for name in self._with_collections)
-            ordered.append(_Clause(_ClauseKind.RAW, f"WITH {refs}"))
+            with_clause = f"WITH {refs}"
+        ordered: list[_Clause] = []
         ordered.extend(self._body_clauses)
         if self._sort_keys:
             ordered.append(_Clause(_ClauseKind.SORT, "SORT " + ", ".join(self._sort_keys)))
-        if self._limit_clause is not None:
-            ordered.append(self._limit_clause)
-        ordered.append(self._return_clause)
-        body = "\n".join(c.text for c in ordered)
+        if self._empty_result_fallback:
+            ordered.append(self._return_clause)
+            inner = "\n".join(c.text for c in ordered)
+            indented = "\n".join("  " + line for line in inner.splitlines())
+            results_alias = self.fresh_alias(prefix="results")
+            result_alias = self.fresh_alias(prefix="result")
+            wrapper = [
+                f"LET {results_alias} = (\n{indented}\n)",
+                (f"FOR {result_alias} IN (LENGTH({results_alias}) == 0 ? [{{}}] : {results_alias})"),
+            ]
+            if self._limit_clause is not None:
+                wrapper.append(self._limit_clause.text)
+            wrapper.append(f"RETURN {result_alias}")
+            body = "\n".join(wrapper)
+        else:
+            if self._limit_clause is not None:
+                ordered.append(self._limit_clause)
+            ordered.append(self._return_clause)
+            body = "\n".join(c.text for c in ordered)
+        if with_clause is not None:
+            body = f"{with_clause}\n{body}"
         if self._ask_mode:
             # Wrap the assembled body in a LENGTH() probe so the executor
             # gets a single-row boolean result rather than a SPARQL-shaped

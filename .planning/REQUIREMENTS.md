@@ -14,8 +14,8 @@
 ### Transpiler Core
 
 - [x] **REQ-w3c-coverage** (PRD §3.1): W3C DAWG translation coverage ≥ 25%, no single XFAIL bucket > 30% of remaining failures. *Current: 96.4% query-eval; 30%-clause consciously accepted (dominant bucket = deferred SERVICE).* — acceptance: `tests/w3c/COVERAGE_REPORT.md`, `analyze_coverage.py --write`
-- [x] **REQ-physical-model-coverage** (PRD §3.3): Correct AQL against every §6.1 shape — PG (`COLLECTION`), LPG (`LABEL`), RPT (`_triples`), plain `DOCUMENT`, PG+LPG hybrids, both edge styles. — acceptance: `tests/translate/{bgp_select,hybrid,rpt}.yml`, `tests/cross/*`
-- [x] **REQ-hybrid-bgp-translation** (PRD §3.4): One BGP touching ≥ 2 physical models → single AQL query joined on shared subject URI. — acceptance: `tests/translate/hybrid.yml`, `tests/cross/test_hybrid_cross.py`
+- [x] **REQ-physical-model-coverage** (PRD §3.3): Correct AQL against every §6.1 shape — PG (`COLLECTION`), LPG (`LABEL`), RPT (`_triples`), plain `DOCUMENT`, PG+LPG and PG+RPT hybrids, both edge styles. — acceptance: `tests/translate/{bgp_select,hybrid,rpt}.yml`, `tests/cross/test_multimodel_cross.py`, `tests/cross/test_edge_traversal_cross.py`
+- [x] **REQ-hybrid-bgp-translation** (PRD §3.4): One BGP touching ≥ 2 physical models → single AQL query joined on shared subject URI. — acceptance: `tests/translate/hybrid.yml`, `tests/cross/test_hybrid_cross.py`, `tests/cross/test_multimodel_cross.py`
 - [x] **REQ-schema-detection** (PRD §3.5): Both detectors ship (heuristic + analyzer-backed); analyzer wins on `strategy="auto"`; zero false negatives on fixture corpus. — acceptance: `tests/schema/test_classify.py`, `test_acquire.py`
 
 ### Protocol & HTTP Surface
@@ -25,14 +25,14 @@
 
 ### Operational, Security & Privacy
 
-- [x] **REQ-operational-parity** (PRD §3.8): Operational parity with `arango-cypher-py` — session/connect/public-mode/CORS/rate-limit/SSRF/redaction/startup-guard, one CI test per surface. — acceptance: `tests/parity/test_cypher_py_*.py`
-- [x] **REQ-threat-model-mitigations** (PRD §3.13): Every §8.6 STRIDE row has its asserting test (CI-blocking). — acceptance: `tests/security/test_*.py`
-- [x] **REQ-privacy-contract** (PRD §3.14): No-bodies-in-logs property test passes; `LOG_FORMAT=json` default emits §9.5 envelope; tenant-label toggles per §17.2. — acceptance: `tests/security/test_no_body_in_logs.py`, `tests/test_log_envelope.py`
-- [x] **REQ-config-appendix-normative** (PRD §3.15): Adding a new env var without updating Appendix A fails CI. — acceptance: `tests/test_config_appendix.py`
+- [ ] **REQ-operational-parity** (PRD §3.8): Operational parity with `arango-cypher-py` — session/connect/public-mode/CORS/rate-limit/SSRF/redaction/startup-guard, one CI test per surface. *Runtime surfaces exist, but the required `tests/parity/test_cypher_py_*.py` per-surface contract is absent.* — acceptance: `tests/parity/test_cypher_py_*.py`
+- [ ] **REQ-threat-model-mitigations** (PRD §3.13): Every §8.6 STRIDE row has its asserting test (CI-blocking). *The required `tests/security/` suite is absent.* — acceptance: `tests/security/test_*.py`
+- [ ] **REQ-privacy-contract** (PRD §3.14): No-bodies-in-logs property test passes; `LOG_FORMAT=json` default emits §9.5 envelope; tenant-label toggles per §17.2. *Observability support is partial: JSON is opt-in through `ARANGO_SPARQL_LOG_JSON`, not the specified `LOG_FORMAT=json` default, and the named tests are absent.* — acceptance: `tests/security/test_no_body_in_logs.py`, `tests/test_log_envelope.py`
+- [ ] **REQ-config-appendix-normative** (PRD §3.15): Adding a new env var without updating Appendix A fails CI. *The named `tests/test_config_appendix.py` guard is absent.* — acceptance: `tests/test_config_appendix.py`
 
 ### Interoperability & Performance
 
-- [ ] **REQ-foxx-parity** (PRD §3.7): Hybrid-schema parity with legacy Foxx `arango-sparql` — ≥ 90% of translatable legacy fixtures have a golden emitting semantically equivalent AQL. — acceptance: `tests/legacy/test_foxx_roundtrip.py` (Docker-gated)
+- [ ] **REQ-foxx-parity** (PRD §3.7): Static semantic parity with archived Foxx `arango-sparql` fixtures — ≥ 90% of inventoried translatable fixtures have a Python parity case or golden emitting semantically equivalent AQL. *Current inventory is an initial three-query slice, so the ≥90% target remains pending.* — acceptance: `tests/legacy/test_legacy_semantic_parity.py`
 - [ ] **REQ-thirdparty-tool-compat** (PRD §3.10): Every §11.1 verified-compatible tool row has a passing smoke test (≥1 SELECT, 1 ASK, Service Description fetch) — Protégé, YASGUI, SPARQLWrapper, MS Ontology Playground. — acceptance: `tests/integration/test_*_compat.py`
 - [ ] **REQ-ontoextract-integration** (PRD §3.11): `arango-ontoextract` can point its Q7 endpoint at us, seed via `/mapping/export-owl`, accept a curated OWL push via `/mapping/import-owl`. — acceptance: `tests/integration/test_aoe_roundtrip.py` (Docker-gated)
 - [ ] **REQ-performance-slos** (PRD §3.12): Every §9.4 perf budget row passes within ≤ 25% of stated p95 (CI-blocking on > 25% regression). — acceptance: `tests/perf/test_*.py`
@@ -101,10 +101,10 @@ Deferred to future release. Tracked but not in the current roadmap.
 | REQ-schema-detection | Phase 1 | Complete |
 | REQ-sparql-protocol-endpoint | Phase 2 | Complete |
 | REQ-schema-http-parity | Phase 2 | Complete |
-| REQ-operational-parity | Phase 3 | Complete |
-| REQ-threat-model-mitigations | Phase 3 | Complete |
-| REQ-privacy-contract | Phase 3 | Complete |
-| REQ-config-appendix-normative | Phase 3 | Complete |
+| REQ-operational-parity | Phase 3 | Partial |
+| REQ-threat-model-mitigations | Phase 3 | Pending |
+| REQ-privacy-contract | Phase 3 | Partial |
+| REQ-config-appendix-normative | Phase 3 | Pending |
 | REQ-foxx-parity | Phase 4 | Pending |
 | REQ-thirdparty-tool-compat | Phase 4 | Pending |
 | REQ-ontoextract-integration | Phase 4 | Pending |

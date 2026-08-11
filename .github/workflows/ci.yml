@@ -12,8 +12,8 @@ name: CI
 # The integration job is the WP-C1 evaluation-correctness gate: it runs
 # the live-ArangoDB harnesses (tests/integration, tests/cross, and the
 # W3C live-execution suite) against a service container. The W3C suite
-# hard-fails when any case in EXPECTED_LIVE_PASSES regresses — see
-# tests/w3c/test_w3c_live_execution.py.
+# hard-fails when any case in EXPECTED_LIVE_PASSES regresses, and the
+# document-edge live-coverage floor prevents aggregate round-trip regression.
 
 on:
   push:
@@ -130,4 +130,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,nl,service]"
-      - run: pytest tests/integration tests/cross tests/w3c/test_w3c_live_execution.py --tb=short -q
+      # The corpus is deliberately vendored at CI runtime, so both the
+      # per-case live gate and the aggregate 40.8% document-edge floor run
+      # against a stable, complete DAWG corpus.
+      - run: bash scripts/fetch_w3c.sh
+      - run: pytest tests/integration tests/cross tests/w3c/test_w3c_live_execution.py tests/w3c/test_live_coverage_gate.py --tb=short -q

@@ -124,8 +124,8 @@ def is_valid_field_name(name: object) -> bool:
 #   (the RDF-triples-pattern; SPARQL-specific extension over the sister
 #   project). Carries ``triplesCollection`` and the four column-name
 #   overrides.
-# * ``DOCUMENT``   — entity is embedded inside another document (e.g. a
-#   ``Person.address`` sub-document). Reserved; not emitted in v0.x.
+# * ``DOCUMENT``   — plain document collection with no class-discriminator
+#   field. It uses the same read pattern as ``COLLECTION``.
 EntityStyle = Literal["COLLECTION", "LABEL", "RPT", "DOCUMENT"]
 
 # Relationship styles understood by the translator:

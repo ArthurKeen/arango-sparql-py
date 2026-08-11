@@ -178,11 +178,12 @@ cases:
   #
   # SPARQL 1.1 §18.4 defines these as repetition of the inner path.
   # Lacking an unbounded AQL construct, the translator lowers them
-  # to a ``UNION`` of fixed-length path arms bounded by
-  # :attr:`SchemaResolver.property_path_max_depth`. ``:p?`` is
-  # bounded at 1 by the modifier itself; ``:p+`` / ``:p*`` honour
-  # the resolver knob. The goldens below override the knob to keep
-  # the AQL short and reviewable; the default in production is 10.
+  # to a ``UNION_DISTINCT`` of fixed-length path arms bounded by
+  # :attr:`SchemaResolver.property_path_max_depth` (set semantics —
+  # SPARQL §9: path endpoints appear once even if many walks match).
+  # ``:p?`` is bounded at 1 by the modifier itself; ``:p+`` / ``:p*``
+  # honour the resolver knob. The goldens below override the knob to
+  # keep the AQL short and reviewable; the default in production is 10.
   # See :mod:`arango_sparql.translate.paths`.
 
   - name: mul_path_zero_or_one
@@ -196,7 +197,7 @@ cases:
       PREFIX : <http://ex.org/>
       SELECT ?s ?o WHERE { ?s :p? ?o }
     expected_aql: |-
-      FOR row3 IN UNION(
+      FOR row3 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
         RETURN { o: doc1._uri, s: doc1._uri }
@@ -220,7 +221,7 @@ cases:
       SELECT ?s ?o WHERE { ?s :p+ ?o }
     property_path_max_depth: 2
     expected_aql: |-
-      FOR row4 IN UNION(
+      FOR row4 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
@@ -247,7 +248,7 @@ cases:
       SELECT ?s ?o WHERE { ?s :p* ?o }
     property_path_max_depth: 2
     expected_aql: |-
-      FOR row5 IN UNION(
+      FOR row5 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
         RETURN { o: doc1._uri, s: doc1._uri }

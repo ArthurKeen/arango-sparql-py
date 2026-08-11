@@ -11,6 +11,8 @@
 # visitor picks the shorthand when there's exactly one COUNT and no
 # DISTINCT modifier, and falls back to the AGGREGATE form otherwise
 # (mixed aggregates, COUNT DISTINCT, GROUP_CONCAT, etc.).
+# Grouped forms are wrapped once so an empty input yields SPARQL's
+# single empty solution instead of AQL COLLECT's zero rows.
 
 ontology: |
   @prefix : <http://ex.org/> .
@@ -59,10 +61,14 @@ cases:
       PREFIX : <http://ex.org/>
       SELECT ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
     expected_aql: |-
-      FOR doc1 IN @@c1_Person
-      FILTER HAS(doc1, "dept")
-      COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
-      RETURN { d: grp2, c: agg3 }
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
+        RETURN { d: grp2, c: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -73,11 +79,15 @@ cases:
         ?s a :Person ; :dept ?d ; :age ?a
       } GROUP BY ?d
     expected_aql: |-
-      FOR doc1 IN @@c1_Person
-      FILTER HAS(doc1, "age")
-      FILTER HAS(doc1, "dept")
-      COLLECT grp2 = doc1.dept AGGREGATE agg3 = AVG(doc1.age), agg4 = SUM(doc1.age)
-      RETURN { d: grp2, avg: agg3, tot: agg4 }
+      LET results5 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "age")
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = AVG(doc1.age), agg4 = SUM(doc1.age)
+        RETURN { d: grp2, avg: agg3, tot: agg4 }
+      )
+      FOR result6 IN (LENGTH(results5) == 0 ? [{}] : results5)
+      RETURN result6
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -88,11 +98,15 @@ cases:
         ?s a :Person ; :dept ?d ; :age ?a
       } GROUP BY ?d
     expected_aql: |-
-      FOR doc1 IN @@c1_Person
-      FILTER HAS(doc1, "age")
-      FILTER HAS(doc1, "dept")
-      COLLECT grp2 = doc1.dept AGGREGATE agg3 = MIN(doc1.age), agg4 = MAX(doc1.age)
-      RETURN { d: grp2, mn: agg3, mx: agg4 }
+      LET results5 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "age")
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = MIN(doc1.age), agg4 = MAX(doc1.age)
+        RETURN { d: grp2, mn: agg3, mx: agg4 }
+      )
+      FOR result6 IN (LENGTH(results5) == 0 ? [{}] : results5)
+      RETURN result6
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -109,11 +123,15 @@ cases:
         ?s a :Person ; :dept ?d ; :name ?n
       } GROUP BY ?d
     expected_aql: |-
-      FOR doc1 IN @@c1_Person
-      FILTER HAS(doc1, "dept")
-      FILTER HAS(doc1, "name")
-      COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.name)
-      RETURN { d: grp2, names: CONCAT_SEPARATOR(@_p1_sep, agg3) }
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        FILTER HAS(doc1, "name")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.name)
+        RETURN { d: grp2, names: CONCAT_SEPARATOR(@_p1_sep, agg3) }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_sep": ", "
@@ -149,10 +167,14 @@ cases:
         ?s a :Person ; :dept ?d
       } GROUP BY ?d ORDER BY DESC(?c)
     expected_aql: |-
-      FOR doc1 IN @@c1_Person
-      FILTER HAS(doc1, "dept")
-      COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
-      SORT agg3 DESC
-      RETURN { d: grp2, c: agg3 }
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept WITH COUNT INTO agg3
+        SORT agg3 DESC
+        RETURN { d: grp2, c: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
     expected_bind_vars:
       "@c1_Person": "Person"

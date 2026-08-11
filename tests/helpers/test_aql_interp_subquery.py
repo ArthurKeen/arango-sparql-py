@@ -91,3 +91,39 @@ def test_probe_count_is_capped_by_inner_limit() -> None:
     }
     rows = run_aql_subset(aql, {"@c1": "people", "@c2": "projects"}, docs)
     assert rows == [{"s": EX + "alice", "n": 1}]
+
+
+def test_scalar_subquery_evaluates_numeric_operands_once() -> None:
+    aql = (
+        "FOR doc1 IN @@c1\n"
+        "LET value = (FOR num2 IN [doc1.age] FOR num3 IN [@_factor] "
+        "RETURN IS_NUMBER(num2) && IS_NUMBER(num3) ? (num2 * num3) : null)[0]\n"
+        "RETURN { value: value }"
+    )
+
+    rows = run_aql_subset(
+        aql,
+        {"@c1": "people", "_factor": 2},
+        {"people": [_doc("alice", age=30), _doc("bob", age="unknown")]},
+    )
+
+    assert rows == [{"value": 60}, {"value": None}]
+
+
+def test_rows_subquery_falls_back_to_one_empty_binding() -> None:
+    aql = (
+        "LET results2 = (\n"
+        "  FOR doc1 IN @@c1\n"
+        "  COLLECT group1 = doc1.group WITH COUNT INTO count1\n"
+        "  RETURN { group: group1, count: count1 }\n"
+        ")\n"
+        "FOR result3 IN (LENGTH(results2) == 0 ? [{}] : results2)\n"
+        "RETURN result3"
+    )
+
+    assert run_aql_subset(aql, {"@c1": "empty"}, {"empty": []}) == [{}]
+    assert run_aql_subset(
+        aql,
+        {"@c1": "people"},
+        {"people": [_doc("alice", group="a"), _doc("bob", group="a")]},
+    ) == [{"group": "a", "count": 2}]

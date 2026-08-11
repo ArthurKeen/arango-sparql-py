@@ -114,11 +114,15 @@ cases:
       PREFIX : <http://www.example.org/>
       SELECT ?s (SUM(?o) AS ?sum) WHERE { ?s ?p ?o } GROUP BY ?s
     expected_aql: |-
-      FOR doc1 IN @@c1_Document
-      FOR k2 IN ATTRIBUTES(doc1, true)
-      FILTER k2 NOT IN @_p1_sys_attrs
-      COLLECT grp3 = doc1._uri AGGREGATE agg4 = SUM(doc1[k2])
-      RETURN { s: grp3, sum: agg4 }
+      LET results5 = (
+        FOR doc1 IN @@c1_Document
+        FOR k2 IN ATTRIBUTES(doc1, true)
+        FILTER k2 NOT IN @_p1_sys_attrs
+        COLLECT grp3 = doc1._uri AGGREGATE agg4 = SUM(doc1[k2])
+        RETURN { s: grp3, sum: agg4 }
+      )
+      FOR result6 IN (LENGTH(results5) == 0 ? [{}] : results5)
+      RETURN result6
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":

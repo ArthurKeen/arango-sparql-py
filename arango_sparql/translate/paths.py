@@ -308,7 +308,10 @@ def _emit_mul_path(
 
     from .union_paths import _emit_union_of_arms
 
-    _emit_union_of_arms(visitor, arm_drivers)
+    # Repetition arms are per-length walks; when both ends are constant
+    # they bind only internal sigils, so collapse to the existence
+    # sentinel rather than re-projecting a fresh intermediate per length.
+    _emit_union_of_arms(visitor, arm_drivers, distinct=True, existence_collapse=True)
 
 
 def _emit_negated_path(

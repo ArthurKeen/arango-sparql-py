@@ -18,10 +18,9 @@ and reaches into its public-ish surface
 Legacy reference: ``references/arango-sparql/src/lib/pgt-translator.js``
 lines 244-261, which hard-coded a four-collection UNION
 (``Person | Organization | Property | Class``) rather than driving
-the fan-out off the resolver. We replace that with two
-correct-by-construction shapes (RPT and ATTRIBUTES fan-out), with
-the CARVE-OUT for the unbound-subject case documented inline and
-in PRD §6.6 Variable-predicates row.
+the fan-out off the resolver. We replace that with RPT and
+document-edge shapes. The latter merges ATTRIBUTES rows with every
+ontology-declared edge collection so object properties are not lost.
 """
 
 from __future__ import annotations
@@ -33,6 +32,7 @@ from rdflib import Literal, URIRef, Variable
 from ..errors import AqlEmitError, UnsupportedSparqlError
 
 if TYPE_CHECKING:
+    from .resolver import ResolvedProperty
     from .visitor import AlgebraVisitor
 
 # System-attribute names we strip out of an ATTRIBUTES() fan-out
@@ -75,7 +75,8 @@ def emit_variable_predicate_triple(
     predicate equality FILTER. This emission is W3C-spec-correct.
 
     **PG / LPG / default-collection subject** — an ``ATTRIBUTES()``
-    fan-out over the subject document::
+    fan-out over the subject document, unioned with edge traversals when
+    the ontology declares edge-backed object properties::
 
         FOR k1 IN ATTRIBUTES(<subject_alias>, true)
         FILTER k1 NOT IN [<sys attrs>]
@@ -85,7 +86,9 @@ def emit_variable_predicate_triple(
         -- ?o bound to <subject_alias>[k1]
 
     which iterates every attribute on the subject document and
-    produces one binding row per non-system attribute. When the
+    produces one binding row per non-system attribute. Each object
+    property contributes a correlated OUTBOUND arm that returns the
+    property's IRI and target vertex IRI. When the
     resolver's :meth:`SchemaResolver.attribute_uri_map` is non-empty
     (the ontology declares ``owl:DatatypeProperty`` terms), ``?p``
     binds to the **predicate IRI** via the bound reverse map, which
@@ -204,6 +207,18 @@ def _emit_attributes_branch(
     standard equality-FILTER join.
     """
     subject_alias = visitor._ensure_subject_alias(subject)
+    edge_properties = visitor.resolver.edge_properties()
+    if edge_properties:
+        _emit_document_edge_union(
+            visitor,
+            subject_alias,
+            predicate,
+            obj,
+            triple,
+            edge_properties,
+        )
+        return
+
     # Mint a fresh alias for the ATTRIBUTES() loop variable.
     # ``k`` prefix is descriptive — operators reading EXPLAIN
     # output can immediately tell which FOR is an attribute
@@ -269,6 +284,117 @@ def _emit_attributes_branch(
             visitor.builder.filter_raw(visitor._value_match_expr(value_expr, obj_bind))
         else:
             visitor.builder.filter_eq(value_expr, obj_bind)
+        return
+    raise UnsupportedSparqlError(
+        f"variable-predicate triple object term type "
+        f"{type(obj).__name__!r} is not supported (triple {triple!r})"
+    )
+
+
+def _emit_document_edge_union(
+    visitor: AlgebraVisitor,
+    subject_alias: str,
+    predicate: Variable,
+    obj: Any,
+    triple: tuple[Any, Any, Any],
+    edge_properties: tuple[ResolvedProperty, ...],
+) -> None:
+    """Merge datatype-attribute and object-edge triples for one subject."""
+    arm_aqls = [_build_attribute_arm(visitor, subject_alias)]
+    for prop in edge_properties:
+        edge_collection = prop.edge_collection
+        if edge_collection is None:  # pragma: no cover - resolver filters these
+            raise AqlEmitError(f"object property {prop.iri!r} has no executable edge collection")
+        child = visitor.builder.create_child()
+        vertex_alias = child.fresh_alias(prefix="v")
+        edge_alias = child.fresh_alias(prefix="e")
+        child.for_traversal(
+            vertex_alias,
+            edge_alias,
+            subject_alias,
+            edge_collection,
+        )
+        if prop.mapping_style == "GENERIC_WITH_TYPE":
+            if not prop.type_field or prop.type_value is None:
+                raise AqlEmitError(
+                    f"object property {prop.iri!r} uses GENERIC_WITH_TYPE "
+                    "without both typeField and typeValue"
+                )
+            type_bind = child.bind(prop.type_value, hint=prop.type_field)
+            child.filter_eq(f"{edge_alias}.{prop.type_field}", type_bind)
+        predicate_bind = child.bind(prop.iri, hint="predicate")
+        child.return_object(
+            [
+                ("predicate", predicate_bind),
+                ("object", f"{vertex_alias}._uri"),
+            ]
+        )
+        arm_aqls.append(visitor.builder.absorb_child(child))
+
+    triple_alias = visitor.builder.fresh_alias(prefix="triple")
+    visitor.builder.for_union(triple_alias, arm_aqls)
+    _bind_union_term(visitor, predicate, f"{triple_alias}.predicate")
+    _bind_union_object(visitor, obj, f"{triple_alias}.object", triple)
+
+
+def _build_attribute_arm(visitor: AlgebraVisitor, subject_alias: str) -> str:
+    """Build the correlated document-attribute arm of a triple UNION."""
+    child = visitor.builder.create_child()
+    key_alias = child.fresh_alias(prefix="k")
+    child.for_attributes(key_alias, subject_alias)
+    skip_list = sorted({*SYSTEM_ATTRIBUTES_TO_SKIP, visitor.resolver.graph_field})
+    sys_bind = child.bind(skip_list, hint="sys_attrs")
+    child.filter_raw(f"{key_alias} NOT IN {sys_bind}")
+
+    attr_uri_map = visitor.resolver.attribute_uri_map()
+    if attr_uri_map:
+        map_bind = child.bind(attr_uri_map, hint="attr_uris")
+        predicate_expr = child.fresh_alias(prefix="p")
+        child.let(predicate_expr, f"{map_bind}[{key_alias}]")
+        child.filter_raw(f"{predicate_expr} != null")
+    else:
+        predicate_expr = key_alias
+
+    value_expr = f"{subject_alias}[{key_alias}]"
+    if visitor.resolver.fan_out_list_values:
+        value_alias = child.fresh_alias(prefix="lv")
+        child.for_inline(value_alias, visitor._fan_out_source(value_expr))
+        value_expr = value_alias
+    child.return_object(
+        [
+            ("predicate", predicate_expr),
+            ("object", value_expr),
+        ]
+    )
+    return visitor.builder.absorb_child(child)
+
+
+def _bind_union_term(
+    visitor: AlgebraVisitor,
+    variable: Variable,
+    expression: str,
+) -> None:
+    existing = visitor.state.var_to_expr.get(str(variable))
+    if existing is None:
+        visitor._record_var_expr(variable, expression)
+    elif existing != expression:
+        visitor.builder.filter_raw(f"{expression} == {existing}")
+
+
+def _bind_union_object(
+    visitor: AlgebraVisitor,
+    obj: Any,
+    expression: str,
+    triple: tuple[Any, Any, Any],
+) -> None:
+    if isinstance(obj, Variable):
+        _bind_union_term(visitor, obj, expression)
+        return
+    if isinstance(obj, (Literal, URIRef)):
+        from .visitor import _term_to_python
+
+        obj_bind = visitor.builder.bind(_term_to_python(obj), hint="obj")
+        visitor.builder.filter_eq(expression, obj_bind)
         return
     raise UnsupportedSparqlError(
         f"variable-predicate triple object term type "

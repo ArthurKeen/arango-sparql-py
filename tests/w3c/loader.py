@@ -10,10 +10,9 @@ loader walks each input file and:
   without extra plumbing).
 * Flattens literal-valued predicates into doc attributes whose key
   is the local name of the predicate IRI (so ``ex:age`` → ``age``).
-* Skips object-property triples (subject + predicate + IRI object) —
-  the translator doesn't yet emit edge traversals, so loading those
-  would only inflate collection size for no gain. Each skip is
-  logged so the operator can spot a query that depends on edges.
+* Preserves object-property triples (subject + predicate + IRI object)
+  as ArangoDB edge collections in the ``document_edge`` profile or
+  ``object_uri`` rows in the ``rpt`` profile.
 * Detects the implicit class via ``rdf:type`` triples and ALSO
   routes typed subjects into per-class collections (collection name
   = ``<prefix><LocalName>``). Untyped or doubly-stored subjects
@@ -32,10 +31,12 @@ keeps the W3C harness's "what's loaded" story consistent with the
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,33 @@ RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 # allows 256, but we keep some headroom so the per-class suffix can
 # always be appended without truncating the prefix mid-test.
 _MAX_COLLECTION_NAME_LEN = 250
+StorageProfile = Literal["document_edge", "rpt"]
+
+
+@dataclass(frozen=True)
+class ObjectTriple:
+    """A named-node RDF triple retained for a physical edge/RPT row.
+
+    The original loader discarded these triples because its flattened
+    Document profile could not represent them. The visitor has since gained
+    dedicated/generic edge traversal and RPT readers, so dropping them made
+    the live harness under-measure shipped capability.
+    """
+
+    subject: str
+    predicate: str
+    object: str
+
+
+@dataclass(frozen=True)
+class LiteralTriple:
+    """A literal RDF triple including the RDF term metadata the flat model loses."""
+
+    subject: str
+    predicate: str
+    value: Any
+    language: str | None
+    datatype: str | None
 
 
 def _local_name(iri: str) -> str:
@@ -60,6 +88,22 @@ def _local_name(iri: str) -> str:
     if match:
         return match.group(1)
     return iri
+
+
+def _subject_key(iri: str) -> str:
+    """Return a deterministic ArangoDB document key for an RDF subject IRI."""
+
+    return hashlib.sha256(iri.encode("utf-8")).hexdigest()[:24]
+
+
+def _edge_suffix(predicate_iri: str) -> str:
+    """Return a collision-resistant, AQL-safe edge collection suffix."""
+
+    local = re.sub(r"[^A-Za-z0-9_]+", "_", _local_name(predicate_iri)).strip("_")
+    local = local or "predicate"
+    if local[0].isdigit():
+        local = f"p_{local}"
+    return f"edge_{local}_{hashlib.sha256(predicate_iri.encode('utf-8')).hexdigest()[:8]}"
 
 
 def _format_for(path: Path) -> Any:
@@ -168,6 +212,9 @@ def _collect_subjects(
     dict[str, dict[str, Any]],
     dict[str, set[str]],
     set[str],
+    set[str],
+    list[ObjectTriple],
+    list[LiteralTriple],
     int,
 ]:
     """Walk every file in *paths* and return:
@@ -180,16 +227,23 @@ def _collect_subjects(
       a literal attribute, so the ontology can declare it as an
       ``owl:DatatypeProperty`` (the resolver's ``attribute_uri_map``
       needs the declarations to bind ``?p`` to IRIs — PRD §6.6);
-    * the count of object-property triples we skipped (logged for
-      operator visibility, returned so callers can surface it as a
-      warning).
+    * ``object_predicates`` — predicates whose named-node objects are
+      retained as ArangoDB edge collections in the ``document_edge``
+      profile;
+    * ``object_triples`` / ``literal_triples`` — lossless-enough rows used
+      by edge and RPT materialisation. Literal metadata is retained even
+      where the document profile cannot yet query it;
+    * the count of bnode triples we could not represent.
     """
     import pyoxigraph as oxi
 
     docs: dict[str, dict[str, Any]] = {}
     types: dict[str, set[str]] = {}
     datatype_predicates: set[str] = set()
-    skipped_obj_triples = 0
+    object_predicates: set[str] = set()
+    object_triples: list[ObjectTriple] = []
+    literal_triples: list[LiteralTriple] = []
+    skipped_bnode_triples = 0
 
     for path in paths:
         if not path.is_file():
@@ -222,31 +276,70 @@ def _collect_subjects(
             if isinstance(obj, oxi.Literal):
                 attr = _local_name(pred_iri)
                 value = _literal_to_python(obj)
-                doc = docs.setdefault(subj_iri, {"_uri": subj_iri})
+                doc = docs.setdefault(subj_iri, {"_key": _subject_key(subj_iri), "_uri": subj_iri})
+                _set_attr(doc, attr, value)
+                datatype_predicates.add(pred_iri)
+                language = getattr(obj, "language", None)
+                datatype = getattr(obj, "datatype", None)
+                literal_triples.append(
+                    LiteralTriple(
+                        subject=subj_iri,
+                        predicate=pred_iri,
+                        value=value,
+                        language=getattr(language, "value", language),
+                        datatype=getattr(datatype, "value", datatype),
+                    )
+                )
+                continue
+
+            if isinstance(obj, oxi.NamedNode):
+                # Preserve IRI→IRI triples as genuine RDF edges. Never
+                # flatten them to strings: that would silently change both
+                # join and multiplicity semantics.
+                docs.setdefault(subj_iri, {"_key": _subject_key(subj_iri), "_uri": subj_iri})
+                docs.setdefault(
+                    obj.value,
+                    {"_key": _subject_key(obj.value), "_uri": obj.value},
+                )
+                object_predicates.add(pred_iri)
+                object_triples.append(ObjectTriple(subj_iri, pred_iri, obj.value))
+                continue
+
+            if isinstance(obj, oxi.BlankNode):
+                # A blank-node object is still a valid RDF term and must
+                # participate in expression/aggregate error semantics. The
+                # document profile cannot traverse it as a vertex yet, but a
+                # stable lexical carrier preserves its presence and identity
+                # within this loaded dataset.
+                attr = _local_name(pred_iri)
+                value = f"_:{obj.value}"
+                doc = docs.setdefault(
+                    subj_iri,
+                    {"_key": _subject_key(subj_iri), "_uri": subj_iri},
+                )
                 _set_attr(doc, attr, value)
                 datatype_predicates.add(pred_iri)
                 continue
 
-            if isinstance(obj, oxi.NamedNode):
-                # Object property — needs an edge collection in AQL,
-                # which the translator doesn't emit yet. Surface the
-                # gap rather than load these triples into a flattened
-                # attribute slot (a Skolemized "store the IRI as a
-                # string" would silently change SPARQL semantics).
-                skipped_obj_triples += 1
-                continue
-
-            # Bnode object: same story as bnode subject above.
-            skipped_obj_triples += 1
+            # Unknown RDF term kind.
+            skipped_bnode_triples += 1
 
     # Make sure every typed subject has a doc entry, even if all its
     # outgoing predicates were object properties; the per-class
     # collection still wants ``_uri`` so type-pattern queries can
     # see the membership.
     for subj_iri in types:
-        docs.setdefault(subj_iri, {"_uri": subj_iri})
+        docs.setdefault(subj_iri, {"_key": _subject_key(subj_iri), "_uri": subj_iri})
 
-    return docs, types, datatype_predicates, skipped_obj_triples
+    return (
+        docs,
+        types,
+        datatype_predicates,
+        object_predicates,
+        object_triples,
+        literal_triples,
+        skipped_bnode_triples,
+    )
 
 
 def _safe_collection_name(prefix: str, suffix: str) -> str | None:
@@ -267,7 +360,7 @@ def _safe_collection_name(prefix: str, suffix: str) -> str | None:
     return name
 
 
-def _drop_and_create(db: Any, name: str) -> Any:
+def _drop_and_create(db: Any, name: str, *, edge: bool = False) -> Any:
     """Idempotent ``drop && create`` for a collection.
 
     Tests share a single ArangoDB instance, so a previous run that
@@ -277,13 +370,15 @@ def _drop_and_create(db: Any, name: str) -> Any:
     """
     if db.has_collection(name):
         db.delete_collection(name)
-    return db.create_collection(name)
+    return db.create_collection(name, edge=edge) if edge else db.create_collection(name)
 
 
 def load_w3c_data_to_arango(
     db: Any,
     data_paths: list[Path],
     collection_prefix: str,
+    *,
+    storage_profile: StorageProfile = "document_edge",
 ) -> tuple[str, dict[str, str]]:
     """Load *data_paths* into ArangoDB collections and return
     ``(ontology_ttl, collection_map)``.
@@ -302,6 +397,13 @@ def load_w3c_data_to_arango(
         Per-test prefix that namespaces every created collection (so
         parallel test runs don't collide). Must be a valid AQL
         identifier prefix, e.g. ``"w3c_functions_contains01_"``.
+    storage_profile:
+        ``"document_edge"`` is the existing flattened-document profile,
+        now augmented with ArangoDB edge collections for IRI→IRI triples.
+        ``"rpt"`` stores every named-subject triple in one RPT collection
+        and maps every detected class to it. The profiles are deliberately
+        explicit: they have different fidelity/performance trade-offs and
+        their live coverage must not be conflated.
 
     Returns
     -------
@@ -313,22 +415,27 @@ def load_w3c_data_to_arango(
         ``class_iri → physical_collection_name``. Empty when the
         dataset has no ``rdf:type`` triples we can map.
     """
+    if storage_profile not in ("document_edge", "rpt"):
+        raise ValueError(f"unsupported W3C storage profile: {storage_profile!r}")
     if not _AQL_IDENT_RE.match(collection_prefix.rstrip("_") or "x"):
         # The prefix joins with the suffix to form an AQL identifier,
         # so the same regex applies. Reject early with a clear error
         # rather than failing later in the AQL builder.
         raise ValueError(f"collection_prefix {collection_prefix!r} is not a valid AQL identifier prefix")
 
-    docs_by_subject, types_by_subject, datatype_predicates, skipped = _collect_subjects(data_paths)
+    (
+        docs_by_subject,
+        types_by_subject,
+        datatype_predicates,
+        object_predicates,
+        object_triples,
+        literal_triples,
+        skipped_bnodes,
+    ) = _collect_subjects(data_paths)
 
     default_coll = _safe_collection_name(collection_prefix, "Document")
     if default_coll is None:
         raise ValueError(f"composed default collection name from prefix {collection_prefix!r} is invalid")
-
-    coll_handle = _drop_and_create(db, default_coll)
-    docs_to_insert = list(docs_by_subject.values())
-    if docs_to_insert:
-        coll_handle.insert_many(docs_to_insert)
 
     collection_map: dict[str, str] = {}
     # Every distinct class IRI we saw on at least one ``rdf:type``
@@ -347,28 +454,192 @@ def load_w3c_data_to_arango(
                 suffix,
             )
             continue
-        per_class = _drop_and_create(db, coll_name)
-        members = [
-            dict(docs_by_subject[s]) for s, classes in types_by_subject.items() if class_iri in classes
-        ]
-        if members:
-            per_class.insert_many(members)
         collection_map[class_iri] = coll_name
 
-    ontology_ttl = _build_ontology_ttl(collection_map, datatype_predicates)
-    if skipped:
+    if storage_profile == "rpt":
+        triples_coll = _rpt_collection_name(collection_prefix)
+        _materialize_rpt(
+            db,
+            default_coll,
+            docs_by_subject,
+            types_by_subject,
+            object_triples,
+            literal_triples,
+            triples_coll,
+        )
+        ontology_ttl = _build_ontology_ttl(
+            collection_map,
+            datatype_predicates,
+            mapping_style="RPT",
+            triples_collection=triples_coll,
+        )
+    else:
+        _materialize_document_edge(
+            db,
+            default_coll,
+            docs_by_subject,
+            collection_map,
+            types_by_subject,
+            object_predicates,
+            object_triples,
+            collection_prefix,
+        )
+        edge_collections = {
+            predicate: _edge_collection_name(collection_prefix, predicate) for predicate in object_predicates
+        }
+        ontology_ttl = _build_ontology_ttl(
+            collection_map,
+            datatype_predicates,
+            edge_collections=edge_collections,
+        )
+
+    if skipped_bnodes:
         logger.info(
-            "loader: skipped %d object-property/bnode triples for prefix %s "
-            "(translator does not emit edge traversals yet)",
-            skipped,
+            "loader: skipped %d triples with blank-node terms for prefix %s",
+            skipped_bnodes,
             collection_prefix,
         )
     return ontology_ttl, collection_map
 
 
+def _edge_collection_name(prefix: str, predicate_iri: str) -> str:
+    name = _safe_collection_name(prefix, _edge_suffix(predicate_iri))
+    if name is None:  # pragma: no cover - fixed-length hashed suffix is safe
+        raise ValueError(f"cannot name edge collection for {predicate_iri!r}")
+    return name
+
+
+def _rpt_collection_name(prefix: str) -> str:
+    name = _safe_collection_name(prefix, "Triples")
+    if name is None:  # pragma: no cover - fixed suffix is always safe
+        raise ValueError(f"cannot name RPT collection with prefix {prefix!r}")
+    return name
+
+
+def _materialize_document_edge(
+    db: Any,
+    default_coll: str,
+    docs_by_subject: dict[str, dict[str, Any]],
+    collection_map: dict[str, str],
+    types_by_subject: dict[str, set[str]],
+    object_predicates: set[str],
+    object_triples: list[ObjectTriple],
+    collection_prefix: str,
+) -> None:
+    """Materialize the flattened Document profile plus real edge collections.
+
+    Every subject is stored in the default collection and in every declared
+    class collection. Edges are emitted once per possible source replica so a
+    traversal works whether the visitor starts from a type-bound class alias
+    or an untyped default-document alias. Targets deliberately point to the
+    default replica: subsequent class constraints join by ``_uri`` and
+    continue to preserve SPARQL bindings without multiplying target edges.
+    """
+
+    default_handle = _drop_and_create(db, default_coll)
+    if docs_by_subject:
+        default_handle.insert_many(list(docs_by_subject.values()))
+
+    for class_iri, coll_name in collection_map.items():
+        per_class = _drop_and_create(db, coll_name)
+        members = [
+            dict(docs_by_subject[subject])
+            for subject, classes in types_by_subject.items()
+            if class_iri in classes and subject in docs_by_subject
+        ]
+        if members:
+            per_class.insert_many(members)
+
+    for predicate in object_predicates:
+        edge_coll = _edge_collection_name(collection_prefix, predicate)
+        edge_handle = _drop_and_create(db, edge_coll, edge=True)
+        rows: list[dict[str, str]] = []
+        for triple in object_triples:
+            if triple.predicate != predicate:
+                continue
+            target = docs_by_subject[triple.object]
+            target_id = f"{default_coll}/{target['_key']}"
+            source_collections = [default_coll]
+            source_collections.extend(
+                collection_map[class_iri]
+                for class_iri in types_by_subject.get(triple.subject, set())
+                if class_iri in collection_map
+            )
+            source = docs_by_subject[triple.subject]
+            rows.extend(
+                {
+                    "_from": f"{source_coll}/{source['_key']}",
+                    "_to": target_id,
+                }
+                for source_coll in source_collections
+            )
+        if rows:
+            edge_handle.insert_many(rows)
+
+
+def _materialize_rpt(
+    db: Any,
+    default_coll: str,
+    docs_by_subject: dict[str, dict[str, Any]],
+    types_by_subject: dict[str, set[str]],
+    object_triples: list[ObjectTriple],
+    literal_triples: list[LiteralTriple],
+    triples_coll: str,
+) -> None:
+    """Materialize a lossless-named-node RPT profile for W3C live tests."""
+
+    # Keep a default collection for untyped queries that still route through
+    # the visitor's Document fallback. The RPT profile is selected only for
+    # class-bound paths by the resolver's class mappings.
+    default_handle = _drop_and_create(db, default_coll)
+    if docs_by_subject:
+        default_handle.insert_many(list(docs_by_subject.values()))
+
+    triple_handle = _drop_and_create(db, triples_coll)
+    rows: list[dict[str, Any]] = []
+    for subject, class_iris in types_by_subject.items():
+        for class_iri in class_iris:
+            rows.append(
+                {
+                    "subject_uri": subject,
+                    "predicate": RDF_TYPE,
+                    "object_uri": class_iri,
+                    "object_value": None,
+                }
+            )
+    rows.extend(
+        {
+            "subject_uri": triple.subject,
+            "predicate": triple.predicate,
+            "object_uri": triple.object,
+            "object_value": None,
+        }
+        for triple in object_triples
+    )
+    rows.extend(
+        {
+            "subject_uri": triple.subject,
+            "predicate": triple.predicate,
+            "object_uri": None,
+            "object_value": triple.value,
+            # Preserve term metadata for the RPT profile even though current
+            # visitor projections only consume the four legacy columns.
+            "object_language": triple.language,
+            "object_datatype": triple.datatype,
+        }
+        for triple in literal_triples
+    )
+    if rows:
+        triple_handle.insert_many(rows)
+
+
 def _build_ontology_ttl(
     collection_map: dict[str, str],
     datatype_predicates: set[str] | None = None,
+    *,
+    edge_collections: dict[str, str] | None = None,
+    mapping_style: str | None = None,
+    triples_collection: str | None = None,
 ) -> str:
     """Render the minimal OWL TTL the schema resolver needs.
 
@@ -378,12 +649,12 @@ def _build_ontology_ttl(
     ``arango-schema-mapper`` would emit, so the same ontology format
     that drives production also drives the test harness.
 
-    Every predicate the loader flattened into a literal attribute is
-    declared as an ``owl:DatatypeProperty`` — a real analyzer ontology
-    declares its properties too, and the resolver's
-    ``attribute_uri_map`` needs the declarations so variable-predicate
-    queries bind ``?p`` to the predicate IRI instead of the attribute
-    name (PRD §6.6 carve-out lift).
+    Every flattened predicate is an ``owl:DatatypeProperty`` and every
+    preserved IRI→IRI predicate is an ``owl:ObjectProperty`` with the
+    edge collection required by the traversal visitor. RPT class mappings
+    instead share one ``phys:triplesCollection``. This mirrors the
+    production resolver contract rather than treating the W3C loader as a
+    special AQL path.
     """
     lines = [
         "@prefix owl: <http://www.w3.org/2002/07/owl#> .",
@@ -397,9 +668,19 @@ def _build_ontology_ttl(
         # (validated by ``_safe_collection_name``) so they're safe
         # inside double quotes; class IRIs come straight from the
         # data file and must be wrapped in angle brackets.
-        lines.append(f'<{class_iri}> a owl:Class ; phys:collectionName "{coll}" .')
+        if mapping_style == "RPT":
+            if triples_collection is None:
+                raise ValueError("RPT ontology needs a triples collection")
+            lines.append(
+                f'<{class_iri}> a owl:Class ; phys:mappingStyle "RPT" ; '
+                f'phys:triplesCollection "{triples_collection}" .'
+            )
+        else:
+            lines.append(f'<{class_iri}> a owl:Class ; phys:collectionName "{coll}" .')
     for pred_iri in sorted(datatype_predicates or ()):
         lines.append(f"<{pred_iri}> a owl:DatatypeProperty .")
+    for pred_iri, edge_collection in sorted((edge_collections or {}).items()):
+        lines.append(f'<{pred_iri}> a owl:ObjectProperty ; phys:edgeCollectionName "{edge_collection}" .')
     lines.append("")
     return "\n".join(lines)
 

@@ -61,11 +61,16 @@ class ParsedSparql:
     ``DESCRIBE *`` (which rdflib stores as the literal string
     ``"var"`` — an unsupported shape that the visitor will refuse
     cleanly).
+
+    ``base_iri`` is the absolute IRI from a SPARQL ``BASE`` directive,
+    or ``None`` when the query declares none. Used by ``IRI()`` /
+    ``URI()`` to resolve relative string arguments (SPARQL §17.4.2.8).
     """
 
     algebra: Any
     explicit_projection: list[Variable] | None = None
     describe_resources: list[Variable | URIRef] | None = None
+    base_iri: str | None = None
 
 
 def parse_sparql(query: str) -> ParsedSparql:
@@ -85,11 +90,39 @@ def parse_sparql(query: str) -> ParsedSparql:
         raise SparqlParseError(f"failed to parse SPARQL: {exc}") from exc
     explicit = _extract_explicit_projection(parsed)
     describe = _extract_describe_resources(parsed)
+    base_iri = _extract_base_iri(parsed)
     return ParsedSparql(
         algebra=translated.algebra,
         explicit_projection=explicit,
         describe_resources=describe,
+        base_iri=base_iri,
     )
+
+
+def _extract_base_iri(parsed: Any) -> str | None:
+    """Return the SPARQL ``BASE`` IRI string, or ``None`` if undeclared.
+
+    rdflib's ``parseQuery`` returns ``(prologue, query)`` where the
+    prologue is a list of ``Base`` / ``PrefixDecl`` parse nodes. A
+    ``Base`` node carries ``iri`` as a :class:`~rdflib.term.URIRef`.
+    """
+    try:
+        prologue, _query = parsed
+    except (ValueError, TypeError):
+        return None
+    if prologue is None:
+        return None
+    try:
+        entries = list(prologue)
+    except TypeError:
+        return None
+    for entry in entries:
+        if getattr(entry, "name", None) != "Base":
+            continue
+        iri = entry.get("iri") if hasattr(entry, "get") else getattr(entry, "iri", None)
+        if iri is not None:
+            return str(iri)
+    return None
 
 
 def _extract_explicit_projection(parsed: Any) -> list[Variable] | None:

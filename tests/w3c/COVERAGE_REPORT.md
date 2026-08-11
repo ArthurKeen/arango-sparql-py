@@ -6,8 +6,9 @@
 > * **Syntax (negative)** — `rdflib` raises a `SparqlParseError` (the test deliberately ill-formed);
 > * **Query evaluation** — the visitor produces non-empty AQL without raising `UnsupportedSparqlError`.
 > * **Live execution** — the translated AQL was run against a real ArangoDB and the bindings matched the W3C-expected `.srx` results.
+> * **Live storage profile** — `document_edge`. Profiles are measured independently; their denominators must not be merged.
 
-Low query-evaluation coverage is *expected* in v0 and tracks our progress as visitor methods are ported from `references/arango-sparql/src/lib/`.
+Query-evaluation coverage measures translation acceptance; live coverage separately measures storage and execution fidelity. The profiles below deliberately keep those signals distinct.
 
 ## Headline numbers
 
@@ -16,7 +17,7 @@ Low query-evaluation coverage is *expected* in v0 and tracks our progress as vis
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
 | Query evaluation | 253 | 244 | 0 | 9 | 0 | 96.4% |
-| Live execution | 191 | 68 | 0 | 126 | 0 | 35.6% |
+| Live execution (document_edge) | 191 | 124 | 0 | 67 | 0 | 64.9% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -54,10 +55,8 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | Count | Test ID | Divergence reason |
 | -----:| ------- | ----------------- |
 | 6 | _(see test)_ | `OWL DL reasoning required` |
-| 2 | _(see test)_ | `ASK over object-property triple — loader skips IRI→IRI triples; translator does not emit edge traversals yet` |
 | 1 | _(see test)_ | `language-tag matching ('name'@en) — loader flattens lang tags; AQL has no notion of xml:lang` |
 | 1 | _(see test)_ | `RDFS entailment required` |
-| 1 | _(see test)_ | `object-property pattern (?parent :hasChild ?child) — loader skips IRI→IRI triples; translator does not emit edge traversals yet` |
 | 1 | _(see test)_ | `RDF literal-form distinction (plain vs xsd:string)` |
 | 1 | _(see test)_ | `RDFS subPropertyOf / domain entailment required` |
 | 1 | _(see test)_ | `RDFS subPropertyOf transitivity entailment required` |
@@ -71,8 +70,10 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 python tests/w3c/analyze_coverage.py            # print
 python tests/w3c/analyze_coverage.py --write    # update this file
 pytest -q tests/w3c -m w3c                      # full pytest run
-RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --write
-                                                # include live execution row
+RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --profile document_edge --write
+                                                # canonical live baseline
+RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --profile rpt
+                                                # separate RPT discovery
 ```
 
 Live-execution numbers are scoped to the translatable subset (cases that the visitor accepts today). They surface AQL ↔ SPARQL semantic divergences caught against a real ArangoDB.

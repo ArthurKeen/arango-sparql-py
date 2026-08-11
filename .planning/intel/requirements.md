@@ -39,13 +39,15 @@ force (405 on Update forms, 400/422/406/503/504/429/401 per §5.2 table).
 ## REQ-physical-model-coverage (§3.3)
 Translator emits correct AQL against every physical shape in §6.1 — PG
 (`COLLECTION`), LPG (`LABEL`), RPT (`_triples`), plain `DOCUMENT` — plus PG+LPG
-hybrids and both edge styles (`DEDICATED_COLLECTION`, `GENERIC_WITH_TYPE`).
+and PG+RPT hybrids and both edge styles (`DEDICATED_COLLECTION`,
+`GENERIC_WITH_TYPE`).
 - acceptance: `tests/translate/{bgp_select,hybrid,rpt}.yml`, `tests/cross/test_multimodel_cross.py`, `tests/cross/test_edge_traversal_cross.py`, `tests/schema/test_fixtures.py`.
 
 ## REQ-hybrid-bgp-translation (§3.4)
 One SPARQL BGP whose triples touch ≥ 2 physical models translates to a single
 AQL query (not rejected, not split), joined on shared subject URI.
 - acceptance: `tests/translate/hybrid.yml`, `tests/cross/test_hybrid_cross.py`.
+- additional mixed-model binding parity: `tests/cross/test_multimodel_cross.py`.
 
 ## REQ-schema-detection (§3.5)
 Both schema detectors ship (algorithmic heuristic + analyzer-backed); analyzer
@@ -59,10 +61,12 @@ All 9 schema/mapping HTTP routes exist with documented response shapes, matching
 - acceptance: `tests/test_service_schema_routes.py`; routes listed in §5.1/§6.4.
 
 ## REQ-foxx-parity (§3.7)
-Hybrid-schema parity with legacy Foxx `arango-sparql`: every translatable legacy
-fixture has a golden emitting semantically equivalent AQL (≥ 90% of legacy
-fixtures pass).
-- acceptance: `tests/legacy/test_foxx_roundtrip.py` (Docker-gated).
+Static semantic parity with archived Foxx `arango-sparql` fixtures: every
+translatable inventoried fixture has a Python semantic-parity case or golden
+emitting semantically equivalent AQL (≥ 90% of the inventory passes).
+- acceptance: `tests/legacy/test_legacy_semantic_parity.py`.
+- status note: initial three-query inventory exists; the ≥90% inventory target
+  remains pending until the archived Jest query corpus is fully enumerated.
 
 ## REQ-operational-parity (§3.8)
 Measurable operational parity with `arango-cypher-py`: identical session /

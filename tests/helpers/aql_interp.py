@@ -283,6 +283,148 @@ def _aggregate_apply(func: str, values: list[Any]) -> Any:
     raise AssertionError(f"interpreter does not implement aggregate {func!r}")
 
 
+def _matching_delimiter(text: str, start: int, opening: str, closing: str) -> int:
+    """Return the matching delimiter index, ignoring quoted contents."""
+
+    depth = 0
+    quote: str | None = None
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+        elif char == opening:
+            depth += 1
+        elif char == closing:
+            depth -= 1
+            if depth == 0:
+                return index
+    raise AssertionError(f"unterminated {opening!r} expression: {text!r}")
+
+
+def _strip_outer_parentheses(expr: str) -> str:
+    """Remove parentheses only when they enclose the complete expression."""
+
+    stripped = expr.strip()
+    while stripped.startswith("("):
+        end = _matching_delimiter(stripped, 0, "(", ")")
+        if end != len(stripped) - 1:
+            break
+        stripped = stripped[1:-1].strip()
+    return stripped
+
+
+def _split_top_level_ternary(expr: str) -> tuple[str, str, str] | None:
+    """Split one AQL ``condition ? yes : no`` without touching nesting."""
+
+    stripped = _strip_outer_parentheses(expr)
+    depths = {"(": 0, "[": 0, "{": 0}
+    pairs = {")": "(", "]": "[", "}": "{"}
+    quote: str | None = None
+    escaped = False
+    question = -1
+    nested_questions = 0
+    for index, char in enumerate(stripped):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+            continue
+        if char in depths:
+            depths[char] += 1
+            continue
+        if char in pairs:
+            depths[pairs[char]] -= 1
+            continue
+        if any(depths.values()):
+            continue
+        if char == "?":
+            if question < 0:
+                question = index
+            else:
+                nested_questions += 1
+        elif char == ":" and question >= 0:
+            if nested_questions:
+                nested_questions -= 1
+            else:
+                return (
+                    stripped[:question].strip(),
+                    stripped[question + 1 : index].strip(),
+                    stripped[index + 1 :].strip(),
+                )
+    return None
+
+
+def _eval_inline_scalar_subquery(
+    body: str,
+    env: dict[str, dict[str, Any]],
+    bind_vars: dict[str, Any],
+    let_env: dict[str, Any] | None,
+) -> Any:
+    """Evaluate the one-row ``FOR x IN [expr] … RETURN expr`` subset."""
+
+    remaining = body.strip()
+    local_let = dict(let_env or {})
+    while remaining.startswith("FOR "):
+        match = re.match(r"FOR\s+(\w+)\s+IN\s+\[", remaining)
+        if match is None:
+            raise AssertionError(f"unsupported scalar subquery FOR: {remaining!r}")
+        alias = match.group(1)
+        opening = match.end() - 1
+        closing = _matching_delimiter(remaining, opening, "[", "]")
+        source = remaining[opening + 1 : closing]
+        local_let[alias] = _eval_expr(source, env, bind_vars, local_let)
+        remaining = remaining[closing + 1 :].strip()
+    if not remaining.startswith("RETURN "):
+        raise AssertionError(f"scalar subquery has no RETURN: {body!r}")
+    return _eval_expr(remaining[len("RETURN ") :], env, bind_vars, local_let)
+
+
+def _replace_inline_scalar_subqueries(
+    expr: str,
+    env: dict[str, dict[str, Any]],
+    bind_vars: dict[str, Any],
+    let_env: dict[str, Any] | None,
+) -> tuple[str, dict[str, Any]]:
+    """Replace emitted ``(FOR … RETURN …)[0]`` values with eval tokens."""
+
+    rewritten = expr
+    values: dict[str, Any] = {}
+    search_from = 0
+    while True:
+        start = rewritten.find("(FOR ", search_from)
+        if start < 0:
+            break
+        closing = _matching_delimiter(rewritten, start, "(", ")")
+        if rewritten[closing + 1 : closing + 4] != "[0]":
+            search_from = start + 1
+            continue
+        token = f"__scalar_subquery_{len(values)}"
+        values[token] = _eval_inline_scalar_subquery(
+            rewritten[start + 1 : closing],
+            env,
+            bind_vars,
+            let_env,
+        )
+        rewritten = rewritten[:start] + token + rewritten[closing + 4 :]
+        search_from = start + len(token)
+    return rewritten, values
+
+
 def _eval_expr(
     expr: str,
     env: dict[str, dict[str, Any]],
@@ -317,6 +459,18 @@ def _eval_expr(
                 return None
             raise NameError(f"name {key!r} is not defined")
 
+    expr, scalar_values = _replace_inline_scalar_subqueries(
+        expr.strip(),
+        env,
+        bind_vars,
+        let_env,
+    )
+    scoped_let = {**(let_env or {}), **scalar_values}
+    if ternary := _split_top_level_ternary(expr):
+        condition, when_true, when_false = ternary
+        branch = when_true if _eval_expr(condition, env, bind_vars, scoped_let) else when_false
+        return _eval_expr(branch, env, bind_vars, scoped_let)
+
     namespace: dict[str, Any] = _NullDefault(_AQL_BUILTINS)
     for alias, doc in env.items():
         # Register the doc dict under its bare alias so HAS(doc1, "attr")
@@ -333,8 +487,7 @@ def _eval_expr(
             for attr, value in doc.items():
                 namespace[f"{alias}__{attr}"] = value
     namespace.update(bind_vars)
-    if let_env:
-        namespace.update(let_env)
+    namespace.update(scoped_let)
     py = _TERNARY_RE.sub(r"((\2) if (\1) else \3)", expr)
     py = _DOC_ATTR_RE.sub(lambda m: f"{m.group(1)}__{m.group(2)}", py)
     py = _BIND_RE.sub(lambda m: m.group(1), py)
@@ -674,9 +827,14 @@ def run_aql_subset(
         row: dict[str, Any] = {}
         if return_scalar_expr is not None:
             # Probe subquery: one scalar column per row. Only the row
-            # count matters to the enclosing LENGTH((…)); the value is
-            # projected under a fixed key so the row is non-empty.
-            row["_scalar"] = _eval_expr(return_scalar_expr, env, bind_vars, let_env)
+            # count matters to the enclosing LENGTH((…)); object-valued
+            # scalar returns are the grouped-empty fallback's passthrough
+            # row and must retain their original projection keys.
+            scalar = _eval_expr(return_scalar_expr, env, bind_vars, let_env)
+            if isinstance(scalar, dict):
+                row.update(scalar)
+            else:
+                row["_scalar"] = scalar
         else:
             for key, value_expr in return_pairs:
                 row[key] = _eval_expr(value_expr, env, bind_vars, let_env)

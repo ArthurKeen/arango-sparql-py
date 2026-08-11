@@ -266,6 +266,7 @@ def _heading(title: str) -> list[str]:
 def _format_markdown(
     by_category: dict[str, CategoryStats],
     live_stats: CategoryStats | None = None,
+    live_profile: str | None = None,
 ) -> str:
     lines: list[str] = []
     lines.append("# W3C SPARQL 1.1 DAWG coverage — measured")
@@ -286,16 +287,23 @@ def _format_markdown(
         "without raising `UnsupportedSparqlError`."
     )
     if live_stats is not None:
+        profile_label = f" ({live_profile})" if live_profile else ""
         lines.append(
             "> * **Live execution** — the translated AQL was run against a "
             "real ArangoDB and the bindings matched the W3C-expected "
             "`.srx` results."
         )
+        if live_profile:
+            lines.append(
+                f"> * **Live storage profile** — `{live_profile}`. "
+                "Profiles are measured independently; their denominators "
+                "must not be merged."
+            )
     lines.append("")
     lines.append(
-        "Low query-evaluation coverage is *expected* in v0 and tracks our "
-        "progress as visitor methods are ported from "
-        "`references/arango-sparql/src/lib/`."
+        "Query-evaluation coverage measures translation acceptance; live "
+        "coverage separately measures storage and execution fidelity. "
+        "The profiles below deliberately keep those signals distinct."
     )
     lines.append("")
 
@@ -322,7 +330,7 @@ def _format_markdown(
         # accepts today, how many AQL-execute to the spec-correct
         # bindings".
         lines.append(
-            f"| Live execution | {live_stats.total} | {live_stats.passed} | "
+            f"| Live execution{profile_label} | {live_stats.total} | {live_stats.passed} | "
             f"{live_stats.failed} | {live_stats.xfailed} | {live_stats.skipped} | "
             f"{live_stats.coverage:.1f}% |"
         )
@@ -413,8 +421,12 @@ def _format_markdown(
     lines.append("python tests/w3c/analyze_coverage.py            # print")
     lines.append("python tests/w3c/analyze_coverage.py --write    # update this file")
     lines.append("pytest -q tests/w3c -m w3c                      # full pytest run")
-    lines.append("RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --write")
-    lines.append("                                                # include live execution row")
+    lines.append(
+        "RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --profile document_edge --write"
+    )
+    lines.append("                                                # canonical live baseline")
+    lines.append("RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --profile rpt")
+    lines.append("                                                # separate RPT discovery")
     lines.append("```")
     lines.append("")
     if live_stats is None:
@@ -509,7 +521,7 @@ def analyze_live() -> CategoryStats:
         "--no-header",
         "-p",
         "no:cacheprovider",
-        "tests/w3c/test_w3c_live_execution.py",
+        "tests/w3c/test_w3c_live_execution.py::test_live_execution",
         "-m",
         "w3c and integration",
     ]
@@ -521,6 +533,9 @@ def analyze_live() -> CategoryStats:
         env=dict(os.environ),  # forward RUN_INTEGRATION + ARANGO_* env vars
     )
     summary = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != 0:
+        raise RuntimeError(f"live W3C pytest run failed; coverage cannot be reported:\n{summary[-4000:]}")
+
     # Pytest's compact summary line has the canonical counters: e.g.
     # ``2 passed, 36 xfailed in 4.21s``. The token immediately
     # before each counter name is its integer count.
@@ -534,6 +549,14 @@ def analyze_live() -> CategoryStats:
     stats.xfailed = _scan("xfailed")
     stats.failed = _scan("failed")
     stats.skipped = _scan("skipped")
+
+    observed = stats.passed + stats.xfailed + stats.failed + stats.skipped
+    if observed != stats.total:
+        raise RuntimeError(
+            "live W3C pytest summary reported "
+            f"{observed} outcomes for {stats.total} W3C cases; "
+            "refusing to publish an inconsistent coverage denominator"
+        )
 
     # Surface the divergence reasons we already know about so the
     # report's "Live-execution divergences" table has something to
@@ -561,11 +584,22 @@ def main() -> int:
             "RUN_INTEGRATION=1; when unset the live row is omitted."
         ),
     )
+    parser.add_argument(
+        "--profile",
+        choices=("document_edge", "rpt"),
+        default="document_edge",
+        help=(
+            "physical RDF profile for --live. Profiles are reported "
+            "separately; do not mix their denominators."
+        ),
+    )
     args = parser.parse_args()
 
     by_category = analyze()
     live_stats: CategoryStats | None = None
+    live_profile: str | None = None
     if args.live:
+        os.environ["W3C_STORAGE_PROFILE"] = args.profile
         live_stats = analyze_live()
         if live_stats.total == 0:
             # The flag was passed but the gate is closed — emit an
@@ -576,8 +610,14 @@ def main() -> int:
                 file=sys.stderr,
             )
             live_stats = None
+        else:
+            live_profile = args.profile
 
-    report = _format_markdown(by_category, live_stats=live_stats)
+    report = _format_markdown(
+        by_category,
+        live_stats=live_stats,
+        live_profile=live_profile,
+    )
 
     if args.write:
         out_path = Path(__file__).parent / "COVERAGE_REPORT.md"
