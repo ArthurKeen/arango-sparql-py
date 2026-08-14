@@ -10,12 +10,13 @@
 @prefix skos: <http://www.w3.org/2004/02/skos/core#> .
 
 
-# DBpedia ontology subset — 75 classes, 250 properties.
+# DBpedia ontology subset — 79 classes, 268 properties.
 # Authored by convert_qald.py from the D-06 provisional survivors'
 # own referenced terms (see module docstring) — never the full DBpedia
 # ontology (RESEARCH D-05 / Anti-Patterns).
 
 # --- Classes ---
+dbyago:ArgentineFilms a owl:Class ; phys:collectionName "ArgentineFilms" .
 dbyago:City108524735 a owl:Class ; phys:collectionName "City108524735" .
 dbyago:LakesOfDenmark a owl:Class ; phys:collectionName "LakesOfDenmark" .
 dbyago:WikicatAmericanVegans a owl:Class ; phys:collectionName "WikicatAmericanVegans" .
@@ -29,10 +30,12 @@ dbyago:WikicatStatesOfTheUnitedStates a owl:Class ; phys:collectionName "Wikicat
 dbo:Actor a owl:Class ; phys:collectionName "Actor" .
 dbo:AdministrativeRegion a owl:Class ; phys:collectionName "AdministrativeRegion" .
 dbo:Airline a owl:Class ; phys:collectionName "Airline" .
+dbo:Airport a owl:Class ; phys:collectionName "Airport" .
 dbo:Album a owl:Class ; phys:collectionName "Album" .
 dbo:Animal a owl:Class ; phys:collectionName "Animal" .
 dbo:Artist a owl:Class ; phys:collectionName "Artist" .
 dbo:Astronaut a owl:Class ; phys:collectionName "Astronaut" .
+dbo:Automobile a owl:Class ; phys:collectionName "Automobile" .
 dbo:Band a owl:Class ; phys:collectionName "Band" .
 dbo:BasketballPlayer a owl:Class ; phys:collectionName "BasketballPlayer" .
 dbo:Beverage a owl:Class ; phys:collectionName "Beverage" .
@@ -89,29 +92,32 @@ dbo:University a owl:Class ; phys:collectionName "University" .
 dbo:VideoGame a owl:Class ; phys:collectionName "VideoGame" .
 dbo:Volcano a owl:Class ; phys:collectionName "Volcano" .
 dbo:Weapon a owl:Class ; phys:collectionName "Weapon" .
+dbo:WorldHeritageSite a owl:Class ; phys:collectionName "WorldHeritageSite" .
 dbo:Writer a owl:Class ; phys:collectionName "Writer" .
 owl:Thing a owl:Class ; phys:collectionName "Thing" .
 
 # --- Object properties (IRI-valued objects; edge-collection mapped) ---
+dbo:Alliance a owl:ObjectProperty ; phys:edgeCollectionName "Alliance" .
 dbo:affiliation a owl:ObjectProperty ; phys:edgeCollectionName "affiliation" .
 dbo:alliance a owl:ObjectProperty ; phys:edgeCollectionName "alliance" .
 dbo:almaMater a owl:ObjectProperty ; phys:edgeCollectionName "dbo_almaMater" .
 dbo:architecturalStyle a owl:ObjectProperty ; phys:edgeCollectionName "architecturalStyle" .
 dbo:artist a owl:ObjectProperty ; phys:edgeCollectionName "artist" .
-dbo:assembly a owl:ObjectProperty ; phys:edgeCollectionName "assembly" .
+dbo:assembly a owl:ObjectProperty ; phys:edgeCollectionName "dbo_assembly" .
 dbo:author a owl:ObjectProperty ; phys:edgeCollectionName "dbo_author" .
 dbo:award a owl:ObjectProperty ; phys:edgeCollectionName "award" .
 dbo:birthPlace a owl:ObjectProperty ; phys:edgeCollectionName "birthPlace" .
 dbo:child a owl:ObjectProperty ; phys:edgeCollectionName "child" .
-dbo:city a owl:ObjectProperty ; phys:edgeCollectionName "city" .
+dbo:city a owl:ObjectProperty ; phys:edgeCollectionName "dbo_city" .
 dbo:class a owl:ObjectProperty ; phys:edgeCollectionName "class" .
-dbo:country a owl:ObjectProperty ; phys:edgeCollectionName "country" .
+dbo:country a owl:ObjectProperty ; phys:edgeCollectionName "dbo_country" .
 dbo:creator a owl:ObjectProperty ; phys:edgeCollectionName "creator" .
 dbo:crosses a owl:ObjectProperty ; phys:edgeCollectionName "crosses" .
 dbo:currency a owl:ObjectProperty ; phys:edgeCollectionName "currency" .
 dbo:deathPlace a owl:ObjectProperty ; phys:edgeCollectionName "deathPlace" .
 dbo:developer a owl:ObjectProperty ; phys:edgeCollectionName "developer" .
 dbo:director a owl:ObjectProperty ; phys:edgeCollectionName "director" .
+dbo:draftTeam a owl:ObjectProperty ; phys:edgeCollectionName "dbo_draftTeam" .
 dbo:field a owl:ObjectProperty ; phys:edgeCollectionName "field" .
 dbo:foundationPlace a owl:ObjectProperty ; phys:edgeCollectionName "foundationPlace" .
 dbo:foundedBy a owl:ObjectProperty ; phys:edgeCollectionName "foundedBy" .
@@ -121,7 +127,7 @@ dbo:ground a owl:ObjectProperty ; phys:edgeCollectionName "dbo_ground" .
 dbo:headquarter a owl:ObjectProperty ; phys:edgeCollectionName "headquarter" .
 dbo:hometown a owl:ObjectProperty ; phys:edgeCollectionName "hometown" .
 dbo:ideology a owl:ObjectProperty ; phys:edgeCollectionName "ideology" .
-dbo:industry a owl:ObjectProperty ; phys:edgeCollectionName "industry" .
+dbo:industry a owl:ObjectProperty ; phys:edgeCollectionName "dbo_industry" .
 dbo:inflow a owl:ObjectProperty ; phys:edgeCollectionName "inflow" .
 dbo:influenced a owl:ObjectProperty ; phys:edgeCollectionName "influenced" .
 dbo:influencedBy a owl:ObjectProperty ; phys:edgeCollectionName "influencedBy" .
@@ -136,8 +142,9 @@ dbo:league a owl:ObjectProperty ; phys:edgeCollectionName "league" .
 dbo:literaryGenre a owl:ObjectProperty ; phys:edgeCollectionName "literaryGenre" .
 dbo:locatedInArea a owl:ObjectProperty ; phys:edgeCollectionName "locatedInArea" .
 dbo:location a owl:ObjectProperty ; phys:edgeCollectionName "location" .
-dbo:locationCountry a owl:ObjectProperty ; phys:edgeCollectionName "locationCountry" .
-dbo:manufacturer a owl:ObjectProperty ; phys:edgeCollectionName "manufacturer" .
+dbo:locationCity a owl:ObjectProperty ; phys:edgeCollectionName "locationCity" .
+dbo:locationCountry a owl:ObjectProperty ; phys:edgeCollectionName "dbo_locationCountry" .
+dbo:manufacturer a owl:ObjectProperty ; phys:edgeCollectionName "dbo_manufacturer" .
 dbo:mission a owl:ObjectProperty ; phys:edgeCollectionName "mission" .
 dbo:mountainRange a owl:ObjectProperty ; phys:edgeCollectionName "mountainRange" .
 dbo:musicBy a owl:ObjectProperty ; phys:edgeCollectionName "musicBy" .
@@ -153,7 +160,7 @@ dbo:place a owl:ObjectProperty ; phys:edgeCollectionName "place" .
 dbo:producer a owl:ObjectProperty ; phys:edgeCollectionName "producer" .
 dbo:product a owl:ObjectProperty ; phys:edgeCollectionName "product" .
 dbo:profession a owl:ObjectProperty ; phys:edgeCollectionName "profession" .
-dbo:publisher a owl:ObjectProperty ; phys:edgeCollectionName "publisher" .
+dbo:publisher a owl:ObjectProperty ; phys:edgeCollectionName "dbo_publisher" .
 dbo:religion a owl:ObjectProperty ; phys:edgeCollectionName "religion" .
 dbo:residence a owl:ObjectProperty ; phys:edgeCollectionName "dbo_residence" .
 dbo:restingPlace a owl:ObjectProperty ; phys:edgeCollectionName "restingPlace" .
@@ -164,18 +171,24 @@ dbo:spokenIn a owl:ObjectProperty ; phys:edgeCollectionName "spokenIn" .
 dbo:spouse a owl:ObjectProperty ; phys:edgeCollectionName "dbo_spouse" .
 dbo:starring a owl:ObjectProperty ; phys:edgeCollectionName "dbo_starring" .
 dbo:targetAirport a owl:ObjectProperty ; phys:edgeCollectionName "targetAirport" .
-dbo:team a owl:ObjectProperty ; phys:edgeCollectionName "team" .
+dbo:team a owl:ObjectProperty ; phys:edgeCollectionName "dbo_team" .
 dbo:type a owl:ObjectProperty ; phys:edgeCollectionName "dbo_type" .
 dbo:wineProduced a owl:ObjectProperty ; phys:edgeCollectionName "wineProduced" .
+dbp:assembly a owl:ObjectProperty ; phys:edgeCollectionName "dbp_assembly" .
 dbp:breed a owl:ObjectProperty ; phys:edgeCollectionName "breed" .
 dbp:burialPlace a owl:ObjectProperty ; phys:edgeCollectionName "burialPlace" .
+dbp:city a owl:ObjectProperty ; phys:edgeCollectionName "dbp_city" .
 dbp:conviction a owl:ObjectProperty ; phys:edgeCollectionName "conviction" .
 dbp:designer a owl:ObjectProperty ; phys:edgeCollectionName "designer" .
+dbp:draftTeam a owl:ObjectProperty ; phys:edgeCollectionName "dbp_draftTeam" .
 dbp:governor a owl:ObjectProperty ; phys:edgeCollectionName "governor" .
 dbp:launchPad a owl:ObjectProperty ; phys:edgeCollectionName "launchPad" .
+dbp:office a owl:ObjectProperty ; phys:edgeCollectionName "dbp_office" .
 dbp:programme a owl:ObjectProperty ; phys:edgeCollectionName "programme" .
 dbp:satelliteOf a owl:ObjectProperty ; phys:edgeCollectionName "satelliteOf" .
 dbp:shipNamesake a owl:ObjectProperty ; phys:edgeCollectionName "shipNamesake" .
+dbp:starring a owl:ObjectProperty ; phys:edgeCollectionName "dbp_starring" .
+dbp:team a owl:ObjectProperty ; phys:edgeCollectionName "dbp_team" .
 dbp:title a owl:ObjectProperty ; phys:edgeCollectionName "title" .
 dbp:trailheads a owl:ObjectProperty ; phys:edgeCollectionName "trailheads" .
 dbp:type a owl:ObjectProperty ; phys:edgeCollectionName "dbp_type" .
@@ -212,6 +225,7 @@ dbo:discoverer a owl:DatatypeProperty .
 dbo:dissolutionDate a owl:DatatypeProperty .
 dbo:doctoralAdvisor a owl:DatatypeProperty .
 dbo:editor a owl:DatatypeProperty .
+dbo:education a owl:DatatypeProperty .
 dbo:elevation a owl:DatatypeProperty .
 dbo:eruptionYear a owl:DatatypeProperty .
 dbo:ethnicGroup a owl:DatatypeProperty .
@@ -229,7 +243,6 @@ dbo:largestCity a owl:DatatypeProperty .
 dbo:leaderName a owl:DatatypeProperty .
 dbo:leaderTitle a owl:DatatypeProperty .
 dbo:length a owl:DatatypeProperty .
-dbo:locationCity a owl:DatatypeProperty .
 dbo:mainspan a owl:DatatypeProperty .
 dbo:manager a owl:DatatypeProperty .
 dbo:mass a owl:DatatypeProperty .
@@ -245,6 +258,7 @@ dbo:numberOfEpisodes a owl:DatatypeProperty .
 dbo:numberOfLocations a owl:DatatypeProperty .
 dbo:numberOfPages a owl:DatatypeProperty .
 dbo:numberOfVisitors a owl:DatatypeProperty .
+dbo:office a owl:DatatypeProperty .
 dbo:officialLanguage a owl:DatatypeProperty .
 dbo:officialSchoolColour a owl:DatatypeProperty .
 dbo:openingYear a owl:DatatypeProperty .
@@ -273,6 +287,7 @@ dbo:timeZone a owl:DatatypeProperty .
 dbo:vicePresident a owl:DatatypeProperty .
 dbo:wavelength a owl:DatatypeProperty .
 dbo:website a owl:DatatypeProperty .
+dbo:weight a owl:DatatypeProperty .
 dbo:wikiPageRedirects a owl:DatatypeProperty .
 dbo:wineRegion a owl:DatatypeProperty .
 dbo:writer a owl:DatatypeProperty .
@@ -292,7 +307,9 @@ dbp:calories a owl:DatatypeProperty .
 dbp:capacity a owl:DatatypeProperty .
 dbp:carbs a owl:DatatypeProperty .
 dbp:children a owl:DatatypeProperty .
+dbp:country a owl:DatatypeProperty .
 dbp:crewMembers a owl:DatatypeProperty .
+dbp:currencyCode a owl:DatatypeProperty .
 dbp:date a owl:DatatypeProperty .
 dbp:deathCause a owl:DatatypeProperty .
 dbp:densityrank a owl:DatatypeProperty .
@@ -313,9 +330,12 @@ dbp:highest a owl:DatatypeProperty .
 dbp:highlights a owl:DatatypeProperty .
 dbp:ign a owl:DatatypeProperty .
 dbp:incumbent a owl:DatatypeProperty .
+dbp:industry a owl:DatatypeProperty .
 dbp:largestmetro a owl:DatatypeProperty .
 dbp:leaderParty a owl:DatatypeProperty .
 dbp:length a owl:DatatypeProperty .
+dbp:locationCountry a owl:DatatypeProperty .
+dbp:manufacturer a owl:DatatypeProperty .
 dbp:members a owl:DatatypeProperty .
 dbp:mineral a owl:DatatypeProperty .
 dbp:name a owl:DatatypeProperty .
@@ -325,19 +345,20 @@ dbp:officialLanguages a owl:DatatypeProperty .
 dbp:populationDensityRank a owl:DatatypeProperty .
 dbp:presidentEnd a owl:DatatypeProperty .
 dbp:presidentStart a owl:DatatypeProperty .
+dbp:publisher a owl:DatatypeProperty .
 dbp:releaseDate a owl:DatatypeProperty .
 dbp:residence a owl:DatatypeProperty .
 dbp:satellites a owl:DatatypeProperty .
 dbp:speciality a owl:DatatypeProperty .
 dbp:species a owl:DatatypeProperty .
 dbp:spouse a owl:DatatypeProperty .
-dbp:starring a owl:DatatypeProperty .
 dbp:studio a owl:DatatypeProperty .
 dbp:successor a owl:DatatypeProperty .
 dbp:taxon a owl:DatatypeProperty .
 dbp:timezone a owl:DatatypeProperty .
 dbp:voiceactor a owl:DatatypeProperty .
 dbp:writer a owl:DatatypeProperty .
+dbp:year a owl:DatatypeProperty .
 dbp:years a owl:DatatypeProperty .
 <http://www.w3.org/2000/01/rdf-schema#label> a owl:DatatypeProperty .
 foaf:gender a owl:DatatypeProperty .
@@ -345,4 +366,5 @@ foaf:givenName a owl:DatatypeProperty .
 foaf:homepage a owl:DatatypeProperty .
 foaf:name a owl:DatatypeProperty .
 foaf:nick a owl:DatatypeProperty .
+foaf:surname a owl:DatatypeProperty .
 

@@ -20,7 +20,7 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
 
 
-  # DBpedia ontology subset — 75 classes, 250 properties.
+  # DBpedia ontology subset — 79 classes, 268 properties.
 
   # Authored by convert_qald.py from the D-06 provisional survivors''
 
@@ -30,6 +30,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
 
   # --- Classes ---
+
+  dbyago:ArgentineFilms a owl:Class ; phys:collectionName "ArgentineFilms" .
 
   dbyago:City108524735 a owl:Class ; phys:collectionName "City108524735" .
 
@@ -66,6 +68,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:Airline a owl:Class ; phys:collectionName "Airline" .
 
+  dbo:Airport a owl:Class ; phys:collectionName "Airport" .
+
   dbo:Album a owl:Class ; phys:collectionName "Album" .
 
   dbo:Animal a owl:Class ; phys:collectionName "Animal" .
@@ -73,6 +77,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
   dbo:Artist a owl:Class ; phys:collectionName "Artist" .
 
   dbo:Astronaut a owl:Class ; phys:collectionName "Astronaut" .
+
+  dbo:Automobile a owl:Class ; phys:collectionName "Automobile" .
 
   dbo:Band a owl:Class ; phys:collectionName "Band" .
 
@@ -187,12 +193,16 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:Weapon a owl:Class ; phys:collectionName "Weapon" .
 
+  dbo:WorldHeritageSite a owl:Class ; phys:collectionName "WorldHeritageSite" .
+
   dbo:Writer a owl:Class ; phys:collectionName "Writer" .
 
   owl:Thing a owl:Class ; phys:collectionName "Thing" .
 
 
   # --- Object properties (IRI-valued objects; edge-collection mapped) ---
+
+  dbo:Alliance a owl:ObjectProperty ; phys:edgeCollectionName "Alliance" .
 
   dbo:affiliation a owl:ObjectProperty ; phys:edgeCollectionName "affiliation" .
 
@@ -205,7 +215,7 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:artist a owl:ObjectProperty ; phys:edgeCollectionName "artist" .
 
-  dbo:assembly a owl:ObjectProperty ; phys:edgeCollectionName "assembly" .
+  dbo:assembly a owl:ObjectProperty ; phys:edgeCollectionName "dbo_assembly" .
 
   dbo:author a owl:ObjectProperty ; phys:edgeCollectionName "dbo_author" .
 
@@ -215,11 +225,11 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:child a owl:ObjectProperty ; phys:edgeCollectionName "child" .
 
-  dbo:city a owl:ObjectProperty ; phys:edgeCollectionName "city" .
+  dbo:city a owl:ObjectProperty ; phys:edgeCollectionName "dbo_city" .
 
   dbo:class a owl:ObjectProperty ; phys:edgeCollectionName "class" .
 
-  dbo:country a owl:ObjectProperty ; phys:edgeCollectionName "country" .
+  dbo:country a owl:ObjectProperty ; phys:edgeCollectionName "dbo_country" .
 
   dbo:creator a owl:ObjectProperty ; phys:edgeCollectionName "creator" .
 
@@ -232,6 +242,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
   dbo:developer a owl:ObjectProperty ; phys:edgeCollectionName "developer" .
 
   dbo:director a owl:ObjectProperty ; phys:edgeCollectionName "director" .
+
+  dbo:draftTeam a owl:ObjectProperty ; phys:edgeCollectionName "dbo_draftTeam" .
 
   dbo:field a owl:ObjectProperty ; phys:edgeCollectionName "field" .
 
@@ -253,7 +265,7 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:ideology a owl:ObjectProperty ; phys:edgeCollectionName "ideology" .
 
-  dbo:industry a owl:ObjectProperty ; phys:edgeCollectionName "industry" .
+  dbo:industry a owl:ObjectProperty ; phys:edgeCollectionName "dbo_industry" .
 
   dbo:inflow a owl:ObjectProperty ; phys:edgeCollectionName "inflow" .
 
@@ -286,10 +298,13 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:location a owl:ObjectProperty ; phys:edgeCollectionName "location" .
 
-  dbo:locationCountry a owl:ObjectProperty ; phys:edgeCollectionName "locationCountry"
+  dbo:locationCity a owl:ObjectProperty ; phys:edgeCollectionName "locationCity" .
+
+  dbo:locationCountry a owl:ObjectProperty ; phys:edgeCollectionName "dbo_locationCountry"
   .
 
-  dbo:manufacturer a owl:ObjectProperty ; phys:edgeCollectionName "manufacturer" .
+  dbo:manufacturer a owl:ObjectProperty ; phys:edgeCollectionName "dbo_manufacturer"
+  .
 
   dbo:mission a owl:ObjectProperty ; phys:edgeCollectionName "mission" .
 
@@ -323,7 +338,7 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:profession a owl:ObjectProperty ; phys:edgeCollectionName "profession" .
 
-  dbo:publisher a owl:ObjectProperty ; phys:edgeCollectionName "publisher" .
+  dbo:publisher a owl:ObjectProperty ; phys:edgeCollectionName "dbo_publisher" .
 
   dbo:religion a owl:ObjectProperty ; phys:edgeCollectionName "religion" .
 
@@ -346,29 +361,41 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
   dbo:targetAirport a owl:ObjectProperty ; phys:edgeCollectionName "targetAirport"
   .
 
-  dbo:team a owl:ObjectProperty ; phys:edgeCollectionName "team" .
+  dbo:team a owl:ObjectProperty ; phys:edgeCollectionName "dbo_team" .
 
   dbo:type a owl:ObjectProperty ; phys:edgeCollectionName "dbo_type" .
 
   dbo:wineProduced a owl:ObjectProperty ; phys:edgeCollectionName "wineProduced" .
 
+  dbp:assembly a owl:ObjectProperty ; phys:edgeCollectionName "dbp_assembly" .
+
   dbp:breed a owl:ObjectProperty ; phys:edgeCollectionName "breed" .
 
   dbp:burialPlace a owl:ObjectProperty ; phys:edgeCollectionName "burialPlace" .
+
+  dbp:city a owl:ObjectProperty ; phys:edgeCollectionName "dbp_city" .
 
   dbp:conviction a owl:ObjectProperty ; phys:edgeCollectionName "conviction" .
 
   dbp:designer a owl:ObjectProperty ; phys:edgeCollectionName "designer" .
 
+  dbp:draftTeam a owl:ObjectProperty ; phys:edgeCollectionName "dbp_draftTeam" .
+
   dbp:governor a owl:ObjectProperty ; phys:edgeCollectionName "governor" .
 
   dbp:launchPad a owl:ObjectProperty ; phys:edgeCollectionName "launchPad" .
+
+  dbp:office a owl:ObjectProperty ; phys:edgeCollectionName "dbp_office" .
 
   dbp:programme a owl:ObjectProperty ; phys:edgeCollectionName "programme" .
 
   dbp:satelliteOf a owl:ObjectProperty ; phys:edgeCollectionName "satelliteOf" .
 
   dbp:shipNamesake a owl:ObjectProperty ; phys:edgeCollectionName "shipNamesake" .
+
+  dbp:starring a owl:ObjectProperty ; phys:edgeCollectionName "dbp_starring" .
+
+  dbp:team a owl:ObjectProperty ; phys:edgeCollectionName "dbp_team" .
 
   dbp:title a owl:ObjectProperty ; phys:edgeCollectionName "title" .
 
@@ -441,6 +468,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:editor a owl:DatatypeProperty .
 
+  dbo:education a owl:DatatypeProperty .
+
   dbo:elevation a owl:DatatypeProperty .
 
   dbo:eruptionYear a owl:DatatypeProperty .
@@ -475,8 +504,6 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:length a owl:DatatypeProperty .
 
-  dbo:locationCity a owl:DatatypeProperty .
-
   dbo:mainspan a owl:DatatypeProperty .
 
   dbo:manager a owl:DatatypeProperty .
@@ -506,6 +533,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
   dbo:numberOfPages a owl:DatatypeProperty .
 
   dbo:numberOfVisitors a owl:DatatypeProperty .
+
+  dbo:office a owl:DatatypeProperty .
 
   dbo:officialLanguage a owl:DatatypeProperty .
 
@@ -563,6 +592,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbo:website a owl:DatatypeProperty .
 
+  dbo:weight a owl:DatatypeProperty .
+
   dbo:wikiPageRedirects a owl:DatatypeProperty .
 
   dbo:wineRegion a owl:DatatypeProperty .
@@ -601,7 +632,11 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbp:children a owl:DatatypeProperty .
 
+  dbp:country a owl:DatatypeProperty .
+
   dbp:crewMembers a owl:DatatypeProperty .
+
+  dbp:currencyCode a owl:DatatypeProperty .
 
   dbp:date a owl:DatatypeProperty .
 
@@ -643,11 +678,17 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbp:incumbent a owl:DatatypeProperty .
 
+  dbp:industry a owl:DatatypeProperty .
+
   dbp:largestmetro a owl:DatatypeProperty .
 
   dbp:leaderParty a owl:DatatypeProperty .
 
   dbp:length a owl:DatatypeProperty .
+
+  dbp:locationCountry a owl:DatatypeProperty .
+
+  dbp:manufacturer a owl:DatatypeProperty .
 
   dbp:members a owl:DatatypeProperty .
 
@@ -667,6 +708,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbp:presidentStart a owl:DatatypeProperty .
 
+  dbp:publisher a owl:DatatypeProperty .
+
   dbp:releaseDate a owl:DatatypeProperty .
 
   dbp:residence a owl:DatatypeProperty .
@@ -679,8 +722,6 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
 
   dbp:spouse a owl:DatatypeProperty .
 
-  dbp:starring a owl:DatatypeProperty .
-
   dbp:studio a owl:DatatypeProperty .
 
   dbp:successor a owl:DatatypeProperty .
@@ -692,6 +733,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
   dbp:voiceactor a owl:DatatypeProperty .
 
   dbp:writer a owl:DatatypeProperty .
+
+  dbp:year a owl:DatatypeProperty .
 
   dbp:years a owl:DatatypeProperty .
 
@@ -706,6 +749,8 @@ ontology: '@prefix owl: <http://www.w3.org/2002/07/owl#> .
   foaf:name a owl:DatatypeProperty .
 
   foaf:nick a owl:DatatypeProperty .
+
+  foaf:surname a owl:DatatypeProperty .
 
 
   '
@@ -908,6 +953,12 @@ cases:
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Swimmer>
     ; <http://dbpedia.org/ontology/birthPlace> <http://dbpedia.org/resource/Moscow>
     }
+- name: qald9plus-train-41
+  nl: Give me all cosmonauts.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Astronaut>
+    { ?uri <http://dbpedia.org/ontology/nationality> <http://dbpedia.org/resource/Russia>
+    } UNION { ?uri <http://dbpedia.org/ontology/nationality> <http://dbpedia.org/resource/Soviet_Union>
+    } }
 - name: qald9plus-train-42
   nl: Give me all Swiss non-profit organizations.
   expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/type> <http://dbpedia.org/resource/Nonprofit_organization>
@@ -963,6 +1014,13 @@ cases:
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/BasketballPlayer>
     ; <http://dbpedia.org/ontology/birthDate> ?date ; <http://dbpedia.org/property/highlights>
     ?h FILTER regex(?h, "MVP") } ORDER BY DESC(?date) OFFSET 0 LIMIT 4
+- name: qald9plus-train-54
+  nl: Give me all companies in Munich.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Company>
+    { ?uri <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/Munich>
+    } UNION { ?uri <http://dbpedia.org/ontology/headquarter> <http://dbpedia.org/resource/Munich>
+    } UNION { ?uri <http://dbpedia.org/ontology/locationCity> <http://dbpedia.org/resource/Munich>
+    } }
 - name: qald9plus-train-55
   nl: Give me the capitals of all countries that the Himalayas run through.
   expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Himalayas> <http://dbpedia.org/ontology/country>
@@ -1018,6 +1076,12 @@ cases:
   expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/Eiffel_Tower>
     <http://dbpedia.org/ontology/architect> ?x . ?x <http://dbpedia.org/property/almaMater>
     ?uri }
+- name: qald9plus-train-68
+  nl: Give me all world heritage sites designated within the past two years.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/WorldHeritageSite> . { ?uri <http://dbpedia.org/property/year>
+    '2013'^^xsd:integer . } UNION { ?uri <http://dbpedia.org/property/year> '2014'^^xsd:integer
+    . } }
 - name: qald9plus-train-69
   nl: Give me all actors who were born in Paris after 1950.
   expected: SELECT DISTINCT ?uri WHERE { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
@@ -1061,6 +1125,12 @@ cases:
   nl: Where was JFK assassinated?
   expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/John_F._Kennedy>
     <http://dbpedia.org/ontology/deathPlace> ?uri }
+- name: qald9plus-train-78
+  nl: Give me all federal chancellors of Germany.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Person>
+    { ?uri <http://dbpedia.org/ontology/office> "Chancellor of Germany" } UNION {
+    ?uri <http://dbpedia.org/property/office> <http://dbpedia.org/resource/Chancellor_of_Germany>
+    } }
 - name: qald9plus-train-79
   nl: Show me everyone who was born on Halloween.
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Person>
@@ -1158,6 +1228,13 @@ cases:
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Person>
     ; <http://dbpedia.org/property/conviction> <http://dbpedia.org/resource/Death_of_John_Lennon>
     }
+- name: qald9plus-train-100
+  nl: Which writers studied in Istanbul?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Writer>
+    { ?uri <http://dbpedia.org/ontology/almaMater> ?x } UNION { ?uri <http://dbpedia.org/ontology/education>
+    ?x } { ?x <http://dbpedia.org/ontology/city> <http://dbpedia.org/resource/Istanbul>
+    } UNION { ?x <http://dbpedia.org/property/city> <http://dbpedia.org/resource/Istanbul>
+    } }
 - name: qald9plus-train-101
   nl: Give me all Australian metalcore bands.
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Band>
@@ -1165,6 +1242,11 @@ cases:
     { ?uri <http://dbpedia.org/ontology/hometown> <http://dbpedia.org/resource/Australia>
     } UNION { ?uri <http://dbpedia.org/ontology/hometown> ?h . ?h <http://dbpedia.org/ontology/country>
     <http://dbpedia.org/resource/Australia> } }
+- name: qald9plus-train-102
+  nl: Which countries adopted the Euro?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Country>
+    { ?uri <http://dbpedia.org/ontology/currency> <http://dbpedia.org/resource/Euro>
+    } UNION { ?uri <http://dbpedia.org/property/currencyCode> "EUR"@en } }
 - name: qald9plus-train-103
   nl: Give me all types of eating disorders.
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/class/yago/WikicatEatingDisorders>
@@ -1213,6 +1295,18 @@ cases:
   nl: Give me all libraries established earlier than 1400.
   expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Library>
     ; <http://dbpedia.org/property/established> ?year FILTER ( ?year < 1400 ) }
+- name: qald9plus-train-114
+  nl: Which programming languages were influenced by Perl?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/ProgrammingLanguage>
+    { ?uri <http://dbpedia.org/ontology/influencedBy> <http://dbpedia.org/resource/Perl>
+    } UNION { <http://dbpedia.org/resource/Perl> <http://dbpedia.org/ontology/influenced>
+    ?uri } }
+- name: qald9plus-train-116
+  nl: What airlines are part of the SkyTeam alliance?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Airline>
+    { ?uri <http://dbpedia.org/ontology/alliance> <http://dbpedia.org/resource/SkyTeam>
+    } UNION { ?uri <http://dbpedia.org/ontology/Alliance> <http://dbpedia.org/resource/SkyTeam>
+    } }
 - name: qald9plus-train-117
   nl: Which ships were called after Benjamin Franklin?
   expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/shipNamesake>
@@ -1268,6 +1362,12 @@ cases:
   expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Airline>
     ; <http://dbpedia.org/ontology/alliance> <http://dbpedia.org/resource/Star_Alliance>
     }
+- name: qald9plus-train-128
+  nl: Give me all actors called Baldwin.
+  expected: PREFIX foaf:<http://xmlns.com/foaf/0.1/> SELECT DISTINCT ?uri WHERE {
+    ?uri foaf:surname 'Baldwin'@en . { ?uri <http://dbpedia.org/ontology/occupation>
+    <http://dbpedia.org/resource/Actor> . } UNION { ?uri <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>
+    <http://dbpedia.org/ontology/Actor> . } }
 - name: qald9plus-train-129
   nl: Who wrote The Hunger Games?
   expected: SELECT DISTINCT ?uri WHERE { <http://dbpedia.org/resource/The_Hunger_Games>
@@ -1333,6 +1433,13 @@ cases:
   nl: Give me the birthdays of all actors of the television show Charmed.
   expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Charmed> <http://dbpedia.org/ontology/starring>
     ?actor . ?actor <http://dbpedia.org/ontology/birthDate> ?date }
+- name: qald9plus-train-142
+  nl: Which telecommunications organizations are located in Belgium?
+  expected: SELECT (COUNT(DISTINCT ?uri) AS ?c) WHERE { ?uri a <http://dbpedia.org/ontology/Organisation>
+    { ?uri <http://dbpedia.org/ontology/industry> <http://dbpedia.org/resource/Telecommunication>
+    } UNION { ?uri <http://dbpedia.org/property/industry> ?industry FILTER regex(?industry,
+    "Telecommunications") } { ?uri <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/Belgium>
+    } UNION { ?uri <http://dbpedia.org/property/locationCountry> "Belgium"@en } }
 - name: qald9plus-train-143
   nl: Give me a list of all lakes in Denmark.
   expected: SELECT DISTINCT ?uri WHERE { { ?uri a <http://dbpedia.org/ontology/Lake>
@@ -1542,6 +1649,14 @@ cases:
   nl: Give me all breeds of the German Shepherd dog.
   expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/property/breed>
     <http://dbpedia.org/resource/German_Shepherd> }
+- name: qald9plus-train-186
+  nl: Who is the heaviest player of the Chicago Bulls?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Person>
+    ; <http://dbpedia.org/ontology/weight> ?num { ?uri <http://dbpedia.org/property/team>
+    <http://dbpedia.org/resource/Chicago_Bulls> } UNION { ?uri <http://dbpedia.org/property/draftTeam>
+    <http://dbpedia.org/resource/Chicago_Bulls> } UNION { ?uri <http://dbpedia.org/ontology/draftTeam>
+    <http://dbpedia.org/resource/Chicago_Bulls> } } ORDER BY DESC(?num) OFFSET 0 LIMIT
+    1
 - name: qald9plus-train-187
   nl: Which languages are spoken in Estonia?
   expected: SELECT DISTINCT ?uri WHERE { ?uri <http://dbpedia.org/ontology/spokenIn>
@@ -2606,6 +2721,14 @@ cases:
   expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
     SELECT DISTINCT ?uri WHERE { ?cave rdf:type dbo:Cave ; dbo:location ?uri . ?uri
     rdf:type dbo:Country } GROUP BY ?uri HAVING ( COUNT(?cave) > 2 )'
+- name: qald9plus-test-4
+  nl: Which airports are located in California, USA?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Airport>
+    { ?uri <http://dbpedia.org/ontology/location> <http://dbpedia.org/resource/California>
+    } UNION { ?uri <http://dbpedia.org/ontology/city> <http://dbpedia.org/resource/California>
+    } UNION { ?uri <http://dbpedia.org/ontology/city> ?city . ?city <http://dbpedia.org/ontology/isPartOf>
+    <http://dbpedia.org/resource/California> } UNION { ?uri <http://dbpedia.org/ontology/operator>
+    <http://dbpedia.org/resource/California> } }
 - name: qald9plus-test-37
   nl: What are the nicknames of San Francisco?
   expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
@@ -2615,6 +2738,18 @@ cases:
   nl: What is Angela Merkel’s birth name?
   expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
     SELECT DISTINCT ?string WHERE { res:Angela_Merkel dbp:birthName ?string }'
+- name: qald9plus-test-29
+  nl: Which countries in the European Union adopted the Euro?
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Country>
+    { ?uri <http://dbpedia.org/ontology/currency> <http://dbpedia.org/resource/Euro>
+    } UNION { ?uri <http://dbpedia.org/property/currencyCode> "EUR"@en } }
+- name: qald9plus-test-23
+  nl: Which software has been published by Mean Hamster Software?
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX onto: <http://dbpedia.org/ontology/>
+    PREFIX prop: <http://dbpedia.org/property/> SELECT DISTINCT ?uri WHERE { ?uri
+    rdf:type onto:Software { ?uri prop:publisher "Mean Hamster Software"@en } UNION
+    { ?uri onto:publisher res:Mean_Hamster_Software } }'
 - name: qald9plus-test-68
   nl: Which country was Bill Gates born in?
   expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -2634,6 +2769,13 @@ cases:
     PREFIX res: <http://dbpedia.org/resource/> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
     SELECT DISTINCT ?uri WHERE { ?uri rdf:type yago:WikicatMonarchsOfTheUnitedKingdom
     ; dbo:spouse ?spouse . ?spouse dbo:birthPlace res:Germany }'
+- name: qald9plus-test-199
+  nl: Give me all Argentine films.
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX yago: <http://dbpedia.org/class/yago/>
+    PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> SELECT DISTINCT ?uri
+    WHERE { { ?uri rdf:type yago:ArgentineFilms } UNION { ?uri rdf:type dbo:Film {
+    ?uri dbo:country res:Argentina } UNION { ?uri dbp:country "Argentina"@en } } }'
 - name: qald9plus-test-203
   nl: How did Michael Jackson die?
   expected: SELECT DISTINCT ?s WHERE { <http://dbpedia.org/resource/Michael_Jackson>
@@ -2788,6 +2930,15 @@ cases:
   expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX dbp: <http://dbpedia.org/property/>
     SELECT DISTINCT ?uri WHERE { res:Yenisei_River <http://dbpedia.org/ontology/country>
     ?uri }'
+- name: qald9plus-test-7
+  nl: Give me all cars that are produced in Germany.
+  expected: SELECT DISTINCT ?uri WHERE { ?uri a <http://dbpedia.org/ontology/Automobile>
+    { ?uri <http://dbpedia.org/ontology/assembly> <http://dbpedia.org/resource/Germany>
+    } UNION { ?uri <http://dbpedia.org/property/assembly> <http://dbpedia.org/resource/Germany>
+    } UNION { { ?uri <http://dbpedia.org/ontology/manufacturer> ?x } UNION { ?uri
+    <http://dbpedia.org/property/manufacturer> ?x } { ?x <http://dbpedia.org/ontology/locationCountry>
+    <http://dbpedia.org/resource/Germany> } UNION { ?x <http://dbpedia.org/ontology/location>
+    <http://dbpedia.org/resource/Germany> } } }
 - name: qald9plus-test-135
   nl: When did Michael Jackson die?
   expected: SELECT DISTINCT ?date WHERE { <http://dbpedia.org/resource/Michael_Jackson>
@@ -2826,6 +2977,14 @@ cases:
   expected: SELECT DISTINCT ?uri WHERE { ?x a <http://dbpedia.org/ontology/Volcano>
     ; <http://dbpedia.org/ontology/locatedInArea> ?uri . ?uri a <http://dbpedia.org/ontology/Country>
     } GROUP BY ?uri HAVING ( COUNT(?x) > 10 )
+- name: qald9plus-test-52
+  nl: Give me all movies with Tom Cruise.
+  expected: 'PREFIX res: <http://dbpedia.org/resource/> PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+    PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> PREFIX onto: <http://dbpedia.org/ontology/>
+    PREFIX prop: <http://dbpedia.org/property/> SELECT DISTINCT ?uri WHERE { ?uri
+    rdf:type onto:Film { ?uri prop:starring res:Tom_Cruise } UNION { ?uri onto:starring
+    res:Tom_Cruise } OPTIONAL { ?uri rdfs:label ?string FILTER ( lang(?string) = "en"
+    ) } }'
 - name: qald9plus-test-21
   nl: Who created English Wikipedia?
   expected: 'PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
