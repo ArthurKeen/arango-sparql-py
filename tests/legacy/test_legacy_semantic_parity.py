@@ -26,6 +26,16 @@ oxi = pytest.importorskip("pyoxigraph", reason="pyoxigraph required for legacy p
 _LEGACY_SOURCE = (
     Path(__file__).parents[2] / "references" / "arango-sparql" / "tests" / "aql-translator.test.js"
 )
+
+# ``references/`` is a local-only symlink to the archived Foxx repo and is not
+# checked out in CI. §3.7 (legacy-Foxx parity) is WAIVED per ADR-0003 — W3C DAWG
+# is the sole correctness gate — so this module is a non-gating local extra:
+# skip the whole file when the archived source is absent rather than failing CI.
+pytestmark = pytest.mark.skipif(
+    not _LEGACY_SOURCE.is_file(),
+    reason=f"legacy Foxx source unavailable ({_LEGACY_SOURCE}); §3.7 waived (ADR-0003), non-gating",
+)
+
 EX = "http://legacy-parity.example/"
 _DATA = """
 @prefix : <http://legacy-parity.example/> .
