@@ -64,15 +64,19 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
-      FOR row6 IN (
-        FOR doc2 IN @@c2_Document
-        FOR k3 IN ATTRIBUTES(doc2, true)
-        FILTER k3 NOT IN @_p1_sys_attrs
-        COLLECT grp4 = doc2._uri WITH COUNT INTO agg5
-        RETURN { s: grp4, c: agg5 }
+      FOR row8 IN (
+        LET results6 = (
+          FOR doc2 IN @@c2_Document
+          FOR k3 IN ATTRIBUTES(doc2, true)
+          FILTER k3 NOT IN @_p1_sys_attrs
+          COLLECT grp4 = doc2._uri WITH COUNT INTO agg5
+          RETURN { s: grp4, c: agg5 }
+        )
+        FOR result7 IN (LENGTH(results6) == 0 ? [{}] : results6)
+        RETURN result7
       )
-      FILTER row6.s == doc1._uri
-      RETURN { s: doc1._uri, c: row6.c }
+      FILTER row8.s == doc1._uri
+      RETURN { s: doc1._uri, c: row8.c }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"

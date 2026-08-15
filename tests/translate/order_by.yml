@@ -88,7 +88,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER HAS(doc1, "name")
-      SORT (doc1.age + @_p1) ASC
+      SORT (FOR num2 IN [doc1.age] FOR num3 IN [@_p1] RETURN IS_NUMBER(num2) && IS_NUMBER(num3) ? (num2 + num3) : null)[0] ASC
       RETURN { n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"

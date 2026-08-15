@@ -16,10 +16,10 @@
 #    equality FILTERs for shared variables, matching the
 #    ``ToMultiSet`` and ``MINUS`` recipes.
 #
-# AlternativePath (``:p|:q``) is desugared to a UNION of single-
-# triple BGPs via :func:`emit_alternative_path`, sharing the
-# helper above so its AQL output is byte-for-byte identical to
-# the equivalent explicit ``{ ?s :p ?o } UNION { ?s :q ?o }``.
+# AlternativePath (``:p|:q``) is desugared via :func:`emit_alternative_path`
+# and combines arms with ``UNION_DISTINCT`` (SPARQL §9 set semantics).
+# Pattern ``UNION`` keeps bag ``UNION`` — the two are intentionally
+# not byte-identical.
 
 ontology: ""
 
@@ -120,17 +120,14 @@ cases:
   # ---- AlternativePath ----------------------------------------------
 
   - name: altpath_two_arms
-    # ``?s :p|:q ?o`` — desugars to UNION of two single-triple BGPs
-    # via :func:`emit_alternative_path`. AQL output must be byte-
-    # for-byte identical to the explicit
-    # ``{ ?s :p ?o } UNION { ?s :q ?o }`` (case
-    # ``union_basic_shared_vars`` above) — regression coverage for
-    # the desugaring path.
+    # ``?s :p|:q ?o`` — desugars via :func:`emit_alternative_path`.
+    # Uses ``UNION_DISTINCT`` (path set semantics); the equivalent
+    # pattern ``UNION`` keeps bag ``UNION``.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?o WHERE { ?s :p|:q ?o }
     expected_aql: |-
-      FOR row3 IN UNION(
+      FOR row3 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
@@ -156,7 +153,7 @@ cases:
       PREFIX : <http://ex.org/>
       SELECT ?s ?o WHERE { ?s :p|:q|:r ?o }
     expected_aql: |-
-      FOR row4 IN UNION(
+      FOR row4 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")

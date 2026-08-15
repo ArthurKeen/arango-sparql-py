@@ -43,9 +43,9 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER HAS(doc1, "name")
-      LET bv2 = (doc1.age * @_p1)
-      FILTER (bv2 >= @_p2)
-      RETURN { n: doc1.name, dbl: bv2 }
+      LET bv4 = (FOR num2 IN [doc1.age] FOR num3 IN [@_p1] RETURN IS_NUMBER(num2) && IS_NUMBER(num3) ? (num2 * num3) : null)[0]
+      FILTER (bv4 >= @_p2)
+      RETURN { n: doc1.name, dbl: bv4 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 2
@@ -102,8 +102,8 @@ cases:
   # ---- BIND with an unbound right-hand side (SPARQL §17.2.1) --------
   #
   # SPARQL §17.4.1.2 + §17.2.1: when ``BIND(expr AS ?v)`` evaluates
-  # ``expr`` and a referenced variable is unbound, the expression
-  # evaluates to the spec's "error" value; the row is KEPT, and
+    # ``expr`` and a referenced variable is unbound, the expression
+    # evaluates to the spec's "error" value; the row is KEPT, and
   # ``?v`` is simply left unbound on this row. The visitor lowers
   # this to ``LET <bv> = null`` so the row continues, ``?v`` carries
   # ``null`` (our model's representation of "unbound"), and every
@@ -148,8 +148,8 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
-      LET bv2 = NOT_NULL(null, (-@_p1))
-      RETURN { n: doc1.name, d: bv2 }
+      LET bv3 = NOT_NULL(null, (FOR num2 IN [@_p1] RETURN IS_NUMBER(num2) ? (0 - num2) : null)[0])
+      RETURN { n: doc1.name, d: bv3 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 3

@@ -265,6 +265,85 @@ def test_nested_mul_path_collapses_to_equivalent_modifier(nested: str, equivalen
     )
 
 
+def test_select_star_omits_sequence_path_intermediates() -> None:
+    """``SELECT *`` must not project SequencePath ``_path_<n>`` join vars.
+
+    SPARQL 1.1 §18.2.4 projects in-scope variables only; the intermediates
+    minted by ``:p1/:p2/:p3`` desugaring are internal. Emitting them made
+    W3C ``property-path/pp01`` (and siblings) diverge despite a correct
+    ``?x`` binding — see live-coverage slice after document-edge fidelity.
+    """
+    from arango_sparql.api import translate
+
+    ontology = """
+    @prefix ex: <http://www.example.org/schema#> .
+    @prefix owl: <http://www.w3.org/2002/07/owl#> .
+    @prefix phys: <https://arango.solutions/phys#> .
+    ex:p1 a owl:ObjectProperty ; phys:edgeCollectionName "edge_p1" .
+    ex:p2 a owl:ObjectProperty ; phys:edgeCollectionName "edge_p2" .
+    ex:p3 a owl:ObjectProperty ; phys:edgeCollectionName "edge_p3" .
+    """
+    resolver = SchemaResolver.from_turtle(ontology, default_collection="Document")
+    result = translate(
+        """
+        PREFIX ex: <http://www.example.org/schema#>
+        PREFIX in: <http://www.example.org/instance#>
+        SELECT * WHERE { in:a ex:p1/ex:p2/ex:p3 ?x }
+        """,
+        resolver=resolver,
+    )
+    assert "_path_" not in result.aql.split("RETURN", 1)[-1]
+    assert "x:" in result.aql.split("RETURN", 1)[-1]
+
+
+def test_mul_path_uses_union_distinct_set_semantics() -> None:
+    """``:p+`` / ``:p*`` must collapse duplicate endpoints (SPARQL §9).
+
+    Fixed-length UNION arms can reach the same node via different walks;
+    bag ``UNION`` would multiply solutions (W3C pp12/pp21/pp37). Path
+    evaluation is a set of nodes — AQL ``UNION_DISTINCT``.
+    """
+    resolver = SchemaResolver.from_turtle("", default_collection="Document")
+    resolver.property_path_max_depth = 3
+    plus = translate(
+        "PREFIX : <http://ex.org/> SELECT ?o WHERE { :a :p+ ?o }",
+        resolver=resolver,
+    )
+    star = translate(
+        "PREFIX : <http://ex.org/> SELECT ?o WHERE { :a :p* ?o }",
+        resolver=resolver,
+    )
+    assert "UNION_DISTINCT(" in plus.aql
+    assert "UNION_DISTINCT(" in star.aql
+    # Pattern UNION must stay bag-preserving.
+    bag = translate(
+        "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { { ?s :p ?o } UNION { ?s :q ?o } }",
+        resolver=resolver,
+    )
+    assert "UNION_DISTINCT(" not in bag.aql
+    assert " IN UNION(" in bag.aql
+
+
+def test_mul_path_constant_endpoints_emit_single_existence_row() -> None:
+    """``SELECT * WHERE { :a (:p)* :b }`` yields one empty binding if matched.
+
+    Both endpoints are IRIs so no user variables are bound; the emitter
+    projects a ``_path_hit`` sentinel under ``UNION_DISTINCT`` and omits
+    it from the outer projection — never one empty row per walk length.
+    """
+    resolver = SchemaResolver.from_turtle("", default_collection="Document")
+    resolver.property_path_max_depth = 2
+    result = translate(
+        "PREFIX : <http://ex.org/> SELECT * WHERE { :a (:p)* :b }",
+        resolver=resolver,
+    )
+    assert "UNION_DISTINCT(" in result.aql
+    assert "_path_hit: 1" in result.aql
+    final_return = result.aql.rsplit("RETURN", 1)[-1]
+    assert "_path_hit" not in final_return
+    assert "{  }" in final_return or "{}" in final_return.replace(" ", "")
+
+
 def test_fresh_path_var_increments_monotonically() -> None:
     """The intermediate-variable counter is per-query: two paths in
     the same query produce ``?_path_1``, ``?_path_2``, … in order,

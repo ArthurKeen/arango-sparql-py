@@ -122,6 +122,18 @@ _PG_PERSON_OWL = """
 """
 
 
+_PG_PROJECT_EDGE_OWL = """
+@prefix : <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phys: <https://arango.solutions/phys#> .
+:Project a owl:Class ;
+    phys:collectionName "Project" .
+:title a owl:DatatypeProperty .
+:owner a owl:ObjectProperty ;
+    phys:edgeCollectionName "owner" .
+"""
+
+
 _RPT_TRIPLES_OWL = """
 @prefix : <http://ex.org/> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
@@ -157,6 +169,24 @@ def test_variable_predicate_pg_class_bound_subject() -> None:
         "@c1_Person": "Person",
         "_p1_sys_attrs": ["_graph", "_uri"],
     }
+
+
+def test_variable_predicate_unifies_document_attributes_and_edges() -> None:
+    resolver = SchemaResolver.from_turtle(_PG_PROJECT_EDGE_OWL)
+    result = translate(
+        "PREFIX : <http://ex.org/> SELECT ?s ?p ?o WHERE { ?s a :Project . ?s ?p ?o }",
+        resolver=resolver,
+    )
+
+    assert "FOR triple" in result.aql
+    assert " IN UNION(" in result.aql
+    assert "FOR k" in result.aql
+    assert " IN ATTRIBUTES(doc1, true)" in result.aql
+    assert " IN OUTBOUND doc1 " in result.aql
+    assert "RETURN { predicate:" in result.aql
+    assert "RETURN { s: doc1._uri, p: triple" in result.aql
+    assert "http://ex.org/owner" in result.bind_vars.values()
+    assert "owner" in result.bind_vars.values()
 
 
 def test_variable_predicate_rpt_bound_subject() -> None:

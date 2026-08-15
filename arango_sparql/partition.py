@@ -144,6 +144,7 @@ def translate_partition(
         builder=builder,
         resolver=resolver,
         explicit_projection=parsed.explicit_projection,
+        base_iri=parsed.base_iri,
         tenant_id=tenant_id,
         extra_projection=key_vars,
     )

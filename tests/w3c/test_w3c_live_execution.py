@@ -76,6 +76,7 @@ from .runner import (
 from .srx_parser import (
     UnsupportedResultFormat,
     compare_ask,
+    compare_graph,
     compare_select,
     normalize_actual_rows,
     parse_results_file,
@@ -84,6 +85,24 @@ from .srx_parser import (
 logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.w3c, pytest.mark.integration]
+W3C_STORAGE_PROFILE_ENV_VAR = "W3C_STORAGE_PROFILE"
+W3C_STORAGE_PROFILES = frozenset({"document_edge", "rpt"})
+
+
+def storage_profile() -> str:
+    """Return the explicit physicalisation profile for this live run.
+
+    The profiles have materially different fidelity/performance properties;
+    callers must select one rather than silently mixing their result rows.
+    """
+
+    profile = os.getenv(W3C_STORAGE_PROFILE_ENV_VAR, "document_edge")
+    if profile not in W3C_STORAGE_PROFILES:
+        raise ValueError(
+            f"{W3C_STORAGE_PROFILE_ENV_VAR} must be one of {sorted(W3C_STORAGE_PROFILES)}, got {profile!r}"
+        )
+    return profile
+
 
 if w3c_corpus_root() is None:
     pytest.skip(
@@ -199,18 +218,6 @@ _MODULE_PREFIX = "w3c_"
 # tells the operator exactly which W3C semantics AQL execution
 # doesn't yet match.
 SKIP_REASONS: dict[str, str] = {
-    # ASK on object-property triples ({:s1 :p1 :s2}) — our loader
-    # skips object-property triples (translator can't traverse
-    # edges yet), so the ASK never finds a match even though the
-    # spec says it should.
-    "json-res/jsonres03": (
-        "ASK over object-property triple — loader skips IRI→IRI triples; "
-        "translator does not emit edge traversals yet"
-    ),
-    "json-res/jsonres04": (
-        "ASK over object-property triple — loader skips IRI→IRI triples; "
-        "translator does not emit edge traversals yet"
-    ),
     # Entailment tests rely on RDF / OWL / RDFS reasoning the
     # translator does not perform — AQL only sees the explicit
     # triples we loaded.
@@ -219,10 +226,6 @@ SKIP_REASONS: dict[str, str] = {
     ),
     "entailment/paper-sparqldl-Q1": "OWL DL reasoning required",
     "entailment/paper-sparqldl-Q1-rdfs": "RDFS entailment required",
-    "entailment/parent2": (
-        "object-property pattern (?parent :hasChild ?child) — loader "
-        "skips IRI→IRI triples; translator does not emit edge traversals yet"
-    ),
     "entailment/plainLit": "RDF literal-form distinction (plain vs xsd:string)",
     "entailment/rdfs02": "RDFS subPropertyOf / domain entailment required",
     "entailment/rdfs05": "RDFS subPropertyOf transitivity entailment required",
@@ -251,9 +254,36 @@ SKIP_REASONS: dict[str, str] = {
 # an unlisted case that passes shows up in the pass column). When a
 # translator change legitimately changes semantics, update the list
 # in the same commit and say why in the commit message.
+#
 EXPECTED_LIVE_PASSES: frozenset[str] = frozenset(
     {
+        # Generic triple scans merge datatype attributes and object edges.
+        "aggregates/agg01",
+        "aggregates/agg02",
+        "aggregates/agg03",
+        "aggregates/agg04",
+        "aggregates/agg05",
+        "aggregates/agg06",
+        "aggregates/agg07",
         "aggregates/agg-sample-01",
+        # Array fan-out restores one RDF solution per repeated literal.
+        "aggregates/agg-avg-01",
+        "aggregates/agg-avg-02",
+        "aggregates/agg-groupconcat-03",
+        "aggregates/agg-max-01",
+        "aggregates/agg-max-02",
+        "aggregates/agg-min-01",
+        "aggregates/agg-min-02",
+        # Empty groups, expression errors, default GROUP_CONCAT separators,
+        # and decimal float noise preserve SPARQL aggregate semantics.
+        "aggregates/agg-empty-group",
+        "aggregates/agg-err-01",
+        "aggregates/agg-err-02",
+        "aggregates/agg-groupconcat-01",
+        "aggregates/agg-groupconcat-02",
+        "aggregates/agg-sum-01",
+        "aggregates/agg-sum-02",
+        "aggregates/agg08b",
         "bind/bind01",
         "bind/bind02",
         "bind/bind03",
@@ -262,18 +292,39 @@ EXPECTED_LIVE_PASSES: frozenset[str] = frozenset(
         "bind/bind06",
         "bind/bind08",
         "bind/bind11",
-        "bindings/inline1",
-        "bindings/values1",
-        "bindings/values3",
+        # SPARQL Results TSV/JSON parsers + isomorphic blank-node compare.
+        "csv-tsv-res/tsv01",
+        "csv-tsv-res/tsv03",
+        "json-res/jsonres01",
+        # RDF graph comparator validates CONSTRUCT output by isomorphism.
         "construct/constructwhere01",
         "construct/constructwhere02",
         "construct/constructwhere03",
-        "construct/constructwhere04",
+        "bindings/inline1",
+        "bindings/inline2",
+        "bindings/values1",
+        "bindings/values2",
+        "bindings/values3",
+        "bindings/values6",
         "entailment/owlds01",
+        "entailment/parent2",
+        # Blank-node objects remain present in the document profile.
+        "entailment/rdf03",
         "entailment/sparqldl-06",
+        "entailment/sparqldl-07",
+        "entailment/sparqldl-08",
+        "entailment/sparqldl-09",
+        # BNODE() labels compared up to SELECT-result isomorphism.
+        "functions/bnode02",
+        # IRI()/URI() resolve relative strings against SPARQL BASE.
+        "functions/iri01",
+        "exists/exists01",
+        "exists/exists02",
+        "exists/exists04",
         "exists/exists05",
         "functions/abs01",
         "functions/ceil01",
+        "functions/coalesce01",
         "functions/concat01",
         "functions/contains01",
         "functions/day",
@@ -282,6 +333,7 @@ EXPECTED_LIVE_PASSES: frozenset[str] = frozenset(
         "functions/floor01",
         "functions/in01",
         "functions/in02",
+        "functions/if02",
         "functions/isnumeric01",
         "functions/lcase01",
         "functions/length01",
@@ -312,12 +364,34 @@ EXPECTED_LIVE_PASSES: frozenset[str] = frozenset(
         "functions/year",
         "grouping/group01",
         "grouping/group03",
+        "grouping/group04",
         "grouping/group05",
+        "json-res/jsonres03",
+        "json-res/jsonres04",
         "project-expression/projexp03",
+        "project-expression/projexp01",
+        "project-expression/projexp02",
+        "project-expression/projexp04",
         "project-expression/projexp06",
         "project-expression/projexp07",
+        # Document-edge RDF physicalisation (W3C loader fidelity slice).
+        "property-path/pp02",
         "property-path/pp06",
+        "property-path/pp08",
+        "property-path/pp14",
+        "property-path/pp30",
+        "property-path/pp31",
+        "property-path/pp32",
+        "property-path/pp33",
+        # SELECT * omits SequencePath _path_* intermediates (pp01/03/09/11).
+        "property-path/pp01",
+        "property-path/pp03",
+        "property-path/pp09",
+        "property-path/pp11",
+        "subquery/subquery09",
+        "subquery/subquery08",
         "subquery/subquery10",
+        "subquery/subquery12",
     }
 )
 
@@ -346,7 +420,11 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
       still bubble up as errors so the operator notices.
     """
     db = _live_arango_db
-    gated = case.short_id in EXPECTED_LIVE_PASSES
+    # Expected-pass gates name the canonical document-edge profile. RPT is
+    # measured separately during discovery until it has its own baseline;
+    # applying a Document comparator gate to a different physical model
+    # would turn useful profile differences into false regressions.
+    gated = storage_profile() == "document_edge" and case.short_id in EXPECTED_LIVE_PASSES
 
     def _diverge(message: str) -> None:
         if gated:
@@ -377,7 +455,12 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
         _diverge(f"unsupported result format: {exc}")
 
     try:
-        ontology_ttl, _coll_map = load_w3c_data_to_arango(db, case.data_paths, prefix)
+        ontology_ttl, _coll_map = load_w3c_data_to_arango(
+            db,
+            case.data_paths,
+            prefix,
+            storage_profile=storage_profile(),
+        )
     except Exception as exc:  # noqa: BLE001 — surface the load step's reason
         # Loader failures are infra-divergent (corpus surprise,
         # pyoxigraph parse error, ArangoDB write rejection); xfail
@@ -387,7 +470,15 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
         _diverge(f"data load failed: {exc}")
 
     try:
-        resolver = SchemaResolver.from_turtle(ontology_ttl, default_collection=default_coll)
+        resolver = SchemaResolver.from_turtle(
+            ontology_ttl,
+            default_collection=default_coll,
+            # The document-edge loader represents repeated RDF literals as
+            # JSON lists. Expand those lists back to one RDF triple per
+            # value; without this, aggregate and variable-predicate cases
+            # observe the list as one atomic AQL value.
+            fan_out_list_values=storage_profile() == "document_edge",
+        )
         # We re-translate here (instead of caching the pre-flight
         # result) because the pre-flight resolver used the literal
         # ``Document`` collection — the live run needs the per-test
@@ -404,6 +495,8 @@ def test_live_execution(case: W3CTestCase, _live_arango_db: Any) -> None:
 
         if expected.is_ask:
             ok, msg = compare_ask(bool(expected.ask), actual_rows)
+        elif expected.is_graph:
+            ok, msg = compare_graph(expected.graph, actual_rows)
         else:
             ok, msg = compare_select(expected.rows or [], normalize_actual_rows(actual_rows))
 
@@ -434,6 +527,18 @@ def test_live_execution_module_imports() -> None:
     """
     assert isinstance(_LIVE_CASES, list)
     assert all(isinstance(c, W3CTestCase) for c in _LIVE_CASES)
+
+
+def test_storage_profile_defaults_and_rejects_unknown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Profiles are explicit so their coverage denominators cannot blur."""
+
+    monkeypatch.delenv(W3C_STORAGE_PROFILE_ENV_VAR, raising=False)
+    assert storage_profile() == "document_edge"
+    monkeypatch.setenv(W3C_STORAGE_PROFILE_ENV_VAR, "rpt")
+    assert storage_profile() == "rpt"
+    monkeypatch.setenv(W3C_STORAGE_PROFILE_ENV_VAR, "unknown")
+    with pytest.raises(ValueError, match="W3C_STORAGE_PROFILE"):
+        storage_profile()
 
 
 def test_live_execution_skip_reasons_are_known() -> None:

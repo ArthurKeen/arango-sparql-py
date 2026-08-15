@@ -122,7 +122,7 @@ cases:
     expected_aql: |
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
-      FILTER ((doc1.age + @_p1) > @_p2)
+      FILTER ((FOR num2 IN [doc1.age] FOR num3 IN [@_p1] RETURN IS_NUMBER(num2) && IS_NUMBER(num3) ? (num2 + num3) : null)[0] > @_p2)
       RETURN { s: doc1._uri }
     expected_bind_vars:
       "@c1_Person": "Person"

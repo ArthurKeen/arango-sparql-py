@@ -82,3 +82,6 @@ references/arango-schema-mapper
 .claude/
 .cursor/rules/workflow.mdc
 .no-drift-gate
+.cursor/.shared-memory-sessions/
+.cursor/hooks.json.pre-update.*
+.cursor/hooks/*.pre-update.*

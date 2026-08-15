@@ -206,7 +206,7 @@ cases:
       PREFIX : <http://ex.org/>
       SELECT ?g ?o WHERE { GRAPH ?g { ?s (:p|:q) ?o } }
     expected_aql: |-
-      FOR row3 IN UNION(
+      FOR row3 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")

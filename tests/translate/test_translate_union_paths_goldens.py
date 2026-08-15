@@ -110,16 +110,12 @@ def test_union_paths_golden(
 # ---------------------------------------------------------------------------
 
 
-def test_altpath_matches_explicit_union_byte_for_byte() -> None:
-    """``?s :p|:q ?o`` MUST produce the same AQL as
-    ``{ ?s :p ?o } UNION { ?s :q ?o }``.
+def test_altpath_uses_union_distinct_while_pattern_union_keeps_bag() -> None:
+    """``:p|:q`` is set semantics; pattern ``UNION`` stays bag ``UNION``.
 
-    This is the headline invariant of the bundle: the
-    desugaring's correctness depends on AlternativePath calling
-    the same shared emitter as Union. A regression that, e.g.,
-    swapped the arm order or used a different row alias prefix
-    would surface here even if both forms still pass their own
-    individual golden.
+    Both forms share the two-phase emitter, but property paths pass
+    ``distinct=True`` (SPARQL §9) while pattern UNION does not
+    (§18.5 multisets). The AQL bodies match aside from the operator.
     """
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     altpath = translate(
@@ -130,10 +126,10 @@ def test_altpath_matches_explicit_union_byte_for_byte() -> None:
         "PREFIX : <http://ex.org/> SELECT ?s ?o WHERE { { ?s :p ?o } UNION { ?s :q ?o } }",
         resolver=resolver,
     )
-    assert altpath.aql == union.aql, (
-        "AlternativePath and explicit UNION should be byte-identical:\n"
-        f"altpath:\n{altpath.aql}\nunion:\n{union.aql}"
-    )
+    assert "UNION_DISTINCT(" in altpath.aql
+    assert "UNION_DISTINCT(" not in union.aql
+    assert " IN UNION(" in union.aql
+    assert altpath.aql.replace("UNION_DISTINCT(", "UNION(") == union.aql
     assert altpath.bind_vars == union.bind_vars
 
 

@@ -29,6 +29,8 @@ harness has no extra runtime cost.
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import logging
 import xml.etree.ElementTree as ET
@@ -101,10 +103,15 @@ class ResultSet:
     variables: list[str] = field(default_factory=list)
     rows: list[dict[str, Any]] | None = None
     ask: bool | None = None
+    graph: Any | None = None
 
     @property
     def is_ask(self) -> bool:
         return self.ask is not None
+
+    @property
+    def is_graph(self) -> bool:
+        return self.graph is not None
 
 
 # ---------------------------------------------------------------------------
@@ -128,10 +135,12 @@ def parse_results_file(path: Path) -> ResultSet:
         return parse_srj(path.read_bytes())
     if suffix in {".ttl", ".n3"}:
         return parse_ttl_results(path.read_bytes())
-    if suffix in {".csv", ".tsv"}:
-        # SPARQL 1.1 also defines CSV/TSV result formats; the few in
-        # the corpus are out-of-scope for v0 — surface a clear reason.
-        raise UnsupportedResultFormat(f"CSV/TSV result formats are not yet supported: {path.suffix}")
+    if suffix == ".tsv":
+        return parse_tsv(path.read_bytes())
+    if suffix == ".csv":
+        raise UnsupportedResultFormat(
+            "CSV result format is lossy for RDF term kinds and is not yet supported"
+        )
     raise UnsupportedResultFormat(f"unknown result-file suffix: {path.suffix}")
 
 
@@ -322,6 +331,59 @@ def _srj_term_value(term: dict[str, Any]) -> Any:
 
 
 # ---------------------------------------------------------------------------
+# TSV (SPARQL 1.1 Results TSV)
+# ---------------------------------------------------------------------------
+
+
+def parse_tsv(payload: bytes) -> ResultSet:
+    """Parse SPARQL Results TSV while preserving RDF term syntax."""
+    try:
+        text = payload.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise UnsupportedResultFormat(f"malformed TSV encoding: {exc}") from exc
+    reader = csv.reader(
+        io.StringIO(text),
+        delimiter="\t",
+        quoting=csv.QUOTE_NONE,
+    )
+    try:
+        header = next(reader)
+    except StopIteration as exc:
+        raise UnsupportedResultFormat("TSV result file is empty") from exc
+    variables = [field.removeprefix("?") for field in header]
+    if any(not variable for variable in variables):
+        raise UnsupportedResultFormat(f"invalid TSV variable header: {header!r}")
+
+    from rdflib.util import from_n3
+
+    rows: list[dict[str, Any]] = []
+    for line_number, fields in enumerate(reader, start=2):
+        if not fields or fields == [""]:
+            continue
+        if len(fields) != len(variables):
+            raise UnsupportedResultFormat(
+                f"TSV row {line_number} has {len(fields)} fields; expected {len(variables)}"
+            )
+        row: dict[str, Any] = {}
+        for variable, token in zip(variables, fields, strict=True):
+            if token == "":
+                continue
+            try:
+                term = from_n3(token)
+            except Exception as exc:  # noqa: BLE001 - normalize parser errors
+                raise UnsupportedResultFormat(
+                    f"invalid RDF term in TSV row {line_number}, variable ?{variable}: {token!r}"
+                ) from exc
+            if term is None:
+                raise UnsupportedResultFormat(
+                    f"invalid RDF term in TSV row {line_number}, variable ?{variable}: {token!r}"
+                )
+            row[variable] = _term_to_python(term)
+        rows.append(row)
+    return ResultSet(variables=variables, rows=rows)
+
+
+# ---------------------------------------------------------------------------
 # TTL / N3 results — best-effort for the small corpus subset that uses it
 # ---------------------------------------------------------------------------
 
@@ -348,6 +410,8 @@ def parse_ttl_results(payload: bytes) -> ResultSet:
         raise UnsupportedResultFormat(f"malformed TTL results: {exc}") from exc
 
     rs = Namespace("http://www.w3.org/2001/sw/DataAccess/tests/result-set#")
+    if not any(str(predicate).startswith(str(rs)) for _, predicate, _ in graph):
+        return ResultSet(graph=graph)
 
     variables: list[str] = []
     for _, var_lit in graph.subject_objects(rs.resultVariable):
@@ -427,6 +491,69 @@ def normalize_actual_rows(rows: list[Any]) -> list[dict[str, Any]]:
     return out
 
 
+def compare_graph(expected_graph: Any, actual_rows: list[Any]) -> tuple[bool, str]:
+    """Compare nested CONSTRUCT/DESCRIBE AQL triples as RDF graphs."""
+    from rdflib import BNode, Graph, Literal, URIRef
+    from rdflib.compare import isomorphic
+
+    actual_graph = Graph()
+    expected_terms: dict[tuple[str, str, str], Any] = {}
+    for subject, predicate, obj in expected_graph:
+        expected_terms[(str(subject), str(predicate), str(obj))] = obj
+
+    triples: list[dict[str, Any]] = []
+    for row in actual_rows:
+        if isinstance(row, list):
+            triples.extend(item for item in row if isinstance(item, dict))
+        elif isinstance(row, dict):
+            triples.append(row)
+
+    for triple in triples:
+        if not {"subject", "predicate", "object"} <= triple.keys():
+            return False, f"malformed AQL graph row: {triple!r}"
+        subject_text = str(triple["subject"])
+        predicate_text = str(triple["predicate"])
+        object_value = triple["object"]
+        subject = (
+            BNode(subject_text.removeprefix("_:")) if subject_text.startswith("_:") else URIRef(subject_text)
+        )
+        predicate = URIRef(predicate_text)
+        expected_object = expected_terms.get((subject_text, predicate_text, str(object_value)))
+        if isinstance(expected_object, URIRef):
+            obj = URIRef(str(object_value))
+        elif isinstance(expected_object, BNode):
+            obj_text = str(object_value)
+            obj = BNode(obj_text.removeprefix("_:"))
+        elif isinstance(expected_object, Literal):
+            obj = Literal(
+                object_value,
+                lang=expected_object.language,
+                datatype=expected_object.datatype,
+            )
+        elif isinstance(object_value, str) and object_value.startswith("_:"):
+            obj = BNode(object_value.removeprefix("_:"))
+        else:
+            obj = Literal(object_value)
+        actual_graph.add((subject, predicate, obj))
+
+    if isomorphic(expected_graph, actual_graph):
+        return True, ""
+    expected_nt = sorted(
+        f"{subject.n3()} {predicate.n3()} {obj.n3()} ." for subject, predicate, obj in expected_graph
+    )
+    actual_nt = sorted(
+        f"{subject.n3()} {predicate.n3()} {obj.n3()} ." for subject, predicate, obj in actual_graph
+    )
+    return (
+        False,
+        "RDF graph mismatch\n"
+        f"expected ({len(expected_graph)} triples):\n  "
+        + "\n  ".join(expected_nt)
+        + f"\nactual ({len(actual_graph)} triples):\n  "
+        + "\n  ".join(actual_nt),
+    )
+
+
 def _canonical_value(value: Any) -> Any:
     """Reduce a value to a comparison-stable key.
 
@@ -442,10 +569,60 @@ def _canonical_value(value: Any) -> Any:
         # coercion so True/False don't compare equal to 1/0.
         return ("bool", value)
     if isinstance(value, (int, float)):
-        return ("num", float(value))
+        # ArangoDB stores every non-integer numeric as IEEE-754 double.
+        # Decimal aggregates can therefore return representational noise
+        # such as 11.100000000000001 for the W3C value 11.1. Twelve
+        # significant digits remove that transport artifact while retaining
+        # differences large enough to be semantically meaningful.
+        return ("num", float(f"{float(value):.12g}"))
     if isinstance(value, str):
         return ("str", value)
     return ("other", repr(value))
+
+
+def _is_bnode_value(value: Any) -> bool:
+    """True when *value* is a blank-node term carried as a ``_:…`` string."""
+    return isinstance(value, str) and value.startswith("_:")
+
+
+def _canonicalize_result_bnodes(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rename blank-node labels positionally for isomorphic SELECT equality.
+
+    SPARQL Results equality is graph-isomorphism over the solution bag:
+    labels are local to each result document and need not match across
+    stores. Expected rows arrive as ``_:bnode#<label>`` (from the SRX /
+    SRJ / TSV parsers); AQL rows carry loader/Skolem hashes like
+    ``_:eab485…`` or ``BNODE()`` UUID strings. Remap each side
+    independently by first appearance after a bnode-masked sort so
+    co-reference within a side is preserved while cross-store label
+    differences disappear.
+    """
+
+    def _mask_key(row: dict[str, Any]) -> tuple[Any, ...]:
+        return tuple(
+            sorted(
+                (
+                    key,
+                    ("bnode",) if _is_bnode_value(value) else _canonical_value(value),
+                )
+                for key, value in row.items()
+            )
+        )
+
+    label_map: dict[str, str] = {}
+    out: list[dict[str, Any]] = []
+    for row in sorted(rows, key=_mask_key):
+        remapped: dict[str, Any] = {}
+        for key in sorted(row):
+            value = row[key]
+            if _is_bnode_value(value):
+                if value not in label_map:
+                    label_map[value] = f"{_BNODE_PREFIX}{len(label_map)}"
+                remapped[key] = label_map[value]
+            else:
+                remapped[key] = value
+        out.append(remapped)
+    return out
 
 
 def _row_key(row: dict[str, Any]) -> tuple[Any, ...]:
@@ -459,12 +636,15 @@ def compare_select(
 ) -> tuple[bool, str]:
     """Bag-equality comparison for SELECT bindings.
 
-    Returns ``(matched, message)`` rather than raising so callers can
-    decide between ``assert`` (translation parity tests) and
-    ``pytest.xfail`` (known-divergence tests).
+    Blank-node labels are compared up to isomorphism (positional
+    remapping per side). Returns ``(matched, message)`` rather than
+    raising so callers can decide between ``assert`` (translation
+    parity tests) and ``pytest.xfail`` (known-divergence tests).
     """
-    exp_keys = sorted(_row_key(r) for r in expected)
-    act_keys = sorted(_row_key(r) for r in actual)
+    exp_canon = _canonicalize_result_bnodes(expected)
+    act_canon = _canonicalize_result_bnodes(actual)
+    exp_keys = sorted(_row_key(r) for r in exp_canon)
+    act_keys = sorted(_row_key(r) for r in act_canon)
     if exp_keys == act_keys:
         return True, ""
     msg_lines = [

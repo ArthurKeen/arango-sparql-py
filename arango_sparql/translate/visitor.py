@@ -12,6 +12,7 @@ builder stays SPARQL-agnostic; everything SPARQL-specific lives here.
 
 from __future__ import annotations
 
+import datetime
 import decimal
 import logging
 from dataclasses import dataclass, field
@@ -175,6 +176,11 @@ class AlgebraVisitor:
     Algebra ``DescribeQuery.PV`` is built from a set iteration. The
     visitor reads this in preference to ``node.PV`` so the AQL output
     is byte-for-byte stable across Python runs."""
+
+    base_iri: str | None = None
+    """Absolute IRI from the query's ``BASE`` directive (or ``None``).
+    Threaded into ``IRI()`` / ``URI()`` so relative string arguments
+    resolve per SPARQL §17.4.2.8."""
 
     tenant_id: str | None = None
     """Per-request tenant identifier sourced from the session's
@@ -607,6 +613,12 @@ class AlgebraVisitor:
         # so this naturally emits FILTER after the FOR clauses, which
         # is the correct AQL evaluation order for cross-FOR filters.
         self.visit(node.p)
+        # A Filter encountered after AggregateJoin is HAVING. The grouped
+        # empty-input fallback belongs before HAVING; finalization cannot
+        # safely move it across the filter yet, so disable it rather than
+        # turn "all groups rejected" into one spurious empty binding.
+        if self.builder._empty_result_fallback:  # noqa: SLF001 - own builder
+            self.builder.clear_empty_result_fallback()
         aql_expr = self._translate_expr(node.expr)
         self.builder.filter_raw(aql_expr)
 
@@ -951,7 +963,11 @@ class AlgebraVisitor:
                 # under DISTINCT) and apply CONCAT_SEPARATOR wherever
                 # the aggregate variable is *read* (projection / HAVING),
                 # via the var_to_expr rebinding below.
-                raw_sep = agg.get("separator", " ")
+                # ``CompValue.get`` is not ``dict.get``: its second
+                # positional argument controls variable substitution. Calling
+                # ``agg.get("separator", " ")`` therefore returned the key
+                # name ``"separator"`` when the clause omitted SEPARATOR.
+                raw_sep = getattr(agg, "separator", None)
                 separator = _term_to_python(raw_sep) if raw_sep is not None else " "
                 sep_bind = self.builder.bind(separator, hint="sep")
                 collect_func = "UNIQUE" if distinct else "PUSH"
@@ -982,6 +998,8 @@ class AlgebraVisitor:
             )
 
         self.builder.collect(keys=keys, aggregates=aggregates, count_into=count_into)
+        if keys:
+            self.builder.set_empty_result_fallback()
 
     def _aggregate_arg_expr(self, agg: Any) -> str:
         """Translate the argument of a SPARQL aggregate to an AQL expression.
@@ -2014,9 +2032,16 @@ class AlgebraVisitor:
         if name == "UnaryNot":
             return f"!({self._translate_expr(expr.expr)})"
         if name == "UnaryMinus":
-            return f"(-{self._translate_expr(expr.expr)})"
+            inner = self._translate_expr(expr.expr)
+            alias = self.builder.fresh_alias(prefix="num")
+            # ArangoDB 3.12 rejects ``-@value`` with ERR 1552. The
+            # one-row subquery also enforces SPARQL's numeric operand
+            # contract instead of allowing AQL to coerce strings.
+            return f"(FOR {alias} IN [{inner}] RETURN IS_NUMBER({alias}) ? (0 - {alias}) : null)[0]"
         if name == "UnaryPlus":
-            return self._translate_expr(expr.expr)
+            inner = self._translate_expr(expr.expr)
+            alias = self.builder.fresh_alias(prefix="num")
+            return f"(FOR {alias} IN [{inner}] RETURN IS_NUMBER({alias}) ? {alias} : null)[0]"
 
         # ----- Relational ------------------------------------------------
         if name == "RelationalExpression":
@@ -2087,7 +2112,15 @@ class AlgebraVisitor:
         """
         result = self._translate_expr(head)
         for op, operand in zip(ops, tail, strict=True):
-            result = f"({result} {op} {self._translate_expr(operand)})"
+            right = self._translate_expr(operand)
+            left_alias = self.builder.fresh_alias(prefix="num")
+            right_alias = self.builder.fresh_alias(prefix="num")
+            result = (
+                f"(FOR {left_alias} IN [{result}] "
+                f"FOR {right_alias} IN [{right}] "
+                f"RETURN IS_NUMBER({left_alias}) && IS_NUMBER({right_alias}) "
+                f"? ({left_alias} {op} {right_alias}) : null)[0]"
+            )
         return result
 
     # ------------------------------------------------------------------
@@ -2096,10 +2129,22 @@ class AlgebraVisitor:
     def _emit_projection(self) -> None:
         if not self.state.projection_vars:
             # ``SELECT *`` lands here with an empty PV — fall back to
-            # every variable we bound during BGP traversal so the query
-            # still produces a useful result. Order is insertion order
-            # of var_to_expr to keep the output stable.
-            keys = list(self.state.var_to_expr.keys())
+            # every *user-visible* variable we bound during BGP traversal
+            # so the query still produces a useful result. Order is
+            # insertion order of var_to_expr to keep the output stable.
+            #
+            # Internal sigils must stay out of the star-projection:
+            # ``_path_<n>`` (property-path SequencePath join points) and
+            # ``_bn_<bgp>_<label>`` (BGP-scoped blank-node existentials)
+            # are machinery the user cannot reference. Emitting them
+            # would make ``SELECT *`` diverge from SPARQL 1.1 §18.2.4
+            # (project only in-scope variables) — see ``paths.py`` and
+            # the matching strip in ``union_paths.py``.
+            keys = [
+                name
+                for name in self.state.var_to_expr
+                if not name.startswith("_path_") and not name.startswith("_bn_")
+            ]
         else:
             keys = [str(v) for v in self.state.projection_vars]
         # Caller-requested extras (canonical-key vars from the
@@ -2223,6 +2268,12 @@ def _term_to_python(term: Any) -> Any:
         # ArangoDB stores.
         if isinstance(value, decimal.Decimal):
             return float(value)
+        if isinstance(value, datetime.date | datetime.time):
+            # python-arango JSON-encodes bind values. rdflib converts XSD
+            # date/time literals to Python temporal objects, which are not
+            # JSON serializable; the physical document model stores their
+            # lexical RDF form and the expression layer parses it as needed.
+            return str(term)
         return value
     if isinstance(term, URIRef):
         return str(term)

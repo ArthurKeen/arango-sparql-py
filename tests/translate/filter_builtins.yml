@@ -25,19 +25,17 @@ cases:
   # ---- Builtin_IF ----------------------------------------------------
 
   - name: if_basic_ternary
-    # ``IF(?n > 0, "pos", "neg")`` — direct map to AQL's ``?:``.
-    # Every operand is wrapped in parens so the precedence of the
-    # surrounding expression can never bind into the wrong arm,
-    # and the whole ternary is wrapped because AQL's ``?:`` binds
-    # looser than ``&&`` / ``||``.
+    # ``IF(?n > 0, "pos", "neg")`` evaluates its condition once in a
+    # one-row subquery. The explicit null branch preserves SPARQL errors;
+    # AQL's bare ternary would incorrectly treat null as false.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s (IF(?n > 0, "pos", "neg") AS ?sign) WHERE { ?s :n ?n }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "n")
-      LET bv2 = (((doc1.n > @_p1)) ? (@_p2) : (@_p3))
-      RETURN { s: doc1._uri, sign: bv2 }
+      LET bv3 = (FOR ifc2 IN [(doc1.n > @_p1)] RETURN ifc2 == null ? null : (ifc2 ? (@_p2) : (@_p3)))[0]
+      RETURN { s: doc1._uri, sign: bv3 }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": 0
@@ -45,17 +43,15 @@ cases:
       "_p3": "neg"
 
   - name: if_inside_filter
-    # ``FILTER (IF(?n > 0, true, false))`` — the ternary is itself
-    # the FILTER expression. The visitor wraps the result in the
-    # standard ``FILTER (…)`` shape; no extra parens needed beyond
-    # the ones the ternary already contributes.
+    # ``FILTER (IF(?n > 0, true, false))`` — the error-preserving
+    # one-row expression is itself the FILTER condition.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s WHERE { ?s :n ?n . FILTER (IF(?n > 0, true, false)) }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "n")
-      FILTER (((doc1.n > @_p1)) ? (@_p2) : (@_p3))
+      FILTER (FOR ifc2 IN [(doc1.n > @_p1)] RETURN ifc2 == null ? null : (ifc2 ? (@_p2) : (@_p3)))[0]
       RETURN { s: doc1._uri }
     expected_bind_vars:
       "@c1_Document": "Document"
@@ -185,20 +181,33 @@ cases:
   # ---- Builtin_URI / Builtin_IRI -------------------------------------
 
   - name: uri_constructor_from_string
-    # ``URI(str)`` / ``IRI(str)`` — SPARQL §17.4.2.8. In our PG /
-    # LPG storage model IRIs are bare strings (the lexical form
-    # itself), so the SPARQL constructor collapses to ``TO_STRING``.
-    # The cast guards against typed-literal sources (e.g.
-    # ``xsd:anyURI``) whose Python value might not already be a
-    # string.
+    # ``URI(str)`` / ``IRI(str)`` — SPARQL §17.4.2.8. Constant string
+    # arguments are BASE-resolved at translate time (no BASE here, so
+    # an absolute lexical form binds unchanged). Relative+BASE is
+    # covered by ``uri_constructor_resolves_against_base``.
     sparql: |
       SELECT (URI("http://ex.org/x") AS ?u) WHERE {}
     expected_aql: |-
       FOR empty1 IN [1]
-      LET bv2 = TO_STRING(@_p1)
+      LET bv2 = @_p1_iri
       RETURN { u: bv2 }
     expected_bind_vars:
-      "_p1": "http://ex.org/x"
+      "_p1_iri": "http://ex.org/x"
+
+  - name: uri_constructor_resolves_against_base
+    # W3C ``functions/iri01`` — relative ``URI("uri")`` / ``IRI("iri")``
+    # against ``BASE <http://example.org/>`` must produce absolute IRIs.
+    sparql: |
+      BASE <http://example.org/>
+      SELECT (URI("uri") AS ?uri) (IRI("iri") AS ?iri) WHERE {}
+    expected_aql: |-
+      FOR empty1 IN [1]
+      LET bv2 = @_p1_iri
+      LET bv3 = @_p2_iri
+      RETURN { uri: bv2, iri: bv3 }
+    expected_bind_vars:
+      "_p1_iri": "http://example.org/uri"
+      "_p2_iri": "http://example.org/iri"
 
   # ---- Builtin_RAND / UUID / STRUUID / BNODE -------------------------
 
@@ -377,15 +386,15 @@ cases:
 
   - name: empty_where_constant_projection
     # ``SELECT (1+2 AS ?x) WHERE { }`` — projection-only query
-    # over an empty pattern. Same empty-BGP recipe; here the
-    # projection expression is a pure constant.
+    # over an empty pattern. The numeric guard preserves SPARQL type
+    # errors instead of applying AQL's permissive coercion.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT (1+2 AS ?x) WHERE { }
     expected_aql: |-
       FOR empty1 IN [1]
-      LET bv2 = (@_p1 + @_p2)
-      RETURN { x: bv2 }
+      LET bv4 = (FOR num2 IN [@_p1] FOR num3 IN [@_p2] RETURN IS_NUMBER(num2) && IS_NUMBER(num3) ? (num2 + num3) : null)[0]
+      RETURN { x: bv4 }
     expected_bind_vars:
       "_p1": 1
       "_p2": 2

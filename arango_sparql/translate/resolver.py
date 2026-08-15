@@ -305,6 +305,8 @@ class SchemaResolver:
     _attribute_uri_map: dict[str, str] | None = field(default=None)
     """Lazily-built reverse property index for
     :meth:`attribute_uri_map`; ``None`` until first use."""
+    _edge_properties: tuple[ResolvedProperty, ...] | None = field(default=None)
+    """Lazily-built object-property mappings backed by edge collections."""
     _shard_family_by_collection: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Reverse index: physical collection name → the shard family
     tuple it belongs to. Built once in :meth:`__post_init__` so
@@ -647,7 +649,7 @@ class SchemaResolver:
         for subject in sorted(set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str):
             if not isinstance(subject, URIRef):
                 continue
-            attribute = local_name(subject)
+            attribute = self.resolve_property(subject).attribute
             existing = mapping.get(attribute)
             if existing is not None:
                 self._warn_schema(
@@ -664,6 +666,30 @@ class SchemaResolver:
             mapping[attribute] = str(subject)
         self._attribute_uri_map = mapping
         return mapping
+
+    def edge_properties(self) -> tuple[ResolvedProperty, ...]:
+        """Return edge-backed object properties in deterministic IRI order.
+
+        Variable-predicate scans use this catalogue to merge document
+        attributes with traversable object-property triples. Object
+        properties without ``phys:edgeCollectionName`` are excluded because
+        they have no executable edge source in the document-edge model.
+        """
+        if self._edge_properties is not None:
+            return self._edge_properties
+        resolved: list[ResolvedProperty] = []
+        subjects = sorted(
+            set(self.ontology.subjects(RDF.type, OWL.ObjectProperty)),
+            key=str,
+        )
+        for subject in subjects:
+            if not isinstance(subject, URIRef):
+                continue
+            prop = self.resolve_property(subject)
+            if prop.edge_collection:
+                resolved.append(prop)
+        self._edge_properties = tuple(resolved)
+        return self._edge_properties
 
     # ------------------------------------------------------------------
     # Helpers

@@ -149,6 +149,7 @@ def _emit_subselect(
         builder=child_builder,
         resolver=visitor.resolver,
         tenant_id=visitor.tenant_id,
+        base_iri=visitor.base_iri,
         explicit_projection=list(inner_pv),
     )
     child_visitor.visit(inner)

@@ -66,11 +66,9 @@ def test_filter_builtins_golden(
 
     Pinning the AQL byte-for-byte protects against:
 
-    1. **Operator-precedence drift** in the IF ternary — the
-       outer parens around the whole ``(... ? ... : ...)`` form
-       are load-bearing (AQL's ``?:`` binds looser than ``&&``
-       / ``||``), and per-operand parens guard against future
-       compound operands changing the parse.
+    1. **IF error propagation drift** — the one-row condition subquery
+       evaluates volatile expressions once and the explicit null arm
+       prevents AQL's ternary from treating SPARQL errors as false.
     2. **LANGMATCHES expansion shape** — RFC 4647's special-case
        ``"*"`` branch and the case-insensitive prefix dance
        (``STARTS_WITH(LOWER(tag), CONCAT(LOWER(range), '-'))``)

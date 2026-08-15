@@ -23,6 +23,7 @@ the bind-variable-only injection-safe path intact.
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
+from urllib.parse import urljoin
 
 from rdflib import Literal
 
@@ -133,18 +134,20 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
         return emit_exists_filter(visitor, expr, negated=True)
     if name == "Builtin_IF":
         # ``IF(cond, then, else)`` — SPARQL 1.1 §17.4.1.5.
-        # AQL has a ternary expression that maps 1:1.
-        # rdflib stores the three args as ``arg1`` / ``arg2`` /
-        # ``arg3``; we wrap each operand in parens so a future
-        # precedence change in the surrounding expression
-        # doesn't reach inside and bind the wrong operands
-        # together. Wrapping the whole ternary is mandatory
-        # because AQL's ``?:`` binds looser than ``&&`` /
-        # ``||``.
+        # A SPARQL error in the condition is an error for the whole IF,
+        # while AQL's ternary treats null as false and would evaluate the
+        # else branch. Evaluate the condition exactly once in a one-row
+        # correlated subquery, then preserve null before branching. The
+        # single evaluation matters for volatile conditions such as RAND().
         cond = visitor._translate_expr(expr.arg1)
         then_expr = visitor._translate_expr(expr.arg2)
         else_expr = visitor._translate_expr(expr.arg3)
-        return f"(({cond}) ? ({then_expr}) : ({else_expr}))"
+        cond_alias = visitor.builder.fresh_alias(prefix="ifc")
+        return (
+            f"(FOR {cond_alias} IN [{cond}] "
+            f"RETURN {cond_alias} == null ? null : "
+            f"({cond_alias} ? ({then_expr}) : ({else_expr})))[0]"
+        )
     if name == "Builtin_CONCAT":
         # ``CONCAT(a, b, c, …)`` — SPARQL 1.1 §17.4.2.4.
         # rdflib stores the variadic args as a Python list on
@@ -267,14 +270,18 @@ def translate_builtin(visitor: AlgebraVisitor, expr: Any) -> str:
     if name == "Builtin_URI" or name == "Builtin_IRI":
         # ``IRI(str)`` / ``URI(str)`` — SPARQL §17.4.2.8. Constructs
         # an IRI from a string (or returns the IRI unchanged if the
-        # arg is already one). In our PG / LPG storage model IRIs
-        # are bare strings whose lexical form is the IRI itself, so
-        # the SPARQL semantics collapse to ``TO_STRING(arg)``. The
-        # cast is necessary because the arg can be a typed literal
-        # (e.g. ``xsd:anyURI``) whose Python value is the lexical
-        # form but whose AQL representation might be a number /
-        # boolean.
-        return f"TO_STRING({visitor._translate_expr(expr.arg)})"
+        # arg is already one). Relative string arguments resolve
+        # against the query ``BASE`` (RFC 3986 via ``urljoin``).
+        # Absolute IRIs are left unchanged. Constant arguments are
+        # resolved at translate time so AQL never sees a relative
+        # lexical form; non-constant arguments keep the
+        # ``TO_STRING`` cast (relative vars against BASE remain a
+        # known gap — AQL has no URL-join primitive).
+        arg = expr.arg
+        if isinstance(arg, Literal):
+            resolved = urljoin(visitor.base_iri or "", str(arg))
+            return visitor.builder.bind(resolved, hint="iri")
+        return f"TO_STRING({visitor._translate_expr(arg)})"
     if name == "Builtin_RAND":
         # ``RAND()`` — SPARQL §17.4.1.7 returns a pseudo-random
         # xsd:double in [0, 1). AQL ``RAND()`` is the same contract.

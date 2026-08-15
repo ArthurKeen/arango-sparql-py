@@ -1,4 +1,4 @@
-"""Cross-validation across storage models: PG vs LPG vs RPT.
+"""Cross-validation across storage models: PG, LPG, RPT, and DOCUMENT.
 
 The PG-only :mod:`tests.cross.test_bgp_select_cross` proves the
 translator's bindings match pyoxigraph for the collection-per-class
@@ -14,6 +14,8 @@ ArangoDB storage model (PRD §6.1–6.2):
   every triple is a row, so a multi-triple BGP becomes a self-join over
   the triples collection keyed on ``subject_uri``, reading objects via
   ``COALESCE(object_uri, object_value)``.
+- **DOCUMENT**: a plain document collection without a class discriminator;
+  its read pattern is intentionally equivalent to ``COLLECTION``.
 
 This is exactly where the real correctness risk lives: the same SPARQL
 must produce the same bindings regardless of how the data is physically
@@ -21,7 +23,7 @@ stored. We assert that here by running each model's translated AQL
 through the shared interpreter against a model-shaped mock store, and
 comparing every model's output to the *same* pyoxigraph ground truth.
 
-The three mock stores and the pyoxigraph dataset are all derived from
+The model-shaped mock stores and the pyoxigraph dataset are all derived from
 one :data:`PEOPLE` source of truth, so they cannot drift apart and
 silently weaken the cross-check.
 """
@@ -121,6 +123,12 @@ def _pg_docs() -> dict[str, list[dict[str, Any]]]:
     }
 
 
+def _document_docs() -> dict[str, list[dict[str, Any]]]:
+    # DOCUMENT uses plain class collections with no discriminator, matching
+    # COLLECTION's physical rows while exercising the explicit style dispatch.
+    return _pg_docs()
+
+
 def _lpg_docs() -> dict[str, list[dict[str, Any]]]:
     # Pure LPG: every class shares the ``vertices`` collection and is
     # distinguished only by a ``type`` discriminator field.
@@ -177,6 +185,19 @@ def _rpt_docs() -> dict[str, list[dict[str, Any]]]:
     return {"_triples": rows}
 
 
+def _hybrid_pg_rpt_docs() -> dict[str, list[dict[str, Any]]]:
+    """Project as PG documents joined to Person rows in the RPT table."""
+
+    return {
+        "Project": [_project_doc(pr, type_field=False) for pr in PROJECTS],
+        "_triples": [
+            row
+            for row in _rpt_docs()["_triples"]
+            if row["subject_uri"] in {EX + person["local"] for person in PEOPLE}
+        ],
+    }
+
+
 PG_ONTOLOGY = """
 @prefix : <http://ex.org/> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
@@ -184,6 +205,19 @@ PG_ONTOLOGY = """
 
 :Person a owl:Class ; phys:collectionName "Person" .
 :Project a owl:Class ; phys:collectionName "Project" .
+"""
+
+DOCUMENT_ONTOLOGY = """
+@prefix : <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phys: <https://arango.solutions/phys#> .
+
+:Person a owl:Class ;
+    phys:collectionName "Person" ;
+    phys:mappingStyle "DOCUMENT" .
+:Project a owl:Class ;
+    phys:collectionName "Project" ;
+    phys:mappingStyle "DOCUMENT" .
 """
 
 LPG_ONTOLOGY = """
@@ -244,13 +278,26 @@ RPT_ONTOLOGY = """
     phys:objectValueColumn "object_value" .
 """
 
+HYBRID_PG_RPT_ONTOLOGY = """
+@prefix : <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phys: <https://arango.solutions/phys#> .
+
+:Person a owl:Class ;
+    phys:mappingStyle "RPT" ;
+    phys:triplesCollection "_triples" .
+:Project a owl:Class ; phys:collectionName "Project" .
+"""
+
 # (ontology TTL, mock-store factory). The factory shape keeps each test
 # run isolated — no shared mutable store between cases.
 MODELS = [
     pytest.param(PG_ONTOLOGY, _pg_docs, id="pg"),
+    pytest.param(DOCUMENT_ONTOLOGY, _document_docs, id="document"),
     pytest.param(LPG_ONTOLOGY, _lpg_docs, id="lpg"),
     pytest.param(HYBRID_PG_LPG_ONTOLOGY, _hybrid_pg_lpg_docs, id="hybrid_pg_lpg"),
     pytest.param(RPT_ONTOLOGY, _rpt_docs, id="rpt"),
+    pytest.param(HYBRID_PG_RPT_ONTOLOGY, _hybrid_pg_rpt_docs, id="hybrid_pg_rpt"),
 ]
 
 

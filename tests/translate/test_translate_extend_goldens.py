@@ -89,3 +89,41 @@ def test_bind_unbound_rhs_emits_warning() -> None:
     assert matching[0]["variable"] == "nova"
     assert "?nova" in matching[0]["message"]
     assert "SPARQL §17.2.1" in matching[0]["message"]
+
+
+def test_unary_minus_literal_avoids_invalid_aql_bind_syntax() -> None:
+    result = translate(
+        "SELECT (COALESCE(?missing, -1) AS ?fallback) WHERE { }",
+        resolver=SchemaResolver.from_turtle(""),
+    )
+
+    assert "IS_NUMBER" in result.aql
+    assert "0 - num" in result.aql
+    assert "-@_p1" not in result.aql
+    assert result.bind_vars["_p1"] == 1
+
+
+def test_if_propagates_condition_errors_without_re_evaluation() -> None:
+    result = translate(
+        "SELECT (IF(1 / 0, false, true) AS ?error) WHERE { }",
+        resolver=SchemaResolver.from_turtle(""),
+    )
+
+    assert "FOR ifc" in result.aql
+    assert "== null ? null" in result.aql
+    assert result.aql.count("@_p1") == 1
+    assert result.aql.count("@_p2") == 1
+    assert result.aql.count(" / ") == 1
+
+
+def test_arithmetic_type_errors_produce_unbound_values() -> None:
+    result = translate(
+        'SELECT ((1 + "not numeric") AS ?bad) WHERE { }',
+        resolver=SchemaResolver.from_turtle(""),
+    )
+
+    assert "IS_NUMBER" in result.aql
+    assert "? (" in result.aql
+    assert ": null" in result.aql
+    assert result.aql.count("@_p1") == 1
+    assert result.aql.count("@_p2") == 1

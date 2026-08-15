@@ -97,12 +97,22 @@ def emit_alternative_path(
     default-collection / RPT branches all compose without
     duplicating per-arm logic here. The same
     :func:`_emit_union_of_arms` helper that ``visit_Union`` uses
-    drives the two-phase translation, so the AQL shape is
-    byte-for-byte identical to a hand-written
-    ``{ ?s :p ?o } UNION { ?s :q ?o }``.
+    drives the two-phase translation. A path relation is a **set** of
+    connected node pairs (SPARQL 1.1 §18.4), so two predicates linking
+    the *same* pair (``:a :p :b . :a :q :b``) yield ``:a (:p|:q) :b``
+    once — hence ``distinct=True`` (``UNION_DISTINCT``). Crucially the
+    distinct key is the whole projected binding, including a
+    SequencePath intermediate (``_path_1``): distinct *paths* through
+    different intermediates to the same endpoint stay separate rows
+    (W3C pp31: ``(:p1|:p2)/(:p3|:p4)`` → two solutions). That is why the
+    intermediate must be projected + joined, never collapsed away.
     """
     arms = list(predicate.args)
-    _emit_union_of_arms(visitor, [_triple_arm_driver(subject, arm, obj) for arm in arms])
+    _emit_union_of_arms(
+        visitor,
+        [_triple_arm_driver(subject, arm, obj) for arm in arms],
+        distinct=True,
+    )
 
 
 # Named driver factories rather than lambdas-with-defaults: mypy cannot
@@ -133,6 +143,9 @@ def _triple_arm_driver(subject: Any, arm: Any, obj: Any) -> Callable[[AlgebraVis
 def _emit_union_of_arms(
     visitor: AlgebraVisitor,
     arm_drivers: list[Callable[[AlgebraVisitor], None]],
+    *,
+    distinct: bool = False,
+    existence_collapse: bool = False,
 ) -> None:
     """Two-phase UNION emitter — probe arms for vars, then emit
     each arm with the full union-schema projection and combine.
@@ -144,6 +157,9 @@ def _emit_union_of_arms(
     serving both ``Union`` (driver = ``cv.visit(arm)``) and
     ``AlternativePath`` (driver = ``cv._emit_triple((s, p_i, o))``)
     without per-caller duplication.
+
+    ``distinct`` selects AQL ``UNION_DISTINCT`` (property-path set
+    semantics) vs ``UNION`` (SPARQL pattern bag semantics).
     """
     if len(arm_drivers) < 2:
         # Defensive — AlternativePath always has ≥ 2 arms (otherwise
@@ -165,41 +181,35 @@ def _emit_union_of_arms(
         arm_var_sets.append(set(probe.state.var_to_expr.keys()) - outer_vars)
 
     raw_vars = sorted(set().union(*arm_var_sets))
-    if not raw_vars:
-        # An UNION whose arms bind no NEW variables is semantically
-        # a "does either arm match anything?" probe — exactly the
-        # NOT-EXISTS shape, but as bag-union, so every match in
-        # either arm contributes a row. We could emit a degenerate
-        # ``UNION((… RETURN 1), (… RETURN 1))`` but the outer
-        # scope would have nothing to bind. The W3C corpus does hit
-        # this shape (e.g. ``SELECT * WHERE { :a (:p)* :b }``);
-        # surface as :class:`UnsupportedSparqlError` so the
-        # translation-only harness buckets it cleanly rather than
-        # crashing collection with a bare ``NotImplementedError``.
-        from ..errors import UnsupportedSparqlError
-
-        raise UnsupportedSparqlError(
-            "UNION whose arms bind no new variables is not yet supported "
-            "(constant-only property path or alternative with no "
-            "free variables)"
-        )
-
     # Property-path intermediate variables (``_path_<n>``, minted by
     # :meth:`AlgebraVisitor._fresh_path_var`) are internal sigil
     # names the user can never reference — strip them from the
     # per-arm RETURN and the outer-scope binding so the AQL only
-    # carries user-visible vars. They MUST remain in ``raw_vars``
-    # above so the empty-arms check above counts them; only the
-    # projection should be elided.
-    all_vars = [v for v in raw_vars if not v.startswith("_path_")]
-    if not all_vars:
-        # Every "new" arm var was an internal ``_path_*`` sigil. No
-        # user projection is needed; emit the union as a side-effect
-        # join over the parent's existing bindings without a row
-        # alias. The path arms still apply their FILTERs through the
-        # outer scope; downstream visitors don't need to see the
-        # intermediate vars.
+    # carries user-visible vars.
+    user_vars = [v for v in raw_vars if not v.startswith("_path_") and not v.startswith("_bn_")]
+
+    if not raw_vars:
+        # Arms bind no variables at all — a constant-only existence
+        # probe (e.g. ``:a (:p)* :b`` / ``:a (:p|:q) :b`` with both ends
+        # IRI). Sentinel schema so ``UNION_DISTINCT`` yields one row.
+        all_vars = ["_path_hit"]
+    elif not user_vars and existence_collapse:
+        # Bounded/arbitrary-length repetition (``*``/``+``/``{n,m}``,
+        # from :mod:`paths`) whose per-length arms bound only internal
+        # ``_path_*`` / ``_bn_*`` sigils: an existence-only walk —
+        # collapse to the sentinel (re-projecting the sigils produced
+        # one empty SELECT * row per walk).
+        all_vars = ["_path_hit"]
+    elif not user_vars:
+        # SequencePath intermediate (e.g. the ``_path_1`` in
+        # ``:a (:p1|:p2)/(:p3|:p4) ?t``). It MUST be projected and bound
+        # in the outer scope so the next step can join on it
+        # (``FILTER doc._uri == row._path_1``) — collapsing it to the
+        # sentinel drops the join and merges distinct paths.
         all_vars = list(raw_vars)
+    else:
+        # Strip internal sigils from the user-visible projection.
+        all_vars = user_vars
 
     # ---- Phase 2: emit each arm with full-schema projection ---------
     arm_aqls: list[str] = []
@@ -211,9 +221,13 @@ def _emit_union_of_arms(
         # to ``null`` so every row of UNION carries the same
         # schema (matches SPARQL semantics where a variable that
         # only appears in one UNION branch is UNDEF in the other
-        # branch's rows).
+        # branch's rows). Existence-only arms project
+        # ``_path_hit: 1`` so UNION_DISTINCT collapses to one row.
         mapping: list[tuple[str, str]] = []
         for var_name in all_vars:
+            if var_name == "_path_hit":
+                mapping.append((var_name, "1"))
+                continue
             expr = cv.state.var_to_expr.get(var_name, "null")
             mapping.append((var_name, expr))
         cv.builder.return_object(mapping)
@@ -221,9 +235,12 @@ def _emit_union_of_arms(
 
     # ---- Outer-scope FOR + variable binding -------------------------
     row_alias = visitor.builder.fresh_alias(prefix="row")
-    visitor.builder.for_union(row_alias, arm_aqls)
+    visitor.builder.for_union(row_alias, arm_aqls, distinct=distinct)
 
     for var_name in all_vars:
+        if var_name == "_path_hit":
+            # Sentinel only — never surface in SELECT * / projection.
+            continue
         new_expr = f"{row_alias}.{var_name}"
         existing = visitor.state.var_to_expr.get(var_name)
         if existing is None:
@@ -300,6 +317,7 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         builder=child_builder,
         resolver=visitor.resolver,
         tenant_id=visitor.tenant_id,
+        base_iri=visitor.base_iri,
     )
     cv.state.var_to_expr = dict(visitor.state.var_to_expr)
     cv.state.graph_scope = list(visitor.state.graph_scope)
