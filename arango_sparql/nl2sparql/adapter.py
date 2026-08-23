@@ -43,11 +43,12 @@ from arango_query_core.nl import FewShotIndex, GuardrailVerdict, ValidationResul
 from arango_query_core.nl.grounding import LabelIndex
 
 if TYPE_CHECKING:
-    # Seam 6/7 index types exist only in query-core >= ccfe56c. They are used
-    # solely in (lazy, __future__) annotations here, so importing them at
-    # runtime would break `[nl]` against the pinned acb60ae — guard behind
-    # TYPE_CHECKING so the adapter loads on either query-core version.
-    from arango_query_core.nl import LabelIndex, PredicateIndex
+    # Seam 6/7/8 index types exist only in newer query-core (seam 8's
+    # ClassPathIndex from >= 0.2.0). They are used solely in (lazy,
+    # __future__) annotations here, so importing them at runtime would break
+    # `[nl]` against an older pin — guard behind TYPE_CHECKING so the adapter
+    # loads on either query-core version.
+    from arango_query_core.nl import ClassPathIndex, LabelIndex, PredicateIndex
 
 from ..errors import SparqlError
 from ..translate.resolver import SchemaResolver
@@ -191,3 +192,22 @@ class SparqlLanguageAdapter:
             ),
             dump=is_dump,
         )
+
+    def path_index(self) -> ClassPathIndex | None:  # seam 8
+        # Opt out: relationship-path grounding (NL-ACC-03) is not wired into
+        # this adapter yet (sweep-blocked), so run without path hints — the
+        # net effect is identical to the pre-seam-8 engine. Returning None
+        # makes the engine skip path_prompt_section. Defined explicitly (not
+        # inherited) because QueryLanguageAdapter is a Protocol: query-core
+        # >= 0.2.0's engine calls this method unconditionally, so an adapter
+        # lacking it raises AttributeError.
+        return None
+
+    def path_prompt_section(
+        self, question: str, index: ClassPathIndex, k: int = 5
+    ) -> str:  # seam 8 (renderer)
+        # Unreachable while path_index() returns None; present to satisfy the
+        # seam-8 Protocol on query-core >= 0.2.0. Wire real navigation hints
+        # (anchor-class resolution per D-02, then ClassPathIndex.shortest_paths)
+        # when NL-ACC-03 path grounding lands in this repo.
+        return ""
