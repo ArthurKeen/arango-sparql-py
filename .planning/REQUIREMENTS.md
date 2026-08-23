@@ -50,6 +50,7 @@
 - [x] **NL-EVAL-05**: Execution-based (answer-set) judging for adopted benchmarks — the canonical exact-algebra judge floors real LLM output at 0% on adopted sets whose golds pre-resolve entity IRIs (07.1 live-eval finding), so add an opt-in `judge: execution` path that runs gold + candidate SPARQL through pyoxigraph and compares **answers** up to variable renaming + IRI↔label normalization (SELECT + ASK); vendor the CK25 instance graph (CC-BY-4.0, provenance-guarded) and record CK25's first execution-graded live accuracy number as the reported (not gated) corporate-domain anchor. QALD's DBpedia answer-subset capture is a separate later phase. — acceptance: `scripted-ck25` green (gold-vs-gold=100%) under execution judging; a live `openai-gpt4o-mini-ck25` execution-graded number recorded in `baseline.json`; scripted canonical CI default + W3C ≥96.4% guard unchanged
 - [x] **NL-FEW-01**: Dense/embedding few-shot retrieval — wire the shared engine's few-shot seam through `SparqlAdapter.few_shot_index()` using a sentence-transformer (dense) retriever over the curated corpus (≤ 3 shots per rule-300), landing engine-side (`arango_query_core.nl.FewShotIndex`) so Cypher inherits it. BM25 is the fallback/ablation, not the primary. — acceptance: retrieved examples appear in the `NLQueryEngine`-built prompt's `## Examples` section; unit tests pass
 - [x] **NL-FEW-02**: Measurable accuracy lift — dense few-shot run shows a **positive NL→SPARQL pass-rate delta over the Phase 06.2 live-model baseline** via the Phase 6 harness. — acceptance: eval report delta > 0 over the live baseline
+- [x] **REQ-nl-postconditions** (PRD §7.3.1): Caller-supplied **semantic postconditions** enforced through the bounded repair loop — invariants that catch a query which parses AND translates but is semantically wrong (unbounded `SELECT`, unbound projected variable). The mechanism is language-agnostic in the shared engine (`arango_query_core.nl.postconditions`, enforced inside `NLQueryEngine.generate`): announced once in the cacheable system prefix, fed back as a correction on violation, first-violation-wins, a raising check is a violation not an outage, and **fail-closed on exhaustion** (never returns a valid-but-wrong query; `NL_REPAIR_MAX_ATTEMPTS+1` ceiling unchanged — postconditions share the budget). Threaded through `nl_to_sparql(..., postconditions=, postcondition_mapping=)`; two rdflib-algebra example invariants ship (`RequireResultLimit`, `ForbidUnboundProjection`), SELECT-scoped. Shared engine pinned `arango-query-core@f2f3061` (CC-9). — acceptance: `pytest tests/nl2sparql/test_postconditions.py` green (17 cases: per-invariant unit + end-to-end retry-then-succeed / fail-closed / prompt-announced / no-postconditions-unchanged)
 
 ### NL to SPARQL Benchmark Adoption (ACTIVE)
 
@@ -117,6 +118,7 @@ Deferred to future release. Tracked but not in the current roadmap.
 | NL-EVAL-05 | Phase 07.2 | Complete |
 | NL-FEW-01 | Phase 7 | Complete |
 | NL-FEW-02 | Phase 7 | Complete |
+| REQ-nl-postconditions | Phase 07.7 | Complete |
 | NL-BENCH-01 | Phase 07.1 | Complete |
 | NL-BENCH-02 | Phase 07.1 | Complete |
 | NL-BENCH-03 | Phase 07.1 | Complete |
@@ -129,10 +131,11 @@ Deferred to future release. Tracked but not in the current roadmap.
 **Coverage:**
 
 - v1 requirements: 28 total (16 PRD + 5 NL + 7 NL-BENCH)
-- Mapped to phases: 28
+- Post-v1 additions: 1 (REQ-nl-postconditions, Phase 07.7) → 29 total
+- Mapped to phases: 29
 - Unmapped: 0 ✓
 - Already satisfied (Complete): 10 across Phases 1–3
 
 ---
 *Requirements defined: 2026-07-15*
-*Last updated: 2026-07-15 after new-project-from-ingest bootstrap*
+*Last updated: 2026-08-23 — added REQ-nl-postconditions (Phase 07.7, caller-supplied semantic postconditions; PRD §7.3.1)*
