@@ -1098,6 +1098,47 @@ Properties asserted by `tests/nl2sparql/test_repair_loop.py`:
   can surface the iteration trace; per §17.3, attempts are not logged
   on the server.
 
+#### 7.3.1 Semantic postconditions (caller-supplied invariants)
+
+The bounded repair loop above corrects a query that fails to **parse or
+translate** (`SparqlParseError` / `UnsupportedSparqlError` /
+`SchemaResolutionError`). A third class of defect escapes it: a query that
+parses, translates, and returns *plausible* results while being
+**semantically wrong** — an unbounded `SELECT` that streams the whole graph,
+a projected variable the `WHERE` body never binds, an aggregate over the
+wrong rows. No syntactic check catches these and no reviewer necessarily
+sees them in a demo.
+
+A **postcondition** is a caller-supplied invariant enforced through the
+*same* bounded budget as parse and translate. It is a small object exposing
+`code`, `check(query, *, context) -> PostconditionViolation | None`, and
+`prompt_section() -> str`. The mechanism is language-agnostic and lives in
+the shared engine (`arango_query_core.nl.postconditions`; enforced inside
+`NLQueryEngine.generate`), so `nl2sparql` and `nl2cypher` share one
+implementation. Semantics:
+
+* Postconditions run **only after** `validate()` (parse + translate)
+  succeeds — a retry is never spent on an already-broken query.
+* The rule is **announced once** in the cacheable system prefix
+  (`prompt_section`), so the model aims to satisfy it up front rather than
+  only being corrected after breaking it.
+* A violation is **fed back** into the next prompt exactly like a parser
+  error (`reason` + `suggested_hint`), so the loop can *correct* the query.
+* The **first** violation wins; a check that **raises** is treated as a
+  violation, not an outage (fail closed).
+* On budget exhaustion the loop **fails closed** — it returns the failure
+  (`method="llm_failed"`, reason + stable `code`), never a valid-but-wrong
+  query. The `NL_REPAIR_MAX_ATTEMPTS + 1` LLM-call ceiling is unchanged;
+  postconditions share it, they do not add to it.
+
+Callers pass invariants via `nl_to_sparql(..., postconditions=[...],
+postcondition_mapping=...)`. Two illustrative SPARQL invariants ship in
+`arango_sparql/nl2sparql/postconditions.py` — `RequireResultLimit` (every
+`SELECT` must bound its result set with `LIMIT`; optional `max_rows`
+ceiling) and `ForbidUnboundProjection` (every explicitly projected variable
+must be bound in the `WHERE` body). Both inspect the rdflib algebra (never a
+hand-rolled parser) and are scoped to `SELECT`. See **REQ-nl-postconditions**.
+
 ### 7.4 Evaluation methodology
 
 NL evaluation lives under `tests/nl2sparql/eval/` and is gated behind
