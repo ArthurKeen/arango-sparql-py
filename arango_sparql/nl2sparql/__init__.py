@@ -29,6 +29,16 @@ seam API (nl-engine-extraction proposal). The adapter is imported
 lazily (``arango_sparql.nl2sparql.adapter``) so this package stays
 import-safe without the ``nl`` extra installed.
 
+Caller-supplied **postconditions** — semantic invariants enforced through the
+shared engine's retry loop (see :mod:`arango_query_core.nl.postconditions`) —
+are passed to :func:`nl_to_sparql` via its ``postconditions=`` parameter. Two
+illustrative SPARQL invariants ship in
+:mod:`arango_sparql.nl2sparql.postconditions`
+(:class:`~arango_sparql.nl2sparql.postconditions.RequireResultLimit`,
+:class:`~arango_sparql.nl2sparql.postconditions.ForbidUnboundProjection`). That
+submodule is imported explicitly (not re-exported here) so this package stays
+import-safe without the ``nl`` extra — same discipline as the adapter.
+
 See ``.cursor/rules/300-nl2sparql.mdc``.
 """
 
