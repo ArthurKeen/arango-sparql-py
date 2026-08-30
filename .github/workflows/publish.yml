@@ -1,0 +1,47 @@
+name: Publish to PyPI
+
+# Mirrors arango-query-core's publish.yml (Trusted Publishing, tag-triggered)
+# so release mechanics are identical across the estate. INERT until a v* tag is
+# pushed. Before the FIRST tag, complete the release runbook in RELEASE.md — in
+# particular the arango-query-core git-pin -> published-version repoint (PyPI
+# rejects any package carrying a direct git URL in Requires-Dist).
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Trusted publishing is registered against ArthurKeen/arango-sparql-py
+    # only — don't attempt to publish from the arango-solutions mirror.
+    if: github.repository == 'ArthurKeen/arango-sparql-py'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev,nl,service]" build twine
+      # Same deterministic, no-network gate as ci.yml's unit job.
+      - run: pytest -m "not integration and not w3c and not eval" --tb=short -q
+      - run: python -m build
+      # Fails early if a direct URL (git+) dependency ever slips back in —
+      # such a wheel would be rejected at upload time.
+      - run: twine check dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
