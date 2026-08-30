@@ -55,19 +55,18 @@ nl = [
   # Shared NL engine + adapter seams + conceptual-model substrate
   # (NLQueryEngine, seam protocols, DenseRetriever) driving BOTH the nl2sparql
   # pipeline and the shared-engine _core/adapter (nl-engine-extraction, PRD
-  # §12.3). Sourced from the ArthurKeen upstream (dev'd first; arango-solutions
-  # is the synced mirror), git-pinned to an exact commit (deterministic; bump
-  # deliberately — CC-9: consumers re-run goldens). f2f3061 is a superset of the
-  # prior 3438305 pin (which added the Phase-7.5 synthbank query-shape template
-  # catalog): it adds the caller-supplied POSTCONDITION mechanism to
-  # NLQueryEngine (arango_query_core.nl.{Postcondition,PostconditionViolation,
-  # PostconditionContext,run_postconditions,postcondition_prompt_sections}) —
-  # semantic invariants enforced through the generate/validate/retry budget, fed
-  # to nl_to_sparql via postconditions= and exercised by this repo's
-  # arango_sparql.nl2sparql.postconditions examples. Pushed to both remotes,
-  # ls-remote-verified before this bump; lands with query-core branch
-  # feat/caller-postconditions (merge that alongside this bump).
-  "arango-query-core @ git+https://github.com/ArthurKeen/arango-query-core@f2f3061d9538e6b7a00ede217a7f44352737a751",
+  # §12.3). Now consumed as a PUBLISHED PyPI release (compat range, matching this
+  # repo's convention for its other published dep, arangodb-schema-analyzer)
+  # instead of a git pin — a direct git URL here would make arango-sparql-py
+  # itself unpublishable (PyPI rejects direct URLs in Requires-Dist; see
+  # RELEASE.md). 0.2.0 is the first release carrying the caller-supplied
+  # POSTCONDITION mechanism (arango_query_core.nl.{Postcondition,
+  # PostconditionViolation,PostconditionContext,run_postconditions,
+  # postcondition_prompt_sections}) — a superset of the former f2f3061 git pin,
+  # verified on PyPI to ship nl/postconditions.py + the [nl]/[dense] extras.
+  # Bump the lower bound deliberately (CC-9: consumers re-run goldens); the
+  # <0.3.0 ceiling holds the semver-minor compatibility band.
+  "arango-query-core>=0.2.0,<0.3.0",
 ]
 # Torch-free-by-default packaging (D-05 packaging discretion, Phase 7 07-03):
 # a plain `pip install '.[nl]'` never pulls sentence-transformers/torch — the
@@ -77,7 +76,7 @@ nl = [
 # extra (sentence-transformers) on top of `[nl]`'s deps.
 dense = [
   "arango-sparql-py[nl]",
-  "arango-query-core[dense] @ git+https://github.com/ArthurKeen/arango-query-core@f2f3061d9538e6b7a00ede217a7f44352737a751",
+  "arango-query-core[dense]>=0.2.0,<0.3.0",
 ]
 dev = [
   "pytest>=8.0.0",
