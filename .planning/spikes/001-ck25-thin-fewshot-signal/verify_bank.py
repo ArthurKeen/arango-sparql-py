@@ -18,12 +18,11 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pyoxigraph as oxi
 import yaml
 
 from arango_sparql.api import translate
 from arango_sparql.translate.resolver import SchemaResolver
-import pyoxigraph as oxi
-
 from tests.helpers.oxi import oxi_query
 from tests.nl2sparql.eval.runner import _canonical, _load_corpus
 
