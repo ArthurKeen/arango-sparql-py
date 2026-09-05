@@ -13,6 +13,7 @@ an identical query would be leakage).
 Run:  python .planning/spikes/001-ck25-thin-fewshot-signal/verify_bank.py
 Exit 0 == all green.
 """
+
 from __future__ import annotations
 
 import sys

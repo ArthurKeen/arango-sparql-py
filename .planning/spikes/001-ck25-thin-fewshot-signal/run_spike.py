@@ -24,6 +24,7 @@ Two modes
     VERDICT (D-01): non-null == at least one held-out case flips fail->pass with
     net gains > 0 (b > c). A null (b == 0, or c >= b) kills the full generator.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -54,8 +55,8 @@ SPIKE_CONFIG = {
 # Held-out questions probed in --dry-run to show retrieval + prompt injection.
 DRY_RUN_PROBES = [
     "Who is the manager of the Data Services department?",  # ck25-7 (2-hop)
-    "How many suppliers do we have in France?",             # ck25-13 (COUNT)
-    "What is the cheapest Oscillator we have?",             # ck25-18 (top-N)
+    "How many suppliers do we have in France?",  # ck25-13 (COUNT)
+    "What is the cheapest Oscillator we have?",  # ck25-18 (top-N)
     "Which supplier delivers the most reliable Inductor?",  # ck25-45 (top-N 2-hop)
 ]
 
@@ -138,8 +139,11 @@ def sweep() -> int:
     tpass = sum(thin_d.values())
 
     non_null = b > 0 and b > c
-    verdict = "NON-NULL (signal — proceed to full build)" if non_null else \
-              "NULL (kill / rethink — thin bank moved nothing net-positive)"
+    verdict = (
+        "NON-NULL (signal — proceed to full build)"
+        if non_null
+        else "NULL (kill / rethink — thin bank moved nothing net-positive)"
+    )
 
     print("\n" + "=" * 68)
     print(f"  Zero arm : {zpass}/{len(zero_d)} passed")
@@ -151,18 +155,27 @@ def sweep() -> int:
     print(f"  VERDICT  : {verdict}")
     print("=" * 68)
 
-    RESULT.write_text(json.dumps({
-        "spike": "001-ck25-thin-fewshot-signal",
-        "arms": {"zero": ZERO_ARM, "thin": SPIKE_ARM},
-        "model": "gpt-4o-mini", "temperature": 0.1,
-        "n_cases": len(zero_d),
-        "zero_pass": zpass, "thin_pass": tpass,
-        "mcnemar": {"b_gains": b, "c_regressions": c, "p_value": p},
-        "bootstrap_delta": {"delta": delta, "lo": lo, "hi": hi},
-        "gains": gains, "regressions": regressions,
-        "non_null": non_null,
-        "zero_cases": zero_d, "thin_cases": thin_d,
-    }, indent=2))
+    RESULT.write_text(
+        json.dumps(
+            {
+                "spike": "001-ck25-thin-fewshot-signal",
+                "arms": {"zero": ZERO_ARM, "thin": SPIKE_ARM},
+                "model": "gpt-4o-mini",
+                "temperature": 0.1,
+                "n_cases": len(zero_d),
+                "zero_pass": zpass,
+                "thin_pass": tpass,
+                "mcnemar": {"b_gains": b, "c_regressions": c, "p_value": p},
+                "bootstrap_delta": {"delta": delta, "lo": lo, "hi": hi},
+                "gains": gains,
+                "regressions": regressions,
+                "non_null": non_null,
+                "zero_cases": zero_d,
+                "thin_cases": thin_d,
+            },
+            indent=2,
+        )
+    )
     print(f"\nWrote {RESULT}")
     return 0
 
