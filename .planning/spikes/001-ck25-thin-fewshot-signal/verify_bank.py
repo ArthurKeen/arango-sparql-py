@@ -22,6 +22,8 @@ import yaml
 
 from arango_sparql.api import translate
 from arango_sparql.translate.resolver import SchemaResolver
+import pyoxigraph as oxi
+
 from tests.helpers.oxi import oxi_query
 from tests.nl2sparql.eval.runner import _canonical, _load_corpus
 
@@ -29,8 +31,6 @@ SPIKE_DIR = Path(__file__).resolve().parent
 BANK = SPIKE_DIR / "ck25_thin_fewshot_bank.yml"
 CK25 = Path("tests/nl2sparql/eval/vendored/ck25/corpus.yml")
 DATA = Path("tests/nl2sparql/eval/vendored/ck25/raw/prod-inst.ttl")
-
-import pyoxigraph as oxi
 
 # --- top-N examples that must have a strictly-unique extremum, with the
 #     value-bearing "probe" query (drop the LIMIT, order desc, read top 2) ---
