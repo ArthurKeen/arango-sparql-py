@@ -32,6 +32,7 @@ from arango_sparql.nl2sparql.client import ScriptedLLMClient
 from arango_sparql.nl2sparql.cost import estimate_llm_cost_usd
 from arango_sparql.nl2sparql.engine_adapter import EngineProviderBridge, SparqlAdapter
 from arango_sparql.nl2sparql.models import LLMResponse
+from arango_sparql.nl2sparql.pipeline import NlPipeline
 from arango_sparql.translate.resolver import SchemaResolver
 from tests.nl2sparql.eval.runner import EVAL_DIR, _canonical
 
@@ -209,6 +210,87 @@ class TestSparqlAdapterSeams:
     def test_grounding_index_defaults_to_none(self) -> None:
         adapter = SparqlAdapter(resolver=SchemaResolver.from_turtle(ONTOLOGY), ontology_ttl=ONTOLOGY)
         assert adapter.grounding_index() is None
+
+    def test_path_index_returns_injected_index(self) -> None:
+        from arango_query_core.nl.pathindex import ClassPathIndex
+
+        path_index = ClassPathIndex(edges=[], subclass_of=[])
+        adapter = SparqlAdapter(
+            resolver=SchemaResolver.from_turtle(ONTOLOGY),
+            ontology_ttl=ONTOLOGY,
+            path_index=path_index,
+        )
+        assert adapter.path_index() is path_index
+
+    def test_path_index_defaults_to_none(self) -> None:
+        adapter = SparqlAdapter(resolver=SchemaResolver.from_turtle(ONTOLOGY), ontology_ttl=ONTOLOGY)
+        assert adapter.path_index() is None
+
+    def test_path_prompt_section_empty_when_anchor_unresolved(self) -> None:
+        """No grounding_index injected -> no anchor classes -> '' (D-02 honest no-op)."""
+        from arango_query_core.nl.grounding import GroundedPredicate, PredicateIndex
+        from arango_query_core.nl.pathindex import ClassPathIndex
+
+        predicates = PredicateIndex.from_items(
+            [
+                GroundedPredicate(
+                    iri="http://ex.org/hasWidgetTarget",
+                    label="hasWidgetTarget",
+                    kind="object",
+                    domain="Widget",
+                    range="Gadget",
+                    shape="linked_entity",
+                )
+            ]
+        )
+        path_index = ClassPathIndex(edges=[("hasWidgetTarget", "Widget", "Gadget")], subclass_of=[])
+        adapter = SparqlAdapter(
+            resolver=SchemaResolver.from_turtle(ONTOLOGY),
+            ontology_ttl=ONTOLOGY,
+            predicate_index=predicates,
+        )
+        assert adapter.path_prompt_section("find hasWidgetTarget", path_index, k=5) == ""
+
+    def test_path_prompt_section_empty_when_target_unresolved(self) -> None:
+        """No predicate_index injected -> no targets -> '' (D-02 honest no-op)."""
+        from arango_query_core.nl.grounding import GroundedEntity, LabelIndex
+        from arango_query_core.nl.pathindex import ClassPathIndex
+
+        grounding = LabelIndex.from_items(
+            [GroundedEntity(id="http://ex.org/w1", labels=("Alice",), type="Widget")]
+        )
+        path_index = ClassPathIndex(edges=[("hasWidgetTarget", "Widget", "Gadget")], subclass_of=[])
+        adapter = SparqlAdapter(
+            resolver=SchemaResolver.from_turtle(ONTOLOGY),
+            ontology_ttl=ONTOLOGY,
+            grounding_index=grounding,
+        )
+        assert adapter.path_prompt_section("find Alice", path_index, k=5) == ""
+
+
+# ---------------------------------------------------------------------------
+# Pipeline threading (Pitfall 5) — path_k/path_index reach the engine
+# ---------------------------------------------------------------------------
+
+
+class TestPipelinePathThreading:
+    def test_pipeline_threads_path_index_without_typeerror(self) -> None:
+        """Constructing NlPipeline with path_index= and calling .run() must
+        not raise TypeError -- the offline structural proof that Plan 03's
+        --dry-run will exercise (Pitfall 5)."""
+        from arango_query_core.nl.pathindex import ClassPathIndex
+
+        path_index = ClassPathIndex(edges=[], subclass_of=[])
+        client = ScriptedLLMClient([_resp(_wrap(GOOD_QUERY))], latency_ms=0)
+        pipeline = NlPipeline(
+            client=client,
+            resolver=SchemaResolver.from_turtle(ONTOLOGY),
+            ontology_ttl=ONTOLOGY,
+            path_k=5,
+            path_index=path_index,
+        )
+        outcome = pipeline.run("find Person")
+        assert outcome.aql
 
 
 # ---------------------------------------------------------------------------

@@ -295,6 +295,268 @@ configs:
       k: 20
       bank: vendored/ck25/generated_fewshot_bank.yml
 
+  # ===== Composed-lever arms (2026-08 "real evaluation") =====
+  # Every lever above was only ever measured IN ISOLATION (entity grounding
+  # 14/49, few-shot 11-14/49, predicate grounding 7/49). These arms measure
+  # the COMPOSITION — runner.py passes few_shot_index + grounding_index +
+  # predicate_index into ONE NlPipeline, so a config carrying multiple seam
+  # blocks activates them all. scripted-* twins are no-network plumbing gates
+  # (same discipline as the isolated arms); the openai-* arms are human-run,
+  # RUN_EVAL=1 + NL2SPARQL_API_KEY, never CI.
+
+  scripted-ck25-grounded-generated-fewshot:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # Entity grounding (seam 6) + query-first few-shot bank — the two CONFIRMED
+  # levers composed. THE composed-ceiling arm.
+  openai-gpt4o-mini-ck25-grounded-generated-fewshot:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # Entity grounding + ENRICHED few-shot bank (generated 73 + 11 hand-authored,
+  # execution-verified analytic-shape exemplars: superlative-over-category,
+  # grouped-superlative, negation, count-with-filter, nested-subquery). The
+  # generated bank had only ~1 top_n and ~1 negation exemplar; bucket 1 (the
+  # never-pass analytic failures) needs many more. Offline shape-retrieval
+  # coverage on the 19 analytic bucket-1 questions rose 8/19 -> 15/19 with this
+  # bank. The `g+f-analytic vs g+f` contrast isolates the added exemplars'
+  # effect (identical grounding + bm25 mode; only the bank content differs).
+  # See docs/ck25-failure-atlas.md.
+  scripted-ck25-grounded-analytic-fewshot:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/analytic_fewshot_bank.yml
+
+  openai-gpt4o-mini-ck25-grounded-analytic-fewshot:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/analytic_fewshot_bank.yml
+
+  # --- gpt-5-mini CK25 sweep arms (run_composed_sweep.py --model gpt-5-mini) ---
+  # Motivated by gpt5_mini_diagnostic.py: gpt-5-mini solved 4/6 genuine-composition
+  # bucket-1 cases gpt-4o-mini fails, with ZERO extraction failures. These give it a
+  # same-session zero + g+f baseline to pair the analytic arm against. execution judge.
+  openai-gpt5-mini-ck25:
+    provider:
+      type: openai
+      model: gpt-5-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+
+  openai-gpt5-mini-ck25-grounded-generated-fewshot:
+    provider:
+      type: openai
+      model: gpt-5-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # gpt-5-mini on the SAME enriched analytic bank + grounding — the model-swap
+  # experiment. The 07-04 3-model sweep had gpt-5-mini UNDER gpt-4o-mini
+  # (bm25 0.44 vs 0.568), possibly a reasoning-model output-extraction artifact
+  # (thinking preamble not stripped) rather than a capability gap.
+  # gpt5_mini_diagnostic.py inspects raw-vs-extracted output on a few bucket-1
+  # analytic cases to tell which. Human-run (RUN_EVAL=1 + NL2SPARQL_API_KEY).
+  openai-gpt5-mini-ck25-grounded-analytic-fewshot:
+    provider:
+      type: openai
+      model: gpt-5-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/analytic_fewshot_bank.yml
+
+  # Same enriched bank + SHAPE-AWARE retrieval (opt-in `few_shot.shape_aware`):
+  # guarantees a query-shape-appropriate exemplar for analytic questions. BM25
+  # alone ranks by wording, so "heaviest coil" retrieves lexical "coil" lookups
+  # over a superlative exemplar; this forces >=1 same-shape exemplar for
+  # analytic questions while leaving non-analytic ones unchanged. Offline
+  # shape-retrieval coverage 15/19 -> 17/19 vs the plain analytic arm. The
+  # `g+f-analytic-aware vs g+f-analytic` contrast isolates the retrieval change
+  # (identical bank + grounding). See docs/ck25-failure-atlas.md.
+  scripted-ck25-grounded-analytic-fewshot-aware:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/analytic_fewshot_bank.yml
+      shape_aware: true
+
+  openai-gpt4o-mini-ck25-grounded-analytic-fewshot-aware:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/analytic_fewshot_bank.yml
+      shape_aware: true
+
+  scripted-ck25-all-levers:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    predicate_grounding:
+      k: 40
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # Everything: entity grounding + predicate grounding + few-shot bank. Tests
+  # whether predicate grounding's documented distraction (07.4, net-negative
+  # alone) re-emerges or is absorbed when few-shot examples are also present.
+  openai-gpt4o-mini-ck25-all-levers:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    predicate_grounding:
+      k: 40
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+
+  # Entity grounding (seam 6) + query-first few-shot bank + relationship-path
+  # grounding (seam 8, Phase 07.6) — proves all three seams stack into ONE
+  # NlPipeline (R3). path_grounding.k mirrors R1's <=5 global-pool budget as
+  # the config's own knob.
+  scripted-ck25-grounded-generated-fewshot-path:
+    provider:
+      type: scripted
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+    path_grounding:
+      k: 5
+
+  openai-gpt4o-mini-ck25-grounded-generated-fewshot-path:
+    provider:
+      type: openai
+      model: gpt-4o-mini
+    judge: execution
+    max_repairs: 2
+    corpus: vendored/ck25/corpus.yml
+    grounding:
+      k: 20
+      label_predicates:
+        - rdfs:label
+        - pv:name
+    few_shot:
+      mode: bm25
+      k: 20
+      bank: vendored/ck25/generated_fewshot_bank.yml
+    path_grounding:
+      k: 5
+
   # Live QALD-9-plus generated-fewshot sweep — non-regression arm (Plan 05
   # Task 3 step 2). QALD's generated bank is empty (0 examples, Plan 04
   # honest TBox-only finding), so BM25 retrieval trivially returns nothing

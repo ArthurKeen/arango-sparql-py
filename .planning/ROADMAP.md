@@ -25,14 +25,15 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Deterministic transpiler core** - SPARQL 1.1 → AQL across all physical models; W3C 96.4% (COMPLETE, pre-GSD)
 - [x] **Phase 2: SPARQL 1.1 Protocol service + schema HTTP surface** - Conformant `/sparql` endpoint + 9 schema routes (COMPLETE, pre-GSD)
-- [ ] **Phase 3: Operational, security & privacy parity** - Runtime session/CORS/SSRF/redaction surfaces exist; required parity/security/privacy/config gates remain incomplete (REOPENED by PRD sync)
-- [ ] **Phase 4: Interoperability & performance verification** - Archived-Foxx semantic inventory started; third-party tools, ontoextract, perf SLOs remain
+- [x] **Phase 3: Operational, security & privacy parity** - Session/CORS/SSRF/redaction/STRIDE/log-envelope/config-gate (COMPLETE, pre-GSD)
+- [x] **Phase 4: Interoperability & performance verification** - Foxx roundtrip, third-party tools, ontoextract, perf SLOs (completed 2026-07-28)
 - [ ] **Phase 5: UI workbench parity completion** - Playwright/a11y CI harness + 3 backend-blocked WPs
 - [x] **Phase 6: NL→SPARQL eval harness + seed corpus** - Make NL quality measurable; check in `baseline.json` gate (FIRST ACTIVE) (completed 2026-07-15)
 - [ ] **Phase 06.1: Re-point nl2sparql onto arango-query-core shared engine** - Behavior-preserving refactor onto the shared `NLQueryEngine` via a 5-seam `SparqlAdapter` (INSERTED)
 - [x] **Phase 06.2: NL→SPARQL harder corpus + genuine live-model baseline** - Grow corpus to real difficulty + capture a live-model baseline so a few-shot lift is measurable (INSERTED) (NEXT ACTIVE) (completed 2026-07-21)
 - [x] **Phase 7: NL→SPARQL dense few-shot retrieval** - Dense/embedding ≤3-shot index via the shared engine's few-shot seam; prove pass-rate lift over the live baseline (completed 2026-07-21)
 - [x] **Phase 07.1: NL→SPARQL eval via public benchmarks** - Adopt public NL→SPARQL benchmark test sets (QALD-9-plus = powered capability gate; CK25 = corporate-domain anchor) + a small refusal supplement, reaching ~5–8pt MDE with real vetted questions; synthetic generation retired (INSERTED; pivoted via grill-me, former 07.2 folded in) (completed 2026-07-22)
+- [x] **Phase 07.5: NL→SPARQL query-first synthetic few-shot bank** - Build-time per-ontology few-shot bank generated query-first from the TBox (compositional templates + data-binding + paraphrase), loaded via the BM25 few-shot seam so NL→SPARQL adapts to any new ontology; re-opens 07.1's synthetic fence in a query-first/few-shot-pool form; measured mechanistically + directionally on held-out CK25+QALD (INSERTED)
 - [ ] **Phase 8: Public release readiness** - Public repo, CI matrix, license/docs/runbook, SBOM on v1.0 tag
 
 ## Phase Details
@@ -93,15 +94,27 @@ with third-party SPARQL tools, `arango-ontoextract`, and the performance budgets
 **Requirements**: REQ-foxx-parity, REQ-thirdparty-tool-compat, REQ-ontoextract-integration, REQ-performance-slos
 **Success Criteria** (what must be TRUE):
 
-  1. ≥ 90% of inventoried translatable legacy Foxx fixtures pass static semantic parity (`tests/legacy/test_legacy_semantic_parity.py`); Foxx is archived/deprecated and is not a runtime dependency
+  1. ~~≥ 90% of translatable legacy Foxx fixtures pass a golden emitting semantically equivalent AQL (`test_foxx_roundtrip.py`, Docker-gated)~~ **STRUCK — REQ-foxx-parity retired via ADR-0003 (D-01/D-02); Foxx is deprecated.**
   2. Each §11.1 verified-compatible tool (Protégé, YASGUI, SPARQLWrapper, MS Ontology Playground) passes a smoke test (SELECT + ASK + Service Description)
   3. `arango-ontoextract` completes the Q7 roundtrip via `/mapping/export-owl` + `/mapping/import-owl` (Docker-gated, both services live)
   4. Every §9.4 performance budget row passes within ≤ 25% of its stated p95
 
-**Plans**: TBD
-**Status**: In progress — static archived-Foxx semantic parity harness has an
-initial three-query inventory; the ≥90% inventory target and the remaining
-interoperability/performance criteria are still open.
+> **Scope narrowed by 04-CONTEXT (D-01..D-09):** SC1 (Foxx parity) is retired via ADR-0003 — see plan 04-03; SC3 is reframed as our own-half `/mapping` OWL-roundtrip contract test (no live AOE); SC4 enforcement is tiered (3 CI-gated in-process rows + 8 report-only rows).
+
+**Plans**: 8 plans (2 waves)
+
+- Wave 1:
+  - [x] 04-01-PLAN.md — Wave-0 foundation: perf marker + SPARQLWrapper dep, tests/perf scaffolding, vendored cosmic_coffee.rdf fixture, docs/howto anchor
+  - [x] 04-02-PLAN.md — RDF/XML (+JSON-LD/N-Triples) format-dispatch production-code fix in owl.py + mapping.py (unblocks RDF/XML test rows)
+  - [x] 04-03-PLAN.md — REQ-foxx-parity retirement: ADR-0003 + PRD/ROADMAP/REQUIREMENTS amendments
+- Wave 2:
+  - [x] 04-04-PLAN.md — AOE own-half roundtrip contract test (import/export isomorphism + ASK/SELECT via /sparql)
+  - [x] 04-05-PLAN.md — Automated third-party smoke: SPARQLWrapper + Ontology Playground roundtrip
+  - [x] 04-06-PLAN.md — CI-gated perf tier: /translate cold+warm, /execute overhead p95 gate + baseline.json
+  - [x] 04-07-PLAN.md — Report-only perf tier: 8 advisory rows → LATENCY_REPORT.md (human-run)
+  - [x] 04-08-PLAN.md — Documented-manual recipes: Protégé/YASGUI/rsparql/SPARQLWrapper/Playground + recorded transcript
+
+**Status**: Planned
 
 ### Phase 5: UI workbench parity completion
 
@@ -232,6 +245,156 @@ Plans:
 **Wave 3** *(blocked on Wave 2)*
 
 - [x] 07-04-PLAN.md — 3-arm x 3-model lift sweep: temperature fix + configs/runner extension + D-06 guard + D-04 provenance + W3C non-regression [NL-FEW-02] — complete (7ce312e, b2aa008, f1c327e, 3136c17, ac19edc); the credentialed human's live sweep returned a documented null on the pre-registered confirmatory test, closed per the plan's human-accepted-documented-null path — see 07-04-SUMMARY.md
+
+### Phase 07.6: NL→SPARQL relationship-path grounding (INSERTED)
+
+**Goal:** Close the dominant CK25 NL→SPARQL failure mode — *right-entity, wrong-path*. Root-caused from the 07.5 composed-lever evaluation (entity grounding + few-shot ceiling = 16/49; every failure is valid, executable SPARQL — 0 malformed): **16 of 31 failures ground the named entity correctly but navigate the wrong predicate-path and execute to empty** (e.g. "manager of Data Services" — the model used `responsibleFor` off the Department instead of the inverse `memberOf`←Person→`hasManager`). Add an engine **seam-8** that, given the question's anchor class (from seam-6 entity grounding) and its target (from seam-7's token scorer), retrieves the *specific* shortest predicate path connecting them from a mechanically-built, **subclass-aware, inverse-edged** TBox class-connectivity graph, and injects it as a compact navigation hint — surfacing *one path between two anchored classes*, NOT a schema dump (the distraction that sank 07.4's full predicate grounding). Mechanical / TBox-only → transfers to CDF; Cypher inherits. Full design + Step-0 offline recall spike (GREEN: 12/16 → ~16/16 with D-9 subclass-aware nodes + D-10 self-revisit + inverse edges): `.planning/research/relationship-path-grounding-scope.md`.
+**Requirements**: NL-ACC-03
+**Depends on:** Phase 07.3 (seam-6 entity grounding → anchor class), Phase 07.4 (seam-7 `PredicateIndex` → domain/range substrate + token scorer), Phase 07.5 (composed-lever sweep + candidate-dump diagnostics harness)
+**Plans:** 3/3 plans complete
+
+Plans:
+**Wave 1** *(tracer — mechanical lever proven offline, engine-first)*
+
+- [x] 07.6-01-PLAN.md — TRACER: ClassPathIndex engine seam (subclass-aware+inverse+self-revisit+≤5 bounded shortest-path) + execution-diff 16-case gold fixture + R4 offline recall gate ≥14/16 [NL-ACC-03]
+
+**Wave 2** *(blocked on 07.6-01 — the prompt seam)*
+
+- [x] 07.6-02-PLAN.md — Engine Protocol seam + seam-8 composition (after entity/predicate blocks) + both SPARQL adapters (byte-identical, anchor=seam-6/target=seam-7 per D-02) + NlPipeline threading + 3rd parity test [NL-ACC-03]
+
+**Wave 3** *(blocked on 07.6-02 — eval arm + promotion + credentialed sweep; human checkpoints)*
+
+- [x] 07.6-03-PLAN.md — Additive `path_grounding:` config arm + scripted twin + `--dry-run` 49/49; D-01 engine promotion (two-remote push + pin bump, recall-green-gated); human-run credentialed CK25 paired sweep + baseline.json adopt/kill fold-in [NL-ACC-03]
+
+### Phase 07.5: NL→SPARQL query-first synthetic few-shot bank (INSERTED)
+
+**Goal:** At build time for any new ontology, auto-generate a **query-first** `(question, gold-SPARQL)` few-shot bank from the TBox, and load it through the existing BM25 `FewShotIndex` seam so NL→SPARQL specializes to any new ontology without hand-curation. Query-first construction (hand-written ontology-agnostic compositional SPARQL templates — lookup / value-object / category-filter / COUNT / top-N / OFFSET / negation / 2-hop — whose predicate/class slots fill from the 07.4 TBox walker; data-bound and execution-filtered to be non-empty; paired question templates + K LLM paraphrases for faithful, natural questions). This **consciously re-opens Phase 07.1's "synthetic generator out-of-scope" fence** in a narrower, safer form — query-first for a few-shot *pool*, not question-first for *eval* (dodging 07.1's oracle/external-validity reasons) — and follows 07.4's documented-null follow-up ("try selective/targeted surfacing, not a full dump"). Measured **mechanistically + directionally, not significance-gated** (the CK25 anchor is underpowered at n=49 and QALD's floor is an orthogonal entity-grounding bottleneck): shape-coverage of held-out failures + CK25 directional lift + QALD non-regression, overlap-audited, with the **same generator run across both CK25 and QALD** as the generalization signal. Full design: `.planning/research/query-first-synthetic-fewshot-bank-design.md`.
+**Requirements**: NL-GEN-01 (query-first synthetic few-shot bank generation; per-ontology adaptation, directionally-graded).
+**Depends on:** Phase 07.4 (TBox walker + predicate shape classification — reused for query construction), Phase 7 (few-shot seam / BM25 `FewShotIndex`).
+**Plans:** 5/6 plans executed
+
+Plans:
+**Wave 1**
+
+- [x] 07.5-01-PLAN.md — Walker signals (orderable + optional-relation) + ShapeTemplate catalog scaffold + promote verify_bank.py -> verify_generated_bank.py [NL-GEN-01]
+
+**Wave 2**
+
+- [x] 07.5-02-PLAN.md — Generator core (9 name-anchored templates + slot-fill + data-bind + execution non-empty filter + strict-extremum) -> CK25 bank + per-shape yield report (REQ-1/REQ-2) [NL-GEN-01]
+
+**Wave 3**
+
+- [x] 07.5-03-PLAN.md — K=3 paraphrases (OpenAICompatibleClient) + offline primary slot-preservation faithfulness guard (REQ-3) [NL-GEN-01]
+
+**Wave 4**
+
+- [x] 07.5-04-PLAN.md — Same generator on QALD TBox (structural-only, D-04) + generator_no_ontology_branch proof (REQ-5) [NL-GEN-01]
+
+**Wave 5** *(human-run, credentialed)*
+
+- [x] 07.5-05-PLAN.md — Shape+entity overlap audit + additive config arms + run_generated_sweep.py + human-run CK25/QALD adopt/kill sweep + baseline.json fold-in (REQ-4/REQ-6) [NL-GEN-01]
+
+**Wave 6** *(CONDITIONAL — only if the SPEC adopt bar clears)*
+
+- [x] 07.5-06-PLAN.md — Stage 2 engine promotion: pure construction core -> arango_query_core seam + pyproject.toml git-pin bump (D-01, OQ-2) [NL-GEN-01]
+
+**Status**: Planned
+
+### Phase 07.4: NL→SPARQL predicate/schema-convention grounding (INSERTED)
+
+**Goal:** Extend the grounding seam (seam 6) from instance-entity grounding to predicate/schema-convention grounding: walk the OWL/RDFS TBox to surface schema predicates with label, domain, range, and a shape classification (value-object range → emit the join pattern; class-typed range → filter by a category-instance IRI), and inject them so the model binds to real predicates and follows schema conventions instead of inventing nonexistent classes or flat predicates. Language-agnostic seam so the Cypher sister repo inherits it. Prove a statistically-graded CK25 accuracy lift over the 07.3 entity-grounded baseline, targeting the 17 convention-bound still-failing cases (dominated by the price value-object and hasCategory product-typing patterns, both mechanically derivable from the TBox).
+**Requirements**: NL-ACC-02 (predicate/schema-convention grounding lift, execution-graded).
+**Depends on:** Phase 07.3 (entity grounding — seam 6, LabelIndex, grounded eval configs)
+**Plans:** 6/5 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 07.4-01-PLAN.md — Engine-side seam 7 in arango-query-core (GroundedPredicate/PredicateIndex + shared scorer + seam 7 Protocol + engine composition) + author NL-ACC-02 [NL-ACC-02]
+
+**Wave 2** *(atomic: pin bump never precedes adapters — Pitfall 1)*
+
+- [x] 07.4-02-PLAN.md — Seam 7 on BOTH SPARQL adapters + NlPipeline passthrough + PREDICATE_DUMP_THRESHOLD, then bump arango-query-core pin (both extras) + uv lock [NL-ACC-02]
+
+**Wave 3**
+
+- [x] 07.4-03-PLAN.md — Eval-only build_predicate_index() TBox walk + corrected 3-way shape rule + shape precision/purity tests (Price/ProductCategory/Manager/literal) [NL-ACC-02]
+
+**Wave 4**
+
+- [x] 07.4-04-PLAN.md — runner.py predicate_grounding read + build-once + D-05 query capture + configs.yml entries + predicate SC-gate/parity/recall guards [NL-ACC-02]
+
+**Wave 5** *(human-run, credentialed)*
+
+- [x] 07.4-05-PLAN.md — README §10 runbook + live CK25 hard-gate McNemar sweep + first live QALD directional run + baseline.json fold-in + close NL-ACC-02 [NL-ACC-02]
+
+**Wave 6** *(gap-closure: CR-01 code-review fix + re-fold)*
+
+- [x] 07.4-06-PLAN.md — Real PredicateIndex dump mode upstream (CR-01 fix, pin b669320) + both adapters wired + re-fold: credentialed human RE-RAN the live CK25 sweep on the fixed dump mode, overwrote the confounded 07.4-05 numbers with valid ones, re-closed NL-ACC-02 as a VALID documented-null [NL-ACC-02]
+
+**Status**: Complete (2026-07-27) — NL-ACC-02 closed via the documented-null path (standalone predicate-alone 7/49 vs a fresh 12/49 entity-alone arm, p=0.1250; additive 10/49 vs the same arm, p=0.6875 — the phase's actual hard-gate test), re-confirmed valid after the 07.4-06 CR-01 dump-mode fix and live re-sweep superseded the original 07.4-05 confounded numbers; see 07.4-06-SUMMARY.md "Re-fold" section for the full before/after.
+
+### Phase 07.3: NL to SPARQL entity/instance grounding (INSERTED)
+
+**Goal:** Productionize **entity/instance grounding** as a language-agnostic seam in the
+shared `arango-query-core` NL engine (so the sister Cypher project inherits it), and prove
+a statistically significant NL→SPARQL accuracy lift on the CK25 corporate-domain anchor via
+the existing execution-graded eval. The `07.2` live run confirmed the model cannot invent
+opaque instance IRIs (e.g. `Ms. Brant` → `empl-Karen.Brant%40company.org`) from the
+vocabulary alone; grounding retrieves candidate instance IRIs from the target data and
+injects them into the prompt so the model can bind to real entities.
+
+**Requirements**: NL-ACC-01 (NL→SPARQL entity/instance grounding lift, execution-graded).
+
+**Depends on:** Phase 07.2 (execution judge + vendored CK25 instance graph), Phase 06.1
+(NL layer on the shared `NLQueryEngine`).
+
+**Spike evidence (2026-07-23, live gpt-4o-mini, CK25 49-case execution judge):**
+
+- Grounding **doubled** CK25: 6/49 (12.2%) → 12/49 (24.5%); Δ +12.2pt, 95% CI [+4.1, +22.4],
+  McNemar b=6/c=0, **p=0.031, zero regressions**; retrieval recall of gold IRIs = 96%.
+  Prototype in `scratchpad/nl-grounding-spike/` + findings in the phase dir
+  (`07.3-SPIKE-FINDINGS.md`); label index over `rdfs:label|pv:name`, top-k by token match,
+  inject "use these EXACT IRIs" block.
+
+- Execution-guided **selection** (the former v1.1 lever) is **empirically dead** for CK25
+  (p=1.0): the model reaches full consensus on systematically-wrong queries, so best-of-N /
+  MBR has no correct sample to select. Superseded by this phase.
+
+**Scope:** lever #1 (grounding) ONLY. Explicitly OUT of scope (own later phases):
+(2) in-domain few-shot for schema-convention failures (~15 residual cases: `subClassOf*`,
+OPTIONAL, indirect-manager idioms); (3) loosening the execution judge's projection-shape
+strictness (some true accuracy is deflated by the answer-set judge keying on all projected
+columns). Retrieval must run against the target instance data / a schema-agnostic index
+(not CK25-specific hand-curation) so it transfers to the CDF project unchanged.
+
+**Non-regression invariants (hard):** W3C DAWG query-eval coverage ≥ 96.4%; the deterministic
+SPARQL→AQL transpiler package untouched; scripted configs stay the CI default (no live calls
+in CI); each eval set stays independently reported (never blended).
+
+**Plans:** 6/6 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 07.3-01-PLAN.md — Engine-side grounding seam in arango-query-core: grounding.py (GroundedEntity/LabelIndex, verbatim spike port + label sanitization) + seam 6 + engine _system_prompt splice + barrel export + engine unit tests [NL-ACC-01]
+
+**Wave 2**
+
+- [x] 07.3-02-PLAN.md — Publish engine commit to the pinned remote (dual-remote git ls-remote verify) + bump pyproject pin (both extras) + uv lock [NL-ACC-01]
+
+**Wave 3** *(parallel — no file overlap)*
+
+- [x] 07.3-03-PLAN.md — SparqlAdapter seam 6 (injection-only) + verbatim SPARQL wording + NlPipeline passthrough + SC-gate (block in engine prompt, not grammar section) + adapter unit tests [NL-ACC-01]
+- [x] 07.3-04-PLAN.md — Eval-only pyoxigraph→LabelIndex builder + deterministic gold-IRI retrieval-recall guard (CI-visible, >=0.90) + grounding: config-default structural test [NL-ACC-01]
+
+**Wave 4**
+
+- [x] 07.3-05-PLAN.md — runner.py additive grounding: read + build-once + passthrough + configs.yml CK25-grounded entries (pv:name config-only) + scripted-ck25-grounded plumbing gate [NL-ACC-01]
+
+**Wave 5**
+
+- [x] 07.3-06-PLAN.md — Human-run live CK25 grounded-vs-fresh-zero McNemar sweep + baseline.json fold-in (reported, not gated) + README §7 runbook + W3C/transpiler non-regression re-check [NL-ACC-01]
 
 ### Phase 07.2: Execution-based eval judging for adopted benchmarks (CK25) (INSERTED)
 
@@ -373,7 +536,7 @@ arc runs 6 (measurable) → 06.1 (shared engine) → 06.2 (harder corpus + live 
 | 1. Deterministic transpiler core | shipped | Complete | pre-GSD (mature) |
 | 2. Protocol service + schema HTTP | shipped | Complete | pre-GSD (mature) |
 | 3. Operational/security/privacy parity | shipped | Complete | pre-GSD (mature) |
-| 4. Interop & performance verification | 0/TBD | Not started | - |
+| 4. Interop & performance verification | 8/8 | Complete    | 2026-07-28 |
 | 5. UI workbench parity completion | 0/TBD | Not started | - |
 | 6. NL→SPARQL eval harness + corpus | 3/3 | Complete    | 2026-07-15 |
 | 06.1. Re-point nl2sparql onto shared engine | 3/3 | Executed | 2026-07-20 |
