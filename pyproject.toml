@@ -35,7 +35,11 @@ analyzer = [
   # arango_sparql/schema/acquire.py::_resolve_analyzer_provider). Without a
   # client SDK it silently degrades to deterministic baseline inference,
   # which misclassifies LABEL-style / hybrid collections.
-  "arangodb-schema-analyzer[anthropic,openai]>=0.9.0,<0.10.0",
+  # Ceiling tracks the analyzer's current minor: 0.12 carries the extended
+  # tool contract (entityStrategy, detectForeignKeys) that consumers like the
+  # CDF reverse-CSI export require — a <0.10 ceiling silently DOWNGRADES a
+  # co-installed 0.12 and breaks them (observed: CDF `make seed`, 2026-09-06).
+  "arangodb-schema-analyzer[anthropic,openai]>=0.12.1,<0.13.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",
