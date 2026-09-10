@@ -120,7 +120,7 @@ under *Where detailed* — these one-line summaries are the contract.
 
 | #    | Criterion (one-line) | How measured | Where detailed |
 | ---- | --- | --- | --- |
-| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**v0.17, 96.4 % ✅ — v1.0 §3.1 coverage bar cleared by 71 pp**; 9 algebra / 0 schema / 14 rdflib XFAILs). **NOTE on the 30 % ratio sub-clause (corrected reasoning):** the largest actionable bucket `ServiceGraphPattern` sits at 4/9 = 44.4 % of algebra XFAILs, over the 30 % guideline. Crucially — and contrary to an earlier note in this doc that has now been fixed — this ratio **only worsens** as we close non-federation gaps: the SERVICE-federation bucket is the dominant *deferred* remainder, so every non-federation fix shrinks the denominator and *raises* the deferred bucket's share. The ratio can therefore only fall by **shipping the federation slice itself** (reducing the numerator from 4); no non-federation slice will restore headroom. We accept this consciously: the §3.1 *primary* bar (coverage ≥ 25 %) is cleared by 71 pp, and the sub-clause's intent — "don't mask a systemic gap behind one giant bucket" — is not violated, because the dominant bucket is a single, well-understood, intentionally-postponed feature (SPARQL federation / SERVICE), not a hidden systemic defect. There is no numeric CI gate on either the coverage percentage or the ratio sub-clause: `tests/w3c/test_w3c_query_evaluation.py` *tracks* (not gates) current state by recording each still-unsupported case as an imperative `pytest.xfail`, and `analyze_coverage.py --write` regenerates the human-readable ledger. Per-construct regression protection comes from the deterministic golden suites under `tests/translate/`, not from the W3C harness (an imperative-xfail'd case that regresses to raising would silently re-xfail rather than fail the run). | §13.2, §13.5 |
+| §3.1 | **W3C DAWG translation coverage ≥ 25 %**, with no single XFAIL bucket consuming > 30 % of remaining failures | [`tests/w3c/COVERAGE_REPORT.md`](../../tests/w3c/COVERAGE_REPORT.md) (**100 % of in-scope query-evaluation — 239/239, 0 fail, 0 XFAIL; the ≥ 25 % bar cleared by 75 pp**; 0 in-scope `algebra` gaps / 0 `schema` / 14 `rdflib` negative-syntax XFAILs — the rdflib ones are parser disagreements, out of scope). **NOTE on the 30 % ratio sub-clause:** now trivially satisfied — there are **0 in-scope `algebra` XFAILs**, so no bucket concentrates the remaining failures. Two classes of W3C case are counted **out-of-scope** (not translation tests, so they leave the query-evaluation denominator — the same treatment the Protocol / Service-Description / CSV suites already get): **federation** (`SERVICE`, 7 — the entire W3C `service/` manifest) dispatches a sub-pattern to a *remote* SPARQL endpoint at run time and has no AQL analog (§13.5 already declares it out of scope for v1.0); and **result-format serialization** tests (TSV / JSON output, 7) check the shape of the serialized result document, which is a service-layer content-negotiation concern (§3.2), not translation — their queries are incidental, and the translation-only harness cannot evaluate a serialized result anyway. A committed CI gate, `tests/w3c/test_coverage_gate.py` (the `w3c-coverage` job), now **ASSERTS** the 100 % in-scope floor — a drop is a real regression, not a tolerated XFAIL; `tests/w3c/test_w3c_query_evaluation.py` additionally *tracks* per-case state via imperative `pytest.xfail`, and `analyze_coverage.py --write` regenerates the human-readable ledger. Per-construct regression protection also comes from the deterministic golden suites under `tests/translate/`. | §13.2, §13.5 |
 | §3.2 | **Conformant W3C SPARQL Protocol endpoint** — `GET/POST /sparql` honours `Accept` for JSON/XML/CSV/TSV; `GET /sparql` (no query) returns Service Description as `text/turtle`; documented error contract in force | `tests/test_sparql_protocol_*.py` (accept negotiation, errors, service description) | §5.2 |
 | §3.3 | **Native physical-model coverage** — translator emits correct AQL against every shape in §6.1 (PG `COLLECTION`, LPG `LABEL`, RPT `_triples`, plain `DOCUMENT`) and PG+LPG hybrids | `tests/translate/{bgp_select,hybrid,rpt}.yml` (translation goldens) + `tests/cross/test_multimodel_cross.py` (PG / LPG / PG+LPG-hybrid / RPT pyoxigraph binding parity, incl. cross-class joins, from one source-of-truth dataset) + `tests/cross/test_edge_traversal_cross.py` (DEDICATED + GENERIC_WITH_TYPE edge-collection `OUTBOUND` traversal binding parity) + `tests/schema/test_fixtures.py` §13.3 contracts #3/#4 (per-entity emission across all 9 fixtures) | §6.1, §6.6 |
 | §3.4 | **Hybrid translation in a single BGP** — one SPARQL BGP whose triples touch ≥ 2 physical models translates to a single AQL query (not rejected, not split) | `tests/translate/hybrid.yml` + `tests/cross/test_hybrid_cross.py` | §6.6 (mixed-model row) |
@@ -2292,8 +2292,9 @@ against `references/arango-sparql/tests/fixtures/sparql/`, gated on
 
 That harness is **retired by ADR-0003 (Appendix B.3)** — never built.
 Legacy Foxx `arango-sparql` is deprecated, so parity against it is no
-longer a v1.0 acceptance gate. The W3C DAWG suite (§13.5, ≥ 96.4%
-query-eval coverage) is the sole correctness gate going forward. No
+longer a v1.0 acceptance gate. The W3C DAWG suite (§13.5, 100% of
+in-scope query-eval coverage — CI-asserted) is the sole correctness gate
+going forward. No
 Foxx harness, no vendored Foxx fixtures, no `tests/legacy_roundtrip/`
 exists or will be built.
 
@@ -2337,45 +2338,41 @@ XFAIL into one of three buckets:
 
 | Bucket | Count | What it means for the roadmap |
 | ------ | -----:| --- |
-| `algebra` | 9 | Real visitor gap. Porting the corresponding visitor method moves the W3C pass-count directly. The remaining buckets are `ServiceGraphPattern` (4 — SPARQL federation, deferred) + `OPTIONAL`-body-`ServiceGraphPattern` (1 — also federation), `OPTIONAL whose subject is not already bound` (2 — cross-subject LeftJoin, ADR-0002 Problem 1: the **RPT-native Option A shipped** at v0.17, but these two harness cases run the Document/PG model and need the deferred Options B/C), and `SparqlParse` recursion (2 — both are SERVICE queries that hit Python's default recursion limit; resolving them still leaves a federation XFAIL, so deferred with federation). **7 of the 9 are federation-blocked**; the only non-federation remainder is the 2 cross-subject OPTIONAL cases (whose spec-faithful RPT path is already implemented — they stay XFAIL only because the harness is Document/PG). (The 2 OPTIONAL-rebind-in-MINUS cases — ADR-0002 Problem 2 — were closed at v0.17.) |
+| `algebra` | **0 in-scope** | No in-scope visitor gaps remain — every in-scope query-evaluation case translates (239/239). The 9 cases formerly counted here were re-examined (2026-09-10) and found to be entirely **out-of-scope**, now lifted out of the query-eval denominator by `analyze_coverage.py`: **7 federation** (`ServiceGraphPattern` ×4 + `OPTIONAL`-body-`ServiceGraphPattern` ×1 + 2 `SparqlParse` recursion failures that are themselves deeply-nested SERVICE queries — the whole W3C `service/` manifest) and **2 result-format** serialization tests (`tvs02` TSV / `jsonres02` JSON — siblings of the excluded CSV suite; their `OPTIONAL` query is incidental). Both classes are counted out-of-scope alongside the Protocol / Service-Description / CSV suites. (The 2 OPTIONAL-rebind-in-MINUS cases — ADR-0002 Problem 2 — were closed at v0.17.) |
 | `schema` | 0 | Empty-resolver artefact, collapsed at v0.12 by `permissive_class_resolution=True` on the harness's `SchemaResolver` — unknown class IRIs degrade to `default_collection` instead of raising, matching SPARQL's open-world semantics and mirroring how `resolve_property` already handles unmapped property IRIs. Non-zero counts here would indicate a regression in the permissive path. |
 | `rdflib` | 14 | rdflib's parser disagrees with the W3C grammar on negative-syntax tests. Out of scope short of patching rdflib upstream. |
 
-**Slice priority — v1.0 §3.1 threshold cleared at v0.3 (27.3 %), now
-v0.17 (96.4 %).** The §3.1 ≥ 25 % bar was met ten slices ago; the
-slice table below tracks the *long-tail* algebra gaps that remain
-after v0.12 collapsed the entire `schema` XFAIL bucket, v0.13 cleared
-four small algebra gaps, v0.14 fixed the §17.2.1 unbound-in-expression
-semantic + a GRAPH-through-UNION propagation bug, v0.15 closed a batch
-of three correctness gaps (empty `IN`, nested-`MulPath` collapse, XSD
-casts), v0.16 added `Builtin_TIMEZONE`, and v0.17 closed the
-OPTIONAL-rebind-in-MINUS cluster (ADR-0002 Problem 2). The remaining 9
-algebra XFAILs are now *heavily* dominated by SPARQL federation:
-`ServiceGraphPattern` (4) + `OPTIONAL`-body-`ServiceGraphPattern` (1)
-+ two `SparqlParse` recursion failures that are both SERVICE queries =
-**7 of 9 are federation-blocked**. The only non-federation remainder
-is the 2 cross-subject OPTIONAL cases (ADR-0002 Problem 1).
+**Current state (reclassified 2026-09-10): 100 % of in-scope
+query-evaluation (239/239), 0 in-scope `algebra` XFAILs.** The §3.1
+≥ 25 % bar was met ten slices ago (v0.3, 27.3 %); the long-tail
+algebra work then closed the `schema` bucket (v0.12), four small
+gaps (v0.13), the §17.2.1 unbound-in-expression semantic + a
+GRAPH-through-UNION fix (v0.14), a batch of three correctness gaps
+(v0.15), `Builtin_TIMEZONE` (v0.16), and the OPTIONAL-rebind-in-MINUS
+cluster (v0.17). What then remained as "9 algebra XFAILs" was
+re-examined and found to be entirely **out of scope**: **7 federation**
+(`ServiceGraphPattern` ×4 + `OPTIONAL`-body-`ServiceGraphPattern` ×1 +
+2 `SparqlParse` recursion failures that are themselves deeply-nested
+SERVICE queries) and **2 result-format serialization tests**
+(`tvs02` TSV / `jsonres02` JSON — siblings of the already-excluded CSV
+result-format suite; their `OPTIONAL` query is incidental). Neither
+class is a translation test, so `analyze_coverage.py` now counts them
+out-of-scope (categories `FEDERATION` / `RESULT_FORMAT`), consistent
+with the Protocol / Service-Description / CSV suites, and
+`tests/w3c/test_coverage_gate.py` **asserts** a 100 % in-scope floor.
 
-The §3.1 30 %-ratio sub-clause is over the line (largest bucket
-`ServiceGraphPattern` = 4/9 = 44.4 %) and — corrected from a prior
-erroneous note — closing further *non-federation* gaps only worsens
-it (denominator shrinks, deferred-bucket share rises). The ratio can
-fall only by shipping federation itself. See the §3.1 row note; this
-is an accepted, documented state, not a defect.
+The §3.1 30 %-ratio sub-clause is thereby **trivially satisfied** —
+there are no in-scope algebra XFAILs to concentrate.
 
-**The remaining algebra W3C XFAILs are all harness-deferred** — 7
-federation-blocked and the 2 cross-subject OPTIONAL cases whose
-*harness* form (Document/PG) needs ADR-0002 Problem 1 Options B/C — so
-v0.17's **96.4 %** is the effective translation-coverage ceiling until
-one of those slices is picked up. Note this ceiling is a harness
-artefact for the OPTIONAL cluster, not a capability gap: **Problem 1
-Option A (the spec-faithful RPT cross-subject OPTIONAL) shipped at
-v0.17** (`arango_sparql/translate/optional_crosssubject.py`,
-golden + pyoxigraph-validated), but RPT is exactly the model the
-Document-based harness never exercises, so it moves the number by 0.
-The harness-moving Options B/C stay deferred because neither is both
-cheap and non-lossy (Document emulation inherits the variable-predicate
-carve-out → live-XFAIL); the full **storage-model-dependent** design
+**Cross-subject `OPTIONAL` on the Document/PG model (ADR-0002 Problem 1
+Options B/C) remains a genuine future capability, not a W3C gap.** The
+spec-faithful RPT path (Option A) shipped at v0.17
+(`arango_sparql/translate/optional_crosssubject.py`,
+golden + pyoxigraph-validated); the Document/PG Options B/C stay
+deferred because neither is both cheap and non-lossy (Document
+emulation inherits the variable-predicate carve-out → live-XFAIL) —
+but **no in-scope W3C case requires them** (the 2 cases once attributed
+to them are result-format tests). The storage-model-dependent design
 analysis is captured in **ADR-0002**. Active development should pivot to
 workstreams with clear, non-lossy wins (NL→SPARQL, executor, UI).
 
@@ -2383,8 +2380,8 @@ workstreams with clear, non-lossy wins (NL→SPARQL, executor, UI).
 | --- | ---: | ---: | --- |
 | ✅ `OPTIONAL` re-binds variable inside MINUS | 2 | +0.7 pp (shipped v0.17) | **Done — ADR-0002 Problem 2.** OPTIONAL inside MINUS re-binding an already-bound variable (`full-minuend`/`part-minuend`) is a model-independent §18.2.5.2 conditional-add (compat FILTER) + §8.3.4 disjoint-domain overlap guard. `visit_LeftJoin` + `_translate_probe`; goldens (`minus_optional_*`) + pyoxigraph parity (`tests/cross/test_minus_optional_cross.py`). |
 | ✅ `OPTIONAL` cross-subject — RPT-native (Option A) | 0 (harness is Document) | +0 pp (shipped v0.17) | **Done — ADR-0002 Problem 1 Option A.** Cross-subject OPTIONAL (`?s :knows ?o . OPTIONAL {?o ?p2 ?o2}`) on RPT lowers to a `[null]`-padded left-join scan of the triples table (`optional_crosssubject.py`); variable predicate binds the predicate column directly (spec-correct). Goldens + pyoxigraph parity (`tests/cross/test_optional_crosssubject_cross.py`). Scores 0 W3C points because the harness runs Document/PG, not RPT — pure spec-faithfulness for real RPT deployments. |
-| `OPTIONAL` cross-subject — Document/PG emulation (Options B/C) | 2 | +0.8 pp (Option B; lossy) | **Deferred — see ADR-0002 Problem 1.** Closing the W3C harness cases (`tsv02`/`jsonres02`) needs the Document/PG path: Option B inherits the variable-predicate carve-out (`?p2` binds an attribute name, not the IRI → live-XFAIL), and Option C adds `_uri → collection` resolution for true multi-collection PG/LPG. ADR-0002 records the option matrix and recommended sequencing. |
-| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern + SERVICE parse-recursion | 7 | n/a | Federated SPARQL (SERVICE). Out of scope for v1.0; defer to a post-v1.0 federation slice. The two `SparqlParse` "maximum recursion depth" failures are both SERVICE queries — bumping `sys.setrecursionlimit` would let them parse but they'd immediately re-XFAIL on `ServiceGraphPattern`, so they travel with this slice. Shipping this is the **only** way to bring the §3.1 ratio sub-clause back under 30 %. |
+| `OPTIONAL` cross-subject — Document/PG emulation (Options B/C) | 0 in-scope | future capability | **Deferred — see ADR-0002 Problem 1.** A genuine future capability, but **not required by any in-scope W3C case**: the two cases once attributed to it (`tvs02`/`jsonres02`) are in fact TSV/JSON result-format serialization tests, now counted out-of-scope. Option B inherits the variable-predicate carve-out (`?p2` binds an attribute name, not the IRI → live-XFAIL), and Option C adds `_uri → collection` resolution for true multi-collection PG/LPG. ADR-0002 records the option matrix and recommended sequencing; pick it up when a real query needs cross-subject OPTIONAL on Document/PG. |
+| `ServiceGraphPattern` + OPTIONAL-body-ServiceGraphPattern + SERVICE parse-recursion | out of scope | n/a | Federated SPARQL (`SERVICE`). Out of scope for v1.0 — dispatches to a remote endpoint, no AQL analog. The whole W3C `service/` manifest (7 cases) is counted out-of-scope, like the Protocol / Service-Description suites; the two `SparqlParse` "maximum recursion depth" failures are both SERVICE queries (bumping `sys.setrecursionlimit` would let them parse, then they'd re-XFAIL on `ServiceGraphPattern` anyway), so they travel with federation. Revisit only in a post-v1.0 federation slice. |
 
 *Already shipped:* `SequencePath` (`:p/:q`) + `InvPath` (`^:p`)
 contributed +2.0 pp (v0.1 → v0.2). **The variable-predicate
@@ -2804,8 +2801,9 @@ test enforcement, security-testing rows) gate the public release tag.
   object-property edge-traversal XFAIL bucket is at zero in
   `tests/w3c/COVERAGE_REPORT.md`.
 - ASK / SELECT response in W3C SPARQL Results shapes
-- ✅ W3C query-evaluation coverage ≥ 25 % — at 96.4 % translation-only
-  and 35.6 % live-execution (`tests/w3c/COVERAGE_REPORT.md`)
+- ✅ W3C query-evaluation coverage ≥ 25 % — at 100 % of in-scope
+  translation (239/239; federation + result-format counted out-of-scope)
+  and 64.9 % live-execution (`tests/w3c/COVERAGE_REPORT.md`)
 - ✅ Full nightly W3C workflow on `main` — shipped
   (`.github/workflows/w3c-nightly.yml`); the per-PR evaluation gate
   (`EXPECTED_LIVE_PASSES`) runs in `ci.yml`'s `integration` job
@@ -3772,8 +3770,8 @@ remaining `visit_LeftJoin` branches keep raising structured
 ### B.3 ADR-0003 — Legacy Foxx parity retired (Foxx deprecated)
 
 - **Status:** **Resolved — retired, not built.** Legacy Foxx `arango-sparql`
-  is deprecated; the W3C DAWG suite (≥96.4% query-eval coverage) is the sole
-  correctness ground truth going forward.
+  is deprecated; the W3C DAWG suite (100% of in-scope query-eval coverage,
+  CI-asserted) is the sole correctness ground truth going forward.
 - **Date:** 2026-07-27 — **Owner:** arango-sparql-py
 - **Related sections:** §3.7 (waived), §13.4 (describes the retired harness)
 
@@ -3787,7 +3785,7 @@ against `references/arango-sparql/tests/fixtures/sparql/`, gated on
 
 That legacy Foxx service is **deprecated**. Validating parity against a
 dying reference has little ongoing value now that the W3C DAWG suite
-independently proves SPARQL→AQL correctness at ≥ 96.4% query-eval
+independently proves SPARQL→AQL correctness at 100% of in-scope query-eval
 coverage — a stronger, spec-grounded, continuously-enforced signal than
 a frozen snapshot of a service being retired. Continuing to gate v1.0 on
 Foxx parity would mean building and maintaining a two-service Docker

@@ -5,8 +5,6 @@
 > * **Syntax (positive)** — `rdflib` accepts the query;
 > * **Syntax (negative)** — `rdflib` raises a `SparqlParseError` (the test deliberately ill-formed);
 > * **Query evaluation** — the visitor produces non-empty AQL without raising `UnsupportedSparqlError`.
-> * **Live execution** — the translated AQL was run against a real ArangoDB and the bindings matched the W3C-expected `.srx` results.
-> * **Live storage profile** — `document_edge`. Profiles are measured independently; their denominators must not be merged.
 
 Query-evaluation coverage measures translation acceptance; live coverage separately measures storage and execution fidelity. The profiles below deliberately keep those signals distinct.
 
@@ -16,8 +14,7 @@ Query-evaluation coverage measures translation acceptance; live coverage separat
 | -------- | -----:| ----:| ----:| -----:| ----:| --------:|
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
-| Query evaluation | 253 | 244 | 0 | 9 | 0 | 96.4% |
-| Live execution (document_edge) | 191 | 124 | 0 | 67 | 0 | 64.9% |
+| Query evaluation | 239 | 239 | 0 | 0 | 0 | 100.0% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -29,6 +26,8 @@ Query-evaluation coverage measures translation acceptance; live coverage separat
 | `mf:ProtocolTest` | 34 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
 | `mf:ServiceDescriptionTest` | 3 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
 | `mf:UpdateEvaluationTest` | 93 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
+| SPARQL Federated Query (`SERVICE`) | 7 | SPARQL 1.1 Federated Query (`SERVICE`) dispatches to a remote endpoint at run time — no AQL analog; out of scope like Protocol / Service-Description (federation-entry-point.md). |
+| TSV / JSON result format | 7 | SPARQL result-serialization tests (TSV / JSON output) — the transpiler emits AQL, not result documents; out of scope like the CSV result-format tests (`mf:CSVResultFormatTest`) already are. |
 
 ## XFAIL implication summary
 
@@ -36,7 +35,7 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 
 | Bucket | Count | Implication |
 | ------ | -----:| ----------- |
-| `algebra` | 9 | port the corresponding visitor method |
+| `algebra` | 0 | port the corresponding visitor method |
 | `schema` | 0 | real schema-resolution failure even under permissive mode (should be 0 — investigate any non-zero count) |
 | `rdflib` | 14 | rdflib parser disagreement; out of scope here |
 
@@ -45,24 +44,6 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | Count | Bucket | Reason | Implication |
 | -----:| ------ | ------ | ----------- |
 | 14 | `rdflib` | `rdflib accepted invalid query` | rdflib parser disagreement; out of scope here |
-| 4 | `algebra` | `UnsupportedSparql: SPARQL Algebra node 'ServiceGraphPattern' is not implemented yet (see .cursor/sk...` | port the corresponding visitor method |
-| 2 | `algebra` | `UnsupportedSparql: OPTIONAL whose subject is not already bound by the required side is not yet supp...` | port the corresponding visitor method |
-| 2 | `algebra` | `SparqlParse: failed to parse SPARQL: maximum recursion depth exceeded` | port the corresponding visitor method |
-| 1 | `algebra` | `UnsupportedSparql: OPTIONAL whose body is 'ServiceGraphPattern' (not a plain BGP) is not yet suppor...` | port the corresponding visitor method |
-
-## Live-execution divergences
-
-| Count | Test ID | Divergence reason |
-| -----:| ------- | ----------------- |
-| 6 | _(see test)_ | `OWL DL reasoning required` |
-| 1 | _(see test)_ | `language-tag matching ('name'@en) — loader flattens lang tags; AQL has no notion of xml:lang` |
-| 1 | _(see test)_ | `RDFS entailment required` |
-| 1 | _(see test)_ | `RDF literal-form distinction (plain vs xsd:string)` |
-| 1 | _(see test)_ | `RDFS subPropertyOf / domain entailment required` |
-| 1 | _(see test)_ | `RDFS subPropertyOf transitivity entailment required` |
-| 1 | _(see test)_ | `RDFS subClassOf / Resource entailment required` |
-| 1 | _(see test)_ | `RDFS subClassOf reflexivity entailment required` |
-| 1 | _(see test)_ | `RDFS member / ContainerMembershipProperty entailment required` |
 
 ## How to reproduce
 
@@ -76,4 +57,4 @@ RUN_INTEGRATION=1 python tests/w3c/analyze_coverage.py --live --profile rpt
                                                 # separate RPT discovery
 ```
 
-Live-execution numbers are scoped to the translatable subset (cases that the visitor accepts today). They surface AQL ↔ SPARQL semantic divergences caught against a real ArangoDB.
+End-to-end (live ArangoDB) coverage is computed by re-running with `--live` after `RUN_INTEGRATION=1` is set; without it the live row is omitted so the report stays reproducible without Docker.

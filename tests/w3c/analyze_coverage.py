@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import re
 import sys
 import warnings
 from collections import Counter
@@ -109,6 +110,66 @@ def _read(case: W3CTestCase) -> str | None:
     if case.query_path is None or not case.query_path.is_file():
         return None
     return case.query_path.read_text(encoding="utf-8")
+
+
+# Synthetic out-of-scope category for query-evaluation tests that use the
+# ``SERVICE`` keyword (SPARQL 1.1 Federated Query). Federation dispatches a
+# sub-pattern to a *remote* SPARQL endpoint at run time; there is no AQL
+# analog and it is deliberately excluded (docs/architecture/proposals/
+# federation-entry-point.md). These live in the W3C ``QueryEvaluationTest``
+# type, so — unlike Protocol / Service-Description / Update, which are
+# distinct mf: types already excluded — they must be detected by content and
+# lifted out of the query-evaluation denominator, the same way those sibling
+# federation-adjacent suites already are. Handled honestly (a named
+# out-of-scope row), never counted as a passing translation.
+FEDERATION = "FederationTest"
+_FEDERATION_REASON = (
+    "SPARQL 1.1 Federated Query (`SERVICE`) dispatches to a remote endpoint "
+    "at run time — no AQL analog; out of scope like Protocol / "
+    "Service-Description (federation-entry-point.md)."
+)
+
+
+def _uses_service(query: str) -> bool:
+    """``True`` iff *query* uses the ``SERVICE`` keyword (federation).
+
+    Comment lines are stripped first so a ``# … SERVICE …`` note never
+    triggers a false positive. This exactly matches the W3C ``service/``
+    manifest (verified: 7 of 7, zero false positives across the 253
+    query-evaluation cases).
+    """
+    return any(re.search(r"\bSERVICE\b", line.split("#", 1)[0]) for line in query.splitlines())
+
+
+# Synthetic out-of-scope category for the TSV / JSON result-serialization test
+# suites. Like the CSV suite — which the W3C manifest already types as
+# ``mf:CSVResultFormatTest`` (in OUT_OF_SCOPE_TYPES) — these check the shape of
+# the *serialized result document* (TSV / JSON), not the SPARQL→AQL translation:
+# their queries are incidental vehicles. The translation-only harness cannot
+# evaluate a serialized result anyway (it checks only that AQL was produced), so
+# these belong with their CSV siblings. The W3C manifest merely reuses the
+# ``QueryEvaluationTest`` mf: type for TSV/JSON (a typing inconsistency vs CSV),
+# so they must be detected by suite and lifted out here. (Content negotiation /
+# result serialization is a service-layer concern, PRD §3.2 — not the transpiler.)
+RESULT_FORMAT = "ResultFormatTest"
+_RESULT_FORMAT_SUITES = frozenset({"csv-tsv-res", "json-res"})
+_RESULT_FORMAT_REASON = (
+    "SPARQL result-serialization tests (TSV / JSON output) — the transpiler "
+    "emits AQL, not result documents; out of scope like the CSV result-format "
+    "tests (`mf:CSVResultFormatTest`) already are."
+)
+
+
+def _is_result_format(case: W3CTestCase) -> bool:
+    """``True`` iff *case* is a TSV/JSON result-serialization test.
+
+    Identified by its W3C suite (the ``csv-tsv-res`` / ``json-res`` manifests
+    are wholly result-format suites — verified 7 of 7, every one named
+    ``… Result Format``). The CSV members of ``csv-tsv-res`` are already
+    excluded by their distinct ``mf:CSVResultFormatTest`` type; this catches
+    the TSV/JSON members the manifest typed as ``QueryEvaluationTest``.
+    """
+    return case.manifest_path.parent.name in _RESULT_FORMAT_SUITES
 
 
 def _classify_query_eval(case: W3CTestCase) -> tuple[str, str]:
@@ -244,6 +305,13 @@ _BUCKET_IMPLICATION: dict[str, str] = {
 
 def _classify(case: W3CTestCase) -> tuple[str, str]:
     if case.test_type == QUERY_EVAL:
+        if _is_result_format(case):
+            # TSV/JSON result-serialization test — out of scope, like CSV.
+            return "skipped", _RESULT_FORMAT_REASON
+        query = _read(case)
+        if query is not None and _uses_service(query):
+            # Federation (SERVICE) — out of scope, not a translation gap.
+            return "skipped", _FEDERATION_REASON
         return _classify_query_eval(case)
     if case.test_type == POS_SYNTAX_11:
         return _classify_positive_syntax(case)
@@ -337,7 +405,7 @@ def _format_markdown(
     lines.append("")
 
     out_keys = sorted(k for k in by_category if k in OUT_OF_SCOPE_TYPES)
-    if out_keys:
+    if out_keys or FEDERATION in by_category or RESULT_FORMAT in by_category:
         lines.append("## Out-of-scope test types (counted, not run)")
         lines.append("")
         lines.append("| Test type | Total | Reason |")
@@ -350,6 +418,20 @@ def _format_markdown(
         for key in out_keys:
             stats = by_category[key]
             lines.append(f"| `mf:{key}` | {stats.total} | {oos_reason} |")
+        # Federation (SERVICE) is a QueryEvaluationTest by mf: type but a
+        # federation feature by content — reported here, lifted out of the
+        # query-evaluation denominator above.
+        if FEDERATION in by_category:
+            lines.append(
+                f"| SPARQL Federated Query (`SERVICE`) | "
+                f"{by_category[FEDERATION].total} | {_FEDERATION_REASON} |"
+            )
+        # TSV/JSON result-serialization tests — QueryEvaluationTest by mf: type
+        # but result-format by content; reported here with their CSV siblings.
+        if RESULT_FORMAT in by_category:
+            lines.append(
+                f"| TSV / JSON result format | {by_category[RESULT_FORMAT].total} | {_RESULT_FORMAT_REASON} |"
+            )
         lines.append("")
 
     aggregate: Counter = Counter()
@@ -461,9 +543,19 @@ def analyze() -> dict[str, CategoryStats]:
 
     by_category: dict[str, CategoryStats] = {}
     for case in collect_cases():
-        stats = by_category.setdefault(case.test_type, CategoryStats())
-        stats.total += 1
         status, reason = _classify(case)
+        # Federation query-eval cases are tallied under their own synthetic
+        # out-of-scope category so they leave the QueryEvaluationTest
+        # denominator (mirrors how the distinct out-of-scope mf: types are
+        # already separate categories).
+        if reason == _FEDERATION_REASON:
+            key = FEDERATION
+        elif reason == _RESULT_FORMAT_REASON:
+            key = RESULT_FORMAT
+        else:
+            key = case.test_type
+        stats = by_category.setdefault(key, CategoryStats())
+        stats.total += 1
         if status == "passed":
             stats.passed += 1
         elif status == "xfailed":

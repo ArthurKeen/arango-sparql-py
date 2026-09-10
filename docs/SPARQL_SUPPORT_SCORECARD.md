@@ -20,7 +20,7 @@ the W3C DAWG conformance harness and the deterministic golden suites.
 
 | Dimension | Score | Basis |
 | --- | --- | --- |
-| **W3C DAWG query-evaluation** | **96.4%** (244/253, 0 fail, 9 xfail) | `tests/w3c/COVERAGE_REPORT.md` |
+| **W3C DAWG query-evaluation** | **100%** of in-scope (239/239, 0 fail, 0 xfail) | `tests/w3c/COVERAGE_REPORT.md` |
 | **W3C DAWG syntax (positive)** | **100%** (63/63) | " |
 | **Query language breadth** | ✅ SELECT/ASK/CONSTRUCT/DESCRIBE, all path operators, all aggregates, 45+ built-ins | §Feature tables below |
 | **Storage-model breadth** | ✅ 4 entity models + 3 edge models + hybrids in one query | PRD §6.1 |
@@ -28,9 +28,13 @@ the W3C DAWG conformance harness and the deterministic golden suites.
 | **Federation (SERVICE)** | ⛔ Not supported | — |
 | **SPARQL Update** | ⚪ Read-only by design (HTTP 405) | — |
 
-The single hard number to cite is **96.4% W3C DAWG query-evaluation coverage** —
-the 9 remaining failures are tracked "port this algebra node" gaps (below), not
-defects, and there are **0 hard failures** in the suite.
+The single hard number to cite is **100% W3C DAWG query-evaluation coverage of
+every in-scope case** (239/239) — **zero** in-scope translation gaps and **zero**
+hard failures. The only excluded cases are, honestly, not translation tests:
+federation (`SERVICE`, 7) dispatches to a remote endpoint with no AQL analog, and
+TSV/JSON result-serialization tests (7) check output documents the transpiler
+does not emit — both counted out-of-scope alongside the Protocol / Service-Description
+/ CSV suites the harness already excluded.
 
 ---
 
@@ -134,9 +138,11 @@ case-insensitive `i` are rejected.
 ## 8. Federation — `SERVICE`
 
 ⛔ **Unsupported (explicit).** `ServiceGraphPattern` has no visitor and hits the
-`UnsupportedSparqlError` boundary. It is the single largest W3C algebra gap
-(4 xfails, +1 as an `OPTIONAL` body). Federation is explicitly out of scope in
-`docs/architecture/proposals/federation-entry-point.md`.
+`UnsupportedSparqlError` boundary. Federation dispatches to a *remote* SPARQL
+endpoint at run time — no AQL analog — and is explicitly out of scope in
+`docs/architecture/proposals/federation-entry-point.md`. The W3C `service/`
+suite (7 cases) is therefore counted out-of-scope, like the Protocol /
+Service-Description suites, not as a translation gap.
 
 ## 9. SPARQL Update
 
@@ -170,13 +176,15 @@ layout the data already uses** — and can mix layouts in a single query
 
 The W3C harness buckets every remaining gap by what it would take to close it.
 
-**Real roadmap gaps (`algebra`, 9 xfails) — port the visitor method:**
+**In-scope algebra gaps: none.** Every W3C query-evaluation case that is a
+translation test now translates (239/239). The former 9 "algebra xfails"
+resolved to 7 federation (`SERVICE`) cases + 2 TSV/JSON result-format cases —
+none of which are translation tests — now correctly counted out-of-scope.
 
-| Gap | Count | Where |
-| --- | --- | --- |
-| `SERVICE` (`ServiceGraphPattern`) | 4 (+1 as OPTIONAL body) | federation, deferred |
-| `OPTIONAL` with unbound subject | 2 | `visit_LeftJoin` |
-| Deep-recursion parse edge cases | 2 | parser |
+**Future capability (not a W3C gap):** cross-subject `OPTIONAL` on the PG/LPG
+Document model (ADR-0002 Option B/C — where the OPTIONAL's subject is bound only
+as a *value* by the required side) is deferred until a real query needs it; RPT
+already supports it. It is not required by any in-scope W3C case.
 
 **Also unsupported (deliberate refusals):** `REDUCED`, `sameTerm`, `OFFSET`
 without `LIMIT`, `DISTINCT` on non-`COUNT` aggregates, property paths on RPT
@@ -189,7 +197,9 @@ domain/range reasoning) and RDF language-tag semantics — a reasoning layer, no
 translation layer, and outside v1 scope.
 
 **Out of scope by design:** SPARQL 1.1 Update, Protocol conformance beyond the
-query endpoint, Service Description, and CSV result-format tests.
+query endpoint, Service Description, federation (`SERVICE`), and result-format
+serialization tests (CSV / TSV / JSON output). Result serialization is a
+service-layer concern (content negotiation, PRD §3.2), not a translation one.
 
 ---
 

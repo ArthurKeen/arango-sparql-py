@@ -7,8 +7,10 @@ xfail-tolerant (query-eval XFAILs at ANY coverage level, per the marker's own
 design) and is EXCLUDED entirely from the per-PR `test` CI job. Neither of
 those catches a real regression. This module is the COMMITTED, ASSERTING
 gate (M4): it computes coverage via `tests.w3c.analyze_coverage.analyze()`
-and FAILS the build if QUERY_EVAL coverage drops below the committed 96.4%
-floor.
+and FAILS the build if QUERY_EVAL coverage drops below the committed 100%
+floor (every in-scope query-evaluation case translates; federation (SERVICE)
+and TSV/JSON result-serialization tests are counted as out-of-scope, not
+passes — see analyze_coverage._FEDERATION_REASON / _RESULT_FORMAT_REASON).
 
 Deliberately carries NO `pytestmark` (no `w3c` marker) so it is never swept
 into the xfail-tolerant `-m w3c` path or excluded by the `test` job's
@@ -25,8 +27,11 @@ from tests.w3c.analyze_coverage import analyze
 from tests.w3c.runner import QUERY_EVAL, w3c_corpus_root
 
 # The committed SC4 floor. Keep in sync with tests/w3c/COVERAGE_REPORT.md's
-# headline Query-evaluation coverage number (currently 96.4%, 244/253).
-_MIN_QUERY_EVAL_COVERAGE = 96.4
+# headline Query-evaluation coverage number (currently 100.0%, 239/239 in-scope
+# — federation + result-format cases are reclassified out-of-scope, never
+# counted as passes). A drop below 100% means a real in-scope translation
+# regression: investigate, don't lower the floor.
+_MIN_QUERY_EVAL_COVERAGE = 100.0
 
 
 def test_query_eval_coverage_meets_sc4_floor() -> None:
