@@ -14,7 +14,7 @@ Query-evaluation coverage measures translation acceptance; live coverage separat
 | -------- | -----:| ----:| ----:| -----:| ----:| --------:|
 | Syntax (positive) | 63 | 63 | 0 | 0 | 0 | 100.0% |
 | Syntax (negative) | 43 | 29 | 0 | 14 | 0 | 67.4% |
-| Query evaluation | 246 | 244 | 0 | 2 | 0 | 99.2% |
+| Query evaluation | 239 | 239 | 0 | 0 | 0 | 100.0% |
 
 ## Out-of-scope test types (counted, not run)
 
@@ -27,6 +27,7 @@ Query-evaluation coverage measures translation acceptance; live coverage separat
 | `mf:ServiceDescriptionTest` | 3 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
 | `mf:UpdateEvaluationTest` | 93 | SPARQL 1.1 Update / Protocol / Service-Description / CSV result-format are not v0 targets — the transpiler ports query semantics first. |
 | SPARQL Federated Query (`SERVICE`) | 7 | SPARQL 1.1 Federated Query (`SERVICE`) dispatches to a remote endpoint at run time — no AQL analog; out of scope like Protocol / Service-Description (federation-entry-point.md). |
+| TSV / JSON result format | 7 | SPARQL result-serialization tests (TSV / JSON output) — the transpiler emits AQL, not result documents; out of scope like the CSV result-format tests (`mf:CSVResultFormatTest`) already are. |
 
 ## XFAIL implication summary
 
@@ -34,7 +35,7 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 
 | Bucket | Count | Implication |
 | ------ | -----:| ----------- |
-| `algebra` | 2 | port the corresponding visitor method |
+| `algebra` | 0 | port the corresponding visitor method |
 | `schema` | 0 | real schema-resolution failure even under permissive mode (should be 0 — investigate any non-zero count) |
 | `rdflib` | 14 | rdflib parser disagreement; out of scope here |
 
@@ -43,7 +44,6 @@ Each XFAIL is bucketed by what fixing it would require — this distinguishes re
 | Count | Bucket | Reason | Implication |
 | -----:| ------ | ------ | ----------- |
 | 14 | `rdflib` | `rdflib accepted invalid query` | rdflib parser disagreement; out of scope here |
-| 2 | `algebra` | `UnsupportedSparql: OPTIONAL whose subject is not already bound by the required side is not yet supp...` | port the corresponding visitor method |
 
 ## How to reproduce
 

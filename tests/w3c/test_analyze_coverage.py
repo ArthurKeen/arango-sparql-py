@@ -46,6 +46,23 @@ def test_federation_cases_leave_the_query_eval_denominator() -> None:
     assert not any("ServiceGraphPattern" in reason for reason in qe.xfail_reasons)
 
 
+def test_result_format_suites_are_out_of_scope() -> None:
+    # TSV/JSON result-serialization tests are lifted out of the query-eval
+    # denominator (out of scope like the CSV result-format tests), so every
+    # remaining in-scope query-evaluation case translates: 100%, 0 XFAIL.
+    from tests.w3c.runner import QUERY_EVAL, w3c_corpus_root
+
+    if w3c_corpus_root() is None:
+        pytest.skip("W3C corpus not on disk; run scripts/fetch_w3c.sh first")
+
+    by_category = analyze_coverage.analyze()
+    rf = by_category.get(analyze_coverage.RESULT_FORMAT)
+    assert rf is not None and rf.skipped == rf.total and rf.passed == 0
+    qe = by_category[QUERY_EVAL]
+    assert qe.xfailed == 0 and qe.failed == 0, "an in-scope query-eval case regressed"
+    assert qe.coverage == 100.0
+
+
 def test_analyze_live_counts_only_parameterized_w3c_cases(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
