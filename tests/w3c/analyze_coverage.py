@@ -430,8 +430,7 @@ def _format_markdown(
         # but result-format by content; reported here with their CSV siblings.
         if RESULT_FORMAT in by_category:
             lines.append(
-                f"| TSV / JSON result format | "
-                f"{by_category[RESULT_FORMAT].total} | {_RESULT_FORMAT_REASON} |"
+                f"| TSV / JSON result format | {by_category[RESULT_FORMAT].total} | {_RESULT_FORMAT_REASON} |"
             )
         lines.append("")
 
