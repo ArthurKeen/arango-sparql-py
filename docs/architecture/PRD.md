@@ -177,7 +177,7 @@ flowchart TB
         RPT["detect_rpt_pattern<br/>(RDF triple-store extension)"]
         CACHE["ArangoSchemaCache<br/>(L1 in-process + L2 ArangoDB)"]
         FP["fingerprint shape / counts"]
-        ANA["arangodb-schema-analyzer<br/>(in-process library, ≥0.9.0)"]
+        ANA["arangodb-schema-analyzer<br/>(in-process library)"]
     end
 
     subgraph nlpipe["NL pipeline (arango_sparql.nl2sparql.*)"]
@@ -607,8 +607,8 @@ tags `PG_ENTITY_COLLECTION`, `LPG_LABEL`, `RPT_TRIPLES`,
 > truth for all entity styles, relationship styles, statistics,
 > tenancy scope, sharding profile, and OWL emission". The startup
 > guard in §6.3.4 enforces this. The shipped `[analyzer]` extra in
-> `pyproject.toml` pins `arangodb-schema-analyzer >= 0.9.0, < 0.10.0`,
-> matching the sister project's pinning policy.
+> `pyproject.toml` declares the supported analyzer band, which MUST stay
+> aligned with `arango-cypher-py`'s — see the band invariant in §12.1.
 
 Module: `arango_sparql.schema.acquire`
 
@@ -2069,8 +2069,14 @@ the ArangoDB semantic stack either depend on it or feed it:
 
 Already covered in §6.3; restated here for the integration map:
 
-- **Pinned dependency**: `arangodb-schema-analyzer >= 0.9.0, < 0.10.0`
-  (`pyproject.toml` extra `[analyzer]`, included in `[service]`).
+- **Pinned dependency**: the supported band is declared in `pyproject.toml`
+  (extra `[analyzer]`, included in `[service]`), **not here**. It tracks the
+  analyzer's current minor and MUST stay aligned with `arango-cypher-py`'s
+  band: the two are co-installed (CDF's query path, any sibling dev venv) and
+  mutually exclusive bands are unsatisfiable — a lower ceiling silently
+  downgrades a co-installed newer analyzer and breaks its consumers (observed
+  2026-09-06, CDF `make seed`). Raising the band is therefore a coordinated
+  change across both repositories, never a unilateral one.
 - **Consumed contracts**:
   - `AgenticSchemaAnalyzer.analyze_physical_schema(db, ...)` →
     canonical `AnalysisResult`.
@@ -2128,6 +2134,11 @@ developmentally a sister:
 - **Shared `MappingBundle` wire shape** (camelCase / snake_case via
   `mapping_from_wire_dict`) — the same fixture corpus exercises both
   projects (`tests/schema/fixtures/*.export.json` is portable).
+- **Coupled analyzer band** — both depend on `arangodb-schema-analyzer` as an
+  in-process library and are routinely co-installed, so their declared bands
+  MUST intersect. This is the one hard coupling between the two repositories
+  (§12.1); a unilateral bump in either breaks the other's consumers silently,
+  by downgrade rather than by error.
 - **Shared UI patterns** — §10 explicitly mirrors the sister's
   workbench so a developer fluent in one is immediately productive
   in the other.
@@ -3198,7 +3209,7 @@ See §12.1 — the analyzer pin is a hard dependency. Upgrade order:
 | **ArangoDB** | 3.11 LTS, 3.12 (default), 3.13 (when GA) | CI matrix includes 3.11 and 3.12 |
 | **Python** | 3.11, 3.12 (default), 3.13 | CI matrix on all three |
 | **Node.js** (UI build only) | 20 LTS, 22 LTS | UI build artefact is what ships |
-| **`arangodb-schema-analyzer`** | `>=0.9.0,<0.10.0` | See §12.1 |
+| **`arangodb-schema-analyzer`** | Declared in `pyproject.toml` | Band invariant in §12.1 — must stay aligned with `arango-cypher-py` |
 | **`rdflib`** | `>=7.0,<8.0` | |
 | **`pyoxigraph`** | `>=0.3.20,<0.5.0` (test-only) | |
 
