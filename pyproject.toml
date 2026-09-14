@@ -35,11 +35,13 @@ analyzer = [
   # arango_sparql/schema/acquire.py::_resolve_analyzer_provider). Without a
   # client SDK it silently degrades to deterministic baseline inference,
   # which misclassifies LABEL-style / hybrid collections.
-  # Ceiling tracks the analyzer's current minor: 0.12 carries the extended
-  # tool contract (entityStrategy, detectForeignKeys) that consumers like the
-  # CDF reverse-CSI export require — a <0.10 ceiling silently DOWNGRADES a
-  # co-installed 0.12 and breaks them (observed: CDF `make seed`, 2026-09-06).
-  "arangodb-schema-analyzer[anthropic,openai]>=0.12.1,<0.13.0",
+  # Band admits the analyzer's current minor and the previous one: 0.12 carries
+  # the extended tool contract (entityStrategy, detectForeignKeys) that consumers
+  # like the CDF reverse-CSI export require — a <0.10 ceiling silently DOWNGRADED
+  # a co-installed 0.12 and broke them (observed: CDF `make seed`, 2026-09-06);
+  # 0.13 adds the bitemporal provenance (§3.13.5) the same export forwards. Raised
+  # together with arango-cypher-py's band on 2026-09-14 (PRD §12.1 invariant).
+  "arangodb-schema-analyzer[anthropic,openai]>=0.12.1,<0.14.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",
