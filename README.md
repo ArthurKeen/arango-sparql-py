@@ -1,6 +1,6 @@
 # arango-sparql-py
 
-[![CI](https://img.shields.io/github/actions/workflow/status/ArthurKeen/arango-sparql-py/ci.yml?branch=main&label=CI&logo=github)](https://github.com/ArthurKeen/arango-sparql-py/actions/workflows/ci.yml)
+[![CI](https://img.shields.io/github/actions/workflow/status/arango-solutions/arango-sparql-py/ci.yml?branch=main&label=CI&logo=github)](https://github.com/arango-solutions/arango-sparql-py/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue?logo=python&logoColor=white)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![W3C DAWG](https://img.shields.io/badge/W3C%20DAWG%20query%20eval-95.7%25-brightgreen)](tests/w3c/COVERAGE_REPORT.md)
@@ -79,7 +79,7 @@ with `bind_vars = {"@c1_Person": "Person", "@c2_Project": "Project"}`.
 ## Quickstart
 
 ```bash
-git clone https://github.com/ArthurKeen/arango-sparql-py.git
+git clone https://github.com/arango-solutions/arango-sparql-py.git
 cd arango-sparql-py
 
 # 1. Install (works with `uv` or plain `pip install -e ".[dev]"`)
