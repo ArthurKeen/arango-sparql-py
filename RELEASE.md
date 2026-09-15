@@ -16,7 +16,9 @@ shared engine, which would have made this package unpublishable.
 
 This is now resolved — PR #9 repointed both extras from `@ git+…@f2f3061` to the
 published range (matching this repo's convention for its other published
-dependency, `arangodb-schema-analyzer[...]>=0.9.0,<0.10.0`):
+dependency, `arangodb-schema-analyzer[...]` — whose band is declared only in
+`pyproject.toml` and governed by the alignment invariant in
+`docs/architecture/PRD.md` §12.1):
 
 ```toml
 # [nl] extra

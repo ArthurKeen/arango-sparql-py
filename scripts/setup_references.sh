@@ -11,7 +11,7 @@ PARENT="$(cd "$REPO_ROOT/.." && pwd)"
 
 CYPHER_PATH="${ARANGO_CYPHER_PY_PATH:-$PARENT/arango-cypher-py}"
 SPARQL_PATH="${ARANGO_SPARQL_PATH:-$PARENT/arango-sparql}"
-MAPPER_PATH="${ARANGO_SCHEMA_MAPPER_PATH:-$PARENT/arango-schema-mapper}"
+ANALYZER_PATH="${ARANGO_SCHEMA_ANALYZER_PATH:-$PARENT/arango-schema-analyzer}"
 
 mkdir -p "$REPO_ROOT/references"
 cd "$REPO_ROOT/references"
@@ -28,4 +28,4 @@ link() {
 
 link "$CYPHER_PATH" arango-cypher-py
 link "$SPARQL_PATH" arango-sparql
-link "$MAPPER_PATH" arango-schema-mapper
+link "$ANALYZER_PATH" arango-schema-analyzer

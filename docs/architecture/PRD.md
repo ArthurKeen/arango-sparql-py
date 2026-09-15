@@ -72,7 +72,7 @@ service with a standalone Python microservice that:
    Foxx `_triples` collection), and **hybrid combinations of all three
    in one database** — via either a hand-authored OWL ontology or a
    `MappingBundle` acquired from
-   [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-mapper)
+   [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-analyzer)
    (with this project's RPT-detection extension layered on top).
 4. **Supports natural-language entry** via an `nl2sparql` pipeline analogous
    to the sister project's `nl2cypher`.
@@ -87,7 +87,7 @@ service with a standalone Python microservice that:
    semantic stack** — most importantly
    [`arango-ontoextract`](https://github.com/ArthurKeen/arango-ontoextract)
    (LLM-driven OWL extraction + curation) and
-   [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-mapper)
+   [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-analyzer)
    (the physical-schema introspector). See §12.
 
 ## 2. Non-goals (v1)
@@ -507,7 +507,7 @@ criterion §3.4.
 
 The translator never invents collection names. Every concrete
 SPARQL→AQL translation requires an OWL/Turtle ontology produced by
-[`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-mapper)
+[`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-analyzer)
 (or hand-authored to match its annotation vocabulary). Annotations live
 under either of the two `phys:` namespaces the analyzer has shipped
 historically; both are accepted (see `resolver.py`):
@@ -595,12 +595,19 @@ heuristic-path conventions); `metadata.detectedPatterns` lists string
 tags `PG_ENTITY_COLLECTION`, `LPG_LABEL`, `RPT_TRIPLES`,
 `PG_DEDICATED_EDGE`, `LPG_GENERIC_EDGE`, `RPT_OBJECT_PROPERTY`.
 
+> **2026-09-15.** `arangodb-schema-analyzer` 0.14.0 is the portfolio owner of LPG
+> type detection (tier-1 names on coverage alone; candidates `@type` / `entity_type` /
+> `category` / `predicate`; `_fromType` / `_toType` endpoint resolution). The local
+> presence-based PG-vs-LPG discriminator in steps 3–5 above is to be retired in favour
+> of consuming `LABEL` / `GENERIC_WITH_TYPE` from the analyzer's CSI; it stays a
+> diagnostic fallback until that lands. The RPT layer (step 2) is unaffected.
+
 #### 6.3.2 Analyzer-backed acquisition (preferred — the canonical path)
 
 > **Hard dependency contract.** The
-> [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-mapper)
+> [`arangodb-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-analyzer)
 > package (PyPI name `arangodb-schema-analyzer`, import name
-> `schema_analyzer`, ≥ 0.9.0) is a **first-class dependency** of
+> `schema_analyzer`; band declared in `pyproject.toml`, see §12.1) is a **first-class dependency** of
 > `arango-sparql-py`, not an optional extra. Heuristic detection
 > (§6.3.1) exists as a **diagnostic / dev-loop fallback only**; the
 > production posture is "analyzer is installed and is the source of
@@ -609,6 +616,9 @@ tags `PG_ENTITY_COLLECTION`, `LPG_LABEL`, `RPT_TRIPLES`,
 > guard in §6.3.4 enforces this. The shipped `[analyzer]` extra in
 > `pyproject.toml` declares the supported analyzer band, which MUST stay
 > aligned with `arango-cypher-py`'s — see the band invariant in §12.1.
+> *(2026-09-15: analyzer 0.14.0 owns LPG type detection portfolio-wide; the
+> §6.3.1 heuristic discriminator is slated for retirement in favour of the
+> analyzer's `LABEL` / `GENERIC_WITH_TYPE` answers.)*
 
 Module: `arango_sparql.schema.acquire`
 
@@ -622,7 +632,7 @@ def acquire_mapping_bundle(
 ) -> MappingBundle: ...
 ```
 
-Wraps `arangodb-schema-analyzer ≥ 0.9.0`'s `AgenticSchemaAnalyzer.analyze_physical_schema`,
+Wraps `arangodb-schema-analyzer`'s (band declared in `pyproject.toml`, §12.1) `AgenticSchemaAnalyzer.analyze_physical_schema`,
 then post-processes:
 
 1. Normalise the analyzer's `conceptualSchema + physicalMapping +
@@ -1511,7 +1521,7 @@ in the UI's connection-status footer:
   "uptime_seconds": 12345,
   "checks": {
     "arangodb": {"status": "ok", "latency_ms": 4.1},
-    "analyzer": {"status": "ok", "latency_ms": 12.3, "version": "0.9.0"},
+    "analyzer": {"status": "ok", "latency_ms": 12.3, "version": "0.14.0"},
     "llm_provider": {"status": "skipped", "reason": "NL_DISABLED"}
   }
 }
@@ -2052,7 +2062,7 @@ the ArangoDB semantic stack either depend on it or feed it:
                     ┌─────────────────────────────┐
                     │ arangodb-schema-analyzer    │
                     │ (PyPI: arangodb-schema-     │
-                    │  analyzer ≥ 0.9.0)          │
+                    │  analyzer; band in pyproject)│
                     └──────────────┬──────────────┘
                                    │ MappingBundle + OWL
                                    ▼
@@ -3352,7 +3362,7 @@ Terms are alphabetised; reference the section where each first appears.
 | **AQL** | ArangoDB Query Language — the canonical query language for ArangoDB |
 | **`arango-cypher-py`** | The sister project — Cypher → AQL transpiler. Shares the `MappingBundle` shape, the schema fixture corpus, and the workbench architecture with this project. |
 | **`arango-query-core`** | (Planned, v1.x) shared Python package factoring out the resolver, schema cache, fingerprint policy, and analyzer integration that `arango-cypher-py` and `arango-sparql-py` currently each carry. |
-| **AgenticSchemaAnalyzer** | The class in `arangodb-schema-analyzer` (PyPI) that introspects an ArangoDB database and emits a `MappingBundle`. The same package was originally repo-named `arango-schema-mapper`. |
+| **AgenticSchemaAnalyzer** | The class in `arangodb-schema-analyzer` (PyPI) that introspects an ArangoDB database and emits a `MappingBundle`. The repo is now `arango-schema-analyzer` (<https://github.com/ArthurKeen/arango-schema-analyzer>); `arango-schema-mapper` and `arango-schema-extractor` are retired names for the same project. |
 | **ArangoRDF PGT** | The Property Graph Translation that AOE uses to store OWL ontologies in ArangoDB (one collection per OWL class, one edge collection per object property). Different from this project's RPT physical model — but a `MappingBundle` describing an AOE-stored ontology will use `style "COLLECTION"` / `"DEDICATED_COLLECTION"`, which is exactly what our resolver already understands. |
 | **axe-core** | [Open-source accessibility-testing engine](https://github.com/dequelabs/axe-core) by Deque Systems. Drives the §10.10 a11y assertions in `tests/playwright/a11y_*.spec.ts`. |
 | **CodeMirror 6** | Editor framework used in the workbench; pinned at `^6.0.2` with the same family of `@codemirror/*` packages as the sister project. |

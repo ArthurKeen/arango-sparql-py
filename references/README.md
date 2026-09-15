@@ -15,8 +15,8 @@ linking these repos under `references/`, the agent can:
   scaffolding,
 - read the legacy `arango-sparql/` JS to port translation semantics
   (BGPs, OPTIONAL, FILTER, regex, …),
-- read `arango-schema-mapper/` to understand the OWL/Turtle schema
-  contract this service consumes.
+- read `arango-schema-analyzer/` to understand the `MappingBundle` / CSI
+  contract this service consumes (OWL/Turtle is one of its exports).
 
 ## Links
 
@@ -24,7 +24,7 @@ linking these repos under `references/`, the agent can:
 | --------------------------------- | ------------------------------------------------------- |
 | `references/arango-cypher-py/`    | Architecture template (Python, FastAPI, nl2cypher, UI). |
 | `references/arango-sparql/`       | Legacy Foxx service — SPARQL→AQL translation semantics. |
-| `references/arango-schema-mapper/`| OWL/Turtle ontology generator.                          |
+| `references/arango-schema-analyzer/`| Schema analyzer — `MappingBundle` / CSI, OWL export.  |
 
 ## Recreate the links
 
@@ -32,7 +32,7 @@ linking these repos under `references/`, the agent can:
 mkdir -p references
 ln -sfn ../../arango-cypher-py        references/arango-cypher-py
 ln -sfn ../../arango-sparql           references/arango-sparql
-ln -sfn ../../arango-schema-mapper    references/arango-schema-mapper
+ln -sfn ../../arango-schema-analyzer  references/arango-schema-analyzer
 ```
 
 (Adjust the relative paths if your sibling repos do not live next to this

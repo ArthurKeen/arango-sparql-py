@@ -27,7 +27,7 @@ SPARQL 1.1 query at ArangoDB without first re-modeling their data:
 
 1. The query is parsed by [`rdflib`](https://rdflib.readthedocs.io/)
    (W3C-grade SPARQL 1.1 parser).
-2. An [OWL ontology](https://github.com/ArthurKeen/arango-schema-mapper)
+2. An [OWL ontology](https://github.com/ArthurKeen/arango-schema-analyzer)
    describing the physical schema is loaded once at startup; IRIs in the
    query are resolved to ArangoDB collection / property names.
 3. The algebra walker emits parameterized AQL with bind variables (no
@@ -69,7 +69,7 @@ with `bind_vars = {"@c1_Person": "Person", "@c2_Project": "Project"}`.
 | --------------------- | -------------------------------------------------------------------- |
 | SPARQL parsing        | `rdflib.plugins.sparql.parser.parseQuery` + Algebra translation      |
 | AQL emission          | Parameterized AQL builder (port of legacy `aql-query-builder.js`)    |
-| Schema mapping        | OWL/Turtle ontology from [`arango-schema-mapper`](https://github.com/ArthurKeen/arango-schema-mapper), loaded once into `rdflib.Graph` |
+| Schema mapping        | `MappingBundle` / CSI v1 from [`arango-schema-analyzer`](https://github.com/ArthurKeen/arango-schema-analyzer) is the contract of record; its OWL/Turtle export is one serialisation of it, loaded once into `rdflib.Graph` |
 | HTTP service          | FastAPI (`arango_sparql.service`) — mirror of [`arango_cypher.service`](https://github.com/ArthurKeen/arango-cypher-py) |
 | NL → SPARQL           | LLM-backed pipeline (`arango_sparql.nl2sparql`) with cost accounting + repair loop |
 | Reference triplestore | [`pyoxigraph`](https://pyoxigraph.readthedocs.io/), embedded, W3C-compliant — used as cross-validation gold |
