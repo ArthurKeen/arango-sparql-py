@@ -72,7 +72,7 @@ tests/w3c/data/
 # per-developer via scripts/setup_references.sh; never check them in.
 references/arango-cypher-py
 references/arango-sparql
-references/arango-schema-mapper
+references/arango-schema-analyzer
 
 # Dark-factory drift mode (personal agent infrastructure; see AGENTS.md).
 # CLAUDE.md is intentionally NOT ignored here — in this repo it is a tracked

@@ -49,7 +49,7 @@ project to `arango-cypher-py`.
 | SPARQL→AQL porting recipe        | `.cursor/skills/sparql-to-aql/SKILL.md`                              |
 | Architecture template            | `references/arango-cypher-py/`                                       |
 | Translation semantics (legacy)   | `references/arango-sparql/src/lib/`                                  |
-| OWL/Turtle schema generator      | `references/arango-schema-mapper/`                                   |
+| Schema analyzer (CSI / OWL)      | `references/arango-schema-analyzer/`                                 |
 
 ## Workflow expectations
 
