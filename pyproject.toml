@@ -39,9 +39,13 @@ analyzer = [
   # the extended tool contract (entityStrategy, detectForeignKeys) that consumers
   # like the CDF reverse-CSI export require — a <0.10 ceiling silently DOWNGRADED
   # a co-installed 0.12 and broke them (observed: CDF `make seed`, 2026-09-06);
-  # 0.13 adds the bitemporal provenance (§3.13.5) the same export forwards. Raised
-  # together with arango-cypher-py's band on 2026-09-14 (PRD §12.1 invariant).
-  "arangodb-schema-analyzer[anthropic,openai]>=0.12.1,<0.14.0",
+  # 0.13 adds the bitemporal provenance (§3.13.5) the same export forwards; 0.14
+  # converges LPG type detection on the analyzer (tier-1 acceptance, added
+  # candidates, `_fromType`/`_toType` endpoints) so LABEL / GENERIC_WITH_TYPE
+  # entries arrive already decided (fast suite green on 0.14.0). Raised together
+  # with arango-cypher-py's band on 2026-09-14 (0.13) and 2026-09-15 (0.14) under
+  # the PRD §12.1 invariant.
+  "arangodb-schema-analyzer[anthropic,openai]>=0.12.1,<0.15.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",

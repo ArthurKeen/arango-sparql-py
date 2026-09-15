@@ -2072,7 +2072,7 @@ Already covered in §6.3; restated here for the integration map:
 - **Pinned dependency**: the supported band is declared in `pyproject.toml`
   (extra `[analyzer]`, included in `[service]`), **not here**. It admits the
   analyzer's current minor (and the previous one while a coordinated raise is in
-  flight) and MUST stay aligned with `arango-cypher-py`'s band: the two are co-installed (CDF's query path, any sibling dev venv) and
+  flight) and MUST stay aligned with `arango-cypher-py`'s band: the two are co-installed in sibling dev venvs (CDF installs this package and the analyzer directly, not cypher-py — verified 2026-09-15) and
   mutually exclusive bands are unsatisfiable — a lower ceiling silently
   downgrades a co-installed newer analyzer and breaks its consumers (observed
   2026-09-06, CDF `make seed`). Raising the band is therefore a coordinated
