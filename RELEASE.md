@@ -38,36 +38,56 @@ rejected.
 > If a git pin ever creeps back in, `publish.yml`'s `twine check` plus the
 > upload step will fail fast — repoint before tagging.
 
-## One-time: register the PyPI Trusted Publisher
+## We publish from ArthurKeen — the Trusted-Publisher binding is repo-EXACT
 
-On PyPI → *Your projects* (or *Publishing* for a not-yet-existing project) →
-**Add a pending publisher (GitHub)** — exact values for this repo:
+We publish from **`ArthurKeen/arango-sparql-py`** (Arthur has no admin on the
+arango-solutions org). `publish.yml`'s guard already matches, and the dual-push
+mirror to arango-solutions is a clean no-op there.
 
-| Field | Value |
-|---|---|
-| PyPI Project Name | `arango-sparql-py` |
-| Owner | `ArthurKeen` |
-| Repository name | `arango-sparql-py` |
-| Workflow name | `publish.yml` |
-| Environment name *(optional 5th field)* | `pypi` |
+> ⚠️ **A tag you cannot publish is a version number you have burned.** The
+> Trusted-Publisher binding is `owner/repo/workflow/environment`-exact. The
+> sister project `arango-schema-analyzer` has been unable to publish since its
+> repo was *renamed*: PyPI's OIDC entry no longer matched the token's
+> `repository`, and every tagged release fails with
+> `invalid-publisher: valid token, but no corresponding publisher`
+> (see that repo's `RELEASING.md`). So **register the publisher for the exact
+> values below, and prove it on TestPyPI before tagging.**
 
-No API token is stored anywhere — the `publish` job authenticates via OIDC
-(`id-token: write`) from the `pypi` environment.
+### One-time setup
+
+1. **PyPI** → *Your projects* → *Publishing* → **Add a pending publisher (GitHub)**:
+
+   | Field | Value |
+   |---|---|
+   | PyPI Project Name | `arango-sparql-py` |
+   | Owner | `ArthurKeen` |
+   | Repository name | `arango-sparql-py` |
+   | Workflow name | `publish.yml` |
+   | Environment name | `pypi` |
+
+2. **TestPyPI** (<https://test.pypi.org>) → add the same pending publisher, but
+   Environment `testpypi`. This is what the dry run uploads to.
+3. **GitHub** (ArthurKeen repo) → *Settings* → *Environments* → create `pypi`
+   **and** `testpypi`. No secrets — OIDC only.
 
 ## Cut a release
 
 1. Dependency repoint — ✅ already landed (#9); no direct-URL deps remain.
-2. Register the Trusted Publisher (above) if not already done.
-3. Set the release version in `pyproject.toml` (`version = "X.Y.Z"`); update any
-   changelog.
-4. Tag and push — the tag is the trigger:
+2. Version already bumped to `0.2.0` in `pyproject.toml`. (Build it locally to
+   sanity-check: `python -m build && twine check --strict dist/*` — both must PASS.)
+3. Register the publishers + create the environments (above).
+4. **Prove OIDC on TestPyPI FIRST — do not skip.** ArthurKeen repo → *Actions* →
+   *Publish to PyPI* → *Run workflow* → `target: testpypi`. A green run that
+   uploads to <https://test.pypi.org/project/arango-sparql-py/> confirms the
+   publisher is registered and working. A red `invalid-publisher` here is the
+   analyzer's trap — fix the PyPI entry and re-run; **no tag has been burned.**
+5. Tag and push the real release (dual-push sends it to both remotes; the
+   workflow fires only on ArthurKeen, is skipped on the mirror):
    ```bash
-   git tag vX.Y.Z && git push origin vX.Y.Z
+   git tag v0.2.0 && git push origin v0.2.0
    ```
-5. `publish.yml` runs **only** on `ArthurKeen/arango-sparql-py` (guarded against
-   the `arango-solutions` mirror): it installs, runs the deterministic test
-   gate, builds sdist+wheel, `twine check`s, and uploads via Trusted Publishing.
-6. Verify: `pip install arango-sparql-py==X.Y.Z` in a clean venv.
+6. Verify: `pip install arango-sparql-py==0.2.0` in a clean venv.
+7. Switch CDF's dependency from the commit pin to `arango-sparql-py>=0.2.0,<0.3.0`.
 
 ## Notes
 
