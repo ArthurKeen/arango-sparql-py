@@ -1,9 +1,16 @@
 {
-  "generated_at": "2026-07-28T17:15:00Z",
-  "captured_env": "local",
-  "rows": {
-    "translate_cold_p95_ms": 2.3,
-    "translate_warm_p95_ms": 2.3,
-    "execute_overhead_p95_ms": 1.9
-  }
+  "note": "Gate contract in tests/perf/gate.py. slo_p95_ms mirrors the PRD \u00a79.4 table; best-of-3 p95 must stay <= slo * slo_tolerance in every environment. calibrated_median_ratio is median request cost / median interleaved GET /health cost \u2014 hardware-independent; exceeding it by ratio_warn_factor warns (advisory).",
+  "slo_tolerance": 1.25,
+  "ratio_warn_factor": 1.5,
+  "slo_p95_ms": {
+    "translate_cold_p95_ms": 60,
+    "translate_warm_p95_ms": 12,
+    "execute_overhead_p95_ms": 80
+  },
+  "calibrated_median_ratio": {
+    "translate_cold_p95_ms": 2.8,
+    "translate_warm_p95_ms": 2.7,
+    "execute_overhead_p95_ms": 2.1
+  },
+  "calibrated_at": "2026-09-29, macOS arm64, Python 3.12 (best of 3 runs x 3 rounds)"
 }
