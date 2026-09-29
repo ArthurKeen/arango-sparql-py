@@ -82,6 +82,8 @@ def load_env(path: Path) -> dict[str, str]:
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
+        if line.startswith("export "):  # shell-style `export KEY=val`
+            line = line[len("export ") :].lstrip()
         key, value = line.split("=", 1)
         env[key.strip()] = value.strip().strip('"').strip("'")
     return env
@@ -268,9 +270,26 @@ def read_app_version() -> str:
 
 def _version_sort_key(version: str) -> tuple:
     """Natural sort for ``<release>-<build>`` strings so 0.2.0-10 sorts after
-    0.2.0-2 (plain ``sorted`` is lexicographic and buries the newest build)."""
-    parts = re.split(r"[.-]", version)
-    return tuple(int(p) if p.isdigit() else p for p in parts)
+    0.2.0-2 (plain ``sorted`` is lexicographic and buries the newest build).
+
+    Each segment becomes ``(0, int)`` or ``(1, str)`` so a numeric and a
+    non-numeric segment at the same position never compare int-vs-str (which
+    would raise ``TypeError`` on a stray tag like ``0.2.0rc1``).
+    """
+    return tuple((0, int(p)) if p.isdigit() else (1, p) for p in re.split(r"[.-]", version))
+
+
+def _url_is_loopback(url: str) -> bool:
+    """True iff *url*'s host is exactly a loopback address (host-parsed, not a
+    substring match). Kept in sync with ``entrypoint._is_loopback`` so preflight
+    rejects the same set the runtime does — otherwise a bad ``.env`` passes
+    preflight and only fails after the live service is already deleted."""
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    if not host and url:
+        host = url.split("//")[-1].split("/")[0].rsplit(":", 1)[0].strip("[]").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
 
 def next_build_version(platform: Platform, name: str, release: str) -> str:
@@ -326,8 +345,8 @@ def preflight(tarball: Path, has_ui: bool) -> None:
                 file=sys.stderr,
             )
         else:
-            url_match = re.search(r"^ARANGO_URL\s*=\s*(\S+)", env_text, re.M)
-            if url_match and re.search(r"localhost|127\.0\.0\.1", url_match.group(1)):
+            url_match = re.search(r"^(?:export\s+)?ARANGO_URL\s*=\s*(\S+)", env_text, re.M)
+            if url_match and _url_is_loopback(url_match.group(1).strip("\"'")):
                 problems.append(
                     "ARANGO_URL points at loopback in the baked .env — unreachable from inside the platform"
                 )
@@ -589,12 +608,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     platform, endpoint, db_name = resolve_config(args)
     platform.authenticate()
     url = f"{endpoint}{mount_path(args.instance, db_name)}/"
-    print(f"==> polling {url}")
+    # Poll /health, not the root: a bare-API (--no-ui) deploy registers no "/"
+    # route, so polling the root would spin to timeout and report a false failure
+    # for a healthy service. /health exists with or without the UI.
+    probe = url + "health"
+    print(f"==> polling {probe}")
     deadline = time.monotonic() + args.wait_timeout
     while time.monotonic() < deadline:
         try:
             response = platform.session.get(
-                url, headers=platform._headers(), timeout=30, allow_redirects=False
+                probe, headers=platform._headers(), timeout=30, allow_redirects=False
             )
             code = response.status_code
             if code == 200:
@@ -668,6 +691,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_verify.add_argument("--instance", default=DEFAULT_INSTANCE)
     p_verify.add_argument("--wait-timeout", type=float, default=900.0)
     p_verify.add_argument("--poll-interval", type=float, default=20.0)
+    p_verify.add_argument(
+        "--no-ui",
+        action="store_true",
+        help="the deployment has no bundled UI — skip the root-page asset check",
+    )
     p_verify.add_argument(
         "--expect-version",
         default=None,

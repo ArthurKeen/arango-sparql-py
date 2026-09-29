@@ -195,3 +195,54 @@ def test_deep_verify_passes_healthy_ui_deploy() -> None:
         }
     )
     assert bd.deep_verify(_Platform(session), _URL, "0.2.0", expect_ui=True) is True
+
+
+def test_deep_verify_passes_bare_api_with_no_ui() -> None:
+    # --no-ui deploy: the root has no "/" route (404), but expect_ui=False so the
+    # missing assets are fine; openapi + /health still confirm the right code.
+    session = _Session(
+        {
+            "openapi.json": _Resp(200, json_data={"info": {"version": "0.2.0"}, "paths": {"/sparql": {}}}),
+            "svc/": _Resp(404, text="Not Found"),
+            "health": _Resp(200, text='{"status":"ok"}'),
+        }
+    )
+    assert bd.deep_verify(_Platform(session), _URL, "0.2.0", expect_ui=False) is True
+
+
+# --- review round 2: edge-case robustness ---------------------------------
+
+
+def test_version_sort_key_tolerates_non_numeric_segment() -> None:
+    # A stray tag like 0.2.0rc1 must not make sorted() compare int vs str.
+    versions = ["0.2.0-10", "0.2.0-2", "0.2.0rc1", "0.2.0-1"]
+    assert sorted(versions, key=bd._version_sort_key)  # does not raise
+
+
+@pytest.mark.parametrize(
+    "url,expected",
+    [
+        ("https://localhost:8529", True),
+        ("http://127.0.0.1:8529", True),
+        ("https://0.0.0.0:8529", True),
+        ("http://[::1]:8529", True),
+        ("https://prod.demo.pilot.arango.ai:8529", False),
+        ("https://localhost-proxy.internal.arango.ai:8529", False),
+    ],
+)
+def test_url_is_loopback_matches_entrypoint(url: str, expected: bool) -> None:
+    # byoc_deploy's preflight guard must reject exactly what the entrypoint does.
+    assert bd._url_is_loopback(url) is expected
+    assert ep._is_loopback(url) is expected
+
+
+def test_load_env_handles_export_prefix(tmp_path: Path) -> None:
+    env_file = tmp_path / ".env"
+    env_file.write_text("export ARANGO_URL=https://h:8529\nARANGO_USER=root\n", encoding="utf-8")
+    env = bd.load_env(env_file)
+    assert env["ARANGO_URL"] == "https://h:8529" and env["ARANGO_USER"] == "root"
+
+
+def test_verify_parser_accepts_no_ui() -> None:
+    args = bd.build_parser().parse_args(["verify", "--no-ui", "--expect-version", "0.2.0"])
+    assert args.no_ui is True

@@ -198,6 +198,8 @@ def _load_baked_env(path: str) -> None:
             line = line.strip()
             if not line or line.startswith("#") or "=" not in line:
                 continue
+            if line.startswith("export "):  # shell-style `export KEY=val`
+                line = line[len("export ") :].lstrip()
             key, value = line.split("=", 1)
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
     except OSError:
