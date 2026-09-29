@@ -3120,8 +3120,9 @@ optionally, the workbench UI, run by the ArangoDB Platform's Container
 Manager alongside a customer's cluster. Operator procedure:
 [`docs/BYOC_DEPLOYMENT.md`](../BYOC_DEPLOYMENT.md). Tooling:
 `scripts/package_arango_manual.sh` (build) and `scripts/byoc_deploy.py`
-(upload, swap, verify). The same contract governs `arango-cypher-py`
-(its PRD §13), so the estate's services behave alike on the platform.
+(upload, swap, verify). `arango-cypher-py` follows an equivalent contract (its
+PRD §13). It differs in two places: it bakes the mount prefix into the bundle
+when the bundle is built, and its verification probes the mount root first.
 
 * **Bundle.** The service MUST ship as a flat `.tar.gz`, not an image, with
   `entrypoint` at the archive root. Line 1 of `entrypoint` MUST begin with
@@ -3132,11 +3133,15 @@ Manager alongside a customer's cluster. Operator procedure:
   `.env` typically holds API keys and database passwords.
 * **Mount prefix.** The platform serves the instance under
   `/_service/uds/_db/<db>/<instance>/` (or `/_service/uds/_global/<instance>/`).
-  The service MUST run with `ROOT_PATH` set to that prefix, so the API
-  (`/openapi.json`, `/sparql`, …) answers under it. The value MUST reach the
-  process through the bundle's `.env` or the Container Manager's per-service
-  environment. The deploy API's `env` map is platform metadata and does not
-  reach the container (verified on prod.demo, 2026-09-28).
+  The service MUST run with `ROOT_PATH` set to that prefix. Routes answer
+  without it, because the platform proxy strips the prefix before the request
+  arrives. What breaks is every URL the service builds for itself. Without
+  `ROOT_PATH`, the `/docs` page fetches the *cluster's* `/openapi.json`
+  instead of this service's. The value MUST reach the process through the
+  bundle's `.env` or the Container Manager's per-service environment. The
+  deploy API's `env` map is platform metadata and does not reach the
+  container; this was observed deploying `arango-cypher-py` to prod.demo on
+  2026-09-28, on the same platform.
 * **UI.** When a built bundle is present (`ARANGO_SPARQL_UI_DIR` names a
   directory holding `index.html`), the service MUST mount it at the app root,
   after every API route, so it never shadows one. It MUST use relative asset
@@ -3144,11 +3149,21 @@ Manager alongside a customer's cluster. Operator procedure:
   rebuild. With no bundle, the service is exactly the bare API.
 * **Root.** With the UI bundled, the service MUST answer `GET` at its bare
   mount root, because that is where the platform's app launcher opens it.
-* **Verification.** After a deploy, verification MUST fail closed unless all
-  of these hold: the mount root returns 200; `openapi.json` reports the
-  release being deployed; every relative asset the root page references
-  loads; and `/health` answers. A bare-API deploy verifies against `/health`
-  instead of the root.
+* **Verification.** After a deploy, verification polls `<mount>/health`
+  until it returns 200, then MUST fail closed unless each of these checks
+  passes:
+  * `openapi.json` reports the expected release. On `update` this is always
+    checked, against the release being deployed. On `rollback`, and on a
+    standalone `verify`, it is checked only when a version is given
+    (`--expect-version`).
+  * With a UI, the root page references at least one JS or CSS asset, and
+    each one returns 200.
+  * `/health` returns 200.
+
+  A bare-API deploy skips the asset check. Verification does *not* yet check
+  three of the MUSTs above: that the root returns 200, that `ROOT_PATH` is
+  set, or that `entrypoint` starts with the right token. Each is tracked as a
+  drift alert.
 * **Update.** The platform has no in-place update, so an update MUST upload
   the new build *before* deleting the running service. A bad artifact then
   fails while the old version is still serving.
