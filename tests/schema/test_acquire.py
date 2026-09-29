@@ -792,6 +792,87 @@ def test_edge_endpoint_enrichment_never_overwrites_pinned_endpoint(
     assert knows["toEntity"] == "Person"
 
 
+def _pg_edge_db_plural() -> MockDb:
+    """Same graph as :func:`_pg_edge_db`, but the collection is ``persons``
+    — the usual case, and the one where entity key and collection differ.
+    """
+
+    persons = [{"_key": str(i), "name": f"p{i}"} for i in range(5)]
+    knows = [{"_from": f"persons/{i}", "_to": f"persons/{i + 1}"} for i in range(4)]
+    return MockDb(
+        collections=[_doc("persons"), _edge("knows")],
+        samples={"persons": persons, "knows": knows},
+    )
+
+
+def _analyzer_pg_bundle(entities: dict[str, dict[str, str]]) -> tuple[Any, Any]:
+    return _make_analyzer_mock(
+        conceptual={"entities": [], "relationships": []},
+        physical={
+            "entities": entities,
+            "relationships": {
+                "knows": {
+                    "style": "DEDICATED_COLLECTION",
+                    "edgeCollectionName": "knows",
+                    "fromEntity": "Any",
+                    "toEntity": "Any",
+                }
+            },
+        },
+    )
+
+
+def test_edge_endpoint_enrichment_uses_the_bundles_entity_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The analyzer keys ``persons`` as ``Person``; the inferred endpoint
+    must name ``Person`` too. Naming the collection instead produced a
+    relationship pointing at an undeclared entity — unqueryable. Found by
+    the schema_live tier; the test above could not catch it because its
+    collection and entity share one name.
+    """
+
+    cls, fn = _analyzer_pg_bundle({"Person": {"style": "COLLECTION", "collectionName": "persons"}})
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_pg_edge_db_plural(), strategy="analyzer")
+
+    knows = (bundle.physical_mapping.get("relationships") or {})["knows"]
+    assert (knows["fromEntity"], knows["toEntity"]) == ("Person", "Person")
+
+
+def test_edge_endpoint_enrichment_stays_any_when_two_entities_share_a_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Two entities over one collection is ambiguous — never guess one."""
+
+    cls, fn = _analyzer_pg_bundle(
+        {
+            "Person": {"style": "COLLECTION", "collectionName": "persons"},
+            "Author": {"style": "COLLECTION", "collectionName": "persons"},
+        }
+    )
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_pg_edge_db_plural(), strategy="analyzer")
+
+    knows = (bundle.physical_mapping.get("relationships") or {})["knows"]
+    assert (knows["fromEntity"], knows["toEntity"]) == ("Any", "Any")
+
+
+def test_edge_endpoint_enrichment_stays_any_for_an_undeclared_collection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An endpoint collection the bundle declares no entity for stays ``"Any"``
+    rather than naming an entity that does not exist.
+    """
+
+    cls, fn = _analyzer_pg_bundle({})
+    _install_analyzer_mock(monkeypatch, analyzer_cls=cls, export_fn=fn)
+    bundle = acquire_mapping_bundle(_pg_edge_db_plural(), strategy="analyzer")
+
+    knows = (bundle.physical_mapping.get("relationships") or {})["knows"]
+    assert (knows["fromEntity"], knows["toEntity"]) == ("Any", "Any")
+
+
 def test_edge_endpoint_enrichment_noop_when_no_relationships(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

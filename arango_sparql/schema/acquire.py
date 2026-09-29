@@ -744,6 +744,34 @@ def _apply_edge_endpoint_enrichment(db: Any, bundle: MappingBundle, *, when: dat
     if not endpoint_index:
         return bundle
 
+    # The inference names a COLLECTION-style endpoint by its *collection*
+    # (``persons``) — the heuristic's own entity key. A bundle from another
+    # producer may key the same collection differently (the analyzer emits
+    # ``Person``), and an endpoint naming an entity the bundle does not
+    # declare is unresolvable: the relationship cannot be queried at all.
+    # Found by the schema_live tier against a seeded PG database.
+    entities = bundle.physical_mapping.get("entities")
+    entities = entities if isinstance(entities, dict) else {}
+    key_by_collection: dict[str, list[str]] = {}
+    for entity_key, entity_spec in entities.items():
+        if isinstance(entity_spec, dict) and entity_spec.get("style") == "COLLECTION":
+            collection = entity_spec.get("collectionName")
+            if isinstance(collection, str):
+                key_by_collection.setdefault(collection, []).append(entity_key)
+
+    def _as_entity_key(inferred: str) -> str:
+        """The bundle's key for *inferred*, or ``"Any"`` when there is none.
+
+        ``"Any"`` rather than the raw name: an endpoint pointing at an
+        undeclared entity breaks the query, while ``"Any"`` only loses
+        precision. Two entities sharing one collection is ambiguous, so it
+        stays ``"Any"`` too — never a guess.
+        """
+        if inferred == "Any" or inferred in entities:
+            return inferred
+        keys = key_by_collection.get(inferred, [])
+        return keys[0] if len(keys) == 1 else "Any"
+
     new_relationships: dict[str, Any] = {}
     filled: list[str] = []
     for name, spec in relationships.items():
@@ -756,7 +784,7 @@ def _apply_edge_endpoint_enrichment(db: Any, bundle: MappingBundle, *, when: dat
         if inferred is None:
             new_relationships[name] = spec
             continue
-        from_entity, to_entity = inferred
+        from_entity, to_entity = (_as_entity_key(side) for side in inferred)
         updated = dict(spec)
         changed = False
         if updated.get("fromEntity", "Any") == "Any" and from_entity != "Any":
