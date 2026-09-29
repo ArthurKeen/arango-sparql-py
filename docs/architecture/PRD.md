@@ -3113,6 +3113,46 @@ MUST have a corresponding play.
   `(tenant, fingerprint)` will pay the full §9.4 cold-acquisition cost.
   Operators may pre-warm via `ops/warm-cache.py`.
 
+### 15.8 BYOC deployment (ArangoDB Container Manager)
+
+The standalone deployment: one process serving the `/sparql` + NL API and,
+optionally, the workbench UI, run by the ArangoDB Platform's Container
+Manager alongside a customer's cluster. Operator procedure:
+[`docs/BYOC_DEPLOYMENT.md`](../BYOC_DEPLOYMENT.md). Tooling:
+`scripts/package_arango_manual.sh` (build) and `scripts/byoc_deploy.py`
+(upload, swap, verify). The same contract governs `arango-cypher-py`
+(its PRD §13), so the estate's services behave alike on the platform.
+
+* **Bundle.** The service MUST ship as a flat `.tar.gz`, not an image, with
+  `entrypoint` at the archive root. Line 1 of `entrypoint` MUST begin with
+  the literal token `entrypoint`: the platform runs
+  `python /project/<first word of that file>`, so a shebang or docstring
+  there breaks boot. The build MUST leave `.env` out of the bundle unless an
+  operator opts in explicitly (`PACKAGE_INCLUDE_ENV=1`), because a local
+  `.env` typically holds API keys and database passwords.
+* **Mount prefix.** The platform serves the instance under
+  `/_service/uds/_db/<db>/<instance>/` (or `/_service/uds/_global/<instance>/`).
+  The service MUST run with `ROOT_PATH` set to that prefix, so the API
+  (`/openapi.json`, `/sparql`, …) answers under it. The value MUST reach the
+  process through the bundle's `.env` or the Container Manager's per-service
+  environment. The deploy API's `env` map is platform metadata and does not
+  reach the container (verified on prod.demo, 2026-09-28).
+* **UI.** When a built bundle is present (`ARANGO_SPARQL_UI_DIR` names a
+  directory holding `index.html`), the service MUST mount it at the app root,
+  after every API route, so it never shadows one. It MUST use relative asset
+  URLs (Vite `base: "./"`), so the page loads under any prefix without a
+  rebuild. With no bundle, the service is exactly the bare API.
+* **Root.** With the UI bundled, the service MUST answer `GET` at its bare
+  mount root, because that is where the platform's app launcher opens it.
+* **Verification.** After a deploy, verification MUST fail closed unless all
+  of these hold: the mount root returns 200; `openapi.json` reports the
+  release being deployed; every relative asset the root page references
+  loads; and `/health` answers. A bare-API deploy verifies against `/health`
+  instead of the root.
+* **Update.** The platform has no in-place update, so an update MUST upload
+  the new build *before* deleting the running service. A bad artifact then
+  fails while the old version is still serving.
+
 ---
 
 ## 16. Versioning & upgrades
