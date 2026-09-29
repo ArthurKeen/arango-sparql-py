@@ -186,6 +186,14 @@ from .security import (
 #    the security / observability setup noise.
 from . import routes as _routes  # noqa: F401, E402
 
+# 8) Optional SPA static mount (standalone / BYOC "microservice + UI").
+#    Installed AFTER every API route above so the catch-all static handler
+#    never shadows an endpoint. No-op unless ARANGO_SPARQL_UI_DIR points at a
+#    built bundle, so library / test / bare-API deployments are unchanged.
+from .static import mount_spa  # noqa: E402
+
+mount_spa(app)
+
 __all__ = [
     "app",
     # Re-exported request/response models

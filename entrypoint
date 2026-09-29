@@ -1,0 +1,210 @@
+entrypoint = __file__
+
+# ^ DO NOT MOVE. The ArangoDB Container Manager runs `python /project/<first
+# token of line 1 of ./entrypoint>`, so line 1's first token must literally be
+# `entrypoint`. A shebang, docstring, or import on line 1 breaks entry
+# detection ("No entrypoint found"). Keep this assignment first.
+#
+# This is the BYOC launcher (see docs/BYOC_DEPLOYMENT.md). The platform extracts
+# the flat tarball built by scripts/package_arango_manual.sh into the service
+# workdir and runs this file on a base image (e.g. py12base). It installs the
+# service deps into the running interpreter, then execs uvicorn on the FastAPI
+# app. Credentials come from the baked .env (loaded by the app's load_dotenv())
+# or from Container Manager UI env vars — never hard-coded here.
+
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+# Extras the service needs at runtime: [service] (uvicorn/typer/dotenv) +
+# [nl] (openai, arango-query-core, the NL pipeline). Mirrors the Dockerfile.
+INSTALL_TARGET = ".[service,nl]"
+
+
+def _find_uv() -> str | None:
+    """Resolve the uv binary. PATH may be minimal when the platform starts us."""
+    env_uv = os.environ.get("UV_BINARY", "").strip()
+    if env_uv and os.path.isfile(env_uv) and os.access(env_uv, os.X_OK):
+        return env_uv
+    found = shutil.which("uv")
+    if found:
+        return found
+    home = Path.home()
+    for candidate in (
+        Path("/usr/local/bin/uv"),
+        Path("/usr/bin/uv"),
+        home / ".local" / "bin" / "uv",
+        home / ".cargo" / "bin" / "uv",
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return None
+
+
+def _ensure_dependencies(root: str) -> None:
+    """Install the service + its runtime extras into this interpreter.
+
+    Prefer ``uv pip install`` (target venvs often ship no ``pip`` module; uv
+    installs without one). Fall back to ensurepip + pip on base images with no
+    uv (e.g. py12base). Set ARANGO_SPARQL_SKIP_INSTALL=1 to skip (image already
+    has deps).
+    """
+    if os.environ.get("ARANGO_SPARQL_SKIP_INSTALL", "").lower() in ("1", "true", "yes"):
+        return
+    uv = _find_uv()
+    lock = os.path.join(root, "uv.lock")
+    if uv:
+        print(f"==> using uv: {uv}", flush=True)
+        if os.path.isfile(lock):
+            print("==> uv sync (lockfile, service+nl extras)...", flush=True)
+            subprocess.run(
+                [
+                    uv,
+                    "sync",
+                    "--no-dev",
+                    "--extra",
+                    "service",
+                    "--extra",
+                    "nl",
+                    "-p",
+                    sys.executable,
+                    "--frozen",
+                ],
+                cwd=root,
+                check=True,
+                env=os.environ,
+            )
+        print(f"==> uv pip install -e '{INSTALL_TARGET}'...", flush=True)
+        subprocess.run(
+            [uv, "pip", "install", "-e", INSTALL_TARGET, "--python", sys.executable],
+            cwd=root,
+            check=True,
+            env=os.environ,
+        )
+        return
+
+    print("==> uv not on PATH (set UV_BINARY if needed); bootstrapping pip...", flush=True)
+    subprocess.run(
+        [sys.executable, "-m", "ensurepip", "--upgrade", "--default-pip"],
+        cwd=root,
+        check=True,
+        env=os.environ,
+    )
+    print(f"==> pip install -e '{INSTALL_TARGET}'...", flush=True)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--upgrade-strategy",
+            "only-if-needed",
+            "-e",
+            INSTALL_TARGET,
+        ],
+        cwd=root,
+        check=True,
+        env=os.environ,
+    )
+
+
+def _is_loopback(url: str) -> bool:
+    """True iff *url*'s host is exactly a loopback address.
+
+    Parse the host and compare against the loopback set, so a legitimate
+    coordinator whose name merely *contains* "localhost" (e.g.
+    ``localhost-proxy.internal.arango.ai``) is not wrongly rejected.
+    """
+    from urllib.parse import urlparse
+
+    host = (urlparse(url).hostname or "").lower()
+    if not host and url:  # bare host:port with no scheme — best-effort
+        host = url.split("//")[-1].split("/")[0].rsplit(":", 1)[0].strip("[]").lower()
+    return host in {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _fail_if_arango_points_at_loopback(url: str) -> None:
+    """The hosted Container Manager has no ArangoDB on localhost; fail fast."""
+    if os.environ.get("ARANGO_SPARQL_ALLOW_LOOPBACK", "").lower() in ("1", "true", "yes"):
+        return
+    if _is_loopback(url):
+        print(
+            "ERROR: ARANGO_URL points at loopback — unreachable from inside the\n"
+            "platform container. Set ARANGO_URL to the coordinator's reachable URL\n"
+            "via the baked .env or Container Manager env vars, e.g.\n"
+            "  ARANGO_URL=https://<coordinator-host>:8529\n"
+            "Debug-only bypass: ARANGO_SPARQL_ALLOW_LOOPBACK=1",
+            flush=True,
+        )
+        sys.exit(2)
+
+
+def main() -> None:
+    root = os.path.dirname(os.path.abspath(__file__))
+    # chdir so the app's load_dotenv() finds a baked ./.env, and so the editable
+    # install resolves pyproject/arango_sparql from here.
+    os.chdir(root)
+    _ensure_dependencies(root)
+
+    prev = os.environ.get("PYTHONPATH", "")
+    os.environ["PYTHONPATH"] = root + (os.pathsep + prev if prev else "")
+
+    # Serve the bundled UI (packaged at ./ui/dist) when present. setdefault so an
+    # operator override via Container Manager env still wins.
+    bundled_ui = os.path.join(root, "ui", "dist")
+    if os.path.isdir(bundled_ui):
+        os.environ.setdefault("ARANGO_SPARQL_UI_DIR", bundled_ui)
+        print(f"==> UI bundle: {bundled_ui}", flush=True)
+
+    # ARANGO_URL may come from a baked .env the app loads at import; read it the
+    # same way (best-effort) purely for the loopback pre-check.
+    _load_baked_env(os.path.join(root, ".env"))
+    _fail_if_arango_points_at_loopback(os.environ.get("ARANGO_URL", ""))
+
+    listen_port = os.environ.get("PORT") or os.environ.get("BACKEND_PORT") or "8000"
+    print(f"==> arango-sparql-py starting in {root}", flush=True)
+    print(f"==> uvicorn arango_sparql.service:app on 0.0.0.0:{listen_port}", flush=True)
+    os.execvp(
+        sys.executable,
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "arango_sparql.service:app",
+            "--host",
+            "0.0.0.0",
+            "--port",
+            str(listen_port),
+            "--proxy-headers",
+            "--forwarded-allow-ips",
+            "*",
+        ],
+    )
+
+
+def _load_baked_env(path: str) -> None:
+    """Populate os.environ from a baked .env (setdefault — platform env wins).
+
+    The app itself calls load_dotenv() at import, but this pre-loads the file so
+    the loopback pre-check above can see ARANGO_URL before uvicorn starts. Uses a
+    tiny parser (no dependency needed before install completes).
+    """
+    if not os.path.isfile(path):
+        return
+    try:
+        for line in Path(path).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):  # shell-style `export KEY=val`
+                line = line[len("export ") :].lstrip()
+            key, value = line.split("=", 1)
+            os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+    except OSError:
+        pass
+
+
+if __name__ == "__main__":
+    main()
