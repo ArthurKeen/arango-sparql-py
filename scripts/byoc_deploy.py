@@ -266,6 +266,13 @@ def read_app_version() -> str:
     return match.group(1)
 
 
+def _version_sort_key(version: str) -> tuple:
+    """Natural sort for ``<release>-<build>`` strings so 0.2.0-10 sorts after
+    0.2.0-2 (plain ``sorted`` is lexicographic and buries the newest build)."""
+    parts = re.split(r"[.-]", version)
+    return tuple(int(p) if p.isdigit() else p for p in parts)
+
+
 def next_build_version(platform: Platform, name: str, release: str) -> str:
     """``<release>-<n>``, the first suffix not already uploaded.
 
@@ -273,7 +280,7 @@ def next_build_version(platform: Platform, name: str, release: str) -> str:
     one, so a redeploy of the same release needs a distinct string. Deriving from
     the release keeps every deployed artifact traceable to a real version.
     """
-    taken = {p["version"] for p in platform.list_packages() if p.get("name") == name}
+    taken = {p.get("version") for p in platform.list_packages() if p.get("name") == name}
     for build in range(1, 1000):
         candidate = f"{release}-{build}"
         if candidate not in taken:
@@ -351,13 +358,17 @@ def cmd_list(args: argparse.Namespace) -> int:
     print(f"platform: {endpoint}\n")
     print("uploaded packages (most recent first):")
     for package in platform.list_packages()[:15]:
-        print(f"  {package['name']:<24} v{package['version']:<14} {package.get('file_name', '')}")
+        name = str(package.get("name", "?"))
+        version = str(package.get("version", "?"))
+        print(f"  {name:<24} v{version:<14} {package.get('file_name', '')}")
     print("\ndeployed user-defined services:")
     for service in platform.list_services():
         meta = service.get("serviceMeta") or {}
         if str(meta.get("serviceType", "")).startswith("arango-user-defined"):
+            # str() guard: a partially-created / terminated service can report
+            # serviceId=None, and f"{None:<40}" raises TypeError.
             print(
-                f"  {service.get('serviceId'):<40} db={service.get('dbName') or '(global)'} "
+                f"  {str(service.get('serviceId')):<40} db={service.get('dbName') or '(global)'} "
                 f"status={service.get('status')}"
             )
     return 0
@@ -422,7 +433,7 @@ def _asset_urls(html: str, base_url: str, platform_base: str) -> list[str]:
     return out
 
 
-def deep_verify(platform: Platform, url: str, expect_version: str | None) -> bool:
+def deep_verify(platform: Platform, url: str, expect_version: str | None, *, expect_ui: bool = True) -> bool:
     """Prove the *right code* is live, not merely that something answered.
 
     A 200 on the root cannot tell a new deployment from the old one; the version
@@ -443,16 +454,32 @@ def deep_verify(platform: Platform, url: str, expect_version: str | None) -> boo
             )
             ok = False
     except Exception as exc:
-        print(
-            f"    note: openapi.json not readable at {url} ({exc}) — if the UI serves, "
-            "the API is likely under a different prefix; set the service ROOT_PATH to "
-            "the mount path",
-            file=sys.stderr,
+        # Fail closed when a version was demanded: an unreadable openapi.json means
+        # we CANNOT prove the right build is live (commonly ROOT_PATH is unset so
+        # the API isn't under the mount prefix). Only downgrade to a note when no
+        # version assertion was requested (e.g. rollback, which reports its own).
+        message = (
+            f"openapi.json not readable at {url} ({exc}) — the API is likely not "
+            "under the mount prefix; set the service ROOT_PATH to the mount path"
         )
+        if expect_version:
+            print(f"    FAIL: {message} (cannot confirm version {expect_version})", file=sys.stderr)
+            ok = False
+        else:
+            print(f"    note: {message}", file=sys.stderr)
 
     try:
         html = platform.session.get(url, headers=platform._headers(), timeout=30).text
         assets = _asset_urls(html, url, platform.base)
+        if expect_ui and not assets:
+            # A UI deploy whose root page references no JS/CSS is a broken/blank
+            # bundle (or the wrong page) — a green light over an empty screen.
+            print(
+                "    FAIL: expected a UI but the root page references no JS/CSS assets "
+                "— the bundle is missing or blank",
+                file=sys.stderr,
+            )
+            ok = False
         broken = []
         for asset in assets:
             response = platform.session.get(asset, headers=platform._headers(), timeout=30)
@@ -545,7 +572,9 @@ def cmd_update(args: argparse.Namespace) -> int:
 def cmd_rollback(args: argparse.Namespace) -> int:
     """Redeploy a package version already on the platform (code only, fast)."""
     platform, _endpoint, db_name = resolve_config(args)
-    available = sorted({p["version"] for p in platform.list_packages() if p.get("name") == args.name})
+    versions = {p.get("version") for p in platform.list_packages() if p.get("name") == args.name}
+    versions.discard(None)
+    available = sorted(versions, key=_version_sort_key)
     if args.to not in available:
         raise DeployError(
             f"{args.name} v{args.to} is not uploaded. Available (most recent 10): {available[-10:]}"
@@ -570,7 +599,8 @@ def cmd_verify(args: argparse.Namespace) -> int:
             code = response.status_code
             if code == 200:
                 print(f"    HTTP 200 — serving ({response.headers.get('content-type', '?')})")
-                return 0 if deep_verify(platform, url, args.expect_version) else 1
+                expect_ui = not getattr(args, "no_ui", False)
+                return 0 if deep_verify(platform, url, args.expect_version, expect_ui=expect_ui) else 1
             hint = "route not registered" if code == 404 else "pod not ready"
             print(f"    HTTP {code} ({hint}) — retrying in {args.poll_interval:.0f}s", flush=True)
         except requests.RequestException as exc:
@@ -617,7 +647,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--display-name", default=DEFAULT_DISPLAY_NAME)
         p.add_argument("--description", default=DEFAULT_DESCRIPTION)
         p.add_argument("--no-wait", action="store_true")
-        p.add_argument("--wait-timeout", type=float, default=600.0)
+        # Generous by default: after a delete+recreate the pod cold-starts on
+        # py12base (ensurepip + editable install of [service,nl]), which can take
+        # a few minutes; a tighter poll would report a false failure mid-boot.
+        p.add_argument("--wait-timeout", type=float, default=900.0)
 
     p_list = sub.add_parser("list", help="show uploaded packages and deployed services")
     p_list.set_defaults(func=cmd_list)
