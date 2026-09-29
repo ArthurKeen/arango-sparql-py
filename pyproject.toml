@@ -108,6 +108,32 @@ dev = [
 [project.scripts]
 arango-sparql-py = "arango_sparql.cli:app"
 
+# BYOC deployment settings for the shared arango-byoc-deploy tool
+# (docs/BYOC_DEPLOYMENT.md, PRD §15.8). Run:
+#   uv run --group deploy arango-byoc-deploy <command>
+[tool.arango-byoc]
+app-name     = "arango-sparql-py"
+instance     = "arango-sparql-py"
+display-name = "Arango SPARQL Transpiler"
+description  = "SPARQL 1.1 → AQL translation service + workbench for ArangoDB."
+base-image   = "py12base"
+tarball      = "arango-sparql-py.tar.gz"   # scripts/package_arango_manual.sh
+# The release is [project].version (tests/test_version_parity.py keeps
+# arango_sparql.__version__ equal to it); /openapi.json reports it.
+version-probe    = { path = "/openapi.json", json-key = "info.version" }
+required-members = ["entrypoint", "pyproject.toml", "arango_sparql/__init__.py", "ui/dist/index.html"]
+index-html       = "ui/dist/index.html"   # --no-ui deploys the bare API
+probes = [{ path = "/health", label = "health" }]
+
+# Deploy tooling, kept out of the published package's metadata (a dependency
+# group is never part of the wheel), so the git pin cannot affect a PyPI
+# release. Pinned to an exact commit until arango-byoc-deploy is on PyPI.
+[dependency-groups]
+deploy = ["arango-byoc-deploy"]
+
+[tool.uv.sources]
+arango-byoc-deploy = { git = "https://github.com/ArthurKeen/arango-byoc-deploy", rev = "0aa88d9c2cb6641f9bdff50c46e3ad9f057c76d4" }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

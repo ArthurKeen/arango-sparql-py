@@ -11,6 +11,6 @@ from __future__ import annotations
 
 # Single source of truth for the package version. Kept in lockstep with
 # pyproject.toml [project].version (tests/test_version_parity.py enforces it);
-# the BYOC deploy script (scripts/byoc_deploy.py) reads THIS value to tag and
-# verify releases, and the FastAPI app reports it in openapi.json.
+# the BYOC deploy tool (arango-byoc-deploy, [tool.arango-byoc] in pyproject) tags
+# releases with it and verifies that openapi.json reports it after a deploy.
 __version__ = "0.2.0"

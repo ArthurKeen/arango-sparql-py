@@ -3119,10 +3119,12 @@ The standalone deployment: one process serving the `/sparql` + NL API and,
 optionally, the workbench UI, run by the ArangoDB Platform's Container
 Manager alongside a customer's cluster. Operator procedure:
 [`docs/BYOC_DEPLOYMENT.md`](../BYOC_DEPLOYMENT.md). Tooling:
-`scripts/package_arango_manual.sh` (build) and `scripts/byoc_deploy.py`
-(upload, swap, verify). `arango-cypher-py` follows an equivalent contract (its
-PRD §13). It differs in two places: it bakes the mount prefix into the bundle
-when the bundle is built, and its verification probes the mount root first.
+`scripts/package_arango_manual.sh` (build) and the shared
+[`arango-byoc-deploy`](https://github.com/ArthurKeen/arango-byoc-deploy) tool
+(pre-flight, upload, swap, verify), configured in `[tool.arango-byoc]` in
+`pyproject.toml` and pinned in the `deploy` dependency group. `arango-cypher-py`
+uses the same tool under an equivalent contract (its PRD §13); it differs in
+baking the mount prefix into the bundle when the bundle is built.
 
 * **Bundle.** The service MUST ship as a flat `.tar.gz`, not an image, with
   `entrypoint` at the archive root. Line 1 of `entrypoint` MUST begin with
@@ -3149,21 +3151,20 @@ when the bundle is built, and its verification probes the mount root first.
   rebuild. With no bundle, the service is exactly the bare API.
 * **Root.** With the UI bundled, the service MUST answer `GET` at its bare
   mount root, because that is where the platform's app launcher opens it.
-* **Verification.** After a deploy, verification polls `<mount>/health`
-  until it returns 200, then MUST fail closed unless each of these checks
-  passes:
-  * `openapi.json` reports the expected release. On `update` this is always
-    checked, against the release being deployed. On `rollback`, and on a
-    standalone `verify`, it is checked only when a version is given
-    (`--expect-version`).
-  * With a UI, the root page references at least one JS or CSS asset, and
-    each one returns 200.
+* **Verification.** After a deploy, verification polls the mount root (or
+  `<mount>/health` for a bare-API deploy) until it returns 200, then MUST fail
+  closed unless each of these checks passes:
+  * With a UI, the mount root returns 200, and every asset the page
+    references loads from under the mount.
+  * `openapi.json` reports the expected release: on `update`, the release
+    being deployed; on `rollback`, the target build's release (a build
+    without a `-<n>` suffix is reported *unverified*, exit code 2); on a
+    standalone `verify`, the version given with `--expect-version`.
   * `/health` returns 200.
 
-  A bare-API deploy skips the asset check. Verification does *not* yet check
-  three of the MUSTs above: that the root returns 200, that `ROOT_PATH` is
-  set, or that `entrypoint` starts with the right token. Each is tracked as a
-  drift alert.
+  Pre-flight refuses a bundle whose `entrypoint` does not start with the
+  literal token. Verification does *not* yet check that `ROOT_PATH` is set;
+  that is tracked as a drift alert.
 * **Update.** The platform has no in-place update, so an update MUST upload
   the new build *before* deleting the running service. A bad artifact then
   fails while the old version is still serving.

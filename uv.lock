@@ -58,6 +58,14 @@ wheels = [
 ]
 
 [[package]]
+name = "arango-byoc-deploy"
+version = "0.1.0"
+source = { git = "https://github.com/ArthurKeen/arango-byoc-deploy?rev=0aa88d9c2cb6641f9bdff50c46e3ad9f057c76d4#0aa88d9c2cb6641f9bdff50c46e3ad9f057c76d4" }
+dependencies = [
+    { name = "requests" },
+]
+
+[[package]]
 name = "arango-query-core"
 version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -73,7 +81,7 @@ dense = [
 
 [[package]]
 name = "arango-sparql-py"
-version = "0.1.0"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
@@ -124,6 +132,11 @@ service = [
     { name = "typer" },
 ]
 
+[package.dev-dependencies]
+deploy = [
+    { name = "arango-byoc-deploy" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", marker = "extra == 'nl'", specifier = ">=0.20.0" },
@@ -132,7 +145,7 @@ requires-dist = [
     { name = "arango-sparql-py", extras = ["analyzer"], marker = "extra == 'dev'" },
     { name = "arango-sparql-py", extras = ["analyzer"], marker = "extra == 'service'" },
     { name = "arango-sparql-py", extras = ["nl"], marker = "extra == 'dense'" },
-    { name = "arangodb-schema-analyzer", extras = ["anthropic", "openai"], marker = "extra == 'analyzer'", specifier = ">=0.9.0,<0.10.0" },
+    { name = "arangodb-schema-analyzer", extras = ["anthropic", "openai"], marker = "extra == 'analyzer'", specifier = ">=0.12.1,<0.15.0" },
     { name = "fastapi", specifier = ">=0.100.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.24.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
@@ -158,18 +171,21 @@ requires-dist = [
 ]
 provides-extras = ["analyzer", "service", "cli", "nl", "dense", "dev"]
 
+[package.metadata.requires-dev]
+deploy = [{ name = "arango-byoc-deploy", git = "https://github.com/ArthurKeen/arango-byoc-deploy?rev=0aa88d9c2cb6641f9bdff50c46e3ad9f057c76d4" }]
+
 [[package]]
 name = "arangodb-schema-analyzer"
-version = "0.9.0"
+version = "0.14.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "jsonschema" },
     { name = "pydantic" },
     { name = "python-arango" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2e/a6/81c93432fc276289441f8db5a80be6e1b2f8b60f8f3147fa801c92a9cc49/arangodb_schema_analyzer-0.9.0.tar.gz", hash = "sha256:664ac77ba4e6dc336772de465fad53a0fa45c22a71cb7447263cae58100d5810", size = 159278, upload-time = "2026-07-01T22:46:52.396Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/c1/fcd150b1f340c9ecd44aa9a2f0f5acd6553106497b76d2155673d977b8a4/arangodb_schema_analyzer-0.14.0.tar.gz", hash = "sha256:a79b746c41abe2b032c9e7926c4579e848a71044066161b313a0fe85ef1417d5", size = 207924, upload-time = "2026-09-14T23:10:47.453Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3b/36/e3b7e501cd06066309ed554a26fc1baf938bb3648e0b405d4ab5e1d880db/arangodb_schema_analyzer-0.9.0-py3-none-any.whl", hash = "sha256:e7ddfd6ccde9ba388d5138fcbc9accaf10637cfeb49b55d0645f7ff85b231bcf", size = 162565, upload-time = "2026-07-01T22:46:50.945Z" },
+    { url = "https://files.pythonhosted.org/packages/08/4f/d51abc2790336c32a06693e7293c0fc7c5746c55ea57cca86d60192adf0e/arangodb_schema_analyzer-0.14.0-py3-none-any.whl", hash = "sha256:07e4c0456f263555be4fde85dff015d6e4888d92ae97c2253d1c5e123fd92077", size = 208092, upload-time = "2026-09-14T23:10:46.08Z" },
 ]
 
 [package.optional-dependencies]
