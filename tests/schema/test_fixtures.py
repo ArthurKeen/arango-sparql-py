@@ -43,7 +43,7 @@ from urllib.parse import quote
 import pytest
 
 from arango_sparql.api import translate
-from arango_sparql.errors import SchemaResolutionError
+from arango_sparql.errors import SchemaResolutionError, UnsupportedSparqlError
 from arango_sparql.translate.mapping import (
     MappingBundle,
     mapping_from_wire_dict,
@@ -569,3 +569,20 @@ def test_rpt_translator_references_legacy_columns_in_emitted_aql(name: str) -> N
                 f"Fixture {name!r} RPT entity {label!r}: legacy column "
                 f"{column!r} not referenced in emitted AQL:\n{result.aql}"
             )
+
+
+@pytest.mark.parametrize("name", ["rpt_lpg_hybrid", "rpt_pg_lpg_hybrid"])
+def test_rpt_edge_from_a_non_rpt_subject_is_refused_not_mistranslated(name: str) -> None:
+    """``?s a :Doc ; :TAGGED_WITH ?o`` with ``Doc`` in LPG and ``TAGGED_WITH``
+    in the triples store used to emit ``OUTBOUND doc @@_triples`` — a
+    traversal over a document collection, which fails at execution with
+    ERR 1218. Found by the schema_live tier; translation-only goldens could
+    not see it. Until the PG/LPG -> triples join lands (PRD §3.4 / §6.6),
+    translation must refuse rather than emit AQL that cannot run.
+    """
+
+    resolver = SchemaResolver.from_mapping_bundle(mapping_from_wire_dict(_load_fixture(name)))
+    query = f"SELECT ?s ?o WHERE {{ ?s a <{_synthetic_iri('Doc')}> ; <{_synthetic_iri('TAGGED_WITH')}> ?o }}"
+
+    with pytest.raises(UnsupportedSparqlError, match="RPT_EDGE"):
+        translate(query, resolver=resolver)
