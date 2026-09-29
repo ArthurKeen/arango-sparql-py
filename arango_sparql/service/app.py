@@ -23,10 +23,14 @@ except ImportError:
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .. import __version__
+
 app = FastAPI(
     title="Arango SPARQL Transpiler",
     description="SPARQL 1.1 → AQL translation service for ArangoDB",
-    version="0.1.0",
+    # Read from the package's single source of truth so openapi.json reports the
+    # real release — the BYOC deploy verifier asserts against exactly this.
+    version=__version__,
     root_path=os.getenv("ROOT_PATH", ""),
 )
 
