@@ -30,6 +30,8 @@ import pytest
 from fastapi.testclient import TestClient
 from rdflib import Graph, URIRef
 
+from tests.helpers.http import assert_varies_on_accept
+
 from .conftest import set_aql_rows
 
 # ---------------------------------------------------------------------------
@@ -197,7 +199,7 @@ def test_construct_stamps_observability_headers(client: TestClient, session_toke
         },
     )
     assert resp.status_code == 200
-    assert resp.headers.get("Vary") == "Accept"
+    assert_varies_on_accept(resp)
     # Bindings count reflects the AQL cursor rows (one per matched
     # Person), not the post-flattening triple count.
     assert resp.headers.get("X-Aql-Bindings-Count") == "2"

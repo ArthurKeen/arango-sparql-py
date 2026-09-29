@@ -116,6 +116,7 @@ markers = [
   "w3c: SPARQL 1.1 W3C DAWG evaluation harness",
   "cross: cross-validates transpiled AQL bindings against pyoxigraph as the W3C reference store",
   "eval: NL->SPARQL evaluation harness; slow, gated behind RUN_EVAL=1",
+  "schema_live: schema detection against seeded live PG/LPG/RPT/hybrid databases (PRD §13.1); also marked integration, so gated on RUN_INTEGRATION=1",
   "perf: performance budget enforcement (see PRD §9.4); CI-blocking on >25% p95 regression for the fast in-process rows",
 ]
 

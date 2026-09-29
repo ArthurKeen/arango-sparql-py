@@ -1760,6 +1760,22 @@ class AlgebraVisitor:
         joins on ``?b._uri`` automatically via the existing
         :meth:`_bind_subject` machinery — no new join logic needed.
         """
+        if prop.mapping_style == "RPT_EDGE":
+            # Reached only when the subject is NOT RPT-bound (an RPT-bound
+            # subject takes _emit_rpt_property_triple). An RPT_EDGE's
+            # "edge collection" is the triples table — a document
+            # collection — so a traversal over it fails at execution with
+            # ERR 1218. Refuse at translate time instead of emitting AQL
+            # that cannot run. Found by the schema_live tier: LPG ``Doc``
+            # subject + RPT ``TAGGED_WITH`` predicate.
+            raise UnsupportedSparqlError(
+                f"object property {prop.iri!r} is stored as RDF triples "
+                f"(RPT_EDGE) but its subject is bound to a non-RPT "
+                f"collection; joining a PG/LPG subject onto triples rows is "
+                f"not supported yet (PRD §3.4 / §6.6 mixed-model row). Bind "
+                f"the subject through its RPT class, or map the relationship "
+                f"to an edge collection"
+            )
         if prop.edge_collection is None:
             raise SchemaResolutionError(
                 f"object property {prop.iri!r} has no phys:edgeCollectionName "

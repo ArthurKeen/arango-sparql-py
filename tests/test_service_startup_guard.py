@@ -228,6 +228,34 @@ def test_install_hint_matches_acquire_module() -> None:
     assert app_mod.ANALYZER_VERSION_RANGE == acquire_mod.ANALYZER_VERSION_RANGE
 
 
+def test_install_hint_range_matches_the_declared_dependency() -> None:
+    """The hint must name the range pyproject actually requires.
+
+    The two in-code copies agreed with each other at ``>=0.9.0,<0.10.0``
+    long after pyproject moved to ``>=0.12.1,<0.15.0``, so the error message
+    told operators to install a version the package would then reject. The
+    parity test above could not see it; this one reads the source of truth.
+    """
+    import re
+    import tomllib
+    from pathlib import Path
+
+    data = tomllib.loads((Path(__file__).resolve().parent.parent / "pyproject.toml").read_text())
+    declared = [
+        dep
+        for deps in [
+            data["project"].get("dependencies", []),
+            *data["project"].get("optional-dependencies", {}).values(),
+        ]
+        for dep in deps
+        if re.match(r"arangodb-schema-analyzer\b", dep)
+    ]
+    assert declared, "pyproject declares no arangodb-schema-analyzer dependency"
+    ranges = {re.sub(r"^arangodb-schema-analyzer(\[[^\]]*\])?", "", dep).strip() for dep in declared}
+
+    assert ranges == {acquire_mod.ANALYZER_VERSION_RANGE}
+
+
 def test_app_install_hint_contains_acquire_command_form() -> None:
     """Both install hints should embed the same ``pip install
     'arangodb-schema-analyzer<version>'`` command so a copy/paste
