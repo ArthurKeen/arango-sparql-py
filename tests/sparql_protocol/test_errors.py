@@ -29,6 +29,7 @@ from fastapi.testclient import TestClient
 from arango_sparql.service import _sessions
 from arango_sparql.service.routes import protocol as _protocol
 from arango_sparql.service.routes import schema as _schema
+from tests.helpers.http import assert_varies_on_accept
 
 from .conftest import SELECT_QUERY, set_aql_rows
 
@@ -360,4 +361,4 @@ def test_405_response_includes_vary_accept(client: TestClient, session_token: st
             "X-Arango-Session": session_token,
         },
     )
-    assert resp.headers.get("Vary") == "Accept"
+    assert_varies_on_accept(resp)
