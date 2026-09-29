@@ -13,6 +13,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.helpers.http import assert_varies_on_accept
+
 from .conftest import ASK_QUERY, CONSTRUCT_QUERY, SELECT_QUERY, set_aql_rows
 
 # ---------------------------------------------------------------------------
@@ -172,7 +174,7 @@ def test_unsupported_accept_returns_406_with_supported_list(client: TestClient, 
         "text/tab-separated-values",
     ]
     assert body["query_form"] == "SELECT"
-    assert resp.headers.get("Vary") == "Accept"
+    assert_varies_on_accept(resp)
 
 
 def test_406_response_content_type_is_application_json(client: TestClient, session_token: str) -> None:

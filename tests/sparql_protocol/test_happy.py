@@ -35,6 +35,7 @@ from fastapi.testclient import TestClient
 from rdflib import Graph, Namespace
 
 from arango_sparql.service import _sessions
+from tests.helpers.http import assert_varies_on_accept
 
 from .conftest import ASK_QUERY, SELECT_QUERY, set_aql_rows
 
@@ -80,7 +81,7 @@ def test_service_description_advertises_vary_accept(client: TestClient, session_
         "/sparql",
         headers={"X-Arango-Session": session_token},
     )
-    assert resp.headers.get("Vary") == "Accept"
+    assert_varies_on_accept(resp)
 
 
 # ---------------------------------------------------------------------------
@@ -120,7 +121,7 @@ def test_select_observability_headers_are_stamped(client: TestClient, session_to
     assert "X-Response-Time" in resp.headers
     assert resp.headers["X-Schema-Warnings-Count"] == "0"
     assert resp.headers["X-Aql-Bindings-Count"] == "1"
-    assert resp.headers["Vary"] == "Accept"
+    assert_varies_on_accept(resp)
     expose = resp.headers.get("Access-Control-Expose-Headers", "")
     for h in (
         "X-Response-Time",
