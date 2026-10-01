@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
+import json
+import re
 import subprocess
+import sys
+from collections import Counter
+from pathlib import Path
 
 import pytest
 
@@ -70,6 +75,23 @@ def test_analyze_live_counts_only_parameterized_w3c_cases(
 
     def fake_run(command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         seen_command.extend(command)
+        junit_arg = next(arg for arg in command if arg.startswith("--junitxml="))
+        junit_path = Path(junit_arg.split("=", 1)[1])
+        junit_path.write_text(
+            """<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="pytest" tests="2" skipped="2">
+    <testcase classname="tests.w3c.test_w3c_live_execution" name="test_live_execution[bind/bind07]">
+      <skipped type="pytest.xfail" message="binding divergence" />
+    </testcase>
+    <testcase classname="tests.w3c.test_w3c_live_execution" name="test_live_execution[functions/rand01]">
+      <skipped type="pytest.xfail" message="binding divergence" />
+    </testcase>
+  </testsuite>
+</testsuites>
+""",
+            encoding="utf-8",
+        )
         return _completed(stdout="86 passed, 105 xfailed in 10.24s")
 
     monkeypatch.setenv("RUN_INTEGRATION", "1")
@@ -81,6 +103,7 @@ def test_analyze_live_counts_only_parameterized_w3c_cases(
     assert stats.total == 191
     assert stats.passed == 86
     assert stats.xfailed == 105
+    assert stats.xfail_ids == {"bind/bind07", "functions/rand01"}
     assert stats.coverage == pytest.approx(86 / 191 * 100)
 
 
@@ -110,3 +133,161 @@ def test_analyze_live_surfaces_hard_pytest_failure(
 
     with pytest.raises(RuntimeError, match="live W3C pytest run failed"):
         analyze_coverage.analyze_live()
+
+
+def test_live_failure_registry_matches_committed_report() -> None:
+    registry_path = Path(__file__).with_name("LIVE_FAILURE_LABELS.json")
+    report_path = Path(__file__).with_name("LIVE_FAILURES.md")
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    report = report_path.read_text(encoding="utf-8")
+
+    failures = registry["failures"]
+    report_ids = set(re.findall(r"^\| `([^`]+)` \|", report, re.MULTILINE))
+    valid_labels = {
+        "needs inference",
+        "language tags lost",
+        "text stored the wrong way",
+        "genuine bug",
+    }
+
+    assert set(failures) == report_ids
+    assert len(failures) == registry["baseline"]["xfailed"]
+    assert {entry["label"] for entry in failures.values()} <= valid_labels
+    assert (
+        sum(entry["label"] in valid_labels for entry in failures.values()) == registry["baseline"]["xfailed"]
+    )
+    assert all(
+        entry["diagnosis"].strip() and "\n" not in entry["diagnosis"]
+        for entry in failures.values()
+        if entry["label"] == "genuine bug"
+    )
+
+
+def test_live_failure_join_rejects_missing_and_stale_ids() -> None:
+    entry = {"label": "genuine bug", "diagnosis": "A concrete one-line diagnosis."}
+
+    with pytest.raises(ValueError, match="unlabelled.*suite/missing"):
+        analyze_coverage.validate_live_failure_join({"suite/missing"}, {})
+
+    with pytest.raises(ValueError, match="stale.*suite/stale"):
+        analyze_coverage.validate_live_failure_join(set(), {"suite/stale": entry})
+
+
+def test_live_failure_join_rejects_invalid_label() -> None:
+    failures = {
+        "suite/case": {
+            "label": "not reviewed",
+            "diagnosis": "A concrete one-line diagnosis.",
+        }
+    }
+
+    with pytest.raises(ValueError, match="invalid label.*not reviewed"):
+        analyze_coverage.validate_live_failure_join({"suite/case"}, failures)
+
+
+def test_live_failure_baseline_rejects_count_mismatch() -> None:
+    registry = json.loads(Path(__file__).with_name("LIVE_FAILURE_LABELS.json").read_text(encoding="utf-8"))
+    baseline = registry["baseline"]
+    stats = analyze_coverage.CategoryStats(
+        total=baseline["total"], passed=baseline["passed"] - 1, xfailed=baseline["xfailed"] + 1
+    )
+
+    with pytest.raises(ValueError, match="live failure baseline mismatch.*passed.*xfailed"):
+        analyze_coverage.validate_live_failure_baseline(stats, registry, "document_edge")
+
+
+@pytest.mark.parametrize(
+    "bucket_fields",
+    [
+        {},
+        {"bucket": "harness"},
+        {"bucket": "translator"},
+        {"bucket": "loader"},
+        {"bucket": None},
+        {"bucket": []},
+    ],
+)
+@pytest.mark.parametrize("label", analyze_coverage.LIVE_FAILURE_LABELS)
+def test_live_failure_join_validates_bucket(label: str, bucket_fields: dict[str, object]) -> None:
+    entry = {"label": label, "diagnosis": "A concrete one-line diagnosis.", **bucket_fields}
+    valid = (
+        bucket_fields.get("bucket") in ("harness", "translator")
+        if label == "genuine bug"
+        else "bucket" not in bucket_fields
+    )
+
+    if valid:
+        assert analyze_coverage.validate_live_failure_join({"suite/case"}, {"suite/case": entry}) == {
+            label: 1
+        }
+    else:
+        with pytest.raises(ValueError, match="suite/case.*bucket"):
+            analyze_coverage.validate_live_failure_join({"suite/case"}, {"suite/case": entry})
+
+
+@pytest.mark.parametrize("bucket", ["harness", "translator"])
+def test_render_live_failures_shows_bucket(bucket: str) -> None:
+    registry = json.loads(Path(__file__).with_name("LIVE_FAILURE_LABELS.json").read_text(encoding="utf-8"))
+    registry["failures"] = {
+        "suite/case": {
+            "label": "genuine bug",
+            "bucket": bucket,
+            "diagnosis": "A concrete one-line diagnosis.",
+        }
+    }
+
+    rendered = analyze_coverage.render_live_failures(registry, Counter({"genuine bug": 1}))
+
+    assert f"| `suite/case` | genuine bug ({bucket}) |" in rendered
+    assert f"| genuine bug ({bucket}) | 1 |" in rendered
+
+
+@pytest.mark.parametrize("contents", [None, "<testsuites>"])
+def test_parse_live_xfail_ids_rejects_missing_or_malformed_junit(
+    tmp_path: Path,
+    contents: str | None,
+) -> None:
+    junit_path = tmp_path / "live-results.xml"
+    if contents is not None:
+        junit_path.write_text(contents, encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="could not parse live W3C JUnit report"):
+        analyze_coverage.parse_live_xfail_ids(junit_path)
+
+
+def test_main_rejects_both_write_modes_before_analysis(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "analyze_coverage.py",
+            "--write",
+            "--live",
+            "--write-live-failures",
+        ],
+    )
+    monkeypatch.setattr(
+        analyze_coverage,
+        "analyze",
+        lambda: pytest.fail("analysis must not run for conflicting write modes"),
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        analyze_coverage.main()
+
+    assert exc_info.value.code != 0
+    assert "--write cannot be used with --write-live-failures" in capsys.readouterr().err
+
+
+def test_render_live_failures_reproduces_committed_report_byte_for_byte() -> None:
+    registry_path = Path(__file__).with_name("LIVE_FAILURE_LABELS.json")
+    report_path = Path(__file__).with_name("LIVE_FAILURES.md")
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    counts = Counter(entry["label"] for entry in registry["failures"].values())
+
+    rendered = analyze_coverage.render_live_failures(registry, counts).encode()
+
+    assert rendered == report_path.read_bytes()
