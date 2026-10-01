@@ -11,8 +11,10 @@ pieces:
 
 - **`scripts/package_arango_manual.sh`** — builds a flat `.tar.gz` of the Python
   source + the built UI + `entrypoint`.
-- **`scripts/byoc_deploy.py`** — uploads it to the platform and (re)deploys the
-  service, then verifies the right version is serving.
+- **[`arango-byoc-deploy`](https://github.com/ArthurKeen/arango-byoc-deploy)** — the
+  shared estate deploy tool: uploads it to the platform, (re)deploys the service,
+  and verifies the right version is serving. Settings live in `[tool.arango-byoc]`
+  in `pyproject.toml`; it is pinned in the `deploy` dependency group.
 
 > **How it differs from a Docker deploy:** BYOC ships a **source tarball**, not
 > an image. The platform runs it on a base image (`py12base`) that installs deps
@@ -58,14 +60,14 @@ service instead — that's the more secure path for shared clusters.
 ## Deploy
 
 ```bash
-python3 scripts/byoc_deploy.py list                  # what's uploaded / deployed
-python3 scripts/byoc_deploy.py update                # the usual: preflight → upload → swap → verify
-python3 scripts/byoc_deploy.py verify --expect-version 0.2.0
-python3 scripts/byoc_deploy.py rollback --to 0.2.0-1 # redeploy an uploaded build (code only)
-python3 scripts/byoc_deploy.py delete                # remove the instance
+uv run --group deploy arango-byoc-deploy list                  # what's uploaded / deployed
+uv run --group deploy arango-byoc-deploy update                # the usual: preflight → upload → swap → verify
+uv run --group deploy arango-byoc-deploy verify --expect-version 0.2.0
+uv run --group deploy arango-byoc-deploy rollback --to 0.2.0-1 # redeploy an uploaded build; verifies its release
+uv run --group deploy arango-byoc-deploy delete                # remove the instance
 ```
 
-`update` derives the release from `arango_sparql/__init__.py:__version__`,
+`update` derives the release from `[project].version` in `pyproject.toml`,
 uploads under `<version>-<n>`, then swaps the live service.
 
 > ⚠️ **There is no in-place update.** A POST against a live instance fails with a
@@ -73,9 +75,9 @@ uploads under `<version>-<n>`, then swaps the live service.
 > for ~60s (cold start on `py12base`). The upload happens *before* the delete, so
 > a bad artifact fails while the old service still serves.
 
-Defaults (override with flags): `--instance arango-sparql-py`, `--base-image
-py12base`, UI on (`--no-ui` to disable), scope = `ARANGO_DB` (`--db ''` for
-global). A wrong `--base-image` fails fast and lists the cluster's valid ones.
+Defaults live in `[tool.arango-byoc]`; override per run with `--instance`,
+`--db` (`''` for global) and `--no-ui` (placed before the command, e.g.
+`uv run --group deploy arango-byoc-deploy --no-ui update`). Scope defaults to `ARANGO_DB`. A wrong `--base-image` fails fast and lists the cluster's valid ones.
 
 ## The mount path + `ROOT_PATH` (important for the UI+API to align)
 
@@ -93,12 +95,14 @@ The platform serves the instance under a path prefix:
 
 ## Verify
 
-`update` finishes by polling `<mount>/` until HTTP 200, then asserting
-`openapi.json`'s version equals the release, fetching every UI asset (200), and
-hitting `<mount>/health`. Run it standalone any time:
+`update` finishes by polling `<mount>/` (or `<mount>/health` for `--no-ui`) until
+HTTP 200, then requires: the root to return 200 when the UI is bundled;
+`openapi.json`'s version to equal the release; every asset the page references
+to load from under the mount; and `<mount>/health` to answer. Run it standalone
+any time:
 
 ```bash
-python3 scripts/byoc_deploy.py verify --expect-version 0.2.0
+uv run --group deploy arango-byoc-deploy verify --expect-version 0.2.0
 ```
 
 ## Health endpoints

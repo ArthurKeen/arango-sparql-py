@@ -3,8 +3,8 @@
 They drifted once (``__init__`` stuck at 0.1.0 while pyproject moved to 0.2.0),
 which the BYOC deploy would have shipped as a wrong ``openapi.json`` version and
 a failed post-deploy verify. This is the cheap guard that keeps the single
-source of truth honest — the deploy script (`scripts/byoc_deploy.py`) and the
-FastAPI app both read ``__version__``.
+source of truth honest — the deploy tool (which reads ``[project].version``) and
+the FastAPI app (which reads ``__version__``) must agree.
 """
 
 from __future__ import annotations

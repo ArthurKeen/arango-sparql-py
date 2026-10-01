@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build the BYOC tarball for the ArangoDB Container Manager (manual packaging).
 #
-# Companion to scripts/byoc_deploy.py, which uploads + deploys what this builds.
+# Companion to the arango-byoc-deploy tool, which uploads + deploys what this builds.
 # See docs/BYOC_DEPLOYMENT.md.
 #
 # Layout: FLAT archive — `entrypoint` and `pyproject.toml` at the ROOT of the
@@ -12,7 +12,7 @@
 # UI: bundled by default (the SPARQL workbench). `ui/vite.config.ts` uses
 # base:"./" (relative asset URLs), so NO build-time mount prefix is needed —
 # the bundle works under any Container-Manager path. Set PACKAGE_NO_UI=1 to
-# ship a bare API (deploy with `byoc_deploy.py --no-ui`).
+# ship a bare API (deploy with `arango-byoc-deploy --no-ui release`).
 #
 # .env: NOT bundled unless PACKAGE_INCLUDE_ENV=1 — a local .env typically holds
 # OPENAI_API_KEY / ARANGO_PASSWORD etc. that must not leak into a shared tarball.
