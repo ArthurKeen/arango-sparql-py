@@ -76,3 +76,25 @@ def test_bundle_is_flat_with_entrypoint_at_root(tmp_path: Path) -> None:
     with tarfile.open(tar, "r:gz") as archive:
         names = {n.lstrip("./") for n in archive.getnames()}
     assert {"entrypoint", "pyproject.toml", "arango_sparql/__init__.py"} <= names
+
+
+def test_arango_byoc_probes_survive_a_no_ui_deploy() -> None:
+    """The deploy config must verify under --no-ui as well as the default UI.
+
+    arango-byoc-deploy runs `probes` UNCONDITIONALLY and already checks the UI
+    root itself (gated on has-ui). A bare "/" probe would therefore 404 a
+    healthy --no-ui deploy (no root route). prefix-env-var/ready-path must also
+    be set so the mount prefix is verified and readiness polls /health.
+    """
+    import tomllib
+
+    cfg = tomllib.loads(_PYPROJECT_TEXT())["tool"]["arango-byoc"]
+    assert cfg["prefix-env-var"] == "ROOT_PATH"
+    assert cfg["ready-path"] == "/health"
+    paths = [p["path"] for p in cfg["probes"]]
+    assert "/" not in paths, f"a bare '/' probe breaks --no-ui verification: {paths}"
+    assert "/health" in paths and "/openapi.json" in paths
+
+
+def _PYPROJECT_TEXT() -> str:
+    return (_REPO / "pyproject.toml").read_text(encoding="utf-8")

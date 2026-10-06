@@ -131,10 +131,15 @@ prefix-env-var = "ROOT_PATH"
 # Poll /health for readiness (exists with or without the bundled UI) before the
 # probes run — a bare --no-ui deploy has no "/" route.
 ready-path     = "/health"
+# These are EXTRA checks run unconditionally, on top of the tool's built-in
+# root-page + asset verification (which it already does, gated on has-ui — it
+# polls the mount root and loads every asset for a UI deploy, and skips that for
+# --no-ui). So do NOT list "/" here: a bare "/" probe runs even under --no-ui,
+# where the service has no root route, and would 404 a healthy bare API. Both
+# below answer with or without the UI.
 probes = [
   { path = "/health", label = "health", expect-json-key = "status" },
   { path = "/openapi.json", label = "API" },
-  { path = "/", label = "Workbench" },
 ]
 
 # Deploy tooling, kept out of the published package's metadata (a dependency
