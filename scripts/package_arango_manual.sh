@@ -85,6 +85,22 @@ elif [[ -f "${REPO_ROOT}/.env" ]]; then
     echo "==> Skipping .env (set PACKAGE_INCLUDE_ENV=1 to bake it; prefer Container Manager UI env for secrets)." >&2
 fi
 
+# --- bake ROOT_PATH (REQUIRED for a path-prefixed Container Manager mount) -----
+# The platform does NOT forward app env at deploy time, so the service's mount
+# prefix must be baked into a bundled .env (the FastAPI app reads it via
+# load_dotenv() → root_path). Without it, /openapi.json, /docs and the API
+# resolve at the CLUSTER root instead of under /_service/uds/_db/<db>/<instance>/
+# (the UI still works — its asset URLs are relative). Mirrors arango-cypher-py's
+# scripts/package-byoc.sh. Append, so it coexists with a baked full .env above.
+if [[ -n "${SERVICE_ROOT_PATH:-}" ]]; then
+    printf 'ROOT_PATH=%s\n' "${SERVICE_ROOT_PATH%/}" >> "${ROOTDIR}/.env"
+    echo "==> Baked ROOT_PATH=${SERVICE_ROOT_PATH%/} into the bundle"
+else
+    echo "==> WARNING: no SERVICE_ROOT_PATH set — /openapi.json, /docs and the API" >&2
+    echo "    will resolve at the cluster root, not under the service mount. Pass" >&2
+    echo "    SERVICE_ROOT_PATH=/_service/uds/_db/<db>/<instance> to fix it." >&2
+fi
+
 # Strip lingering macOS xattrs (provenance/quarantine) that break Linux tar.
 if [[ "$(uname -s)" == "Darwin" ]] && command -v xattr >/dev/null 2>&1; then
     xattr -cr "${ROOTDIR}" 2>/dev/null || true

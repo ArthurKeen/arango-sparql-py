@@ -123,7 +123,24 @@ tarball      = "arango-sparql-py.tar.gz"   # scripts/package_arango_manual.sh
 version-probe    = { path = "/openapi.json", json-key = "info.version" }
 required-members = ["entrypoint", "pyproject.toml", "arango_sparql/__init__.py", "ui/dist/index.html"]
 index-html       = "ui/dist/index.html"   # --no-ui deploys the bare API
-probes = [{ path = "/health", label = "health" }]
+# The mount prefix is baked into the bundle (SERVICE_ROOT_PATH ->
+# scripts/package_arango_manual.sh -> ROOT_PATH in .env); name the env var the
+# deploy tool checks for it. The platform drops app env, so this is baked, not
+# passed at deploy time.
+prefix-env-var = "ROOT_PATH"
+# Poll /health for readiness (exists with or without the bundled UI) before the
+# probes run — a bare --no-ui deploy has no "/" route.
+ready-path     = "/health"
+# These are EXTRA checks run unconditionally, on top of the tool's built-in
+# root-page + asset verification (which it already does, gated on has-ui — it
+# polls the mount root and loads every asset for a UI deploy, and skips that for
+# --no-ui). So do NOT list "/" here: a bare "/" probe runs even under --no-ui,
+# where the service has no root route, and would 404 a healthy bare API. Both
+# below answer with or without the UI.
+probes = [
+  { path = "/health", label = "health", expect-json-key = "status" },
+  { path = "/openapi.json", label = "API" },
+]
 
 # Deploy tooling, kept out of the published package's metadata (a dependency
 # group is never part of the wheel), so the git pin cannot affect a PyPI
