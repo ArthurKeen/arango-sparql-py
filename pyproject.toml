@@ -123,6 +123,11 @@ tarball      = "arango-sparql-py.tar.gz"   # scripts/package_arango_manual.sh
 version-probe    = { path = "/openapi.json", json-key = "info.version" }
 required-members = ["entrypoint", "pyproject.toml", "arango_sparql/__init__.py", "ui/dist/index.html"]
 index-html       = "ui/dist/index.html"   # --no-ui deploys the bare API
+# The one *_API_KEY the sanitized bake may carry (NL→SPARQL needs it); the
+# packager allowlist already excludes PYPI_*/RUN_*. Without this the preflight
+# refuses a bundle that bakes OPENAI_API_KEY. ARANGO_PASSWORD is not an
+# *_API_KEY, so the preflight never flags it.
+allow-baked-secrets = ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "OPENROUTER_API_KEY"]
 # The mount prefix is baked into the bundle (SERVICE_ROOT_PATH ->
 # scripts/package_arango_manual.sh -> ROOT_PATH in .env); name the env var the
 # deploy tool checks for it. The platform drops app env, so this is baked, not
