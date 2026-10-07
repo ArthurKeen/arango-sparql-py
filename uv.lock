@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -127,7 +127,9 @@ nl = [
 ]
 service = [
     { name = "arangodb-schema-analyzer", extra = ["anthropic", "openai"] },
+    { name = "pyjwt" },
     { name = "python-dotenv" },
+    { name = "requests" },
     { name = "rich" },
     { name = "typer" },
 ]
@@ -151,6 +153,7 @@ requires-dist = [
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "openai", marker = "extra == 'nl'", specifier = ">=1.0.0" },
     { name = "pydantic", specifier = ">=2.6" },
+    { name = "pyjwt", marker = "extra == 'service'", specifier = ">=2.0" },
     { name = "pyoxigraph", marker = "extra == 'dev'", specifier = ">=0.3.22" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0.0" },
@@ -160,6 +163,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'nl'", specifier = ">=6.0.0" },
     { name = "rank-bm25", marker = "extra == 'nl'", specifier = ">=0.2.2" },
     { name = "rdflib", specifier = ">=7.0" },
+    { name = "requests", marker = "extra == 'service'", specifier = ">=2.28" },
     { name = "rich", marker = "extra == 'cli'", specifier = ">=13.0.0" },
     { name = "rich", marker = "extra == 'service'", specifier = ">=13.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.22" },

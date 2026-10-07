@@ -14,7 +14,8 @@ import secrets
 import time
 
 from arango import ArangoClient
-from fastapi import Depends, HTTPException
+from arango.database import StandardDatabase
+from fastapi import Depends, HTTPException, Request
 
 from ..._env import (
     read_arango_database,
@@ -23,8 +24,28 @@ from ..._env import (
     read_arango_username,
 )
 from ..app import _PUBLIC_MODE, _svc_logger, app
-from ..models import BindGraphRequest, ConnectRequest, ConnectResponse
+from ..models import (
+    BindGraphRequest,
+    ConnectRequest,
+    ConnectResponse,
+    PlatformConnectRequest,
+    PlatformStatus,
+)
 from ..observability import log_endpoint_timing
+from ..platform_auth import (
+    DEPLOYMENT_ENDPOINT_ENV,
+    PLATFORM_AUTH_ENV,
+    PlatformTokenError,
+    choose_database,
+    default_database,
+    describe_endpoint,
+    forwarded_token,
+    open_platform_database,
+    platform_auth_enabled,
+    platform_endpoint,
+    platform_tls_verify,
+    probe_endpoint,
+)
 from ..security import (
     _check_connect_target,
     _describe_connect_error,
@@ -110,7 +131,160 @@ def connect(req: ConnectRequest):
         database=req.database,
         databases_visible=len(databases),
     )
-    return ConnectResponse(token=token, databases=databases)
+    return ConnectResponse(token=token, databases=databases, database=req.database)
+
+
+def _platform_unavailable_reason(request: Request) -> str | None:
+    """Why this request cannot open a platform session, or ``None``."""
+    if not platform_auth_enabled():
+        return f"platform sessions are disabled ({PLATFORM_AUTH_ENV})"
+    if platform_endpoint() is None:
+        return f"no cluster endpoint configured ({DEPLOYMENT_ENDPOINT_ENV} or ARANGO_URL)"
+    if forwarded_token(request) is None:
+        return "the request carried no platform login (the service is not behind the platform gateway)"
+    return None
+
+
+@app.get("/connect/platform", response_model=PlatformStatus)
+def platform_status(request: Request):
+    """Whether the Workbench can skip the connect dialog.
+
+    True when the service knows its cluster's endpoint *and* the request
+    arrived through the platform gateway carrying the user's platform JWT.
+    The UI calls this on load and, when available, opens a session with
+    ``POST /connect/platform`` instead of asking for credentials. Discloses
+    no credential and no endpoint — only the database it would open.
+    """
+    reason = _platform_unavailable_reason(request)
+    return PlatformStatus(available=reason is None, database=default_database(), reason=reason)
+
+
+@app.post("/connect/platform", response_model=ConnectResponse)
+def connect_platform(req: PlatformConnectRequest, request: Request):
+    """Open a session as the platform user who sent this request.
+
+    The session authenticates with the gateway-forwarded JWT rather than a
+    password, so it sees exactly what the user's platform permissions allow
+    and the service stores no credential. The coordinator validates the JWT
+    on the first call; a rejected one is a 401 the UI turns into "sign in
+    again". The target is server configuration only — never the request —
+    so the SSRF guard ``/connect`` applies to user-supplied URLs is not
+    needed here.
+    """
+    t0 = time.perf_counter()
+    database = req.database or default_database()
+
+    def _fail(status: int, error: str, message: str, *, error_type: str) -> HTTPException:
+        log_endpoint_timing(
+            "/connect/platform",
+            round((time.perf_counter() - t0) * 1000, 1),
+            status="error",
+            database=database,
+            error_type=error_type,
+        )
+        return HTTPException(status_code=status, detail={"error": error, "message": message})
+
+    reason = _platform_unavailable_reason(request)
+    endpoint = platform_endpoint()
+    token = forwarded_token(request)
+    if reason is not None or endpoint is None or token is None:
+        raise _fail(
+            404,
+            "platform_session_unavailable",
+            f"Cannot use the platform login: {reason}. Connect with credentials instead.",
+            error_type="unavailable",
+        )
+
+    verify = platform_tls_verify()
+    client = _resolve_arango_client()(hosts=endpoint, verify_override=verify)
+
+    def _open(name: str) -> StandardDatabase:
+        try:
+            return open_platform_database(client, name, token)
+        except PlatformTokenError as e:
+            client.close()
+            _svc_logger.warning("platform connect refused for db=%r: %s", name, e)
+            raise _fail(
+                401,
+                "platform_login_rejected",
+                f"Cannot open a session with your platform login: {e}. Sign in to the platform again.",
+                error_type="unusable_token",
+            ) from e
+
+    # The databases *this user* may open — ``/_api/database/user``, not
+    # ``_system.databases()``, which needs _system access a platform user
+    # usually lacks. ``None`` when the listing itself fails.
+    def _accessible(db: StandardDatabase) -> list[str] | None:
+        try:
+            names: list[str] = list(db.databases_accessible_to_user())
+        except Exception as exc:
+            _svc_logger.warning("listing accessible databases failed: %s", exc)
+            return None
+        return sorted(names)
+
+    accessible: list[str] | None = None
+    if req.database is None:
+        accessible = _accessible(_open("_system"))
+        database = choose_database(accessible)
+
+    db = _open(database)
+    try:
+        # Force an authenticated round-trip — ``.db()`` is lazy, so the
+        # coordinator only validates the forwarded JWT on the first call.
+        db.version()
+    except Exception as e:
+        client.close()
+        code = getattr(e, "http_code", None)
+        detail = _describe_connect_error(e)
+        _svc_logger.warning("platform connect failed for db=%r (HTTP %s): %s", database, code, detail)
+        if code in (401, 403):
+            raise _fail(
+                401,
+                "platform_login_rejected",
+                f"The cluster refused your platform login for database {database!r}. "
+                "Sign in to the platform again, or pick a database you can access.",
+                error_type="rejected",
+            ) from e
+        if code == 404:
+            raise _fail(
+                404,
+                "unknown_database",
+                f"Database {database!r} does not exist on this cluster.",
+                error_type="unknown_database",
+            ) from e
+        cause = probe_endpoint(endpoint, token, verify)
+        _svc_logger.warning(
+            "platform endpoint %s unreachable (tls_verify=%s): %s",
+            describe_endpoint(endpoint),
+            "bundle" if isinstance(verify, str) else verify,
+            cause,
+        )
+        raise _fail(
+            502,
+            "cluster_unreachable",
+            f"Could not reach the cluster at {describe_endpoint(endpoint)} for database "
+            f"{database!r}: {detail} — {cause}",
+            error_type=type(e).__name__,
+        ) from e
+
+    if accessible is None:
+        accessible = _accessible(db)
+    databases = list(accessible or [])
+    if database not in databases:
+        databases.append(database)
+
+    _evict_lru()
+    session_token = secrets.token_urlsafe(32)
+    _sessions[session_token] = _Session(token=session_token, db=db, client=client, platform_token=token)
+
+    log_endpoint_timing(
+        "/connect/platform",
+        round((time.perf_counter() - t0) * 1000, 1),
+        database=database,
+        requested=req.database is not None,
+        databases_visible=len(databases),
+    )
+    return ConnectResponse(token=session_token, databases=databases, database=database)
 
 
 @app.post("/disconnect")

@@ -301,6 +301,8 @@ that already speak our shape.
 | `POST` | `/connect` | open or session | Open an ArangoDB session (URL+credentials → session token); SSRF-guarded |
 | `POST` | `/disconnect` | session | Close the session |
 | `GET`  | `/connect/defaults` | none in dev / session in public mode | Return non-secret env-var defaults the connect dialog should pre-fill |
+| `GET`  | `/connect/platform` | gateway-forwarded platform JWT | Whether the Workbench can skip the connect dialog — true behind the Arango Platform gateway (BYOC). Returns `{available, database, reason}`, no credential/endpoint — see §15.8 |
+| `POST` | `/connect/platform` | gateway-forwarded platform JWT | Open a session as the signed-in platform user (JWT authenticates server-side; no password reaches the browser). Returns a session token + the opened database — see §15.8 |
 | `GET`  | `/graphs` | session | List the connected database's ArangoDB named graphs (topology graphs) available for collection-scope down-select — see §6.8 |
 | `POST` | `/session/graph` | session | Bind (or clear) the active ArangoDB named-graph scope for this session — see §6.8 |
 | `POST` | `/translate` | rate-limited | SPARQL → AQL only (no DB access) |
@@ -3165,6 +3167,24 @@ baking the mount prefix into the bundle when the bundle is built.
   Pre-flight refuses a bundle whose `entrypoint` does not start with the
   literal token. Verification does *not* yet check that `ROOT_PATH` is set;
   that is tracked as a drift alert.
+* **Platform login (no dialog).** Behind the platform gateway the Workbench
+  MUST open its session from the signed-in platform user, not a credentials
+  form. The gateway forwards that user's platform JWT as `Authorization:
+  Bearer`, and the operator injects the coordinator address as
+  `ARANGO_DEPLOYMENT_ENDPOINT`; the service opens the ArangoDB session with the
+  JWT (`auth_method="jwt"`) **server-side**, so no password reaches the
+  browser. `GET /connect/platform` reports availability and the default
+  database (the instance's mount DB → `ARANGO_DB` → `_system`); when available,
+  the UI calls `POST /connect/platform` on load and the user only picks a
+  database and a graph (or all collections). A platform session re-binds to the
+  caller's forwarded JWT on every request, because the gateway rotates it. The
+  path is on by default and disabled with `ARANGO_SPARQL_PLATFORM_AUTH=off`;
+  off the platform the service falls back to `/connect/defaults` and the manual
+  dialog. Mirrors `arango-cypher-py`'s platform-login contract. The
+  operator-injected endpoint serves a cluster-CA certificate the container does
+  not trust by default, so TLS to it is unverified unless
+  `ARANGO_SPARQL_PLATFORM_CA_BUNDLE` / `ARANGO_SPARQL_PLATFORM_VERIFY_TLS` say
+  otherwise (Appendix A).
 * **Update.** The platform has no in-place update, so an update MUST upload
   the new build *before* deleting the running service. A bad artifact then
   fails while the old version is still serving.
@@ -3539,6 +3559,17 @@ supplies them per `/connect`).
 | `ARANGO_CA_BUNDLE_PATH` | empty | no | Path to PEM bundle for ArangoOasis or self-signed clusters |
 | `ARANGO_POOL_SIZE` | `16` | no | python-arango connection pool size per tenant |
 | `ARANGO_SPARQL_SKIP_DB_BOOTSTRAP` | `false` | no | Opt out of the boot-time `ARANGO_DB` auto-create (below). For operators who provision databases out-of-band. |
+
+**Platform sessions (BYOC, §15.8).** On the Arango Platform the Workbench
+opens a session from the gateway-forwarded platform JWT — no credentials form.
+These are server/operator configuration, never taken from a request:
+
+| Env var | Default | Required? | Description |
+| --- | --- | --- | --- |
+| `ARANGO_SPARQL_PLATFORM_AUTH` | `auto` (on) | no | `off`/`0`/`false`/`no` disables platform sessions entirely (the manual connect dialog still works) |
+| `ARANGO_DEPLOYMENT_ENDPOINT` | empty | injected by the platform operator | Coordinator address a platform session connects to; falls back to `ARANGO_URL`. A platform session is available only when this (or `ARANGO_URL`) is set *and* the request carried a forwarded JWT |
+| `ARANGO_SPARQL_PLATFORM_CA_BUNDLE` | empty | no | PEM path for the cluster CA that signs the operator endpoint's certificate; when set, TLS to the endpoint is verified against it |
+| `ARANGO_SPARQL_PLATFORM_VERIFY_TLS` | `auto` | no | `on` insists on TLS verification; `off` disables it. `auto` verifies an explicitly configured `ARANGO_URL` but not the operator-injected in-cluster endpoint (cluster-CA cert the container does not trust by default) |
 
 **Database bootstrap.** ArangoDB never auto-creates a database, so
 pointing `ARANGO_DB` at a fresh database would otherwise fail every
