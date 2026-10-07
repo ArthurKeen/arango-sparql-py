@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import {
   connect,
+  connectPlatform,
   disconnect,
   getConnectDefaults,
+  getPlatformStatus,
   schemaIntrospect,
   type ConnectDefaults,
+  type PlatformStatus,
   type SchemaIntrospectResponse,
 } from "../api/client";
 import type { Action, ConnectionState, SchemaWarning } from "../api/store";
@@ -83,6 +86,8 @@ export default function ConnectionDialog({
     password: "",
   });
   const [open, setOpen] = useState(false);
+  // null until GET /connect/platform answers (or fails on an older backend).
+  const [platform, setPlatform] = useState<PlatformStatus | null>(null);
   const autoConnectAttempted = useRef(false);
 
   useEffect(() => {
@@ -96,7 +101,33 @@ export default function ConnectionDialog({
     }
   }, [connection.status, connection.url, connection.database, connection.username]);
 
+  // On the platform the user is already signed in: open a session with that
+  // login and skip the credentials dialog entirely. Off the platform (local
+  // dev, or a backend without /connect/platform) fall back to the .env
+  // defaults and their optional password auto-connect.
   useEffect(() => {
+    getPlatformStatus()
+      .then((status) => {
+        setPlatform(status);
+        if (status.available) {
+          if (!autoConnectAttempted.current && connection.status === "disconnected") {
+            autoConnectAttempted.current = true;
+            // No database named: the server opens one this user can open
+            // (the mount database when possible) and says which.
+            doPlatformConnect();
+          }
+          return;
+        }
+        loadDefaults();
+      })
+      .catch((err) => {
+        console.warn("Platform login check failed; using the connect dialog:", err);
+        loadDefaults();
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function loadDefaults() {
     getConnectDefaults()
       .then((defaults: ConnectDefaults) => {
         const newForm = {
@@ -120,14 +151,13 @@ export default function ConnectionDialog({
         }
       })
       .catch((err) => {
-        // /connect/defaults may not be implemented on the SPARQL
-        // backend yet (the endpoint is documented as future-work in
-        // models.py). Surface in the console rather than silently
-        // dropping — the form falls back to its hardcoded defaults.
+        // /connect/defaults is 404 in public mode (and omits the password
+        // unless ARANGO_SPARQL_EXPOSE_DEFAULTS_PASSWORD=1). Surface in the
+        // console rather than silently dropping — the form falls back to its
+        // hardcoded defaults.
         console.warn("Failed to load /connect/defaults:", err);
       });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }
 
   async function doConnect(f: typeof form) {
     dispatch({
@@ -158,6 +188,41 @@ export default function ConnectionDialog({
       // the post-connect render; error path logs and degrades to
       // "no schema loaded" rather than rolling back the connection.
       void doAutoIntrospect(resp.token, f.database);
+    } catch (err) {
+      dispatch({
+        type: "CONNECT_ERROR",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  // Open a session as the signed-in platform user — no credentials. The
+  // platform session's cluster is the one serving this page; its origin
+  // labels the connection. The server chooses (or confirms) the database and
+  // reports it in resp.database, which is what we introspect and store.
+  async function doPlatformConnect(database?: string) {
+    const url = window.location.origin;
+    dispatch({
+      type: "CONNECT_START",
+      url,
+      database: database ?? platform?.database ?? "",
+      username: "",
+    });
+    try {
+      const resp = await connectPlatform(database);
+      const opened = resp.database || database || platform?.database || "";
+      dispatch({
+        type: "CONNECT_SUCCESS",
+        token: resp.token,
+        databases: resp.databases,
+        url,
+        database: opened,
+        username: "",
+        password: "",
+        platform: true,
+      });
+      setOpen(false);
+      void doAutoIntrospect(resp.token, opened);
     } catch (err) {
       dispatch({
         type: "CONNECT_ERROR",
@@ -201,6 +266,23 @@ export default function ConnectionDialog({
   async function handleSwitchDb(newDb: string) {
     if (newDb === connection.database) return;
 
+    // Platform session: reconnect through /connect/platform (no credentials).
+    // Open the new session first, then tear down the old one — doPlatformConnect
+    // dispatches CONNECT_START, which nulls the old token so DB-keyed effects
+    // bail instead of firing against the new DB with the dead token.
+    if (connection.platform) {
+      const oldToken = connection.token;
+      await doPlatformConnect(newDb);
+      if (oldToken) {
+        try {
+          await disconnect(oldToken);
+        } catch {
+          /* best-effort */
+        }
+      }
+      return;
+    }
+
     if (connection.token) {
       try {
         await disconnect(connection.token);
@@ -232,7 +314,11 @@ export default function ConnectionDialog({
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
           <span
             className="text-gray-400 text-xs truncate max-w-[200px]"
-            title={connection.url}
+            title={
+              connection.platform
+                ? `${connection.url} — signed in with your platform login`
+                : connection.url
+            }
           >
             {connection.url.replace(/^https?:\/\//, "")}/
           </span>
@@ -264,6 +350,36 @@ export default function ConnectionDialog({
 
   if (!open && connection.status === "connecting") {
     return <span className="text-sm text-gray-400">Connecting...</span>;
+  }
+
+  if (!open && platform?.available) {
+    // Signed in to the platform: reconnecting needs no credentials. The
+    // dialog stays reachable for a different cluster.
+    return (
+      <div className="flex items-center gap-3 text-sm">
+        {connection.error && (
+          <span
+            role="alert"
+            className="text-xs text-red-400 max-w-[360px] truncate"
+            title={connection.error}
+          >
+            {connection.error}
+          </span>
+        )}
+        <button
+          onClick={() => doPlatformConnect()}
+          className="px-3 py-1.5 text-sm rounded bg-indigo-600 hover:bg-indigo-500 text-white transition-colors"
+        >
+          Connect
+        </button>
+        <button
+          onClick={() => setOpen(true)}
+          className="text-xs text-gray-400 hover:text-gray-200 underline-offset-2 hover:underline"
+        >
+          Use credentials
+        </button>
+      </div>
+    );
   }
 
   if (!open) {

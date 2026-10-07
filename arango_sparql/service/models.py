@@ -71,6 +71,37 @@ class ConnectRequest(BaseModel):
 class ConnectResponse(BaseModel):
     token: str
     databases: list[str]
+    # The database the session opened. ``/connect/platform`` chooses it when
+    # the request names none (the mount database may not be one the user can
+    # open), so the UI learns which DB it actually landed in. ``None`` on the
+    # classic ``/connect`` path keeps backward compatibility for older callers.
+    database: str | None = None
+
+
+class PlatformConnectRequest(BaseModel):
+    """Request body for ``POST /connect/platform``.
+
+    Only the (optional) database name — the credential is the gateway-
+    forwarded platform JWT, never a field. ``None`` lets the server open the
+    database this user can best open (the instance's mount database).
+    """
+
+    database: str | None = Field(default=None, max_length=_MAX_FIELD_LENGTH)
+
+
+class PlatformStatus(BaseModel):
+    """Response body for ``GET /connect/platform``.
+
+    ``available`` is true only when the service can open a session from the
+    forwarded platform login (platform auth on, a cluster endpoint
+    configured, and a forwarded JWT on the request). ``database`` is the DB a
+    platform session would open by default; ``reason`` explains an
+    unavailable status. Discloses no credential and no endpoint.
+    """
+
+    available: bool
+    database: str
+    reason: str | None = None
 
 
 class BindGraphRequest(BaseModel):

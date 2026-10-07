@@ -23,6 +23,9 @@ export interface ConnectRequest {
 export interface ConnectResponse {
   token: string;
   databases: string[];
+  // The database the session opened. /connect/platform chooses it when the
+  // request names none (the mount database may not be one the user can open).
+  database?: string | null;
 }
 
 export interface ConnectDefaults {
@@ -30,6 +33,15 @@ export interface ConnectDefaults {
   database: string;
   username: string;
   password?: string;
+}
+
+export interface PlatformStatus {
+  // True when the Workbench can open a session from the platform login the
+  // gateway forwarded — no credentials dialog needed.
+  available: boolean;
+  // The database a platform session opens by default: the instance's mount.
+  database: string;
+  reason?: string | null;
 }
 
 export interface TranslateRequest {
@@ -190,6 +202,21 @@ export async function connect(req: ConnectRequest): Promise<ConnectResponse> {
   return request("/connect", {
     method: "POST",
     body: JSON.stringify(req),
+  });
+}
+
+// Whether the Workbench can skip the connect dialog and open a session from
+// the platform login the gateway forwarded (BYOC / Container Manager).
+export async function getPlatformStatus(): Promise<PlatformStatus> {
+  return request("/connect/platform");
+}
+
+// Open a session as the signed-in platform user. No credentials: the gateway
+// forwards the platform login with the request.
+export async function connectPlatform(database?: string): Promise<ConnectResponse> {
+  return request("/connect/platform", {
+    method: "POST",
+    body: JSON.stringify(database ? { database } : {}),
   });
 }
 

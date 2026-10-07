@@ -52,6 +52,14 @@ service = [
   "typer>=0.9.0",
   "rich>=13.0.0",
   "python-dotenv>=1.0.0",
+  # Platform (BYOC) sessions: the Workbench opens a session as the signed-in
+  # platform user from the gateway-forwarded JWT (arango_sparql/service/
+  # platform_auth.py). PyJWT narrows python-arango's local token decode;
+  # requests runs the post-failure endpoint probe. Both are pulled in
+  # transitively by python-arango, but platform_auth imports them directly, so
+  # they are declared here (matches arango-cypher-py's service deps).
+  "PyJWT>=2.0",
+  "requests>=2.28",
 ]
 cli = [
   "typer>=0.9.0",

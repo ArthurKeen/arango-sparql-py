@@ -23,6 +23,9 @@ export interface ConnectionState {
   password: string;
   databases: string[];
   error: string | null;
+  // True when the session was opened via the platform login (no credentials):
+  // database switches reconnect through /connect/platform, not /connect.
+  platform?: boolean;
 }
 
 export type ResultTab = "table" | "json" | "graph" | "explain" | "profile";
@@ -210,6 +213,7 @@ export const initialState: AppState = {
     password: "",
     databases: [],
     error: null,
+    platform: false,
   },
   sparql: DEFAULT_SPARQL,
   ontologyTtl: "",
@@ -257,6 +261,7 @@ export type Action =
       database: string;
       username: string;
       password: string;
+      platform?: boolean;
     }
   | { type: "CONNECT_ERROR"; error: string }
   | { type: "DISCONNECT" }
@@ -368,6 +373,7 @@ function reducer(state: AppState, action: Action): AppState {
           password: action.password,
           databases: action.databases,
           error: null,
+          platform: action.platform ?? false,
         },
       };
     case "CONNECT_ERROR":
@@ -388,6 +394,7 @@ function reducer(state: AppState, action: Action): AppState {
           token: null,
           databases: [],
           error: null,
+          platform: false,
         },
         results: null,
         // Explain/profile are session-scoped (they hit a live DB); drop
