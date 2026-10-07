@@ -18,7 +18,7 @@ import {
   closeBracketsKeymap,
 } from "@codemirror/autocomplete";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { oneDark } from "./theme";
+import { editorTheme } from "./theme";
 import { sparql } from "../lang/sparql";
 import { sparqlCompletionSource, sparqlHoverInfo } from "../lang/sparqlComplete";
 
@@ -155,7 +155,7 @@ export default function SparqlEditor({
         sparql(),
         autocompletion({ override: [sparqlCompletionSource] }),
         sparqlCurieHover,
-        oneDark,
+        editorTheme,
         keymap.of([
           ...closeBracketsKeymap,
           ...completionKeymap,
@@ -180,9 +180,9 @@ export default function SparqlEditor({
             padding: "2px 8px",
             fontFamily: "monospace",
             fontSize: "11px",
-            color: "#93c5fd",
-            backgroundColor: "#0b1220",
-            border: "1px solid #1e293b",
+            color: "var(--cm-function)",
+            backgroundColor: "var(--cm-panel-bg)",
+            border: "1px solid var(--cm-border)",
             borderRadius: "4px",
             maxWidth: "480px",
             wordBreak: "break-all",

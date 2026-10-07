@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import cytoscape from "cytoscape";
 import type { Core } from "cytoscape";
+import { CATEGORICAL, graphPalette, type GraphPalette } from "../theme/graphPalette";
+import { useTheme } from "../theme/theme";
 import type { OwlClass, OwlProperty } from "../api/client";
 import {
   buildSchemaModel,
@@ -32,10 +34,65 @@ interface Props {
   counts?: Record<string, number>;
 }
 
-const NODE_COLORS = [
-  "#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
-  "#06b6d4", "#ec4899", "#84cc16",
-];
+// Arango categorical set (brand green first; red reserved for errors).
+const NODE_COLORS = CATEGORICAL;
+
+// Labels, edges and highlight follow the active theme (ported from
+// arango-cypher-py's schema canvas) so they stay legible on the canvas.
+function schemaStyle(p: GraphPalette): cytoscape.StylesheetJson {
+  return [
+    {
+      selector: "node",
+      style: {
+        label: "data(label)",
+        "background-color": "data(color)",
+        "text-valign": "bottom",
+        "text-halign": "center",
+        "font-size": "10px",
+        color: p.text,
+        "text-margin-y": 6,
+        width: 36,
+        height: 36,
+        "border-width": 2,
+        "border-color": "data(color)",
+        "border-opacity": 0.4,
+      },
+    },
+    {
+      selector: "edge",
+      style: {
+        width: "data(width)",
+        "line-color": p.edge,
+        "target-arrow-color": p.edge,
+        "target-arrow-shape": "triangle",
+        "curve-style": "bezier",
+        label: "data(label)",
+        "font-size": "9px",
+        color: p.textSecondary,
+        "text-background-color": p.canvas,
+        "text-background-opacity": 0.85,
+        "text-background-padding": "3px",
+        "text-rotation": "autorotate",
+      },
+    },
+    {
+      selector: "edge[?bundled]",
+      style: { "line-style": "solid", "line-color": p.edgeStrong },
+    },
+    {
+      selector: ".dim",
+      style: { opacity: 0.12, "text-opacity": 0.12 },
+    },
+    {
+      selector: "node.match",
+      style: { "border-width": 4, "border-color": p.warning, "border-opacity": 1 },
+    },
+    {
+      selector: "edge.match",
+      style: { "line-color": p.warning, "target-arrow-color": p.warning },
+    },
+  ];
+}
 
 type Selection =
   | { kind: "bundle"; bundle: SchemaBundle; sourceLabel: string; targetLabel: string }
@@ -44,6 +101,11 @@ type Selection =
 
 export default function CytoscapeSchemaGraph({ classes, properties, counts }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [theme] = useTheme();
+  const palette = graphPalette(theme);
+  // The canvas is rebuilt per model (effect below); the ref hands it the
+  // palette current at build time, and the restyle effect keeps it fresh.
+  const paletteRef = useRef(palette);
   const cyRef = useRef<Core | null>(null);
   const modelRef = useRef<SchemaGraphModel | null>(null);
 
@@ -106,62 +168,7 @@ export default function CytoscapeSchemaGraph({ classes, properties, counts }: Pr
         gravity: 0.3,
         padding: 40,
       } as cytoscape.LayoutOptions,
-      style: [
-        {
-          selector: "node",
-          style: {
-            label: "data(label)",
-            "background-color": "data(color)",
-            "text-valign": "bottom",
-            "text-halign": "center",
-            "font-size": "10px",
-            color: "#d1d5db",
-            "text-margin-y": 6,
-            width: 36,
-            height: 36,
-            "border-width": 2,
-            "border-color": "data(color)",
-            "border-opacity": 0.4,
-          } as cytoscape.Css.Node,
-        },
-        {
-          selector: "edge",
-          style: {
-            width: "data(width)",
-            "line-color": "#4b5563",
-            "target-arrow-color": "#4b5563",
-            "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            label: "data(label)",
-            "font-size": "9px",
-            color: "#9ca3af",
-            "text-background-color": "#111827",
-            "text-background-opacity": 0.85,
-            "text-background-padding": "3px",
-            "text-rotation": "autorotate",
-          } as cytoscape.Css.Edge,
-        },
-        {
-          selector: "edge[?bundled]",
-          style: { "line-style": "solid", "line-color": "#6b7280" } as cytoscape.Css.Edge,
-        },
-        {
-          selector: ".dim",
-          style: { opacity: 0.12, "text-opacity": 0.12 } as cytoscape.Css.Node,
-        },
-        {
-          selector: "node.match",
-          style: {
-            "border-width": 4,
-            "border-color": "#fbbf24",
-            "border-opacity": 1,
-          } as cytoscape.Css.Node,
-        },
-        {
-          selector: "edge.match",
-          style: { "line-color": "#fbbf24", "target-arrow-color": "#fbbf24" } as cytoscape.Css.Edge,
-        },
-      ],
+      style: schemaStyle(paletteRef.current),
       minZoom: 0.15,
       maxZoom: 5,
     });
@@ -200,6 +207,12 @@ export default function CytoscapeSchemaGraph({ classes, properties, counts }: Pr
       cyRef.current = null;
     };
   }, [model, labelById]);
+
+  // A theme toggle restyles in place: positions, zoom and highlight survive.
+  useEffect(() => {
+    paletteRef.current = palette;
+    cyRef.current?.style(schemaStyle(palette));
+  }, [palette]);
 
   // Apply search highlight / node focus without rebuilding the graph
   // (PRD §10.18 — paint on the stable layout, never relayout).

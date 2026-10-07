@@ -21,7 +21,7 @@ import PrefixManager from "./components/PrefixManager";
 import type { Command } from "./utils/commandPalette";
 import { setSparqlSchemaContext } from "./lang/sparqlComplete";
 import { physicalMappingOf } from "./utils/mappingWire";
-import { useTheme } from "./hooks/useTheme";
+import ThemeToggle from "./components/ThemeToggle";
 import { t } from "./i18n";
 import { useAppState } from "./api/store";
 import {
@@ -35,7 +35,7 @@ import {
   listGraphs,
   bindGraph,
   isAuthError,
-  schemaForceReacquire,
+  schemaIntrospect,
   type GraphInfo,
 } from "./api/client";
 import {
@@ -97,7 +97,6 @@ export default function App() {
   const [autoOpenOnError, setAutoOpenOnError] = useState(() =>
     loadBool("qi_auto_open_error", true),
   );
-  const theme = useTheme();
   const [nlInput, setNlInput] = useState("");
   const [nlSamples, setNlSamples] = useState<string[]>([]);
   const [graphs, setGraphs] = useState<GraphInfo[]>([]);
@@ -264,12 +263,19 @@ export default function App() {
     }
   }, [dispatch, buildRequest, addToHistory, handleMaybeAuthError]);
 
-  const handleRefreshSchema = useCallback(async () => {
+  // Re-read the schema for the session's current scope. ``force`` (the
+  // "Refresh schema" button) bypasses the cache; a graph pick re-reads the
+  // cached scoped bundle. Both go through GET /schema/introspect with
+  // include_owl so the ontology editor — which drives translation and NL —
+  // follows the new scope. (POST /schema/force-reacquire never returned OWL,
+  // so graph scoping used to have no effect on translation.) Mirrors
+  // arango-cypher-py: Refresh = introspect?force=true, graph pick = unforced.
+  const handleRefreshSchema = useCallback(async (force: boolean = true) => {
     if (!state.connection.token) return;
     dispatch({ type: "SCHEMA_REFRESH_START" });
     try {
-      const resp = await schemaForceReacquire(state.connection.token, {
-        database: state.connection.database,
+      const resp = await schemaIntrospect(state.connection.token, {
+        force,
         include_owl: true,
         include_statistics: true,
       });
@@ -282,7 +288,7 @@ export default function App() {
           message: w.message,
           install_hint: w.install_hint,
         })),
-        cacheHit: false,
+        cacheHit: !!resp.cache_hit,
       });
       // If the analyzer emitted inline OWL, prefill the editor so
       // the user sees the freshly-acquired ontology without
@@ -302,12 +308,7 @@ export default function App() {
       });
       handleMaybeAuthError(err);
     }
-  }, [
-    dispatch,
-    state.connection.token,
-    state.connection.database,
-    handleMaybeAuthError,
-  ]);
+  }, [dispatch, state.connection.token, handleMaybeAuthError]);
 
   // Bind (or clear) the named-graph scope, then re-acquire the schema so
   // the ontology / mapping / NL suggestions reflect the narrowed set of
@@ -321,7 +322,7 @@ export default function App() {
       try {
         await bindGraph(graphName, token);
         setGraphScope(graphName);
-        await handleRefreshSchema();
+        await handleRefreshSchema(false);
       } catch (err) {
         setGraphError(err instanceof Error ? err.message : String(err));
         handleMaybeAuthError(err);
@@ -925,12 +926,14 @@ export default function App() {
       </div>
       <header className="flex items-center justify-between px-4 py-2 bg-gray-900 border-b border-gray-800">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold text-gray-100 tracking-tight">
+          <h1 className="text-sm font-semibold text-gray-50 tracking-tight">
             {t("app.title")}
           </h1>
           <span className="text-gray-600 text-xs">|</span>
           <ConnectionDialog
             connection={state.connection}
+            introspecting={state.schema.refreshing}
+            onRefreshSchema={() => void handleRefreshSchema(true)}
             dispatch={dispatch}
             onSchemaLoaded={(turtle) => {
               if (turtle) {
@@ -938,26 +941,7 @@ export default function App() {
               }
             }}
           />
-          {isConnected && (
-            <GraphSelector
-              graphs={graphs}
-              selection={graphScope}
-              loading={graphBusy}
-              onSelect={handleSelectGraph}
-              error={graphError}
-            />
-          )}
-          {isConnected && (
-            <button
-              onClick={handleRefreshSchema}
-              disabled={state.schema.refreshing}
-              className="px-2 py-1 text-[11px] rounded bg-gray-800 text-gray-400 hover:text-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              title="Force re-acquire of the schema mapping (POST /schema/force-reacquire)"
-            >
-              {state.schema.refreshing ? "Refreshing\u2026" : "Refresh schema"}
-            </button>
-          )}
-          {state.schema.cacheHit && !state.schema.refreshing && (
+          {isConnected && state.schema.cacheHit && !state.schema.refreshing && (
             <span
               className="text-[10px] text-gray-500 tabular-nums"
               title="Last /schema/introspect was served from the L1 cache"
@@ -975,6 +959,16 @@ export default function App() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {isConnected && (
+            <GraphSelector
+              graphs={graphs}
+              selection={graphScope}
+              loading={graphBusy}
+              onSelect={handleSelectGraph}
+              error={graphError}
+            />
+          )}
+          <ThemeToggle />
           <SettingsMenu
             showMapping={showMapping}
             onToggleMapping={() => setShowMapping((v) => !v)}
@@ -988,8 +982,6 @@ export default function App() {
             historyCount={state.history.length}
             autoOpenOnError={autoOpenOnError}
             onToggleAutoOpenOnError={() => setAutoOpenOnError((v) => !v)}
-            themeMode={theme.mode}
-            onCycleTheme={theme.cycle}
           />
         </div>
       </header>
@@ -1073,26 +1065,6 @@ export default function App() {
             busy={busy}
             suggestions={nlSuggestions}
             onPickSuggestion={setNlInput}
-            contextSlot={
-              <>
-                {graphScope && (
-                  <span
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-indigo-600/20 text-indigo-300 border border-indigo-600/30"
-                    title="Named-graph scope in effect"
-                  >
-                    graph: {graphScope}
-                  </span>
-                )}
-                {!isConnected && (
-                  <span
-                    className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-900/30 text-amber-400 border border-amber-800/40"
-                    title="Send will generate SPARQL + AQL; connect to also run it"
-                  >
-                    not connected &middot; Send generates only
-                  </span>
-                )}
-              </>
-            }
             statusSlot={
               stage !== "idle" ? (
                 <span
@@ -1110,6 +1082,10 @@ export default function App() {
                   {state.nlInfo.llmCalls} call
                   {state.nlInfo.llmCalls === 1 ? "" : "s"}
                   {state.nlInfo.repaired ? " \u00b7 repaired" : ""}
+                </span>
+              ) : !isConnected ? (
+                <span className="text-[10px] text-amber-600/80 truncate">
+                  {t("status.notConnected")}
                 </span>
               ) : null
             }
@@ -1131,19 +1107,6 @@ export default function App() {
 
           {/* L0 — per-result affordance chips (Phase 3) */}
           <ResultAffordances affordances={affordances} onSelect={handleAffordance} />
-
-          {/* L0 — results are the primary surface and fill the space */}
-          <div className="flex-1 min-h-0">
-            <ResultsPanel
-              results={state.results}
-              warnings={state.warnings}
-              activeTab={state.activeResultTab}
-              dispatch={dispatch}
-              execMs={state.execMs}
-              explainPlan={state.explainPlan}
-              profileData={state.profileData}
-            />
-          </div>
 
           {/* L1 — collapsible query inspector (SPARQL | AQL) */}
           <QueryInspector
@@ -1167,6 +1130,19 @@ export default function App() {
             sparqlPane={sparqlPane}
             aqlPane={aqlPane}
           />
+
+          {/* L0 — results are the primary surface; fill the space the inspector leaves */}
+          <div className="flex-1 min-h-0 border-t border-gray-800">
+            <ResultsPanel
+              results={state.results}
+              warnings={state.warnings}
+              activeTab={state.activeResultTab}
+              dispatch={dispatch}
+              execMs={state.execMs}
+              explainPlan={state.explainPlan}
+              profileData={state.profileData}
+            />
+          </div>
         </div>
       </div>
 

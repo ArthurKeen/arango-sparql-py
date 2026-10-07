@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import cytoscape from "cytoscape";
 import type { Core, EventObject, NodeSingular } from "cytoscape";
+import { CATEGORICAL, graphPalette, type GraphPalette } from "../theme/graphPalette";
+import { useTheme } from "../theme/theme";
 
 // CytoscapeGraph — RDF-aware variant of the Cypher UI's CytoscapeGraph.
 //
@@ -58,18 +60,77 @@ interface Props {
   onBackgroundClick?: () => void;
 }
 
-const NODE_COLORS = [
-  "#6366f1",
-  "#10b981",
-  "#f59e0b",
-  "#ef4444",
-  "#8b5cf6",
-  "#06b6d4",
-  "#ec4899",
-  "#84cc16",
-];
+// Namespace colours: the Arango categorical set (theme-independent mid-tones
+// that read on both canvases; brand green first, red reserved for errors).
+const NODE_COLORS = CATEGORICAL;
 
-const LITERAL_COLOR = "#6b7280";
+// Literals stay neutral so entity colours carry the meaning (same muted grey
+// in day and night palettes).
+const LITERAL_COLOR = "#9a9a9a";
+
+// Labels, edges and selection come from the active theme (ported from
+// arango-cypher-py's graphStyle) so they stay legible on the canvas.
+function graphStyle(p: GraphPalette): cytoscape.StylesheetJson {
+  return [
+    {
+      selector: "node",
+      style: {
+        label: "data(label)",
+        "background-color": "data(color)",
+        "text-valign": "bottom",
+        "text-halign": "center",
+        "font-size": "10px",
+        color: p.text,
+        "text-margin-y": 6,
+        width: 36,
+        height: 36,
+        "border-width": 2,
+        "border-color": "data(color)",
+        "border-opacity": 0.4,
+        "text-max-width": "120px",
+        "text-wrap": "ellipsis",
+      },
+    },
+    {
+      selector: "node.literal",
+      style: {
+        shape: "round-rectangle",
+        "background-opacity": 0.6,
+        width: "label",
+        height: 20,
+        padding: "4px",
+        "border-width": 1,
+        "border-style": "dashed",
+        "font-size": "9px",
+      },
+    },
+    {
+      selector: "node.selected",
+      style: {
+        "border-width": 3,
+        "border-color": p.accent,
+        "border-opacity": 1,
+      },
+    },
+    {
+      selector: "edge",
+      style: {
+        width: 1.5,
+        "line-color": p.edge,
+        "target-arrow-color": p.edge,
+        "target-arrow-shape": "triangle",
+        "curve-style": "bezier",
+        label: "data(label)",
+        "font-size": "9px",
+        color: p.textSecondary,
+        "text-background-color": p.canvas,
+        "text-background-opacity": 0.85,
+        "text-background-padding": "3px",
+        "text-rotation": "autorotate",
+      },
+    },
+  ];
+}
 
 function isIri(value: unknown): value is string {
   if (typeof value !== "string") return false;
@@ -301,6 +362,12 @@ export default function CytoscapeGraph({
   const onBackgroundClickRef = useRef(onBackgroundClick);
   onBackgroundClickRef.current = onBackgroundClick;
 
+  const [theme] = useTheme();
+  const palette = graphPalette(theme);
+  // The canvas is built once (mount effect); the ref hands it the palette
+  // current at build time, and the restyle effect below keeps it fresh.
+  const paletteRef = useRef(palette);
+
   const triples = useMemo(() => extractTriples(bindings), [bindings]);
   const { elements } = useMemo(
     () => buildElements(triples, collapseLiterals),
@@ -327,65 +394,7 @@ export default function CytoscapeGraph({
       container: containerRef.current,
       elements: [],
       layout: COSE_LAYOUT,
-      style: [
-        {
-          selector: "node",
-          style: {
-            label: "data(label)",
-            "background-color": "data(color)",
-            "text-valign": "bottom",
-            "text-halign": "center",
-            "font-size": "10px",
-            color: "#d1d5db",
-            "text-margin-y": 6,
-            width: 36,
-            height: 36,
-            "border-width": 2,
-            "border-color": "data(color)",
-            "border-opacity": 0.4,
-            "text-max-width": "120px",
-            "text-wrap": "ellipsis",
-          } as cytoscape.Css.Node,
-        },
-        {
-          selector: "node.literal",
-          style: {
-            shape: "round-rectangle",
-            "background-opacity": 0.6,
-            width: "label",
-            height: 20,
-            padding: "4px",
-            "border-width": 1,
-            "border-style": "dashed",
-            "font-size": "9px",
-          } as cytoscape.Css.Node,
-        },
-        {
-          selector: "node.selected",
-          style: {
-            "border-width": 3,
-            "border-color": "#e5e7eb",
-            "border-opacity": 1,
-          } as cytoscape.Css.Node,
-        },
-        {
-          selector: "edge",
-          style: {
-            width: 1.5,
-            "line-color": "#4b5563",
-            "target-arrow-color": "#4b5563",
-            "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            label: "data(label)",
-            "font-size": "9px",
-            color: "#9ca3af",
-            "text-background-color": "#111827",
-            "text-background-opacity": 0.85,
-            "text-background-padding": "3px",
-            "text-rotation": "autorotate",
-          } as cytoscape.Css.Edge,
-        },
-      ],
+      style: graphStyle(paletteRef.current),
       minZoom: 0.15,
       maxZoom: 5,
     });
@@ -435,6 +444,12 @@ export default function CytoscapeGraph({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A theme toggle restyles in place: positions, zoom and selection survive.
+  useEffect(() => {
+    paletteRef.current = palette;
+    cyRef.current?.style(graphStyle(palette));
+  }, [palette]);
 
   useEffect(() => {
     const cy = cyRef.current;

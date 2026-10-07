@@ -35,6 +35,12 @@ interface Props {
    * directly so the dialog keeps its single-responsibility shape
    * — App.tsx owns the editor / Turtle coupling. */
   onSchemaLoaded?: (turtle: string | null) => void;
+  /** True while a schema read is in flight (auto-introspect on connect or a
+   * refresh) — drives the "Loading schema…" cue in the connection bar. */
+  introspecting?: boolean;
+  /** "Refresh schema": bypass the schema cache and re-read the database.
+   * Owned by App.tsx, which also keeps the ontology editor in sync. */
+  onRefreshSchema?: () => void;
 }
 
 /**
@@ -78,6 +84,8 @@ export default function ConnectionDialog({
   connection,
   dispatch,
   onSchemaLoaded,
+  introspecting = false,
+  onRefreshSchema,
 }: Props) {
   const [form, setForm] = useState({
     url: connection.url,
@@ -283,17 +291,33 @@ export default function ConnectionDialog({
       return;
     }
 
-    if (connection.token) {
+    // Switch within the SAME cluster: reuse the live connection's credentials
+    // rather than `form`. After the initial connect the dialog is closed and
+    // `form.password` may be stale/empty, which would turn a database switch
+    // into a 400 "Connection failed". `connection.*` is the source of truth for
+    // the active session (password is retained on CONNECT_SUCCESS). Mirrors
+    // arango-cypher-py 51be876.
+    const f = {
+      ...form,
+      url: connection.url || form.url,
+      username: connection.username || form.username,
+      password: connection.password || form.password,
+      database: newDb,
+    };
+    setForm(f);
+
+    // Open the new session first, then tear down the old one: doConnect()
+    // dispatches CONNECT_START, which nulls the token so the database-keyed
+    // effects bail instead of firing against the new DB with the dead token.
+    const oldToken = connection.token;
+    await doConnect(f);
+    if (oldToken) {
       try {
-        await disconnect(connection.token);
+        await disconnect(oldToken);
       } catch {
         /* best-effort */
       }
     }
-
-    const f = { ...form, database: newDb };
-    setForm(f);
-    await doConnect(f);
   }
 
   async function handleDisconnect() {
@@ -308,24 +332,31 @@ export default function ConnectionDialog({
   }
 
   if (connection.status === "connected") {
+    // Mirrors arango-cypher-py's connection bar: CLUSTER host · DATABASE
+    // picker · schema status · Refresh schema · Disconnect.
     return (
       <div className="flex items-center gap-3 text-sm">
-        <span className="flex items-center gap-1.5">
+        <span
+          className="flex items-center gap-1.5"
+          title={
+            connection.platform
+              ? `${connection.url} — signed in with your platform login`
+              : connection.url
+          }
+        >
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400" />
-          <span
-            className="text-gray-400 text-xs truncate max-w-[200px]"
-            title={
-              connection.platform
-                ? `${connection.url} — signed in with your platform login`
-                : connection.url
-            }
-          >
-            {connection.url.replace(/^https?:\/\//, "")}/
+          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Cluster</span>
+          <span className="text-gray-300 text-xs truncate max-w-[220px]">
+            {connection.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}
           </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-[10px] text-gray-500 uppercase tracking-wide">Database</span>
           {connection.databases.length > 1 ? (
             <select
               value={connection.database}
               onChange={(e) => handleSwitchDb(e.target.value)}
+              aria-label="Database"
               className="bg-gray-800 border border-gray-600 text-gray-200 text-sm rounded px-1.5 py-0.5 focus:border-indigo-500 focus:outline-none cursor-pointer"
             >
               {connection.databases.map((db) => (
@@ -338,6 +369,24 @@ export default function ConnectionDialog({
             <span className="text-gray-300">{connection.database}</span>
           )}
         </span>
+        {introspecting && (
+          <span className="flex items-center gap-1.5 text-xs text-amber-400 animate-pulse">
+            <svg className="w-3 h-3 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round" />
+            </svg>
+            Loading schema…
+          </span>
+        )}
+        {onRefreshSchema && (
+          <button
+            onClick={onRefreshSchema}
+            disabled={introspecting}
+            title="Bypass the schema cache and re-introspect the database"
+            className="px-2.5 py-1 text-xs rounded bg-gray-800 hover:bg-gray-700 text-gray-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Refresh schema
+          </button>
+        )}
         <button
           onClick={handleDisconnect}
           className="px-2.5 py-1 text-xs rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-colors"

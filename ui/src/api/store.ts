@@ -355,6 +355,12 @@ function reducer(state: AppState, action: Action): AppState {
         connection: {
           ...state.connection,
           status: "connecting",
+          // Drop the previous token: on a DB switch the old session is about
+          // to be closed, and the token+database-keyed effects (graph list,
+          // auto-introspect) would otherwise re-fire against the new DB with
+          // the dead token and 401 — which DISCONNECTs the new session.
+          // Mirrors arango-cypher-py 51be876.
+          token: null,
           url: action.url,
           database: action.database,
           username: action.username,

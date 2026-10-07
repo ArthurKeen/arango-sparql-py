@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { themeModeLabel, type ThemeMode } from "../utils/theme";
 
 // Gear/settings popover (Query Workbench Shell, L2 — PRD §10.16). Holds
 // the workspace-panel triggers (Ontology, Outline, Samples, History) and
@@ -23,8 +22,6 @@ export interface SettingsMenuProps {
   historyCount: number;
   autoOpenOnError: boolean;
   onToggleAutoOpenOnError: () => void;
-  themeMode: ThemeMode;
-  onCycleTheme: () => void;
 }
 
 // Show the Mod-K accelerator with the platform-correct modifier glyph.
@@ -78,7 +75,7 @@ function ToggleRow({
       </span>
       <span
         className={`relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors ${
-          active ? "bg-indigo-600" : "bg-gray-700"
+          active ? "bg-indigo-600" : "bg-gray-500"
         }`}
       >
         <span
@@ -211,16 +208,6 @@ export default function SettingsMenu(props: SettingsMenuProps) {
             description="Reveal the editors when a query fails"
             active={props.autoOpenOnError}
             onClick={props.onToggleAutoOpenOnError}
-          />
-
-          <div className="my-1 border-t border-gray-800" />
-
-          <SectionLabel>Appearance</SectionLabel>
-          {/* Cycles system → dark → light; kept open so users can flip freely. */}
-          <ActionRow
-            label="Theme"
-            badge={themeModeLabel(props.themeMode)}
-            onClick={props.onCycleTheme}
           />
         </div>
       )}
