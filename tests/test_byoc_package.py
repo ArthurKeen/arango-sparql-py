@@ -26,11 +26,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _build(tmp_path: Path, *, root_path: str | None) -> Path:
+def _build(tmp_path: Path, *, root_path: str | None, include_env_file: Path | None = None) -> Path:
     out = tmp_path / "bundle.tar.gz"
     env = {"PACKAGE_NO_UI": "1", "PATH": __import__("os").environ.get("PATH", "")}
     if root_path is not None:
         env["SERVICE_ROOT_PATH"] = root_path
+    if include_env_file is not None:
+        env["PACKAGE_INCLUDE_ENV"] = "1"
+        env["PACKAGE_ENV_FILE"] = str(include_env_file)
     subprocess.run(
         ["bash", str(_SCRIPT), str(out)],
         cwd=str(_REPO),
@@ -98,3 +101,41 @@ def test_arango_byoc_probes_survive_a_no_ui_deploy() -> None:
 
 def _PYPROJECT_TEXT() -> str:
     return (_REPO / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_sanitized_env_bake_keeps_service_keys_and_strips_the_rest(tmp_path: Path) -> None:
+    """PACKAGE_INCLUDE_ENV bakes ONLY an allowlist — publish tokens / test flags
+    in a developer .env must never ship in the deployment artifact (the deploy
+    preflight only catches *_API_KEY, so this packager allowlist is the guard)."""
+    src = tmp_path / "src.env"
+    src.write_text(
+        "# dev env\n"
+        "ARANGO_URL=https://h:8529\n"
+        "ARANGO_PASSWORD=supersecret\n"
+        "ARANGO_SPARQL_PUBLIC_MODE=true\n"
+        "OPENAI_API_KEY=sk-abc\n"
+        "export ARANGO_DB=IAM\n"
+        "PYPI_TOKEN=pypi-xxx\n"
+        "PYPI_PASSWORD=zzz\n"
+        "RUN_EVAL=1\n"
+        "GITHUB_TOKEN=ghp_yyy\n",
+        encoding="utf-8",
+    )
+    tar = _build(tmp_path, root_path="/_service/uds/_db/IAM/arango-sparql-py", include_env_file=src)
+    baked = _member(tar, ".env")
+    assert baked is not None
+    # service keys kept (incl. the needed ARANGO_PASSWORD, an allowed LLM key, and
+    # an `export `-prefixed line)
+    for keep in (
+        "ARANGO_URL=",
+        "ARANGO_PASSWORD=",
+        "ARANGO_SPARQL_PUBLIC_MODE=",
+        "OPENAI_API_KEY=",
+        "ARANGO_DB=IAM",
+    ):
+        assert keep in baked, f"{keep} should be baked"
+    # non-service secrets / flags stripped
+    for leaked in ("PYPI_TOKEN", "PYPI_PASSWORD", "RUN_EVAL", "GITHUB_TOKEN"):
+        assert leaked not in baked, f"{leaked} must not ship in the bundle"
+    # ROOT_PATH still appended alongside the sanitized keys
+    assert "ROOT_PATH=/_service/uds/_db/IAM/arango-sparql-py" in baked

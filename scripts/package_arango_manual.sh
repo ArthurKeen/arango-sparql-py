@@ -73,16 +73,27 @@ else
     echo "==> PACKAGE_NO_UI=1 — shipping bare API (deploy with --no-ui)"
 fi
 
-# --- optional baked .env (secrets — opt-in only) -------------------------------
+# --- optional baked .env (SANITIZED allowlist — opt-in) -----------------------
+# PACKAGE_INCLUDE_ENV=1 bakes ONLY the keys the service actually reads (the
+# allowlist below), so publish tokens (PYPI_*), test flags (RUN_*) or anything
+# else in a developer .env never ships inside a deployment artifact. This is the
+# REAL guard: the arango-byoc-deploy preflight only refuses baked *_API_KEY
+# names, so it would happily let PYPI_TOKEN through. PACKAGE_ENV_FILE overrides
+# the source (default: repo-root .env) so you can bake a deploy-specific file.
+ENV_SRC="${PACKAGE_ENV_FILE:-${REPO_ROOT}/.env}"
+# ARANGO_* = connection + ARANGO_SPARQL_* service config; the rest are
+# CORS / session / LLM / uvicorn. (ROOT_PATH is appended below, not from here.)
+BAKE_ALLOW='^(export +)?(ARANGO_[A-Z0-9_]*|CORS_ALLOWED_ORIGINS|SESSION_TTL_SECONDS|MAX_SESSIONS|OPENAI_API_KEY|ANTHROPIC_API_KEY|OPENROUTER_API_KEY|LLM_PROVIDER|PORT|HOST)='
 if [[ "${PACKAGE_INCLUDE_ENV:-0}" == "1" ]]; then
-    if [[ -f "${REPO_ROOT}/.env" ]]; then
-        cp "${REPO_ROOT}/.env" "${ROOTDIR}/.env"
-        echo "==> Bundled .env (PACKAGE_INCLUDE_ENV=1). Verify it holds no secrets you can't ship."
+    if [[ -f "${ENV_SRC}" ]]; then
+        grep -E "${BAKE_ALLOW}" "${ENV_SRC}" > "${ROOTDIR}/.env" || true
+        echo "==> Baked a SANITIZED .env from ${ENV_SRC} (service keys only; PYPI_*/RUN_* excluded)."
+        echo "    Keys baked: $(cut -d= -f1 "${ROOTDIR}/.env" | sed -E 's/^export +//' | tr '\n' ' ')"
     else
-        echo "==> PACKAGE_INCLUDE_ENV=1 but no .env at repo root — nothing bundled." >&2
+        echo "==> PACKAGE_INCLUDE_ENV=1 but no env file at ${ENV_SRC} — nothing bundled." >&2
     fi
-elif [[ -f "${REPO_ROOT}/.env" ]]; then
-    echo "==> Skipping .env (set PACKAGE_INCLUDE_ENV=1 to bake it; prefer Container Manager UI env for secrets)." >&2
+elif [[ -f "${ENV_SRC}" ]]; then
+    echo "==> Skipping .env (PACKAGE_INCLUDE_ENV=1 bakes a sanitized subset; or set env in the Container Manager UI)." >&2
 fi
 
 # --- bake ROOT_PATH (REQUIRED for a path-prefixed Container Manager mount) -----
