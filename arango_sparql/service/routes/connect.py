@@ -196,6 +196,10 @@ def connect_platform(req: PlatformConnectRequest, request: Request):
         )
 
     verify = platform_tls_verify()
+    # Deviation from the arango-cypher-py mirror: that project reads
+    # ``_svc.ArangoClient`` directly here; this repo routes every client build
+    # through ``_resolve_arango_client()`` (see ``/connect`` above) so the test
+    # monkeypatch seam is identical across both connect paths.
     client = _resolve_arango_client()(hosts=endpoint, verify_override=verify)
 
     def _open(name: str) -> StandardDatabase:
@@ -214,6 +218,11 @@ def connect_platform(req: PlatformConnectRequest, request: Request):
     # The databases *this user* may open — ``/_api/database/user``, not
     # ``_system.databases()``, which needs _system access a platform user
     # usually lacks. ``None`` when the listing itself fails.
+    #
+    # Deviation from the arango-cypher-py mirror: that project wraps the call
+    # in its ``_arango_sync.sync(...)`` typing guard; this repo has no such
+    # module, and its ``/connect`` already lists with a plain ``.databases()``,
+    # so the direct ``list(...)`` keeps the two connect paths consistent.
     def _accessible(db: StandardDatabase) -> list[str] | None:
         try:
             names: list[str] = list(db.databases_accessible_to_user())
