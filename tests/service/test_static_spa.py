@@ -86,3 +86,43 @@ def test_mount_spa_idempotent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     assert mount_spa(app) is True
     assert mount_spa(app) is True  # second call is a no-op, not a duplicate mount
     assert sum(getattr(r, "name", None) == "spa" for r in app.router.routes) == 1
+
+
+# --- cache headers (ported from arango-cypher-py a4716c7) -------------------
+
+
+def test_index_html_is_never_cached_so_a_redeploy_takes_effect(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # The shell names the hashed bundle; a cached shell keeps running the
+    # previous release's UI after a redeploy.
+    _build_ui(tmp_path)
+    monkeypatch.setenv(_UI_ENV, str(tmp_path))
+    app = FastAPI()
+    assert mount_spa(app)
+    client = TestClient(app)
+    for path in ("/", "/index.html"):
+        resp = client.get(path)
+        assert resp.status_code == 200, path
+        assert resp.headers["cache-control"] == "no-cache, no-store, must-revalidate", path
+
+
+def test_hashed_assets_are_immutable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _build_ui(tmp_path)
+    monkeypatch.setenv(_UI_ENV, str(tmp_path))
+    app = FastAPI()
+    assert mount_spa(app)
+    resp = TestClient(app).get("/assets/app.js")
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == "public, max-age=31536000, immutable"
+
+
+def test_other_root_files_keep_the_default_policy(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _build_ui(tmp_path)
+    (tmp_path / "favicon.svg").write_text("<svg/>", encoding="utf-8")
+    monkeypatch.setenv(_UI_ENV, str(tmp_path))
+    app = FastAPI()
+    assert mount_spa(app)
+    resp = TestClient(app).get("/favicon.svg")
+    assert resp.status_code == 200
+    assert "cache-control" not in resp.headers

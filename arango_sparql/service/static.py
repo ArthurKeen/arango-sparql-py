@@ -31,10 +31,40 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+from starlette.types import Scope
 
 logger = logging.getLogger("arango_sparql.service")
 
 _UI_DIR_ENV = "ARANGO_SPARQL_UI_DIR"
+
+# Cache contract for the bundled SPA (ported from arango-cypher-py's
+# service/ui.py, commit a4716c7). index.html names the content-hashed bundle
+# (``assets/index-<hash>.js``), so it must revalidate on every load — otherwise
+# a browser keeps the previous shell after a redeploy and runs stale UI against
+# the new API. The hashed files under ``assets/`` never change at a given name,
+# so they are cacheable for a year.
+_HTML_NO_CACHE = "no-cache, no-store, must-revalidate"
+_ASSET_IMMUTABLE = "public, max-age=31536000, immutable"
+
+
+class _SpaStaticFiles(StaticFiles):
+    """``StaticFiles`` that stamps the SPA cache headers above."""
+
+    def file_response(
+        self,
+        full_path: os.PathLike[str] | str,
+        stat_result: os.stat_result,
+        scope: Scope,
+        status_code: int = 200,
+    ) -> Response:
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        path = Path(full_path)
+        if path.suffix.lower() in (".html", ".htm"):
+            response.headers["Cache-Control"] = _HTML_NO_CACHE
+        elif path.parent.name == "assets":
+            response.headers["Cache-Control"] = _ASSET_IMMUTABLE
+        return response
 
 
 def resolve_ui_dir() -> Path | None:
@@ -67,6 +97,6 @@ def mount_spa(app: FastAPI) -> bool:
         return False
     if any(getattr(route, "name", None) == "spa" for route in app.router.routes):
         return True
-    app.mount("/", StaticFiles(directory=str(directory), html=True), name="spa")
+    app.mount("/", _SpaStaticFiles(directory=str(directory), html=True), name="spa")
     logger.info("serving SPARQL workbench UI from %s at the app root", directory)
     return True

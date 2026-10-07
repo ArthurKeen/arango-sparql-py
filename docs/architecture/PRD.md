@@ -3180,7 +3180,14 @@ baking the mount prefix into the bundle when the bundle is built.
   directory holding `index.html`), the service MUST mount it at the app root,
   after every API route, so it never shadows one. It MUST use relative asset
   URLs (Vite `base: "./"`), so the page loads under any prefix without a
-  rebuild. With no bundle, the service is exactly the bare API.
+  rebuild. With no bundle, the service is exactly the bare API. `index.html`
+  MUST be served `Cache-Control: no-cache, no-store, must-revalidate` (it
+  names the content-hashed bundle, so a cached shell would keep running the
+  previous release after a redeploy); the hashed files under `assets/` are
+  `public, max-age=31536000, immutable`. The UI MUST derive its API base from
+  the page's own path (the mount), never assume the origin root — otherwise
+  every call, including `/connect/platform`, reaches the cluster instead of
+  the service.
 * **Root.** With the UI bundled, the service MUST answer `GET` at its bare
   mount root, because that is where the platform's app launcher opens it.
 * **Verification.** After a deploy, verification polls the mount root (or
