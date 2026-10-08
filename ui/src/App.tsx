@@ -35,7 +35,8 @@ import {
   listGraphs,
   bindGraph,
   isAuthError,
-  schemaIntrospect,
+  schemaIntrospectUntilReady,
+  SchemaPollSuperseded,
   type GraphInfo,
 } from "./api/client";
 import {
@@ -274,11 +275,15 @@ export default function App() {
     if (!state.connection.token) return;
     dispatch({ type: "SCHEMA_REFRESH_START" });
     try {
-      const resp = await schemaIntrospect(state.connection.token, {
-        force,
-        include_owl: true,
-        include_statistics: true,
-      });
+      const resp = await schemaIntrospectUntilReady(
+        state.connection.token,
+        { force, include_owl: true, include_statistics: true },
+        { onAnalyzing: () => dispatch({ type: "SCHEMA_ANALYZING" }) },
+      );
+      if (resp.status === "pending") {
+        dispatch({ type: "SCHEMA_REFRESH_ERROR", error: t("schema.stillAnalyzing") });
+        return;
+      }
       dispatch({
         type: "SCHEMA_LOADED",
         mapping: resp.mapping ?? null,
@@ -287,6 +292,7 @@ export default function App() {
           code: w.code,
           message: w.message,
           install_hint: w.install_hint,
+          severity: w.severity,
         })),
         cacheHit: !!resp.cache_hit,
       });
@@ -302,6 +308,8 @@ export default function App() {
         dispatch({ type: "SET_ONTOLOGY_TTL", ontologyTtl: owl });
       }
     } catch (err) {
+      // A newer refresh / DB switch / disconnect took over: drop this result.
+      if (err instanceof SchemaPollSuperseded) return;
       dispatch({
         type: "SCHEMA_REFRESH_ERROR",
         error: err instanceof Error ? err.message : String(err),
@@ -933,6 +941,7 @@ export default function App() {
           <ConnectionDialog
             connection={state.connection}
             introspecting={state.schema.refreshing}
+            analyzing={state.schema.analyzing}
             onRefreshSchema={() => void handleRefreshSchema(true)}
             dispatch={dispatch}
             onSchemaLoaded={(turtle) => {

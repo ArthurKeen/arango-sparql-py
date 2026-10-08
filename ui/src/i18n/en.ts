@@ -31,6 +31,10 @@ export const messages = {
   "theme.toDay": "Switch to day mode",
 
   "composer.placeholder": "Ask a question about your data\u2026",
+  "schema.loading": "Loading schema\u2026",
+  "schema.analyzing": "Analyzing schema\u2026 (the first analysis of a large database can take several minutes)",
+  "schema.stillAnalyzing": "The schema is still being analyzed in the background \u2014 it will load on the next schema refresh.",
+  "schema.pendingGraph": "This database's schema is being analyzed in the background\u2026",
   "status.notConnected": "Not connected \u2014 Send generates & transpiles only",
 
   "status.idle": "Ready",

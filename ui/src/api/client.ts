@@ -369,6 +369,8 @@ export interface OwlSchemaResponse {
   properties: OwlProperty[];
   // Optional source TTL — round-trip handy for the OntologyPanel.
   turtle?: string;
+  status?: SchemaReadStatus;
+  warming?: boolean;
 }
 
 export async function getOwlSchema(
@@ -387,6 +389,8 @@ export interface SchemaStatisticsResponse {
   statistics: Record<string, unknown>;
   available: boolean;
   last_acquired_at?: string | null;
+  status?: SchemaReadStatus;
+  warming?: boolean;
 }
 
 export async function getSchemaStatistics(
@@ -421,13 +425,21 @@ export interface SchemaIntrospectQuery {
   include_statistics?: boolean;
 }
 
+// Catalog model (arango_sparql/service/schema_warm.py): schema analysis never
+// blocks a request. "pending" = not analyzed yet, a background analysis is
+// running — retry. `warming` = a (re)analysis is in flight; with "ready" the
+// payload is the current cached schema and a fresher one is on its way.
+export type SchemaReadStatus = "ready" | "pending";
+
 export interface SchemaIntrospectResponse {
   mapping: Record<string, unknown>;
   summary: Record<string, unknown>;
-  warnings: Array<{ code: string; message: string; install_hint?: string }>;
+  warnings: Array<{ code: string; message: string; install_hint?: string; severity?: string }>;
   source: Record<string, unknown> | null;
   cache_hit: boolean;
   elapsed_ms: number;
+  status?: SchemaReadStatus;
+  warming?: boolean;
 }
 
 function qs(params: Record<string, string | number | boolean | undefined>): string {
@@ -446,6 +458,74 @@ export async function schemaIntrospect(
   return request(`/schema/introspect${qs(query as Record<string, string | number | boolean | undefined>)}`, {
     headers: authHeaders(token),
   });
+}
+
+const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Latest-wins guard: only the most recent schema poll may deliver a result.
+// A DB switch, disconnect or second refresh starts (or cancels) a poll, and
+// every older one stops with SchemaPollSuperseded instead of overwriting the
+// new session's schema state.
+let schemaPollGeneration = 0;
+
+export class SchemaPollSuperseded extends Error {
+  constructor() {
+    super("superseded by a newer schema request");
+    this.name = "SchemaPollSuperseded";
+  }
+}
+
+/** Stop every in-flight schema poll (e.g. on disconnect). */
+export function cancelSchemaPolls(): void {
+  schemaPollGeneration += 1;
+}
+
+export interface SchemaPollOptions {
+  /** Called on every wait so the UI can show "Analyzing schema…". */
+  onAnalyzing?: (resp: SchemaIntrospectResponse) => void;
+  /** Give up (returning the last "pending" answer) after this long. */
+  maxWaitMs?: number;
+  /** Injectable for tests. */
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+/**
+ * GET /schema/introspect, waiting out a background analysis.
+ *
+ * Ported from arango-cypher-py's `introspectSchemaUntilReady`, with a longer
+ * budget: cypher relies on its catalog sidecar pre-warming, while this service
+ * analyzes on first use (the first read of a large database such as
+ * prod.demo `IAM` takes minutes). Waits while the answer is "pending" — and,
+ * for a forced refresh, while it is still `warming` (the server keeps serving
+ * the previous schema until the new one lands). Backs off 2s → 10s; later
+ * polls never re-force. Returns the last answer when `maxWaitMs` elapses
+ * (default 20 min) so the caller can say "still analyzing".
+ */
+export async function schemaIntrospectUntilReady(
+  token: string,
+  query: SchemaIntrospectQuery = {},
+  opts: SchemaPollOptions = {},
+): Promise<SchemaIntrospectResponse> {
+  const generation = ++schemaPollGeneration;
+  const { onAnalyzing, maxWaitMs = 20 * 60_000, sleep = defaultSleep, now = Date.now } = opts;
+  const forced = query.force === true;
+  const started = now();
+  const waiting = (r: SchemaIntrospectResponse) =>
+    r.status === "pending" || (forced && r.warming === true);
+  let resp = await schemaIntrospect(token, query);
+  let delay = 2000;
+  while (waiting(resp)) {
+    if (generation !== schemaPollGeneration) throw new SchemaPollSuperseded();
+    if (now() - started >= maxWaitMs) return resp;
+    onAnalyzing?.(resp);
+    await sleep(delay);
+    if (generation !== schemaPollGeneration) throw new SchemaPollSuperseded();
+    delay = Math.min(Math.round(delay * 1.5), 10_000);
+    resp = await schemaIntrospect(token, { ...query, force: false });
+  }
+  if (generation !== schemaPollGeneration) throw new SchemaPollSuperseded();
+  return resp;
 }
 
 export type SchemaDriftStatus =

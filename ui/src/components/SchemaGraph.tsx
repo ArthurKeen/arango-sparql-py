@@ -8,6 +8,7 @@ import {
 import { owlSchemaFromTurtle } from "../api/owlFromTurtle";
 import { extractRelationshipCounts } from "../utils/schemaGraph";
 import CytoscapeSchemaGraph from "./CytoscapeSchemaGraph";
+import { t } from "../i18n";
 
 // Schema graph viewer for the SPARQL UI.
 //
@@ -38,6 +39,10 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
   const [serverCounts, setServerCounts] = useState<Record<string, number>>({});
   const [serverError, setServerError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // The server has not analyzed this database yet (catalog "pending"): the
+  // analysis runs in the background and the editor ontology fills in when it
+  // lands, at which point this view renders from the editor instead.
+  const [serverPending, setServerPending] = useState(false);
 
   // Parse the in-editor ontology client-side. A parse failure surfaces a
   // message rather than crashing the panel; an empty editor yields empty
@@ -73,9 +78,11 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
     let cancelled = false;
     setLoading(true);
     setServerError(null);
+    setServerPending(false);
     getOwlSchema()
       .then((resp) => {
         if (cancelled) return;
+        setServerPending(resp.status === "pending");
         setServerClasses(resp.classes ?? []);
         setServerProperties(resp.properties ?? []);
       })
@@ -130,6 +137,17 @@ export default function SchemaGraph({ ontologyTtl }: Props) {
         properties={serverProperties}
         counts={serverCounts}
       />
+    );
+  }
+
+  if (serverPending) {
+    return (
+      <div
+        className="h-full flex items-center justify-center px-6 text-center text-xs text-gray-500"
+        aria-busy="true"
+      >
+        {t("schema.pendingGraph")}
+      </div>
     );
   }
 
