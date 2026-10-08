@@ -124,7 +124,7 @@ arango-sparql-py = "arango_sparql.cli:app"
 [tool.arango-byoc]
 app-name     = "arango-sparql-py"
 instance     = "arango-sparql-py"
-display-name = "Arango SPARQL Transpiler"
+display-name = "Arango SPARQL"
 description  = "SPARQL 1.1 → AQL translation service + workbench for ArangoDB."
 base-image   = "py12base"
 tarball      = "arango-sparql-py.tar.gz"   # scripts/package_arango_manual.sh
