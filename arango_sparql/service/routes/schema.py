@@ -39,6 +39,7 @@ from ...schema.acquire import (
 )
 from ...schema.cache import SchemaCache
 from ...schema.fingerprint import BundleFingerprint, FingerprintDrift
+from ...schema.graph_scope import scope_bundle_to_graph
 from ...translate.mapping import (
     MappingBundle,
     MappingError,
@@ -51,6 +52,7 @@ from ...translate.owl import (
     mapping_to_turtle,
     owl_graph_view,
 )
+from .. import schema_warm
 from ..app import app
 from ..models import (
     OwlSchemaResponse,
@@ -292,6 +294,42 @@ def _scoped_cache_key(db_name: str, graph_name: str | None) -> str:
     return f"{db_name}::graph::{graph_name}"
 
 
+def _build_and_cache_full_bundle(db: Any, *, strategy: Strategy = "auto") -> MappingBundle:
+    """Analyze the WHOLE database and store the result in the cache.
+
+    The one place a full analysis runs. Always builds unscoped and with
+    inline OWL: a named-graph scope is a cheap filter of this bundle
+    (:func:`schema.graph_scope.scope_bundle_to_graph`), so one analysis serves
+    every scope, and the OWL export is cheap next to the physical scan.
+    Called synchronously by explicit paths (``force-reacquire``, the
+    heuristic strategy) and in the background by
+    :mod:`arango_sparql.service.schema_warm`.
+    """
+
+    bundle = acquire_mapping_bundle(
+        db,
+        include_owl=True,
+        strategy=strategy,
+        force_refresh=True,
+        graph_name=None,
+    )
+    db_name = getattr(db, "name", "") or ""
+    if db_name:
+        _resolve_schema_cache().put(db_name, bundle)
+    return bundle
+
+
+def _scoped(db: Any, bundle: MappingBundle, graph_name: str | None) -> MappingBundle:
+    """The session's view of a full-DB *bundle* (no-op when unscoped)."""
+    return scope_bundle_to_graph(db, bundle, graph_name) if graph_name else bundle
+
+
+def _usable(entry: Any, *, include_owl: bool) -> bool:
+    # The cache key does not encode ``include_owl``: a bundle cached without
+    # OWL (e.g. by an older force-reacquire) cannot satisfy an OWL request.
+    return entry is not None and not (include_owl and entry.bundle.owl_turtle is None)
+
+
 def _get_or_acquire(
     db: Any,
     *,
@@ -300,37 +338,102 @@ def _get_or_acquire(
     include_owl: bool = False,
     graph_name: str | None = None,
 ) -> tuple[MappingBundle, bool]:
-    """Return ``(bundle, cache_hit)`` for *db*. When *force* is true
-    or no fresh entry exists, runs ``acquire_mapping_bundle`` and
-    repopulates the cache.
+    """SYNCHRONOUS read-or-build: ``(bundle, cache_hit)`` for *db*.
 
-    Cache-key is ``db.name`` (plus a ``::graph::<name>`` suffix when a
-    named-graph scope is bound) — the analyzer's exclude-collections
-    invariant in :func:`db_shape_fingerprint` already protects us
-    against the L2 cache-self-loop case (PRD §6.3.3).
+    Blocks for a full analysis on a miss, so the interactive endpoints use
+    :func:`_read_or_warm` instead; this remains for the explicit, opt-in
+    slow paths (``POST /schema/force-reacquire``) and the heuristic
+    strategy (fast — no analyzer). The cache holds the full-DB bundle under
+    ``db.name``; a named-graph scope is derived from it on every read.
     """
 
-    cache = _resolve_schema_cache()
     db_name = getattr(db, "name", "") or ""
-    cache_key = _scoped_cache_key(db_name, graph_name)
     if not force and db_name:
-        entry = cache.get(cache_key)
-        # Re-acquire on an OWL request the cached bundle can't satisfy: the
-        # cache key doesn't encode ``include_owl``, so a bundle first cached
-        # without OWL would otherwise starve the UI's ontology auto-fill.
-        if entry is not None and not (include_owl and entry.bundle.owl_turtle is None):
-            return entry.bundle, True
+        entry = _resolve_schema_cache().get(db_name)
+        if _usable(entry, include_owl=include_owl):
+            return _scoped(db, entry.bundle, graph_name), True
+    return _scoped(db, _build_and_cache_full_bundle(db, strategy=strategy), graph_name), False
 
-    bundle = acquire_mapping_bundle(
-        db,
-        include_owl=include_owl,
-        strategy=strategy,
-        force_refresh=force,
-        graph_name=graph_name,
-    )
-    if db_name:
-        cache.put(cache_key, bundle)
-    return bundle, False
+
+def _read_or_warm(
+    db: Any,
+    *,
+    strategy: Strategy,
+    include_owl: bool = False,
+    graph_name: str | None = None,
+    force: bool = False,
+) -> tuple[MappingBundle | None, bool, bool]:
+    """NON-BLOCKING read: ``(bundle | None, cache_hit, warming)``.
+
+    Serves the cached full-DB bundle (scoped to *graph_name*) and never runs
+    the analyzer on the request path — the catalog model ported from
+    arango-cypher-py (``service/schema_warm.py``):
+
+    * miss → start a background analysis, return ``(None, False, True)``;
+      the caller answers ``pending`` and the client retries;
+    * TTL-expired entry → serve it (stale-while-revalidate) and refresh in
+      the background, so the hourly TTL never re-blocks the UI;
+    * ``force`` ("Refresh schema") → refresh in the background while still
+      serving the current entry, with ``warming=True`` until it lands.
+
+    A background failure is re-raised once to the next caller (so the
+    route's existing error mapping applies) instead of leaving the client
+    polling forever. ``strategy="heuristic"`` is fast, so it stays inline.
+    """
+
+    if strategy == "heuristic":
+        bundle, hit = _get_or_acquire(
+            db, force=force, strategy=strategy, include_owl=include_owl, graph_name=graph_name
+        )
+        return bundle, hit, False
+
+    db_name = getattr(db, "name", "") or ""
+    if not db_name:
+        bundle, hit = _get_or_acquire(
+            db, force=force, strategy=strategy, include_owl=include_owl, graph_name=graph_name
+        )
+        return bundle, hit, False
+
+    cache = _resolve_schema_cache()
+    entry, expired = cache.peek(db_name)
+    usable = _usable(entry, include_owl=include_owl)
+    # A cache hit means "served what was already cached"; a bundle that this
+    # call's own warm just built (inline, under test) is a fresh acquisition.
+    cache_hit = usable and not force
+    if force or expired or not usable:
+        failure = schema_warm.take_error(db_name)
+        if failure is not None and not usable:
+            raise failure
+        schema_warm.schedule_warm(db, strategy=strategy)
+        # A warm may complete inline (the test seam); re-read so the caller
+        # sees a bundle that is already there.
+        refreshed, _ = cache.peek(db_name)
+        if refreshed is not entry:
+            cache_hit = False
+        entry = refreshed
+        usable = _usable(entry, include_owl=include_owl)
+        if not usable:
+            failure = schema_warm.take_error(db_name)
+            if failure is not None:
+                raise failure
+    warming = schema_warm.is_warming(db_name)
+    if not usable:
+        return None, False, warming
+    return _scoped(db, entry.bundle, graph_name), cache_hit, warming
+
+
+def _pending_warning(warming: bool) -> dict[str, Any]:
+    """The ``info`` note a ``pending`` schema response carries (cypher parity)."""
+    return {
+        "code": "SCHEMA_PENDING",
+        "severity": "info",
+        "message": (
+            "Schema for this database is being analyzed in the background — "
+            "this can take several minutes on a large database. Retry shortly."
+            if warming
+            else "Schema for this database has not been analyzed yet. Retry shortly."
+        ),
+    }
 
 
 def _enforce_force_reacquire_policy() -> None:
@@ -369,9 +472,15 @@ def schema_introspect(
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SchemaIntrospectResponse:
-    """Live schema acquisition. Respects the L1 cache unless
-    ``force=true``. ``strategy`` ∈ ``{auto, analyzer, heuristic}``;
-    invalid values are 422.
+    """Serve the connected database's schema from the cache — never block
+    on the analyzer (catalog model, ``service/schema_warm.py``).
+
+    A database not yet analyzed answers ``status="pending"`` immediately and
+    a background analysis starts; the client retries. ``force=true``
+    ("Refresh schema") re-analyzes in the background while the current
+    schema keeps being served with ``warming=true``. ``strategy`` ∈
+    ``{auto, analyzer, heuristic}``; invalid values are 422 (``heuristic``
+    is fast and stays synchronous).
 
     When ``include_owl=true`` the acquired mapping carries its inline
     OWL/Turtle in ``mapping.owlTurtle`` so the UI can auto-populate the
@@ -383,7 +492,7 @@ def schema_introspect(
     t0 = time.perf_counter()
 
     try:
-        bundle, cache_hit = _get_or_acquire(
+        bundle, cache_hit, warming = _read_or_warm(
             session.db,
             force=force,
             strategy=typed_strategy,
@@ -423,6 +532,21 @@ def schema_introspect(
         ) from exc
 
     elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+    if bundle is None:
+        log_endpoint_timing(
+            "/schema/introspect",
+            elapsed_ms,
+            force=force,
+            strategy=typed_strategy,
+            status="pending",
+            warming=warming,
+        )
+        return SchemaIntrospectResponse(
+            status="pending",
+            warming=warming,
+            warnings=[_pending_warning(warming)],
+            elapsed_ms=elapsed_ms,
+        )
     summary = _summary_from_bundle(bundle)
     warnings = (bundle.metadata or {}).get("warnings") or []
     log_endpoint_timing(
@@ -430,6 +554,8 @@ def schema_introspect(
         elapsed_ms,
         force=force,
         strategy=typed_strategy,
+        status="ready",
+        warming=warming,
         cache_hit=cache_hit,
         entities=summary["entity_count"],
         relationships=summary["relationship_count"],
@@ -443,6 +569,8 @@ def schema_introspect(
         source=_bundle_source_dict(bundle),
         cache_hit=cache_hit,
         elapsed_ms=elapsed_ms,
+        status="ready",
+        warming=warming,
     )
 
 
@@ -473,7 +601,7 @@ def schema_owl(
     t0 = time.perf_counter()
 
     try:
-        bundle, cache_hit = _get_or_acquire(
+        bundle, cache_hit, warming = _read_or_warm(
             session.db,
             force=force,
             strategy=typed_strategy,
@@ -500,6 +628,16 @@ def schema_owl(
             status_code=422,
             detail={"error": _sanitize_error(str(exc)), "code": exc.code},
         ) from exc
+
+    if bundle is None:
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+        log_endpoint_timing("/schema/owl", elapsed_ms, force=force, status="pending", warming=warming)
+        return OwlSchemaResponse(
+            status="pending",
+            warming=warming,
+            warnings=[_pending_warning(warming)],
+            elapsed_ms=elapsed_ms,
+        )
 
     try:
         turtle = mapping_to_turtle(bundle)
@@ -545,6 +683,8 @@ def schema_owl(
         source=_bundle_source_dict(bundle),
         warnings=warnings,
         elapsed_ms=elapsed_ms,
+        status="ready",
+        warming=warming,
     )
 
 
@@ -815,9 +955,8 @@ def schema_statistics(
 
     t0 = time.perf_counter()
     try:
-        bundle, _hit = _get_or_acquire(
+        bundle, _hit, warming = _read_or_warm(
             session.db,
-            force=False,
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )
@@ -831,6 +970,15 @@ def schema_statistics(
             },
         ) from exc
 
+    if bundle is None:
+        log_endpoint_timing(
+            "/schema/statistics",
+            round((time.perf_counter() - t0) * 1000, 1),
+            status="pending",
+            warming=warming,
+        )
+        return SchemaStatisticsResponse(status="pending", warming=warming)
+
     stats = (bundle.metadata or {}).get("statistics") or {}
     available = bool(isinstance(stats, dict) and (stats.get("relationships") or stats.get("entities")))
     log_endpoint_timing(
@@ -842,6 +990,8 @@ def schema_statistics(
         statistics=stats if isinstance(stats, dict) else {},
         available=available,
         last_acquired_at=_last_acquired_at(bundle),
+        status="ready",
+        warming=warming,
     )
 
 

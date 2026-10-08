@@ -621,6 +621,16 @@ tags `PG_ENTITY_COLLECTION`, `LPG_LABEL`, `RPT_TRIPLES`,
 > *(2026-09-15: analyzer 0.14.0 owns LPG type detection portfolio-wide; the
 > §6.3.1 heuristic discriminator is slated for retirement in favour of the
 > analyzer's `LABEL` / `GENERIC_WITH_TYPE` answers.)*
+>
+> **No LLM by default (2026-10-08, `arango-cypher-py` parity).** The service
+> constructs the analyzer without an LLM provider unless
+> `SCHEMA_ANALYZER_PROVIDER` opts in (Appendix A.5); it does not inherit
+> `LLM_PROVIDER` or the NL API keys. Reason, measured on prod.demo `IAM`: the
+> analyzer's `timeout_ms` is a *total* budget, its physical scan alone takes
+> ~7 min, so the LLM call was floored to 1 s, timed out three times and fell
+> back to the baseline anyway — the LLM only ever added waiting. The baseline's
+> no-LLM note is reported as `ANALYZER_BASELINE_NO_LLM` with `severity: info`,
+> which the Workbench keeps out of its warning banner.
 
 Module: `arango_sparql.schema.acquire`
 
@@ -686,8 +696,16 @@ Two-tier persistence:
 
 | Layer | Where | Keyed by | Lifetime |
 | --- | --- | --- | --- |
-| In-process LRU | `_mapping_cache` dict | `db.name` | TTL 3600 s (`SCHEMA_MAPPING_CACHE_TTL_SECONDS`, Appendix A.5) |
-| Persistent | `arango_sparql_schema_cache` collection in the customer's own DB | `(db.name, key="mapping")` | Until invalidated |
+| In-process LRU | `SchemaCache` L1 | `db.name` — the **whole-database** bundle | TTL 3600 s (`SCHEMA_MAPPING_CACHE_TTL_SECONDS`, Appendix A.5); an expired entry is served while it refreshes (§6.3.5) |
+| Persistent | `arango_sparql_schema_cache` collection in the customer's own DB | `(db.name, key="mapping")` | Until invalidated — **not implemented yet** (`SchemaCache._persist_to_l2` / `_read_from_l2` are stubs), so a restart or redeploy starts cold |
+
+A named-graph scope (§6.8) is **not** a separate cache slot: the analysis
+always runs over the whole database, and a scoped view is derived on read by
+filtering that bundle (`schema/graph_scope.py::scope_bundle_to_graph`, a
+membership-tag filter or one graph-metadata read). Binding a graph therefore
+never triggers a second analysis — matching `arango-cypher-py`'s
+`read_cached_mapping`. (Before 2026-10-08 each scope was analyzed separately:
+`IAM_DEMO` on prod.demo took 11.6 min cold.)
 
 Refresh policy uses the analyzer's two cheap fingerprints:
 
@@ -731,6 +749,42 @@ The four reachable combinations:
 Both opt-outs are *deliberately verbose* so a heuristic-only or
 schema-less deployment is a conscious operator decision, not a silent
 default.
+
+#### 6.3.5 Request path never blocks on analysis (catalog model)
+
+Module: `arango_sparql/service/schema_warm.py` — ported from
+`arango-cypher-py`'s `catalog/warm.py` (commits 2570086 / 4e48943).
+
+Analysis is minutes on a large database, so no request waits for it. Every
+interactive schema read goes through `routes/schema.py::_read_or_warm`:
+
+| Cache state | Response | Background work |
+| --- | --- | --- |
+| Fresh entry | `status: "ready"`, the (scoped) schema | none |
+| Expired entry (past the TTL) | `status: "ready"`, the stale schema, `warming: true` | one re-analysis |
+| No entry | `status: "pending"`, empty payload, `SCHEMA_PENDING` info note | one analysis |
+| `force=true` ("Refresh schema") | `status: "ready"`, the current schema, `warming: true` (or `pending` if none) | one re-analysis |
+
+* Warms are **deduped per database** (one analysis serves every scope) and run
+  on a daemon thread with the session's authenticated handle.
+* A failed background analysis is **re-raised once** to the next request,
+  through the route's normal error mapping (e.g. 422 `E_*`), and the request
+  after that retries — a client never polls a dead warm forever.
+* Applies to `GET /schema/introspect`, `/schema/owl`, `/schema/statistics`
+  (all carry `status` + `warming`), the optional schema enrichment of
+  `/translate` / `/execute` (a miss means "no enrichment", never a wait), and
+  the SPARQL Protocol endpoint (§5.2: a miss is `503 E_SCHEMA_UNAVAILABLE` +
+  `Retry-After: 30`).
+* `strategy=heuristic` is fast and stays synchronous; `POST
+  /schema/force-reacquire` stays the explicit synchronous slow path.
+* The UI waits with `schemaIntrospectUntilReady` (2 s → 10 s backoff, up to
+  20 min; latest request wins) and shows "Analyzing schema…" meanwhile.
+
+Not ported from cypher: the out-of-band **sidecar** (`configs/catalog.yml` +
+`scripts/catalog_sync.py`) that pre-warms registered databases — a BYOC
+deployment runs no second process, so the on-demand warm above is what
+applies. Together with the persistent tier (§6.3.3) it is the follow-up that
+would make the *first* read after a redeploy instant.
 
 ### 6.4 Schema HTTP surface
 
@@ -3626,7 +3680,10 @@ provisioning.
 
 | Env var | Default | Required? | Description |
 | --- | --- | --- | --- |
-| `SCHEMA_MAPPING_CACHE_TTL_SECONDS` | `3600` | no | Soft TTL on cached `MappingBundle`; superseded by fingerprint mismatch |
+| `SCHEMA_MAPPING_CACHE_TTL_SECONDS` | `3600` | no | Soft TTL on cached `MappingBundle`; superseded by fingerprint mismatch. An expired entry is still **served** while a background re-analysis refreshes it (stale-while-revalidate, §6.3.5) |
+| `SCHEMA_ANALYZER_PROVIDER` | empty (no LLM) | no | Opt-in LLM for the schema analyzer: `openai` / `anthropic` / `openrouter`. **Unset by default — the analyzer runs its deterministic baseline, as in `arango-cypher-py`.** Not inherited from `LLM_PROVIDER` or the API keys (those belong to NL). See §6.3.2 |
+| `SCHEMA_ANALYZER_MODEL` | provider default | no | Model for the opt-in analyzer LLM |
+| `SCHEMA_ANALYZER_TIMEOUT_MS` | `180000` | no | The analyzer's **total** budget (physical scan + LLM call); only matters with `SCHEMA_ANALYZER_PROVIDER` set — the LLM call gets what the scan leaves (floored at 1 s by the analyzer) |
 | `SCHEMA_L1_CACHE_MAX_BYTES` | `268435456` (256 MiB) | no | In-process mapping cache cap |
 | `SCHEMA_CACHE_MAX_ENTRIES` | `200` | no | L2 (ArangoDB-backed) cache cap per service install |
 | `SCHEMA_ANALYZER_REQUIRED` | `true` | no | **Startup** gate (distinct from the per-request fallback gate `ARANGO_SPARQL_ALLOW_HEURISTIC` in A.2). When `true`, the service refuses to boot if `arangodb-schema-analyzer` is not importable. See the four-cell decision table in §6.3.4. |

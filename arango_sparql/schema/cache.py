@@ -169,6 +169,32 @@ class SchemaCache:
                 return None
             return entry
 
+    def peek(
+        self,
+        db_name: str,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[CachedEntry | None, bool]:
+        """Return ``(entry, expired)`` for *db_name* WITHOUT evicting.
+
+        The request path's stale-while-revalidate read: a schema older than
+        the TTL is still a far better answer than making the user wait for a
+        multi-minute re-analysis, so the caller serves it and schedules a
+        background refresh (``service/schema_warm.py``) when ``expired`` is
+        true. :meth:`get` keeps its evict-on-expiry contract for every
+        existing caller.
+        """
+
+        with self._lock:
+            entry = self._l1.get(db_name)
+            if entry is None:
+                hydrated = self._read_from_l2(db_name)
+                if hydrated is None:
+                    return None, False
+                self._l1[db_name] = hydrated
+                entry = hydrated
+            return entry, entry.is_expired(ttl_seconds=self._ttl_seconds, now=now)
+
     def has_fresh_entry(
         self,
         db_name: str,

@@ -647,7 +647,9 @@ def test_execute_merges_analyzer_bundle_no_default_collection_warning(
         metadata={"warnings": []},
         source=MappingSource(kind="analyzer", notes="merge route test"),
     )
-    monkeypatch.setattr(schema_mod, "_get_or_acquire", lambda db, **kw: (bundle, False))
+    # Translate/execute enrichment reads the schema cache-only via
+    # ``_read_or_warm`` -> (bundle | None, cache_hit, warming).
+    monkeypatch.setattr(schema_mod, "_read_or_warm", lambda db, **kw: (bundle, True, False))
 
     # Inline ontology with NO phys:collectionName on :Person.
     ttl = """

@@ -550,3 +550,33 @@ def test_module_import_does_not_persist_env_state(
     assert _absent_env(TTL_ENV_VAR) is None
     cache = SchemaCache()
     assert cache.ttl_seconds == DEFAULT_TTL_SECONDS
+
+
+# ---------------------------------------------------------------------------
+# peek — stale-while-revalidate read (service/schema_warm.py)
+# ---------------------------------------------------------------------------
+
+
+def test_peek_returns_a_fresh_entry_unexpired() -> None:
+    cache = SchemaCache(ttl_seconds=3600)
+    cache.put("db", _bundle())
+    entry, expired = cache.peek("db")
+    assert entry is not None
+    assert expired is False
+
+
+def test_peek_serves_an_expired_entry_without_evicting_it() -> None:
+    # The request path serves a stale schema while a background warm
+    # refreshes it; get() still evicts for every other caller.
+    cache = SchemaCache(ttl_seconds=60)
+    old = datetime.now(UTC) - timedelta(hours=2)
+    cache.put("db", _bundle(label="Stale"), now=old)
+    entry, expired = cache.peek("db")
+    assert entry is not None and expired is True
+    again, _ = cache.peek("db")
+    assert again is entry  # not evicted
+    assert cache.get("db") is None  # get() keeps evict-on-expiry
+
+
+def test_peek_miss() -> None:
+    assert SchemaCache(ttl_seconds=60).peek("absent") == (None, False)

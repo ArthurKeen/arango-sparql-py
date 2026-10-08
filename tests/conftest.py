@@ -38,3 +38,24 @@ def _reset_rate_limit_buckets() -> None:
 
     _security._compute_bucket.reset()
     _security._nl_bucket.reset()
+
+
+@pytest.fixture(autouse=True)
+def _inline_schema_warm(monkeypatch: pytest.MonkeyPatch):
+    """Run background schema warms inline, and reset warm state per test.
+
+    In production a schema cache miss starts the analysis on a daemon thread
+    and the endpoint answers ``pending`` (``service/schema_warm.py``). Under
+    test that thread would race the assertions and could outlive the test,
+    touching a fake database after it is torn down. Running the warm inline
+    keeps every route test deterministic: a miss analyzes, fills the cache,
+    and the same request answers ``ready`` — the content the tests assert.
+    The asynchronous ``pending`` path itself is covered explicitly in
+    ``tests/service/test_schema_warm.py``, which replaces this seam.
+    """
+    from arango_sparql.service import schema_warm
+
+    schema_warm._reset_for_tests()
+    monkeypatch.setattr(schema_warm, "_start_thread", lambda target, name: target())
+    yield
+    schema_warm._reset_for_tests()

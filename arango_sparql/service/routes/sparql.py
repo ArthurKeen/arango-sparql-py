@@ -100,10 +100,11 @@ def _resolver_or_422(req: Any, *, analyzer_bundle: Any | None = None) -> Any:
 def _analyzer_bundle_for_session(session: _Session | None) -> Any | None:
     """Best-effort: the analyzer-discovered mapping bundle for *session*'s DB.
 
-    Reuses the schema route's cache + acquisition path (so the bundle the
-    UI already fetched via ``/schema/introspect`` is a cache hit). Returns
-    ``None`` — meaning "no enrichment" — when there is no session or
-    acquisition fails for any reason. A translate/execute must never fail
+    Cache-only (never blocks on the analyzer): serves the bundle the UI
+    already fetched via ``/schema/introspect``; on a miss a background
+    analysis starts (``service/schema_warm.py``) and this returns ``None``
+    — "no enrichment" — instead of making a translate wait minutes. Also
+    ``None`` when there is no session or the read fails for any reason. A translate/execute must never fail
     merely because this optional enrichment was unavailable (e.g. the
     analyzer extra is not installed, or the DB is unreachable for schema
     discovery).
@@ -113,11 +114,10 @@ def _analyzer_bundle_for_session(session: _Session | None) -> Any | None:
     try:
         # Lazy import: both route modules register on the same ``app`` at
         # import time; importing at call time avoids any load-order cycle.
-        from .schema import _get_or_acquire
+        from .schema import _read_or_warm
 
-        bundle, _cache_hit = _get_or_acquire(
+        bundle, _cache_hit, _warming = _read_or_warm(
             session.db,
-            force=False,
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )
