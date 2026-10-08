@@ -118,17 +118,29 @@ function authHeaders(token: string): Record<string, string> {
   return { "X-Arango-Session": token };
 }
 
-// SPA mount-point detection. Same logic as the Cypher UI: when the SPA
-// is mounted under `/frontend/` (production AMP deploy) or `/ui/`
-// (legacy / local-dev) we strip the prefix to recover the actual API
-// base. For Vite dev-server we fall through to the empty string and
-// rely on `vite.config.ts`'s proxy table.
+// SPA mount-point detection, ported from the Cypher UI's `apiBaseFor`.
+// The API lives at the directory the page was served from: the Container
+// Manager opens the bare mount (`/_service/uds/_db/<db>/<instance>/`), so the
+// base is that path. A trailing `index.html` and a `/frontend` or `/ui`
+// sub-mount (legacy deploys) are dropped. Whole segments are compared, so an
+// instance named `ui-demo` is not cut in half. At the origin root (Vite dev)
+// the base is empty and `vite.config.ts`'s proxy table takes over.
+//
+// The previous `indexOf("/frontend" | "/ui")` version returned "" under the
+// Container Manager mount, which sent every call (incl. /connect/platform) to
+// the cluster root — the Workbench then fell back to the credentials button.
+// The SPA has no client-side routes, so the page path is always the mount.
+export function apiBaseFor(pathname: string): string {
+  const segments = pathname.split("/");
+  if (/\.html?$/i.test(segments[segments.length - 1] ?? "")) segments.pop();
+  while (segments.length > 0 && segments[segments.length - 1] === "") segments.pop();
+  const last = segments[segments.length - 1];
+  if (last === "frontend" || last === "ui") segments.pop();
+  return segments.join("/");
+}
+
 function apiBase(): string {
-  for (const prefix of ["/frontend", "/ui"]) {
-    const idx = window.location.pathname.indexOf(prefix);
-    if (idx >= 0) return window.location.pathname.slice(0, idx);
-  }
-  return "";
+  return apiBaseFor(window.location.pathname);
 }
 
 export const AUTH_EXPIRED_MESSAGE =

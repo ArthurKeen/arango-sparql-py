@@ -1645,7 +1645,7 @@ adds the three SPARQL-specific affordances.
 | Capability | Source |
 | --- | --- |
 | Custom `StreamLanguage` for SPARQL 1.1 (keywords, IRIs, prefixed names, `?var` and `$var` variables, blank-node labels `_:`, language tags `@en`, datatype suffixes `^^xsd:int`, `<...>` IRI literals, comments) | `ui/src/lang/sparql.ts` (custom; mirrors `lang/cypher.ts`'s structure) |
-| Syntax highlighting via `oneDark` theme (`HighlightStyle` mapping `keyword`, `string`, `number`, `function`, `variableName`, `special(variableName)`, `typeName`, `lineComment`, `blockComment`, `operator`, `bracket`, `punctuation`) | `ui/src/components/theme.ts` (shared with AQL editor) |
+| Syntax highlighting via the theme-aware `editorTheme` (`HighlightStyle` mapping `keyword`, `string`, `number`, `function`, `variableName`, `special(variableName)`, `typeName`, `lineComment`, `blockComment`, `operator`, `bracket`, `punctuation`) | `ui/src/components/theme.ts` (shared with AQL editor) |
 | **Schema-aware completion** (the central differentiator vs hand-typing): | `ui/src/lang/sparql-completion.ts` |
 | — after `?` / `$` → variable names already in scope | |
 | — after `:` (PrefixedName separator) → local names from the active prefix's namespace as known to the OWL ontology | |
@@ -1679,7 +1679,7 @@ port is a checklist, not a rewrite.
 | **Heuristic AQL formatter** — explicit "Format" button runs `formatAql()` (tokenise-by-whitespace + clause-based reindent) | ✅ verbatim | `formatAql()` from `AqlEditor.tsx` |
 | **Bind-variable inspector** — collapsible footer rendering `JSON.stringify(bindVars, null, 2)` when non-empty, read-only | ✅ verbatim | |
 | **Edit-and-rerun-as-AQL** — manual edits to the AQL pane can be re-executed without re-translating from SPARQL, via the existing `/execute-aql` endpoint (§5.1) | ✅ verbatim, **with the alignment fix**: the v1.0 implementation reads the live CodeMirror document on Run rather than the reducer's cached `state.aql`, fixing the cypher-py bug where stale state could be re-run after editing | This is the one case where we deliberately diverge to fix a bug; tracked in v1.0 deliverables |
-| Same `oneDark` theme | ✅ verbatim | |
+| Same `editorTheme` (day/night via `--cm-*` tokens) | ✅ verbatim | |
 
 ### 10.4 Mapping panel (`ui/src/components/MappingPanel.tsx`)
 
@@ -1760,8 +1760,38 @@ conditional tabs (**Explain** when `explainPlan` is present,
 
 ### 10.8 Theme
 
-Single dark theme (`oneDark` via `theme.ts`) for v1.0, matching the
-sister project. Light mode is a v1.1 deliverable.
+The workbench uses the **Arango palette** and a **day / night** pair,
+matching `arango-cypher-py` file-for-file:
+
+* **Palette.** `ui/src/palette.css` re-points every Tailwind colour
+  variable to Arango tokens (Arango Green `#006532` / hover `#005329` /
+  light-green `#f4fef2` for primary and active states; Arango neutrals for
+  gray; `#da1a20` for errors). Component classes stay as written; the
+  palette does the theming.
+* **Day / night.** Day is the default; night is opt-in. The active theme
+  lives on `<html data-theme="light|dark">`, set by `ui/src/theme/theme.ts`
+  and remembered per viewer under `localStorage["arango-sparql.theme"]`.
+  `ui/index.html` applies the stored choice before first paint, so the page
+  never flashes the wrong theme. The header's moon/sun button
+  (`ThemeToggle`) switches it.
+* **Editors and canvases follow the theme.** CodeMirror reads `--cm-*`
+  tokens (`components/theme.ts` → `editorTheme`); the result and schema
+  graphs take labels, edges and selection colours from
+  `ui/src/theme/graphPalette.ts` and restyle in place on a toggle
+  (positions and zoom survive).
+
+This replaces the earlier single-dark-theme stance (and its
+system/dark/light cycle in the Settings menu).
+
+**Workbench shell (deployed parity).** The header is one row, as in the
+sister project: title · `CLUSTER` host · `DATABASE` picker · schema status ·
+**Refresh schema** · **Disconnect** on the left; the `GRAPH` scope pill
+(named graph or "All collections"), the theme toggle and Settings on the
+right. Below the composer the collapsible Query Inspector (SPARQL · AQL)
+precedes the results. "Refresh schema" re-reads `GET /schema/introspect`
+with `force=true`; picking a graph re-reads it unforced for the new scope —
+both with `include_owl`, so the ontology that drives translation and NL
+follows the scope.
 
 ### 10.9 Operational states
 
@@ -1789,7 +1819,7 @@ release. Concrete commitments:
 | Surface | Commitment | How verified |
 | --- | --- | --- |
 | Keyboard navigation | All actions reachable without a mouse; focus-visible ring on every focusable element; tab order matches reading order; `Esc` dismisses every overlay | `tests/playwright/a11y_keyboard.spec.ts` traverses every primary action by `Tab`+`Enter` |
-| Colour contrast | Text + UI component contrast ≥ 4.5:1; large text ≥ 3:1; non-text contrast ≥ 3:1 (covers `oneDark` defaults — verified, not assumed) | `tests/playwright/a11y_contrast.spec.ts` runs `axe-core` |
+| Colour contrast | Text + UI component contrast ≥ 4.5:1; large text ≥ 3:1; non-text contrast ≥ 3:1 (covers both the day and night palettes — verified, not assumed) | `tests/playwright/a11y_contrast.spec.ts` runs `axe-core` |
 | Screen-reader labels | All icon-only buttons have `aria-label`; all editors have a visible label and `role="textbox"`; result tables expose row/col headers; status changes are announced via `aria-live="polite"` | `tests/playwright/a11y_aria.spec.ts` |
 | Reduced motion | Respect `prefers-reduced-motion` — disable canvas auto-centring animation, panel slide transitions, and the loading-bar pulse | Playwright test sets the media-query and asserts no `transition` / `animation` styles compute |
 | Editor a11y | CodeMirror 6 ARIA defaults preserved; completion popup is `role="listbox"` with arrow-key navigation; hover docs are reachable via `Mod-K` (not hover-only) | Manual audit checklist in `docs/a11y-audit.md` |
@@ -2890,11 +2920,11 @@ test enforcement, security-testing rows) gate the public release tag.
 - Mapping panel with OWL roundtrip (`/mapping/import-owl`,
   `/mapping/export-owl`)
 - Results panel with literal-collapse toggle on the graph tab
-- Connection dialog with auto-defaults, schema introspection,
+- Connection bar with platform login (no dialog on BYOC), auto-defaults, schema introspection,
   optional tenant selector
 - `localStorage` workbench (`"sparql-workbench"`) with 50-entry history
 - `Mod-K` command palette
-- Single dark theme (`oneDark`)
+- Arango palette with day/night themes (§10.8)
 
 **Third-party tool compatibility (§11)**
 
@@ -2958,7 +2988,7 @@ the workbench polish that v1.0 deferred.
 | Property-path expansion — close remaining `MulPath` (`:p+`, `:p*`, `:p?`), `AlternativePath` (`:p\|:q`), and `NegatedPath` (`!:p`) buckets | §6.6 row promoted from 🟡 (v1 partial — Sequence/Inverse shipped) → ✅ |
 | `visit_ConstructQuery` (RDF output: `text/turtle` / `application/n-triples` / `application/rdf+xml` / `application/ld+json`) | §5.2 RDF formats |
 | W3C query-evaluation coverage ≥ 35 % | §13.5 v1.1 row |
-| UI light theme | §10.8 (workbench parity completion) |
+| UI light theme | §10.8 — **delivered early** (Arango palette + day/night, cypher-py parity) |
 | "Schema-discovered prefix" autocompletion in the SPARQL editor | §10.2 (analyzer namespaces → typed prefix suggestions) |
 | TopBraid Composer compatibility verified | §11.1 best-effort row promoted to verified |
 | `arango-query-core` extraction kicked off | §12.3 (shared resolver / cache / fingerprint / analyzer integration with `arango-cypher-py`) |
@@ -3150,7 +3180,14 @@ baking the mount prefix into the bundle when the bundle is built.
   directory holding `index.html`), the service MUST mount it at the app root,
   after every API route, so it never shadows one. It MUST use relative asset
   URLs (Vite `base: "./"`), so the page loads under any prefix without a
-  rebuild. With no bundle, the service is exactly the bare API.
+  rebuild. With no bundle, the service is exactly the bare API. `index.html`
+  MUST be served `Cache-Control: no-cache, no-store, must-revalidate` (it
+  names the content-hashed bundle, so a cached shell would keep running the
+  previous release after a redeploy); the hashed files under `assets/` are
+  `public, max-age=31536000, immutable`. The UI MUST derive its API base from
+  the page's own path (the mount), never assume the origin root — otherwise
+  every call, including `/connect/platform`, reaches the cluster instead of
+  the service.
 * **Root.** With the UI bundled, the service MUST answer `GET` at its bare
   mount root, because that is where the platform's app launcher opens it.
 * **Verification.** After a deploy, verification polls the mount root (or

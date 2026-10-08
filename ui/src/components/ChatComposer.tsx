@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { t } from "../i18n";
 
 // Agent-style chat composer (Query Workbench Shell, L0 — PRD §10.14).
 // Enter sends (runs the full pipeline via planSend); Shift+Enter inserts
@@ -44,7 +45,7 @@ export default function ChatComposer({
   onChange,
   onSend,
   busy,
-  placeholder = "Describe what you want in plain English\u2026",
+  placeholder = t("composer.placeholder"),
   suggestions = [],
   onPickSuggestion,
   contextSlot,
@@ -96,7 +97,7 @@ export default function ChatComposer({
         <div className="flex items-center flex-wrap gap-1.5 mb-1.5">{contextSlot}</div>
       )}
       <div className="relative" ref={rootRef}>
-        <div className="flex items-end gap-2 rounded-lg border border-gray-700 bg-gray-800 focus-within:border-violet-500 transition-colors px-2.5 py-1.5">
+        <div className="flex items-end gap-2 rounded-lg border border-gray-700 bg-gray-800 focus-within:border-indigo-500 transition-colors px-2.5 py-1.5">
           <textarea
             ref={taRef}
             rows={1}

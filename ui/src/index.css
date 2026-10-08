@@ -1,80 +1,49 @@
 @import "tailwindcss";
+@import "./palette.css";
 
-/* Theme (WP-UI-THEME, PRD §10.8).
- *
- * The app's chrome is styled with literal Tailwind gray utilities
- * (`bg-gray-950`, `text-gray-100`, …). Tailwind v4 compiles those to
- * `var(--color-gray-NNN)`, so we retheme the *entire* app to light by
- * overriding an INVERTED gray ramp under `html.light` — no per-component
- * rewrite. CodeMirror follows the same switch via the `--cm-*` palette
- * consumed by `components/theme.ts`. Accent colours (indigo/emerald/…)
- * are intentionally left untouched in both themes. */
-
+/* Editor surfaces and syntax colours, per theme. The CodeMirror theme in
+   src/components/theme.ts reads these, so editors follow a toggle without
+   being reconfigured. */
 :root {
-  color-scheme: dark;
-
-  --color-brand: #6366f1;
-  --color-brand-hover: #818cf8;
-  --color-surface: #111827;
-  --color-surface-alt: #1f2937;
-  --color-border: #374151;
-
-  /* CodeMirror palette (dark) — see components/theme.ts */
-  --cm-bg: #111827;
-  --cm-fg: #e5e7eb;
-  --cm-keyword: #c084fc;
-  --cm-string: #86efac;
-  --cm-number: #fbbf24;
-  --cm-function: #60a5fa;
-  --cm-variable: #e5e7eb;
-  --cm-variable-special: #f472b6;
-  --cm-type: #2dd4bf;
-  --cm-comment: #6b7280;
-  --cm-operator: #94a3b8;
-  --cm-bracket: #d1d5db;
-  --cm-punctuation: #9ca3af;
-  --cm-panel: #1f2937;
-  --cm-border: #374151;
-  --cm-gutter-fg: #6b7280;
+  --cm-bg: #f8f8f8;
+  --cm-fg: #282828;
+  --cm-gutter-fg: #9a9a9a;
+  --cm-border: #e5e5e5;
+  --cm-panel-bg: #ffffff;
+  --cm-caret: #282828;
+  --cm-accent-rgb: 0, 101, 50; /* #006532 */
+  --cm-keyword: #006532;
+  --cm-string: #8a4b00;
+  --cm-number: #9c4221;
+  --cm-function: #2f6fb3;
+  --cm-variable: #282828;
+  --cm-variable-special: #b83280;
+  --cm-type: #0e7c86;
+  --cm-comment: #9a9a9a;
+  --cm-operator: #5c5c5c;
+  --cm-bracket: #5c5c5c;
+  --cm-punctuation: #5c5c5c;
 }
 
-html.light {
-  color-scheme: light;
-
-  /* Inverted gray ramp: gray-950 (app bg) → light, gray-100 (text) → dark. */
-  --color-gray-50: #030712;
-  --color-gray-100: #111827;
-  --color-gray-200: #1f2937;
-  --color-gray-300: #374151;
-  --color-gray-400: #4b5563;
-  --color-gray-500: #6b7280;
-  --color-gray-600: #9ca3af;
-  --color-gray-700: #d1d5db;
-  --color-gray-800: #e5e7eb;
-  --color-gray-900: #f3f4f6;
-  --color-gray-950: #f9fafb;
-
-  --color-surface: #ffffff;
-  --color-surface-alt: #f3f4f6;
-  --color-border: #d1d5db;
-
-  /* CodeMirror palette (light) */
-  --cm-bg: #ffffff;
-  --cm-fg: #1f2937;
-  --cm-keyword: #7c3aed;
-  --cm-string: #047857;
-  --cm-number: #b45309;
-  --cm-function: #2563eb;
-  --cm-variable: #1f2937;
-  --cm-variable-special: #be185d;
-  --cm-type: #0f766e;
-  --cm-comment: #6b7280;
-  --cm-operator: #475569;
-  --cm-bracket: #374151;
-  --cm-punctuation: #6b7280;
-  --cm-panel: #f3f4f6;
-  --cm-border: #d1d5db;
-  --cm-gutter-fg: #9ca3af;
+:root[data-theme="dark"] {
+  --cm-bg: #1a1a1a;
+  --cm-fg: #e5e5e5;
+  --cm-gutter-fg: #9a9a9a;
+  --cm-border: #3d3d3d;
+  --cm-panel-bg: #282828;
+  --cm-caret: #e5e5e5;
+  --cm-accent-rgb: 111, 207, 151; /* #6fcf97 */
+  --cm-keyword: #6fcf97;
+  --cm-string: #f0c674;
+  --cm-number: #f0b429;
+  --cm-function: #7cb7f0;
+  --cm-variable: #e5e5e5;
+  --cm-variable-special: #f08cc0;
+  --cm-type: #5fd4db;
+  --cm-comment: #9a9a9a;
+  --cm-operator: #b3b3b3;
+  --cm-bracket: #d4d4d4;
+  --cm-punctuation: #b3b3b3;
 }
 
 body {
@@ -88,7 +57,7 @@ body {
     sans-serif;
 }
 
-/* CodeMirror surface overrides (theme-driven via CSS variables) */
+/* CodeMirror overrides (both themes) */
 .cm-editor {
   height: 100%;
   font-size: 14px;
@@ -102,19 +71,19 @@ body {
 }
 
 .cm-editor .cm-activeLineGutter {
-  background: var(--color-surface-alt) !important;
+  background: rgba(var(--cm-accent-rgb), 0.08) !important;
 }
 
 .cm-editor .cm-activeLine {
-  background: rgba(99, 102, 241, 0.08) !important;
+  background: rgba(var(--cm-accent-rgb), 0.06) !important;
 }
 
 .cm-editor .cm-selectionBackground {
-  background: rgba(99, 102, 241, 0.25) !important;
+  background: rgba(var(--cm-accent-rgb), 0.22) !important;
 }
 
 .cm-editor .cm-cursor {
-  border-left-color: var(--cm-fg) !important;
+  border-left-color: var(--cm-caret) !important;
 }
 
 .cm-editor.cm-focused {

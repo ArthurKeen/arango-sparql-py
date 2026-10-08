@@ -27,10 +27,11 @@ export const messages = {
   "aria.commandPalette": "Command palette",
   "aria.status": "Status",
 
-  "theme.label": "Theme",
-  "theme.system": "System",
-  "theme.dark": "Dark",
-  "theme.light": "Light",
+  "theme.toNight": "Switch to night mode",
+  "theme.toDay": "Switch to day mode",
+
+  "composer.placeholder": "Ask a question about your data\u2026",
+  "status.notConnected": "Not connected \u2014 Send generates & transpiles only",
 
   "status.idle": "Ready",
   "status.translating": "Translating…",

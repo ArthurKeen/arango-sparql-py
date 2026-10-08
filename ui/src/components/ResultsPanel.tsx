@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { CATEGORICAL } from "../theme/graphPalette";
 import type { Action, ResultTab } from "../api/store";
 import CytoscapeGraph from "./CytoscapeGraph";
 import type { CyNode } from "./CytoscapeGraph";
@@ -160,7 +161,7 @@ function NodeInspector({
         <div className="flex items-center gap-2 min-w-0">
           <span
             className="w-3 h-3 rounded-full shrink-0"
-            style={{ backgroundColor: node.color || "#6366f1" }}
+            style={{ backgroundColor: node.color || CATEGORICAL[0] }}
           />
           <span className="text-sm font-semibold text-gray-100 truncate">
             {node.label}

@@ -452,3 +452,60 @@ describe("reducer: schema slice", () => {
     expect(next.schema).toEqual(initialSchemaState);
   });
 });
+
+// Ported from arango-cypher-py (51be876): a DB switch must not leave the old
+// token in place, or token+database-keyed effects 401 against the new DB.
+describe("reducer: CONNECT_START token lifecycle (db-switch 401 fix)", () => {
+  function connected(): AppState {
+    return apply(initialState, {
+      type: "CONNECT_SUCCESS",
+      token: "old-token",
+      databases: ["a", "b"],
+      url: "https://cluster",
+      database: "a",
+      username: "root",
+      password: "pw",
+    });
+  }
+
+  it("CONNECT_START drops the previous token so db-keyed effects bail", () => {
+    const s = apply(connected(), {
+      type: "CONNECT_START",
+      url: "https://cluster",
+      database: "b",
+      username: "root",
+    });
+    expect(s.connection.status).toBe("connecting");
+    expect(s.connection.token).toBeNull();
+    expect(s.connection.database).toBe("b");
+  });
+
+  it("CONNECT_SUCCESS installs the fresh token after a switch", () => {
+    const s = apply(
+      connected(),
+      { type: "CONNECT_START", url: "https://cluster", database: "b", username: "root" },
+      {
+        type: "CONNECT_SUCCESS",
+        token: "new-token",
+        databases: ["a", "b"],
+        url: "https://cluster",
+        database: "b",
+        username: "root",
+        password: "pw",
+      },
+    );
+    expect(s.connection.status).toBe("connected");
+    expect(s.connection.token).toBe("new-token");
+    expect(s.connection.database).toBe("b");
+  });
+
+  it("CONNECT_ERROR after a switch leaves no stale token behind", () => {
+    const s = apply(
+      connected(),
+      { type: "CONNECT_START", url: "https://cluster", database: "b", username: "root" },
+      { type: "CONNECT_ERROR", error: "boom" },
+    );
+    expect(s.connection.status).toBe("disconnected");
+    expect(s.connection.token).toBeNull();
+  });
+});
