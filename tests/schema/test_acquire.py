@@ -1075,3 +1075,51 @@ def test_analyzer_not_installed_error_custom_install_hint() -> None:
     err = AnalyzerNotInstalledError(install_hint=custom)
     assert err.install_hint == custom
     assert custom in str(err)
+
+
+# ---------------------------------------------------------------------------
+# Analyzer LLM provider — off by default (cypher-py parity, 2026-10-08)
+# ---------------------------------------------------------------------------
+
+
+def test_analyzer_runs_without_an_llm_by_default_even_when_nl_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # LLM_PROVIDER and the API keys belong to the NL pipeline; configuring NL
+    # must not put the analyzer back on the LLM path (its scan uses up the
+    # total budget on a large database and the LLM call is floored to 1 s).
+    monkeypatch.delenv("SCHEMA_ANALYZER_PROVIDER", raising=False)
+    monkeypatch.setenv("LLM_PROVIDER", "openai")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    assert acquire_mod._resolve_analyzer_provider() is None
+
+
+@pytest.mark.parametrize("provider", ["openai", "anthropic", "openrouter", " OpenAI "])
+def test_analyzer_llm_is_an_explicit_opt_in(monkeypatch: pytest.MonkeyPatch, provider: str) -> None:
+    monkeypatch.setenv("SCHEMA_ANALYZER_PROVIDER", provider)
+    assert acquire_mod._resolve_analyzer_provider() == provider.strip().lower()
+
+
+def test_unknown_analyzer_provider_falls_back_to_no_llm(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SCHEMA_ANALYZER_PROVIDER", "gemini")
+    assert acquire_mod._resolve_analyzer_provider() is None
+
+
+def test_the_no_llm_baseline_note_is_info_not_a_warning() -> None:
+    # Without an LLM the analyzer adds this note to every bundle; tagged
+    # ``info`` (stable code) the Workbench keeps it out of the warning banner.
+    note = acquire_mod._normalize_warning_entry(
+        "LLM provider not configured; returning deterministic baseline inference"
+    )
+    assert note["code"] == "ANALYZER_BASELINE_NO_LLM"
+    assert note["severity"] == "info"
+
+
+def test_other_analyzer_strings_stay_warnings() -> None:
+    note = acquire_mod._normalize_warning_entry("OpenAI request failed")
+    assert note == {
+        "code": acquire_mod.W_ANALYZER_ADVISORY,
+        "message": "OpenAI request failed",
+        "severity": "warning",
+    }

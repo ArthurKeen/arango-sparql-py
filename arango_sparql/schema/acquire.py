@@ -378,56 +378,46 @@ def _provider_sdk_available(provider: str) -> bool:
 
 
 def _resolve_analyzer_provider() -> str | None:
-    """Pick the LLM provider for the schema analyzer, or ``None`` for the
-    deterministic baseline.
+    """The LLM provider for the schema analyzer — ``None`` (no LLM) by default.
 
-    With no provider, ``AgenticSchemaAnalyzer`` runs its no-LLM baseline
-    inference, which misclassifies hybrid / LABEL-style collections — e.g.
-    it treats a ``name`` column as a type discriminator and emits one OWL
-    class per value instead of a single class. Naming a provider here is
-    what lets the analyzer do the intelligent classification the PRD
-    assumes is canonical (§6.3.2).
+    The analyzer runs its deterministic baseline inference unless an operator
+    opts in with ``SCHEMA_ANALYZER_PROVIDER=openai|anthropic|openrouter``. This
+    matches ``arango-cypher-py``, whose service always constructs
+    ``AgenticSchemaAnalyzer()`` without an LLM.
 
-    Resolution mirrors the NL2SPARQL policy
-    (:func:`arango_sparql.nl2sparql.client.get_default_client`) so both
-    LLM-backed subsystems select the same provider from one environment:
+    Why the default changed (2026-10-08): the analyzer's ``timeout_ms`` is a
+    *total* budget shared by its physical scan and its LLM call. On a large
+    database the scan alone outlasts it (prod.demo ``IAM``: ~7 min), so the LLM
+    call is floored to the analyzer's 1 s minimum, times out three times, and
+    falls back to the baseline anyway — the LLM only ever added waiting. The
+    generic ``LLM_PROVIDER`` and the API keys belong to the NL pipeline and are
+    deliberately *not* inherited here, so configuring NL never switches the
+    analyzer back onto the LLM path.
 
-    1. Explicit ``SCHEMA_ANALYZER_PROVIDER``, then the generic
-       ``LLM_PROVIDER`` (shared with the NL pipeline).
-    2. Otherwise infer from which API key is present, but only pick a
-       provider whose client SDK is importable — selecting one whose key is
-       set but whose SDK is absent would make the analyzer silently drop
-       back to baseline, the exact failure this shim exists to prevent.
-    3. ``None`` when nothing usable is configured — the analyzer then
-       degrades to baseline, exactly as it did before this shim.
-
-    The key itself is deliberately *not* read here: the analyzer resolves
-    it from the provider's canonical env var, so passing only the provider
-    name keeps key handling in one place.
+    Trade-off: the baseline can misclassify hybrid / LABEL-style collections
+    (e.g. a ``name`` column read as a type discriminator). Operators who need
+    the LLM classification on a database small enough for it to finish inside
+    ``SCHEMA_ANALYZER_TIMEOUT_MS`` can still opt in explicitly.
     """
 
-    provider = (os.getenv("SCHEMA_ANALYZER_PROVIDER") or os.getenv("LLM_PROVIDER") or "").strip().lower()
-    if provider:
-        if provider not in ("openai", "anthropic", "openrouter"):
-            logger.warning(
-                "Unknown schema-analyzer provider %r; using deterministic "
-                "baseline. Set SCHEMA_ANALYZER_PROVIDER to "
-                "openai/anthropic/openrouter.",
-                provider,
-            )
-            return None
-        # Explicit request is honoured as-is; if its SDK/key is missing the
-        # analyzer logs and degrades to baseline itself.
-        return provider
-
-    for candidate, key_var in (
-        ("openai", "OPENAI_API_KEY"),
-        ("anthropic", "ANTHROPIC_API_KEY"),
-        ("openrouter", "OPENROUTER_API_KEY"),
-    ):
-        if os.getenv(key_var) and _provider_sdk_available(candidate):
-            return candidate
-    return None
+    provider = (os.getenv("SCHEMA_ANALYZER_PROVIDER") or "").strip().lower()
+    if not provider:
+        return None
+    if provider not in ("openai", "anthropic", "openrouter"):
+        logger.warning(
+            "Unknown schema-analyzer provider %r; using deterministic "
+            "baseline. Set SCHEMA_ANALYZER_PROVIDER to "
+            "openai/anthropic/openrouter, or unset it for no LLM.",
+            provider,
+        )
+        return None
+    if not _provider_sdk_available(provider):
+        logger.warning(
+            "SCHEMA_ANALYZER_PROVIDER=%s but its client SDK is not installed; "
+            "the analyzer will degrade to its deterministic baseline.",
+            provider,
+        )
+    return provider
 
 
 def _acquire_via_analyzer(db: Any, *, include_owl: bool) -> MappingBundle:
@@ -451,12 +441,10 @@ def _acquire_via_analyzer(db: Any, *, include_owl: bool) -> MappingBundle:
     except ImportError as exc:  # pragma: no cover — caller pre-checks
         raise AnalyzerNotInstalledError() from exc
 
-    # Pass an LLM provider so the analyzer runs its intelligent
-    # classification instead of the deterministic baseline (which cannot
-    # tell a single-class collection from a LABEL-discriminated one). The
-    # analyzer reads the matching API key from the environment itself, and
-    # re-checks provider+key internally — a missing key or provider error
-    # degrades to baseline rather than raising, so this stays best-effort.
+    # No LLM unless SCHEMA_ANALYZER_PROVIDER opts in (cypher-py parity; see
+    # _resolve_analyzer_provider for why). With a provider, the analyzer
+    # reads the matching API key itself and degrades to baseline on any
+    # provider error, so this stays best-effort.
     provider = _resolve_analyzer_provider()
     model = os.getenv("SCHEMA_ANALYZER_MODEL") or (
         _DEFAULT_ANALYZER_MODEL.get(provider) if provider else None
@@ -469,17 +457,15 @@ def _acquire_via_analyzer(db: Any, *, include_owl: bool) -> MappingBundle:
         )
     else:
         logger.info(
-            "schema-analyzer running deterministic baseline (no LLM provider "
-            "configured; set SCHEMA_ANALYZER_PROVIDER or LLM_PROVIDER to enable "
-            "intelligent classification)"
+            "schema-analyzer running deterministic baseline (no LLM — the "
+            "default; set SCHEMA_ANALYZER_PROVIDER to opt in)"
         )
     analyzer = AgenticSchemaAnalyzer(llm_provider=provider, model=model)
-    # The analyzer's per-call LLM budget defaults to 60s, which is not enough
-    # for a large schema (a 50+ collection database can need 2-3 minutes for
-    # the model to emit a full mapping) — the request times out and the whole
-    # classification silently degrades to the deterministic baseline. Give it
-    # a generous default and let deployments tune it; the result is cached by
-    # the route layer, so this cost is paid once per schema, not per request.
+    # ``timeout_ms`` is the analyzer's TOTAL budget (physical scan + LLM call);
+    # it only matters when an LLM provider is opted in — the remaining budget
+    # after the scan is what the LLM call gets (floored at 1 s by the analyzer).
+    # The result is cached by the route layer and built off the request path
+    # (service/schema_warm.py), so the cost is paid once per database.
     timeout_ms = _analyzer_timeout_ms()
     analysis_result = analyzer.analyze_physical_schema(db, timeout_ms=timeout_ms)
 
@@ -857,6 +843,16 @@ def _attach_warning(
     )
 
 
+#: Analyzer notes recognised by message prefix → (code, severity). ``info``
+#: describes normal operation and the Workbench keeps it out of the warning
+#: banner: since 2026-10-08 the analyzer runs without an LLM by default
+#: (:func:`_resolve_analyzer_provider`), so this note is on every analyzer
+#: bundle. Mirrors arango-cypher-py's ``_ANALYZER_NOTES``.
+_ANALYZER_NOTES: tuple[tuple[str, str, str], ...] = (
+    ("LLM provider not configured", "ANALYZER_BASELINE_NO_LLM", "info"),
+)
+
+
 def _normalize_warning_entry(entry: Any) -> dict[str, Any]:
     """Coerce one warning into the canonical ``{code, message}`` dict.
 
@@ -869,7 +865,11 @@ def _normalize_warning_entry(entry: Any) -> dict[str, Any]:
 
     if isinstance(entry, dict):
         return entry
-    return {"code": W_ANALYZER_ADVISORY, "message": str(entry)}
+    message = str(entry)
+    for prefix, code, severity in _ANALYZER_NOTES:
+        if message.startswith(prefix):
+            return {"code": code, "message": message, "severity": severity}
+    return {"code": W_ANALYZER_ADVISORY, "message": message, "severity": "warning"}
 
 
 def _normalize_bundle_warnings(bundle: MappingBundle) -> MappingBundle:
