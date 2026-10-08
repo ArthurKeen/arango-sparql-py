@@ -417,14 +417,23 @@ class SchemaIntrospectResponse(BaseModel):
     emitted so a single call satisfies both the planner-side
     ("give me the bundle") and the UI-side ("just show the user what
     the schema looks like") consumers.
+
+    Catalog model (``service/schema_warm.py``): ``status="pending"`` means
+    the database has not been analyzed yet and a background analysis is
+    running — ``mapping`` / ``summary`` are empty and the client retries.
+    ``warming=true`` means a (re)analysis is in flight; with
+    ``status="ready"`` the payload is the current cached schema and a
+    fresher one is on its way (after "Refresh schema" or TTL expiry).
     """
 
-    mapping: dict[str, Any]
-    summary: dict[str, Any]
+    mapping: dict[str, Any] = Field(default_factory=dict)
+    summary: dict[str, Any] = Field(default_factory=dict)
     warnings: list[dict[str, Any]] = Field(default_factory=list)
     source: dict[str, Any] | None = None
     cache_hit: bool = False
     elapsed_ms: float = 0.0
+    status: Literal["ready", "pending"] = "ready"
+    warming: bool = False
 
 
 class SchemaPropertiesResponse(BaseModel):
@@ -482,6 +491,9 @@ class SchemaStatisticsResponse(BaseModel):
     statistics: dict[str, Any] = Field(default_factory=dict)
     available: bool = False
     last_acquired_at: str | None = None
+    # Same catalog semantics as SchemaIntrospectResponse.status / .warming.
+    status: Literal["ready", "pending"] = "ready"
+    warming: bool = False
 
 
 class SchemaFingerprintBlock(BaseModel):
@@ -685,3 +697,6 @@ class OwlSchemaResponse(BaseModel):
     source: dict[str, Any] | None = None
     warnings: list[dict[str, Any]] = Field(default_factory=list)
     elapsed_ms: float = 0.0
+    # Same catalog semantics as SchemaIntrospectResponse.status / .warming.
+    status: Literal["ready", "pending"] = "ready"
+    warming: bool = False

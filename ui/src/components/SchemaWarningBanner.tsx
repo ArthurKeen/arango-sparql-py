@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import type { Action } from "../api/store";
+import type { Action, SchemaWarning } from "../api/store";
 
 // Schema-warning banner. The Cypher UI surfaces backend-reported
 // schema introspection warnings (e.g. ANALYZER_NOT_INSTALLED) here.
@@ -9,11 +9,8 @@ import type { Action } from "../api/store";
 // today. A future ontology-validation endpoint can populate
 // `warnings` with the same shape and reuse the dismissal storage.
 
-export interface SchemaWarning {
-  code: string;
-  message: string;
-  install_hint?: string;
-}
+// One SchemaWarning shape for the whole UI (the store owns it).
+export type { SchemaWarning };
 
 interface Props {
   warnings: SchemaWarning[];
@@ -61,8 +58,10 @@ export default function SchemaWarningBanner({
     setDismissed(loadDismissed());
   }, [url, database]);
 
+  // Info notes describe normal operation (e.g. ANALYZER_BASELINE_NO_LLM on
+  // every analyzer schema) — not something to warn about. cypher-py parity.
   const visible = warnings.filter(
-    (w) => !dismissed[dismissalKey(url, database, w.code)],
+    (w) => w.severity !== "info" && !dismissed[dismissalKey(url, database, w.code)],
   );
 
   const handleDismiss = useCallback(

@@ -168,7 +168,10 @@ def test_schema_acquisition_failure_returns_503_with_retry_after(
     def _boom(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("analyzer connection refused")
 
-    monkeypatch.setattr(_protocol, "_get_or_acquire", _boom)
+    # Fail the analysis itself: the (inline, see tests/conftest.py) background
+    # warm records the failure, ``_read_or_warm`` re-raises it to this
+    # request, and the protocol maps it to 503 + Retry-After.
+    monkeypatch.setattr(_schema, "acquire_mapping_bundle", _boom)
     resp = client.get(
         "/sparql",
         params={"query": SELECT_QUERY},

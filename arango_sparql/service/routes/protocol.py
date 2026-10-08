@@ -26,9 +26,10 @@ The route layer composes the four helpers in
   no-query GET response.
 
 The route does *not* re-implement schema acquisition — it delegates
-to :func:`arango_sparql.service.routes.schema._get_or_acquire`,
-which takes care of the L1 cache and the ``E_SCHEMA_UNAVAILABLE``
-edge case.
+to :func:`arango_sparql.service.routes.schema._read_or_warm`, which
+serves the cached schema and never blocks on the analyzer: a database
+not yet analyzed answers ``503 E_SCHEMA_UNAVAILABLE`` + ``Retry-After``
+while a background analysis runs (``service/schema_warm.py``).
 
 Headers (PRD §5.2 + §9.1):
 
@@ -99,7 +100,7 @@ from ..security import (
     _translate_errors,
 )
 from ..tenant import resolve_tenant_id
-from .schema import _get_or_acquire
+from .schema import _read_or_warm
 
 logger = _log.getLogger("arango_sparql.service.routes.protocol")
 
@@ -451,9 +452,8 @@ def _resolver_for_session(session: _Session) -> tuple[SchemaResolver, list[dict[
     """
 
     try:
-        bundle, _cache_hit = _get_or_acquire(
+        bundle, _cache_hit, _warming = _read_or_warm(
             session.db,
-            force=False,
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )
@@ -485,6 +485,24 @@ def _resolver_for_session(session: _Session) -> tuple[SchemaResolver, list[dict[
             headers={"Retry-After": "30"},
         ) from exc
 
+    if bundle is None:
+        # Not analyzed yet: a background analysis is running
+        # (service/schema_warm.py). PRD §5.2 row 5's contract for a
+        # schema that is not available yet — 503 + Retry-After — is
+        # exactly what a protocol client needs; it never blocks on the
+        # multi-minute analyzer.
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": (
+                    "The schema for this database is being analyzed in the background. "
+                    "Retry after the indicated delay."
+                ),
+                "code": "E_SCHEMA_UNAVAILABLE",
+            },
+            headers={"Retry-After": "30"},
+        )
+
     resolver = SchemaResolver.from_mapping_bundle(bundle)
     return resolver, list(resolver.warnings)
 
@@ -497,9 +515,10 @@ def _bundle_for_session(session: _Session):
     """
 
     try:
-        bundle, _hit = _get_or_acquire(
+        # Cache-only (never blocks): a miss starts a background analysis
+        # and the Service Description renders with the default graph.
+        bundle, _hit, _warming = _read_or_warm(
             session.db,
-            force=False,
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )

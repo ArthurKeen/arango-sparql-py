@@ -342,26 +342,31 @@ def test_introspect_force_bypasses_cache(
     assert stub_acquire["calls"][1]["force_refresh"] is True
 
 
-def test_introspect_forwards_session_graph_scope(
+def test_introspect_scope_is_derived_from_one_full_db_analysis(
     client: TestClient,
     session_token: str,
     stub_acquire: dict[str, Any],
 ) -> None:
-    """A bound named-graph scope reaches acquisition and gets its own
-    cache slot (so it doesn't collide with the unscoped bundle)."""
+    """A bound named-graph scope is a filter of the full-DB bundle.
+
+    The analyzer always runs unscoped (``graph_name=None``) and the result is
+    cached once per database; a scoped introspect derives its view from it.
+    So switching scope never re-runs the multi-minute analysis — the
+    unscoped read after a scoped one is a cache hit. (cypher-py parity,
+    ``read_cached_mapping``; this replaced per-scope acquisition.)
+    """
     _sessions[session_token].graph_name = "social"
     headers = {"X-Arango-Session": session_token}
     resp = client.get("/schema/introspect", headers=headers)
     assert resp.status_code == 200
-    assert stub_acquire["calls"][-1]["graph_name"] == "social"
+    assert resp.json()["status"] == "ready"
+    assert [c["graph_name"] for c in stub_acquire["calls"]] == [None]
 
-    # An unscoped introspect on the same db must NOT be served the scoped
-    # entry (distinct cache key), so it triggers a fresh acquire.
     _sessions[session_token].graph_name = None
     resp2 = client.get("/schema/introspect", headers=headers)
     assert resp2.status_code == 200
-    assert resp2.json()["cache_hit"] is False
-    assert stub_acquire["calls"][-1]["graph_name"] is None
+    assert resp2.json()["cache_hit"] is True
+    assert len(stub_acquire["calls"]) == 1
 
 
 def test_introspect_strategy_invalid_returns_422(client: TestClient, session_token: str) -> None:

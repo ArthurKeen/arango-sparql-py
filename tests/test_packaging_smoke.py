@@ -15,7 +15,7 @@ def test_package_imports() -> None:
 def test_service_app_constructs() -> None:
     from arango_sparql.service import app
 
-    assert app.title == "Arango SPARQL Transpiler"
+    assert app.title == "Arango SPARQL"
 
 
 def test_health_route_registered() -> None:

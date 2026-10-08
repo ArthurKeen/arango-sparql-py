@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  cancelSchemaPolls,
   connect,
   connectPlatform,
   disconnect,
   getConnectDefaults,
   getPlatformStatus,
-  schemaIntrospect,
+  schemaIntrospectUntilReady,
+  SchemaPollSuperseded,
   type ConnectDefaults,
   type PlatformStatus,
   type SchemaIntrospectResponse,
 } from "../api/client";
 import type { Action, ConnectionState, SchemaWarning } from "../api/store";
+import { t } from "../i18n";
 
 // `ConnectionDialog` for the SPARQL UI. After a successful
 // `/connect` it kicks off a `/schema/introspect` round-trip so the
@@ -38,6 +41,9 @@ interface Props {
   /** True while a schema read is in flight (auto-introspect on connect or a
    * refresh) — drives the "Loading schema…" cue in the connection bar. */
   introspecting?: boolean;
+  /** True while the server analyzes the database in the background — the
+   * cue then says so, since a first analysis can take minutes. */
+  analyzing?: boolean;
   /** "Refresh schema": bypass the schema cache and re-read the database.
    * Owned by App.tsx, which also keeps the ontology editor in sync. */
   onRefreshSchema?: () => void;
@@ -62,6 +68,7 @@ function _normaliseWarnings(
       code: w.code,
       message: w.message,
       install_hint: w.install_hint,
+      severity: w.severity,
     }));
 }
 
@@ -85,6 +92,7 @@ export default function ConnectionDialog({
   dispatch,
   onSchemaLoaded,
   introspecting = false,
+  analyzing = false,
   onRefreshSchema,
 }: Props) {
   const [form, setForm] = useState({
@@ -242,11 +250,19 @@ export default function ConnectionDialog({
   async function doAutoIntrospect(token: string, database: string) {
     dispatch({ type: "SCHEMA_REFRESH_START" });
     try {
-      const resp = await schemaIntrospect(token, {
-        database,
-        include_owl: true,
-        include_statistics: true,
-      });
+      // The schema is read from the server's cache; a database it has not
+      // analyzed yet answers "pending" while a background analysis runs
+      // (service/schema_warm.py), so wait it out instead of freezing on one
+      // multi-minute request.
+      const resp = await schemaIntrospectUntilReady(
+        token,
+        { database, include_owl: true, include_statistics: true },
+        { onAnalyzing: () => dispatch({ type: "SCHEMA_ANALYZING" }) },
+      );
+      if (resp.status === "pending") {
+        dispatch({ type: "SCHEMA_REFRESH_ERROR", error: t("schema.stillAnalyzing") });
+        return;
+      }
       dispatch({
         type: "SCHEMA_LOADED",
         mapping: resp.mapping ?? null,
@@ -257,6 +273,8 @@ export default function ConnectionDialog({
       const turtle = _extractTurtle(resp);
       if (turtle && onSchemaLoaded) onSchemaLoaded(turtle);
     } catch (err) {
+      // A newer connect / refresh / disconnect took over: drop this result.
+      if (err instanceof SchemaPollSuperseded) return;
       // Non-fatal — the user can still author an ontology by hand.
       // We surface the error in the schema slice so the warning
       // banner can render it; the connection itself remains active.
@@ -321,6 +339,7 @@ export default function ConnectionDialog({
   }
 
   async function handleDisconnect() {
+    cancelSchemaPolls();
     if (connection.token) {
       try {
         await disconnect(connection.token);
@@ -374,7 +393,7 @@ export default function ConnectionDialog({
             <svg className="w-3 h-3 animate-spin" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="2" strokeDasharray="28" strokeDashoffset="8" strokeLinecap="round" />
             </svg>
-            Loading schema…
+            {analyzing ? t("schema.analyzing") : t("schema.loading")}
           </span>
         )}
         {onRefreshSchema && (

@@ -41,3 +41,118 @@ describe("apiBaseFor", () => {
     expect(apiBaseFor("/_service/uds/_db/frontend-db/app/")).toBe("/_service/uds/_db/frontend-db/app");
   });
 });
+
+// ---------------------------------------------------------------------------
+// schemaIntrospectUntilReady — catalog model (service/schema_warm.py)
+// ---------------------------------------------------------------------------
+
+import { afterEach, vi } from "vitest";
+import {
+  cancelSchemaPolls,
+  schemaIntrospectUntilReady,
+  SchemaPollSuperseded,
+  type SchemaIntrospectResponse,
+} from "./client";
+
+function introspectBody(over: Partial<SchemaIntrospectResponse>): SchemaIntrospectResponse {
+  return {
+    mapping: {},
+    summary: {},
+    warnings: [],
+    source: null,
+    cache_hit: false,
+    elapsed_ms: 0,
+    status: "ready",
+    warming: false,
+    ...over,
+  };
+}
+
+// Real fetch Responses, served in order; records each request URL.
+function serve(bodies: SchemaIntrospectResponse[]): string[] {
+  const urls: string[] = [];
+  let i = 0;
+  // apiBase() reads the page path; the vitest env is Node (no DOM).
+  vi.stubGlobal("window", { location: { pathname: "/" } });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string) => {
+      urls.push(url);
+      const body = bodies[Math.min(i++, bodies.length - 1)];
+      return new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }),
+  );
+  return urls;
+}
+
+const noSleep = () => Promise.resolve();
+
+describe("schemaIntrospectUntilReady", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("waits out 'pending' and returns the ready schema", async () => {
+    const urls = serve([
+      introspectBody({ status: "pending", warming: true }),
+      introspectBody({ status: "pending", warming: true }),
+      introspectBody({ status: "ready", mapping: { entities: {} } }),
+    ]);
+    const seen: string[] = [];
+    const resp = await schemaIntrospectUntilReady(
+      "tok",
+      { include_owl: true },
+      { sleep: noSleep, onAnalyzing: (r) => seen.push(String(r.status)) },
+    );
+    expect(resp.status).toBe("ready");
+    expect(urls).toHaveLength(3);
+    expect(seen).toEqual(["pending", "pending"]);
+  });
+
+  it("returns at once when the schema is already ready", async () => {
+    const urls = serve([introspectBody({ status: "ready", cache_hit: true })]);
+    const resp = await schemaIntrospectUntilReady("tok", {}, { sleep: noSleep });
+    expect(resp.cache_hit).toBe(true);
+    expect(urls).toHaveLength(1);
+  });
+
+  it("after a forced refresh, waits until warming ends — and never re-forces", async () => {
+    const urls = serve([
+      introspectBody({ status: "ready", warming: true }),
+      introspectBody({ status: "ready", warming: true }),
+      introspectBody({ status: "ready", warming: false }),
+    ]);
+    const resp = await schemaIntrospectUntilReady("tok", { force: true }, { sleep: noSleep });
+    expect(resp.warming).toBe(false);
+    expect(urls[0]).toContain("force=true");
+    expect(urls.slice(1).every((u) => u.includes("force=false"))).toBe(true);
+  });
+
+  it("does not wait on warming for an unforced read (a stale schema is served)", async () => {
+    const urls = serve([introspectBody({ status: "ready", warming: true })]);
+    await schemaIntrospectUntilReady("tok", {}, { sleep: noSleep });
+    expect(urls).toHaveLength(1);
+  });
+
+  it("gives up after maxWaitMs and returns the last pending answer", async () => {
+    serve([introspectBody({ status: "pending", warming: true })]);
+    let t = 0;
+    const resp = await schemaIntrospectUntilReady(
+      "tok",
+      {},
+      { sleep: async () => void (t += 60_000), now: () => t, maxWaitMs: 120_000 },
+    );
+    expect(resp.status).toBe("pending");
+  });
+
+  it("is superseded by a newer poll or a cancel, never delivering stale state", async () => {
+    serve([introspectBody({ status: "pending", warming: true })]);
+    const older = schemaIntrospectUntilReady("old-token", {}, {
+      sleep: async () => {
+        cancelSchemaPolls();
+      },
+    });
+    await expect(older).rejects.toBeInstanceOf(SchemaPollSuperseded);
+  });
+});

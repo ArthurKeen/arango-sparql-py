@@ -26,7 +26,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .. import __version__
 
 app = FastAPI(
-    title="Arango SPARQL Transpiler",
+    title="Arango SPARQL",
     description="SPARQL 1.1 → AQL translation service for ArangoDB",
     # Read from the package's single source of truth so openapi.json reports the
     # real release — the BYOC deploy verifier asserts against exactly this.

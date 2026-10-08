@@ -58,6 +58,9 @@ export interface SchemaWarning {
   code: string;
   message: string;
   install_hint?: string;
+  /** "info" notes describe normal operation (e.g. the analyzer's no-LLM
+   * baseline) and stay out of the warning banner. */
+  severity?: string;
 }
 
 export type SchemaCacheStatus =
@@ -82,6 +85,10 @@ export interface SchemaState {
   lastFetchedAt: number | null;
   /** True while a /schema/{introspect,force-reacquire} call is in flight. */
   refreshing: boolean;
+  /** True while the server analyzes the database in the background (the
+   * schema read answered "pending", or a forced refresh is still `warming`).
+   * The first analysis of a large database can take minutes. */
+  analyzing: boolean;
   /** Last error from a schema-API call, if any. Cleared on success. */
   error: string | null;
   /** Triple count reported by the most recent OWL import (UI badge). */
@@ -96,6 +103,7 @@ export const initialSchemaState: SchemaState = {
   cacheHit: false,
   lastFetchedAt: null,
   refreshing: false,
+  analyzing: false,
   error: null,
   lastImportTripleCount: null,
 };
@@ -307,6 +315,7 @@ export type Action =
   | { type: "ADD_TRANSCRIPT_TURN"; turn: TranscriptTurn }
   | { type: "CLEAR_TRANSCRIPT" }
   | { type: "SCHEMA_REFRESH_START" }
+  | { type: "SCHEMA_ANALYZING" }
   | {
       type: "SCHEMA_LOADED";
       mapping: Record<string, unknown> | null;
@@ -499,7 +508,12 @@ function reducer(state: AppState, action: Action): AppState {
     case "SCHEMA_REFRESH_START":
       return {
         ...state,
-        schema: { ...state.schema, refreshing: true, error: null },
+        schema: { ...state.schema, refreshing: true, analyzing: false, error: null },
+      };
+    case "SCHEMA_ANALYZING":
+      return {
+        ...state,
+        schema: { ...state.schema, refreshing: true, analyzing: true },
       };
     case "SCHEMA_LOADED":
       return {
@@ -516,6 +530,7 @@ function reducer(state: AppState, action: Action): AppState {
           cacheStatus: "unchanged",
           lastFetchedAt: Date.now(),
           refreshing: false,
+          analyzing: false,
           error: null,
         },
       };
@@ -525,6 +540,7 @@ function reducer(state: AppState, action: Action): AppState {
         schema: {
           ...state.schema,
           refreshing: false,
+          analyzing: false,
           error: action.error,
         },
       };
