@@ -174,6 +174,47 @@ class EngineProviderBridge:
         }
 
 
+#: An LLM-generated query used a "prefixed name pasted after a prefix"
+#: (``:phys:typeValue``). Rejected in NL validation so the repair loop can fix
+#: it; hand-written SPARQL keeps the translator's local-name fallback.
+E_NL_MISPREFIXED_TERM = "E_NL_MISPREFIXED_TERM"
+
+
+def _misprefixed_properties(warnings: list[dict]) -> list[str]:
+    """IRIs of properties whose local name itself contains a ``:``.
+
+    The translator falls back to an IRI's local name as the document
+    attribute when the property is not declared (``W_SCHEMA_UNMAPPED_IRI``).
+    That fallback is correct for a real field the ontology does not declare
+    (e.g. ``:file_name``) — analyzer ontologies declare no datatype properties
+    at all, so NL relies on it. A local name containing ``:`` is different: it
+    is a prefixed name pasted after another prefix, almost always one of the
+    ontology's ``phys:`` mapping annotations (``:phys:typeValue``, seen on
+    prod.demo IAM, 2026-10-08) — storage metadata, not data, so the query is
+    wrong even though it translates.
+    """
+    out: list[str] = []
+    for w in warnings or []:
+        if not isinstance(w, dict) or w.get("code") != "W_SCHEMA_UNMAPPED_IRI":
+            continue
+        fallback = str(w.get("fallback") or "")
+        if ":" in fallback:
+            out.append(str(w.get("iri") or fallback))
+    return out
+
+
+def _misprefixed_message(iris: list[str]) -> str:
+    listed = ", ".join(f"<{iri}>" for iri in iris)
+    return (
+        f"Predicate(s) {listed} have a local name containing ':' — a prefixed name "
+        "written after another prefix (e.g. ':phys:typeValue'). Terms in the 'phys:' "
+        "namespace (phys:typeValue, phys:collectionName, phys:mappingStyle, …) are "
+        "storage annotations describing how classes are stored; they are not data and "
+        "cannot be queried. Use rdf:type (`a`) with a declared class, a declared "
+        "property, or a plain attribute name such as `:file_name`."
+    )
+
+
 class SparqlAdapter:
     """The five ``QueryLanguageAdapter`` seams for SPARQL.
 
@@ -261,10 +302,17 @@ class SparqlAdapter:
         # pipeline's final re-translate uses — never one rebuilt from
         # ``ontology_ttl`` (which may be empty for mapping-JSON requests).
         try:
-            _api_translate(query, resolver=self.resolver)
-            return ValidationResult(ok=True)
+            result = _api_translate(query, resolver=self.resolver)
         except SparqlError as exc:
             return ValidationResult(ok=False, error=str(exc), code=getattr(exc, "code", ""))
+        misprefixed = _misprefixed_properties(result.warnings)
+        if misprefixed:
+            return ValidationResult(
+                ok=False,
+                error=_misprefixed_message(misprefixed),
+                code=E_NL_MISPREFIXED_TERM,
+            )
+        return ValidationResult(ok=True)
 
     def repair_hint(self, query: str, failure: ValidationResult) -> str:  # seam 4
         # Reproduce ``format_repair_context`` output. The engine hands us a

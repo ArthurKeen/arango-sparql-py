@@ -979,7 +979,7 @@ advisories" panel.
 
 | Code | Trigger |
 | --- | --- |
-| `W_SCHEMA_UNMAPPED_IRI` | A predicate IRI is not declared in the ontology. Resolver falls back to the IRI's local name as the AQL attribute. |
+| `W_SCHEMA_UNMAPPED_IRI` | A predicate IRI is not declared in the ontology. Resolver falls back to the IRI's local name as the AQL attribute. An attribute name that is not an AQL identifier is emitted **backtick-quoted** (`` doc.`phys:typeValue` ``), and `HAS()` receives it as a bind variable; a name containing a backtick or backslash cannot be quoted safely and raises `E_SPARQL_UNSUPPORTED` — never bare, invalid AQL (`translate/builder.py::attribute_ref`, mirroring `arango-cypher-py`'s escaped-name rule). In NL generation a fallback name containing `:` is rejected instead (§7.3.2). |
 | `W_SCHEMA_DEFAULT_COLLECTION` | A class is declared `owl:Class` but lacks `phys:collectionName`. Resolver falls back to the IRI's local name as the collection name. |
 | `W_SCHEMA_RPT_INFERRED` | The RPT detector flagged a collection as triples-shaped but the OWL ontology did not declare it as such. Resolver treats it as RPT and surfaces this so the operator can either accept the inference or annotate the OWL. |
 | `W_SCHEMA_HYBRID_DETECTED` | The mapping contains entities of two or more `style` values (e.g. one `RPT` + one `LABEL`). Informational only; useful for the UI banner. |
@@ -1204,6 +1204,22 @@ postcondition_mapping=...)`. Two illustrative SPARQL invariants ship in
 ceiling) and `ForbidUnboundProjection` (every explicitly projected variable
 must be bound in the `WHERE` body). Both inspect the rdflib algebra (never a
 hand-rolled parser) and are scoped to `SELECT`. See **REQ-nl-postconditions**.
+
+#### 7.3.2 Built-in validation rule: mis-prefixed names
+
+Besides parse and translate, the validate step rejects a generated query
+whose undeclared property has a local name containing `:` — a prefixed name
+pasted after another prefix, almost always one of the ontology's `phys:`
+storage annotations (`:phys:typeValue`). Such a query translates (the
+local-name fallback, §6.7 `W_SCHEMA_UNMAPPED_IRI`) yet is wrong: it reads
+storage metadata as data. It fails validation with `E_NL_MISPREFIXED_TERM`
+and a message explaining that `phys:` terms are not data, so the bounded
+repair loop corrects it (`nl2sparql/engine_adapter.py::SparqlAdapter.validate`).
+The system prompt states the same rule up front. Undeclared *plain* names
+(`:file_name`) still validate: analyzer ontologies declare no datatype
+properties, so NL relies on that fallback for every field. Observed on
+prod.demo IAM, 2026-10-08 ("What are the different types of AWS security
+documents available?").
 
 ### 7.4 Evaluation methodology
 

@@ -33,6 +33,7 @@ _SYSTEM_PROMPT = """You are a SPARQL 1.1 expert. Given a natural-language questi
 
 Rules:
 - Use ONLY classes and properties declared in the ontology below.
+- Terms in the `phys:` namespace (phys:typeValue, phys:collectionName, phys:mappingStyle, …) are storage annotations that describe how each class is stored. They are NOT data: never use them as predicates.
 - Use SPARQL 1.1 syntax (SELECT / WHERE / FILTER / OPTIONAL / UNION / GROUP BY / ORDER BY / LIMIT, etc.).
 - Do NOT use vendor extensions (no ArangoDB AQL, no Cypher, no SQL).
 - Use fully-qualified IRIs or declare PREFIX directives for every prefix you use. Do NOT invent prefix bindings.
