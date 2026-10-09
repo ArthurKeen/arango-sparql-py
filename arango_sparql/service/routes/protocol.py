@@ -93,6 +93,7 @@ from ..protocol.service_description import render_service_description
 from ..protocol.update_detect import is_sparql_update
 from ..security import (
     _check_compute_rate_limit,
+    _follow_platform_identity,
     _sanitize_error,
     _service_pkg_candidates,
     _Session,
@@ -379,11 +380,11 @@ def _resolve_protocol_session(request: Request) -> _Session:
     PRD §5.2's ``E_AUTH_REQUIRED`` row.
     """
 
-    token = (
-        request.headers.get("X-Arango-Session")
-        or _bearer_token(request.headers.get("Authorization", ""))
-        or request.query_params.get("session", "")
-    )
+    bearer = _bearer_token(request.headers.get("Authorization", ""))
+    token = request.headers.get("X-Arango-Session") or bearer or request.query_params.get("session", "")
+    # The Authorization header is free to carry the platform login unless it
+    # carried the session token itself.
+    via_session_header = bool(token) and token != bearer
     if token:
         session = _sessions.get(token)
         if session is None or session.expired:
@@ -401,6 +402,17 @@ def _resolve_protocol_session(request: Request) -> _Session:
                     "error": "Session expired or invalid",
                     "code": "E_AUTH_REQUIRED",
                 },
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        # A platform session follows the caller's current login and refuses a
+        # request that does not carry it, as every other route does: serving
+        # it on the stored login would let anyone holding the session token
+        # query as the user who opened it.
+        refusal = _follow_platform_identity(session, request, via_session_header=via_session_header)
+        if refusal is not None:
+            raise HTTPException(
+                status_code=401,
+                detail={"error": refusal, "code": "E_AUTH_REQUIRED"},
                 headers={"WWW-Authenticate": "Bearer"},
             )
         session.touch()
@@ -428,6 +440,10 @@ def _resolve_protocol_session(request: Request) -> _Session:
 def _bearer_token(header_value: str) -> str:
     """Extract the token from an ``Authorization: Bearer …`` header,
     or the empty string when the header isn't a Bearer header.
+
+    Case-sensitive on purpose: behind the platform gateway the header holds
+    the user's platform login as ``bearer <jwt>``, which is not a session
+    token and must not be looked up as one (that would refuse the request).
     """
 
     if not header_value:
