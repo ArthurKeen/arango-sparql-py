@@ -27,7 +27,7 @@ from ..errors import (
     SchemaResolutionError,
     UnsupportedSparqlError,
 )
-from .builder import AqlQueryBuilder
+from .builder import AqlQueryBuilder, attribute_ref, is_aql_identifier
 from .filter_builtins import translate_builtin, translate_function
 from .minus_exists import emit_minus
 from .optional_crosssubject import (
@@ -731,7 +731,7 @@ class AlgebraVisitor:
                     )
                 value_expr = let_alias
             else:
-                value_expr = f"{subject_alias}.{prop.attribute}"
+                value_expr = attribute_ref(subject_alias, prop.attribute)
 
             if is_rebind:
                 # Conditional-add inside a MINUS probe (SPARQL §18.2.5.2):
@@ -1328,7 +1328,7 @@ class AlgebraVisitor:
                 self._emit_edge_triple(s, prop, o, triple)
                 return
             alias = self._ensure_subject_alias(s)
-            attr_path = f"{alias}.{prop.attribute}"
+            attr_path = attribute_ref(alias, prop.attribute)
             if isinstance(o, Variable):
                 # Predicate-existence filter (SPARQL 1.1 §18.5): a
                 # required BGP triple ``?s :p ?o`` only matches when
@@ -1344,7 +1344,14 @@ class AlgebraVisitor:
                 # has its own emission path that bypasses ``_emit_triple``
                 # so optional bindings still get the SPARQL-spec "leave
                 # unbound when missing" semantics.
-                self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
+                if is_aql_identifier(prop.attribute):
+                    self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
+                else:
+                    # A non-identifier name travels as a bind variable, never
+                    # spliced into the AQL text (attribute_ref above has
+                    # already refused names AQL cannot quote).
+                    attr_bind = self.builder.bind(prop.attribute, hint="attr")
+                    self.builder.filter_raw(f"HAS({alias}, {attr_bind})")
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
                     if self.resolver.fan_out_list_values:
@@ -1373,7 +1380,12 @@ class AlgebraVisitor:
                 # else: the same expression is already bound — the
                 # triple just re-states what we already knew, no-op.
             elif isinstance(o, (Literal, URIRef)):
-                bind = self.builder.bind(_term_to_python(o), hint=prop.attribute)
+                bind = self.builder.bind(
+                    _term_to_python(o),
+                    # The hint only decorates the placeholder name; skip it
+                    # for a name that is not an identifier (it used to raise).
+                    hint=prop.attribute if is_aql_identifier(prop.attribute) else None,
+                )
                 if self.resolver.fan_out_list_values:
                     self.builder.filter_raw(self._value_match_expr(attr_path, bind))
                 else:
@@ -1490,7 +1502,7 @@ class AlgebraVisitor:
            SELECT / FILTER / additional FORs to reuse.
         """
         graph_field = self.resolver.graph_field
-        lhs = f"{alias}.{graph_field}"
+        lhs = attribute_ref(alias, graph_field)
         if not self.state.graph_scope:
             if not self.resolver.default_graph_includes_named:
                 # Strict default-graph mode — match SPARQL §8.3

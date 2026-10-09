@@ -18,9 +18,41 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from ..errors import AqlEmitError
+from ..errors import AqlEmitError, UnsupportedSparqlError
 
 _AQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def is_aql_identifier(name: str) -> bool:
+    """Whether *name* can be written bare after a dot (``doc.name``)."""
+    return bool(_AQL_IDENT_RE.match(name or ""))
+
+
+def attribute_ref(alias: str, name: str) -> str:
+    """AQL attribute access ``alias.<name>`` that is valid for ANY attribute name.
+
+    A plain identifier is emitted bare (``doc.name`` — every existing golden).
+    Anything else (``phys:typeValue``, ``first name``, ``é``) is backtick-
+    quoted: ``doc.`phys:typeValue```. Emitting it bare produced invalid AQL
+    (``doc.phys:typeValue`` → ERR 1501), and an unquoted caller-influenced
+    name is an injection shape.
+
+    Inside AQL backticks ``\\`` starts an escape and a backtick ends the
+    quoting, so a name containing either cannot be passed safely and is
+    refused — never emitted as plausible-but-wrong AQL. Mirrors
+    arango-cypher-py's ``_reject_unsafe_escaped_names`` rule.
+    """
+    if is_aql_identifier(name):
+        return f"{alias}.{name}"
+    if not name or "`" in name or "\\" in name:
+        shown = name if len(name) <= 80 else name[:80] + "…"
+        raise UnsupportedSparqlError(
+            f"attribute name {shown!r} contains a backtick or backslash (or is empty) "
+            "and cannot be passed safely to AQL; rename the attribute or map the property "
+            "to a different one in the ontology"
+        )
+    return f"{alias}.`{name}`"
+
 
 # Sentinel for distinguishing "bind name absent" from "bind value is None"
 # in :meth:`AqlQueryBuilder.absorb_child`'s collision check. A bare
