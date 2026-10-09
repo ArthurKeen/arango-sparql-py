@@ -302,7 +302,8 @@ that already speak our shape.
 | `POST` | `/disconnect` | session | Close the session |
 | `GET`  | `/connect/defaults` | none in dev / session in public mode | Return non-secret env-var defaults the connect dialog should pre-fill |
 | `GET`  | `/connect/platform` | gateway-forwarded platform JWT | Whether the Workbench can skip the connect dialog — true behind the Arango Platform gateway (BYOC). Returns `{available, database, reason}`, no credential/endpoint — see §15.8 |
-| `POST` | `/connect/platform` | gateway-forwarded platform JWT | Open a session as the signed-in platform user (JWT authenticates server-side; no password reaches the browser). Returns a session token + the opened database — see §15.8 |
+| `POST` | `/connect/platform` | gateway-forwarded platform JWT | Open a session as the signed-in platform user (JWT authenticates server-side; no password reaches the browser). Returns a session token, the opened database and the user the integration sidecar identified — see §15.8 |
+| `GET`  | `/connect/platform/diagnostics` | gateway-forwarded platform JWT | What the platform provides and whether each piece works; never a token — see §15.8 |
 | `GET`  | `/graphs` | session | List the connected database's ArangoDB named graphs (topology graphs) available for collection-scope down-select — see §6.8 |
 | `POST` | `/session/graph` | session | Bind (or clear) the active ArangoDB named-graph scope for this session — see §6.8 |
 | `POST` | `/translate` | rate-limited | SPARQL → AQL only (no DB access) |
@@ -3273,9 +3274,28 @@ baking the mount prefix into the bundle when the bundle is built.
   off the platform the service falls back to `/connect/defaults` and the manual
   dialog. Mirrors `arango-cypher-py`'s platform-login contract. The
   operator-injected endpoint serves a cluster-CA certificate the container does
-  not trust by default, so TLS to it is unverified unless
-  `ARANGO_SPARQL_PLATFORM_CA_BUNDLE` / `ARANGO_SPARQL_PLATFORM_VERIFY_TLS` say
-  otherwise (Appendix A).
+  not trust by default; the operator injects that CA as `ARANGO_DEPLOYMENT_CA`
+  (a path, or the PEM text) and TLS to the endpoint is verified against it, and
+  left unverified only when no CA is injected.
+  `ARANGO_SPARQL_PLATFORM_CA_BUNDLE` / `ARANGO_SPARQL_PLATFORM_VERIFY_TLS`
+  override (Appendix A). The `/sparql` protocol endpoint resolves its session
+  separately but MUST apply the same rule as every other route: a platform
+  session's request without the caller's forwarded JWT is refused (401), never
+  served on the stored one, and a rotated JWT re-binds the session.
+* **Background work as the same user.** The forwarded JWT expires, and a
+  background schema analysis can run for minutes. When the injected
+  integration sidecar (`INTEGRATION_HTTP_ADDRESS[_FULL]`) names the caller
+  (`/_integration/authn/v1/identity`), the analysis runs on a token minted for
+  that user (`/_integration/authn/v1/createToken`, lifetime
+  `ARANGO_SPARQL_SIDECAR_TOKEN_LIFETIME_S`, default 3600), minted only when an
+  analysis starts. A token is never minted without a named user (the sidecar
+  would default to root); without one the analysis keeps the request's token.
+  `POST /connect/platform` returns the user it identified.
+* **Platform diagnostics.** `GET /connect/platform/diagnostics` reports what
+  the platform provides (endpoint, CA, TLS policy and a direct request under
+  it, the forwarded login, the sidecar's identity and a 60-second minted token
+  tried against the endpoint), never a token or a claim value. In a browser,
+  sign in to the platform at `/ui/` first.
 * **Update.** The platform has no in-place update, so an update MUST upload
   the new build *before* deleting the running service. A bad artifact then
   fails while the old version is still serving.
@@ -3660,7 +3680,10 @@ These are server/operator configuration, never taken from a request:
 | `ARANGO_SPARQL_PLATFORM_AUTH` | `auto` (on) | no | `off`/`0`/`false`/`no` disables platform sessions entirely (the manual connect dialog still works) |
 | `ARANGO_DEPLOYMENT_ENDPOINT` | empty | injected by the platform operator | Coordinator address a platform session connects to; falls back to `ARANGO_URL`. A platform session is available only when this (or `ARANGO_URL`) is set *and* the request carried a forwarded JWT |
 | `ARANGO_SPARQL_PLATFORM_CA_BUNDLE` | empty | no | PEM path for the cluster CA that signs the operator endpoint's certificate; when set, TLS to the endpoint is verified against it |
-| `ARANGO_SPARQL_PLATFORM_VERIFY_TLS` | `auto` | no | `on` insists on TLS verification; `off` disables it. `auto` verifies an explicitly configured `ARANGO_URL` but not the operator-injected in-cluster endpoint (cluster-CA cert the container does not trust by default) |
+| `ARANGO_DEPLOYMENT_CA` | empty | injected by the platform operator | The CA that signs the injected endpoint's certificate (a path, or the PEM text); the endpoint is verified against it unless an override says otherwise |
+| `INTEGRATION_HTTP_ADDRESS_FULL` / `INTEGRATION_HTTP_ADDRESS` | empty | injected by the platform operator | The integration sidecar: names a token's user, and mints tokens for background work |
+| `ARANGO_SPARQL_SIDECAR_TOKEN_LIFETIME_S` | `3600` | no | Lifetime of a token minted for background work (minimum 60) |
+| `ARANGO_SPARQL_PLATFORM_VERIFY_TLS` | `auto` | no | `on` insists on TLS verification; `off` disables it. `auto` verifies an explicitly configured `ARANGO_URL` against the system trust store, and the operator-injected endpoint against `ARANGO_DEPLOYMENT_CA` (unverified when none is injected) |
 
 **Database bootstrap.** ArangoDB never auto-creates a database, so
 pointing `ARANGO_DB` at a fresh database would otherwise fail every

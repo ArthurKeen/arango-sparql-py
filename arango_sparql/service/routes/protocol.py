@@ -99,6 +99,7 @@ from ..security import (
     _Session,
     _sessions,
     _translate_errors,
+    background_database,
 )
 from ..tenant import resolve_tenant_id
 from .schema import _read_or_warm
@@ -470,6 +471,7 @@ def _resolver_for_session(session: _Session) -> tuple[SchemaResolver, list[dict[
     try:
         bundle, _cache_hit, _warming = _read_or_warm(
             session.db,
+            background_db=lambda: background_database(session),
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )
@@ -535,6 +537,7 @@ def _bundle_for_session(session: _Session):
         # and the Service Description renders with the default graph.
         bundle, _hit, _warming = _read_or_warm(
             session.db,
+            background_db=lambda: background_database(session),
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )
