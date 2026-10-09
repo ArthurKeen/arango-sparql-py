@@ -24,6 +24,7 @@ from __future__ import annotations
 import logging as _log
 import os
 import time
+from collections.abc import Callable
 from typing import Any
 
 from fastapi import Depends, HTTPException
@@ -72,6 +73,7 @@ from ..security import (
     _get_session,
     _sanitize_error,
     _Session,
+    background_database,
 )
 
 logger = _log.getLogger("arango_sparql.service.routes.schema")
@@ -362,6 +364,7 @@ def _read_or_warm(
     include_owl: bool = False,
     graph_name: str | None = None,
     force: bool = False,
+    background_db: Callable[[], Any] | None = None,
 ) -> tuple[MappingBundle | None, bool, bool]:
     """NON-BLOCKING read: ``(bundle | None, cache_hit, warming)``.
 
@@ -379,6 +382,11 @@ def _read_or_warm(
     A background failure is re-raised once to the next caller (so the
     route's existing error mapping applies) instead of leaving the client
     polling forever. ``strategy="heuristic"`` is fast, so it stays inline.
+
+    *background_db* gives the handle a new background analysis runs on (a
+    platform session's user, on a token that outlives the request; see
+    :func:`~arango_sparql.service.security.background_database`). It is
+    called only when a warm actually starts, since clients poll while one runs.
     """
 
     if strategy == "heuristic":
@@ -404,7 +412,9 @@ def _read_or_warm(
         failure = schema_warm.take_error(db_name)
         if failure is not None and not usable:
             raise failure
-        schema_warm.schedule_warm(db, strategy=strategy)
+        if not schema_warm.is_warming(db_name):
+            warm_db = background_db() if background_db is not None else db
+            schema_warm.schedule_warm(warm_db, strategy=strategy)
         # A warm may complete inline (the test seam); re-read so the caller
         # sees a bundle that is already there.
         refreshed, _ = cache.peek(db_name)
@@ -494,6 +504,7 @@ def schema_introspect(
     try:
         bundle, cache_hit, warming = _read_or_warm(
             session.db,
+            background_db=lambda: background_database(session),
             force=force,
             strategy=typed_strategy,
             include_owl=include_owl,
@@ -603,6 +614,7 @@ def schema_owl(
     try:
         bundle, cache_hit, warming = _read_or_warm(
             session.db,
+            background_db=lambda: background_database(session),
             force=force,
             strategy=typed_strategy,
             include_owl=True,
@@ -957,6 +969,7 @@ def schema_statistics(
     try:
         bundle, _hit, warming = _read_or_warm(
             session.db,
+            background_db=lambda: background_database(session),
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )

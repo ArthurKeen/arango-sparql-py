@@ -76,6 +76,9 @@ class ConnectResponse(BaseModel):
     # open), so the UI learns which DB it actually landed in. ``None`` on the
     # classic ``/connect`` path keeps backward compatibility for older callers.
     database: str | None = None
+    # ``/connect/platform`` only: the platform user the session runs as, as
+    # the platform's integration sidecar names them (``None`` when unknown).
+    user: str | None = None
 
 
 class PlatformConnectRequest(BaseModel):

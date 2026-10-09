@@ -42,6 +42,7 @@ from ..security import (
     _sanitize_error,
     _Session,
     _translate_errors,
+    background_database,
 )
 from ..tenant import resolve_tenant_id
 
@@ -118,6 +119,7 @@ def _analyzer_bundle_for_session(session: _Session | None) -> Any | None:
 
         bundle, _cache_hit, _warming = _read_or_warm(
             session.db,
+            background_db=lambda: background_database(session),
             strategy="auto",
             graph_name=getattr(session, "graph_name", None),
         )
