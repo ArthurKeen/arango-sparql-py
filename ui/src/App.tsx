@@ -15,6 +15,7 @@ import ChatComposer from "./components/ChatComposer";
 import Transcript from "./components/Transcript";
 import QueryInspector from "./components/QueryInspector";
 import SettingsMenu from "./components/SettingsMenu";
+import ReportProblem from "./components/ReportProblem";
 import ResultAffordances from "./components/ResultAffordances";
 import CommandPalette from "./components/CommandPalette";
 import PrefixManager from "./components/PrefixManager";
@@ -84,6 +85,9 @@ export default function App() {
   const [showSamples, setShowSamples] = useState(false);
   const [showOutline, setShowOutline] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
+  // "Report a problem" (PRD §10.19): which error the dialog files — the query
+  // banner's, the NL banner's, or (from the settings menu) whichever is shown.
+  const [reportSource, setReportSource] = useState<"query" | "nl" | "menu" | null>(null);
   const [showTranscript, setShowTranscript] = useState(() =>
     loadBool("show_transcript", false),
   );
@@ -991,6 +995,7 @@ export default function App() {
             historyCount={state.history.length}
             autoOpenOnError={autoOpenOnError}
             onToggleAutoOpenOnError={() => setAutoOpenOnError((v) => !v)}
+            onReportProblem={() => setReportSource("menu")}
           />
         </div>
       </header>
@@ -1000,12 +1005,21 @@ export default function App() {
           <span className="text-sm text-red-300 flex-1 break-words">
             {state.error}
           </span>
-          <button
-            onClick={() => dispatch({ type: "CLEAR_ERROR" })}
-            className="text-red-400 hover:text-red-200 text-xs shrink-0"
-          >
-            Dismiss
-          </button>
+          <div className="flex items-center gap-3 shrink-0">
+            <button
+              onClick={() => setReportSource("query")}
+              title="File this as a GitHub issue (you review it first)"
+              className="text-red-300 hover:text-red-100 text-xs underline-offset-2 hover:underline"
+            >
+              Report
+            </button>
+            <button
+              onClick={() => dispatch({ type: "CLEAR_ERROR" })}
+              className="text-red-400 hover:text-red-200 text-xs"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
 
@@ -1105,12 +1119,21 @@ export default function App() {
               <span className="text-xs text-red-300 flex-1 break-words">
                 {state.nlError}
               </span>
-              <button
-                onClick={() => dispatch({ type: "CLEAR_NL_ERROR" })}
-                className="text-red-400 hover:text-red-200 text-[11px] shrink-0"
-              >
-                Dismiss
-              </button>
+              <div className="flex items-center gap-3 shrink-0">
+                <button
+                  onClick={() => setReportSource("nl")}
+                  title="File this as a GitHub issue (you review it first)"
+                  className="text-red-300 hover:text-red-100 text-[11px] underline-offset-2 hover:underline"
+                >
+                  Report
+                </button>
+                <button
+                  onClick={() => dispatch({ type: "CLEAR_NL_ERROR" })}
+                  className="text-red-400 hover:text-red-200 text-[11px]"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
           )}
 
@@ -1161,6 +1184,21 @@ export default function App() {
           onSelect={(sparql) => dispatch({ type: "SET_SPARQL", sparql })}
           onClear={() => dispatch({ type: "CLEAR_HISTORY" })}
           onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {reportSource && (
+        <ReportProblem
+          error={
+            reportSource === "nl"
+              ? state.nlError
+              : reportSource === "query"
+                ? state.error
+                : (state.error ?? state.nlError)
+          }
+          sparql={state.sparql}
+          aql={state.aql}
+          onClose={() => setReportSource(null)}
         />
       )}
 

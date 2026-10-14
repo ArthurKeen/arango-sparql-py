@@ -199,7 +199,11 @@ export function isAuthError(err: unknown): boolean {
 
 export interface HealthResponse {
   status: string;
+  /** "arango-sparql-py" — same keys as arango-cypher-py's /health. */
+  service: string;
   version: string;
+  /** The installed arangodb-schema-analyzer, or null when absent. */
+  analyzer_version: string | null;
 }
 
 export async function getHealth(): Promise<HealthResponse> {

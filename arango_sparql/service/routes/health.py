@@ -13,6 +13,8 @@ server-level dependency to wait on).
 from __future__ import annotations
 
 import logging
+from functools import cache
+from importlib.metadata import PackageNotFoundError, version
 
 from fastapi import Response
 
@@ -26,9 +28,26 @@ logger = logging.getLogger(__name__)
 _READY_TIMEOUT_SECONDS = 2.0
 
 
+@cache
+def _analyzer_version() -> str | None:
+    """The installed schema analyzer's version — it decides how a database's
+    schema is read, so "Report a problem" (PRD §10.19) carries it. ``None``
+    when it is not installed. Mirrors arango-cypher-py's ``routes/health.py``.
+    """
+    try:
+        return version("arangodb-schema-analyzer")
+    except PackageNotFoundError:
+        return None
+
+
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
-    return HealthResponse(status="ok", version=__version__)
+    return HealthResponse(
+        status="ok",
+        service="arango-sparql-py",
+        version=__version__,
+        analyzer_version=_analyzer_version(),
+    )
 
 
 @app.get("/health/ready", response_model=ReadyResponse)

@@ -22,6 +22,8 @@ export interface SettingsMenuProps {
   historyCount: number;
   autoOpenOnError: boolean;
   onToggleAutoOpenOnError: () => void;
+  /** Opens "Report a problem" (PRD §10.19). */
+  onReportProblem: () => void;
 }
 
 // Show the Mod-K accelerator with the platform-correct modifier glyph.
@@ -199,6 +201,7 @@ export default function SettingsMenu(props: SettingsMenuProps) {
             badge={PALETTE_HINT}
             onClick={runItem(props.onOpenPalette)}
           />
+          <ActionRow label="Report a problem" onClick={runItem(props.onReportProblem)} />
 
           <div className="my-1 border-t border-gray-800" />
 
