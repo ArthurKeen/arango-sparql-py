@@ -125,7 +125,9 @@ def start_properties(db: Any, start: str | None) -> dict[str, Any] | None:
 
 def _translation_feedback(exc: SparqlError) -> str:
     feedback = f"the SPARQL does not translate: {exc}"
-    if isinstance(exc, SchemaResolutionError):
+    # An undeclared term is the model inventing a name; say where real ones are.
+    # (Other resolution errors — e.g. an untyped subject — explain themselves.)
+    if isinstance(exc, SchemaResolutionError) and "is not declared" in str(exc):
         feedback += ". Use only the classes and properties the schema lists, written as :Name"
     return feedback
 
