@@ -36,10 +36,12 @@ Three tiers, in priority order:
    overwritten — so it closes the analyzer's cross-collection gap
    without fighting it.
 
-Every tier sees the database through :func:`hide_schema_cache_collections`,
-so the collections that hold a transpiler's own cached schema (this
-service's and arango-cypher-py's, :data:`SCHEMA_CACHE_COLLECTIONS`) never
-become classes in the analyzed schema.
+Every tier sees the database through :func:`hide_service_collections`, so
+the collections the transpilers keep for themselves in a customer database —
+the schema caches (:data:`~arango_sparql.schema.cache.SCHEMA_CACHE_COLLECTIONS`)
+and the mined examples (:func:`~arango_sparql.query_mining.store.example_collections`),
+this service's and arango-cypher-py's — never become classes in the analyzed
+schema (:func:`service_collections`).
 
 Public surface:
 
@@ -67,6 +69,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from arango_sparql.query_mining.store import example_collections
 from arango_sparql.schema.cache import SCHEMA_CACHE_COLLECTIONS
 from arango_sparql.schema.detect import (
     build_heuristic_mapping,
@@ -187,7 +190,7 @@ def acquire_mapping_bundle(
         raise ValueError(f"strategy must be one of {_VALID_STRATEGIES!r}, got {strategy!r}")
 
     when = now if now is not None else datetime.now(UTC)
-    db = hide_schema_cache_collections(db)
+    db = hide_service_collections(db)
     # `force_refresh` is accepted for signature compat with the
     # cache-wrapping orchestrator (PRD signature includes it). The
     # acquisition path itself is stateless so the flag does not
@@ -219,13 +222,21 @@ def acquire_mapping_bundle(
     return bundle
 
 
-class _SchemaCacheHidden:
-    """A database handle whose ``collections()`` leaves out the schema caches.
+def service_collections() -> frozenset[str]:
+    """Collections the transpilers keep in a customer database for themselves:
+    both schema caches and both examples collections (this service's as
+    configured). Never user data, so never analyzed or fingerprinted."""
+
+    return SCHEMA_CACHE_COLLECTIONS | example_collections()
+
+
+class _ServiceCollectionsHidden:
+    """A database handle whose ``collections()`` leaves out :func:`service_collections`.
 
     Every analysis pass enumerates collections through ``db.collections()``
     (the analyzer's snapshot and statistics, this module's RPT and edge
     passes, the heuristic detector), and the analyzer offers no way to
-    exclude one. Filtering the enumeration once keeps the caches out of every
+    exclude one. Filtering the enumeration once keeps them out of every
     derived artifact at the same time: classes, shard families, statistics,
     the sharding profile and the OWL export. Everything else is delegated to
     the wrapped handle unchanged.
@@ -238,18 +249,17 @@ class _SchemaCacheHidden:
         rows = self._db.collections()
         if not isinstance(rows, list):
             return rows
-        return [
-            row for row in rows if not (isinstance(row, dict) and row.get("name") in SCHEMA_CACHE_COLLECTIONS)
-        ]
+        hidden = service_collections()
+        return [row for row in rows if not (isinstance(row, dict) and row.get("name") in hidden)]
 
     def __getattr__(self, name: str) -> Any:
         return getattr(self._db, name)
 
 
-def hide_schema_cache_collections(db: Any) -> Any:
-    """Return *db* seen without :data:`SCHEMA_CACHE_COLLECTIONS` (idempotent)."""
+def hide_service_collections(db: Any) -> Any:
+    """Return *db* seen without :func:`service_collections` (idempotent)."""
 
-    return db if isinstance(db, _SchemaCacheHidden) else _SchemaCacheHidden(db)
+    return db if isinstance(db, _ServiceCollectionsHidden) else _ServiceCollectionsHidden(db)
 
 
 def refresh_statistics(db: Any, bundle: MappingBundle) -> MappingBundle:
@@ -273,7 +283,7 @@ def refresh_statistics(db: Any, bundle: MappingBundle) -> MappingBundle:
     except ImportError:
         return bundle
 
-    view = hide_schema_cache_collections(db)
+    view = hide_service_collections(db)
     try:
         rows = view.collections()
         snapshot = {
@@ -1044,7 +1054,7 @@ def _live_fingerprint(db: Any, *, kind: Literal["shape", "counts"]) -> str | Non
         return None
 
     try:
-        return fn(db, exclude_collections=set(SCHEMA_CACHE_COLLECTIONS))
+        return fn(db, exclude_collections=set(service_collections()))
     except TypeError:
         # Older analyzer releases (< 0.5) did not accept
         # exclude_collections. Re-try without it; the cache row will
@@ -1080,6 +1090,7 @@ __all__ = [
     "analyzer_available",
     "db_counts_fingerprint",
     "db_shape_fingerprint",
-    "hide_schema_cache_collections",
+    "hide_service_collections",
     "refresh_statistics",
+    "service_collections",
 ]
