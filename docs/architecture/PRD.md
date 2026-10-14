@@ -474,7 +474,7 @@ ArangoDB database typically uses one or, increasingly, a mix of several
 | Style ID (in OWL `phys:mappingStyle` and JSON `physicalMapping.entities[*].style`) | Friendly name | Stored as | Read pattern |
 | --- | --- | --- | --- |
 | `COLLECTION` | **PG** — Property Graph | One ArangoDB document collection per OWL class | `FOR doc IN @@coll` |
-| `LABEL` | **LPG** — Labeled Property Graph | One shared document collection holding multiple OWL classes, discriminated by a `typeField` (e.g. `type`, `_type`, `entityType`, `label`) | `FOR doc IN @@coll FILTER doc.<typeField> == @typeValue` |
+| `LABEL` | **LPG** — Labeled Property Graph | One shared document collection holding multiple OWL classes, discriminated by a `typeField` (e.g. `type`, `_type`, `entityType`, `label`) — or by an **array** of labels (r2g's `labels: ["Person","Customer"]`) | `FOR doc IN @@coll FILTER doc.<typeField> == @typeValue` (scalar), `FILTER @typeValue IN doc.<typeField>` (array), see *Label fields* below |
 | `RPT` | **RDF / Resource-style triples** | A triple-row collection (the legacy Foxx default was `_triples`) with `subject_uri`, `predicate`, `object_uri`, `object_value` columns and `_:` prefix for blank nodes | `FOR t IN @@triples FILTER t.predicate == @p AND t.subject_uri == @s` plus `NOT_NULL(t.object_uri, t.object_value)` to bind the object |
 | `DOCUMENT` | Plain document | Document collection with no class-discriminator field; OWL class derived from collection name only | Same as `COLLECTION` |
 
@@ -509,6 +509,22 @@ matched exactly — `doc._uri == @iri`, or `doc._id == @iri` for a document with
 identity can be pasted back as a constant (`<aws_iam_role/0123>`). Known limit:
 a constant subject is still looked up in the default collection, not in the
 collection its `_id` names; and `isIRI()` is false for an `_id` identity.
+
+**Label fields** (`LABEL` style). The type test depends on the field's shape,
+because each form is served by a different index (`translate/builder.py::
+type_predicate`, issue #10): `phys:typeFieldIsArray true` → `@v IN doc.f`
+(an array index `f[*]`, as r2g provisions); `false` → `doc.f == @v`; unknown →
+`(doc.f == @v || @v IN doc.f)`, correct for both shapes but unable to use
+either index. Live analysis records the shape with a one-row probe per LABEL
+collection (`schema/acquire.py::_apply_label_shape_enrichment`), writing
+`typeFieldIsArray` into the mapping and appending `phys:typeFieldIsArray` to
+the analyzer's OWL, so the Workbench never takes the unknown path; a
+hand-written ontology or a CSI import without the flag does. A node carrying
+several labels answers every class it carries. Edge type fields
+(`GENERIC_WITH_TYPE`) stay scalar equality — no known producer writes array
+edge types — and property paths unroll one traversal per hop, each testing its
+own edge, so the "filter on `e` only constrains the last hop" trap does not
+arise; `p.edges[*]` is never emitted.
 
 **Hybrid** is not a fifth style; it is the *case where two or more of the
 above coexist in one database*. Concretely, a single SPARQL query can

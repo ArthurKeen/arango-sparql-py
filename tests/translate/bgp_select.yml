@@ -56,7 +56,7 @@ cases:
       SELECT ?o WHERE { ?o a :Order }
     expected_aql: |
       FOR doc1 IN @@c1_Orders
-      FILTER doc1.kind == @_p1_kind
+      FILTER (doc1.kind == @_p1_kind || @_p1_kind IN doc1.kind)
       RETURN { o: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Orders": "Orders"

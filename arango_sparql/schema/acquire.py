@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -199,6 +200,7 @@ def acquire_mapping_bundle(
     )
     bundle = _apply_rpt_enrichment(db, bundle, when=when)
     bundle = _apply_edge_endpoint_enrichment(db, bundle, when=when)
+    bundle = _apply_label_shape_enrichment(db, bundle, when=when)
     bundle = _normalize_bundle_warnings(bundle)
     bundle = _stamp_acquisition_timestamp(bundle, when=when)
     # Named-graph down-select (no-op when graph_name is None). Applied
@@ -806,6 +808,106 @@ def _apply_edge_endpoint_enrichment(db: Any, bundle: MappingBundle, *, when: dat
         metadata=new_metadata,
         owl_turtle=bundle.owl_turtle,
         source=bundle.source,
+    )
+
+
+_LABEL_SHAPE_PROBE = "FOR d IN @@coll FILTER d[@field] != null LIMIT 1 RETURN IS_ARRAY(d[@field])"
+_PN_LOCAL_SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-]*$")
+_OWL_DEFAULT_PREFIX = re.compile(r"@prefix\s+:\s*<([^>]+)>", re.IGNORECASE)
+_OWL_PHYS_PREFIX = re.compile(r"@prefix\s+phys:\s*<([^>]+)>", re.IGNORECASE)
+
+
+def _apply_label_shape_enrichment(db: Any, bundle: MappingBundle, *, when: datetime) -> MappingBundle:
+    """Record whether each multi-class (``LABEL``) entity's type field is an array.
+
+    Issue #10: r2g's LPG layout stores a node's labels as an array
+    (``labels: ["Person", "Customer"]``); neither the analyzer nor CSI records
+    that, and ``doc.labels == @v`` silently matches nothing. One cheap probe
+    per LABEL collection (``LIMIT 1``) sets ``typeFieldIsArray`` true/false, so
+    the translator emits the index-friendly form for the real shape
+    (``translate/builder.py::type_predicate``) instead of the slower
+    shape-agnostic one. The flag goes into ``physicalMapping`` and is appended
+    to the analyzer's OWL as ``phys:typeFieldIsArray``, because the Workbench
+    sends that OWL back on every translate.
+
+    Best-effort and additive: a probe that fails, or a collection with no
+    document carrying the field, leaves the entity unflagged (shape-agnostic
+    emission — still correct).
+    """
+    entities = bundle.physical_mapping.get("entities")
+    if not isinstance(entities, dict):
+        return bundle
+
+    new_entities: dict[str, Any] = dict(entities)
+    probed: dict[str, bool] = {}
+    for name, spec in entities.items():
+        if not isinstance(spec, dict) or "typeFieldIsArray" in spec:
+            continue
+        field = spec.get("typeField")
+        collection = spec.get("collectionName")
+        if not (isinstance(field, str) and field and isinstance(collection, str) and collection):
+            continue
+        try:
+            rows = list(db.aql.execute(_LABEL_SHAPE_PROBE, bind_vars={"@coll": collection, "field": field}))
+        except Exception as exc:  # noqa: BLE001 — enrichment is best-effort
+            logger.warning("label-shape probe failed for %s.%s: %s", collection, field, exc)
+            continue
+        if not rows or not isinstance(rows[0], bool):
+            continue
+        new_entities[name] = {**spec, "typeFieldIsArray": rows[0]}
+        probed[name] = rows[0]
+
+    if not probed:
+        return bundle
+
+    new_physical = dict(bundle.physical_mapping)
+    new_physical["entities"] = new_entities
+    new_metadata = dict(bundle.metadata)
+    enrichment_log = list(new_metadata.get("enrichmentApplied") or [])
+    enrichment_log.append(
+        {
+            "kind": "label_shape_probe",
+            "appliedAt": when.isoformat(),
+            "entities": sorted(probed),
+            "arrays": sorted(n for n, is_array in probed.items() if is_array),
+        }
+    )
+    new_metadata["enrichmentApplied"] = enrichment_log
+    return MappingBundle(
+        conceptual_schema=bundle.conceptual_schema,
+        physical_mapping=new_physical,
+        metadata=new_metadata,
+        owl_turtle=_append_label_shape_annotations(bundle.owl_turtle, probed),
+        source=bundle.source,
+    )
+
+
+def _append_label_shape_annotations(owl_turtle: str | None, probed: dict[str, bool]) -> str | None:
+    """Append ``:<Class> phys:typeFieldIsArray true|false .`` to the analyzer's OWL.
+
+    The analyzer's Turtle is returned to the UI verbatim (``translate/owl.py::
+    mapping_to_turtle``), so the shape flag has to be in that text. A Turtle
+    statement may follow the prefixes anywhere; appending keeps every existing
+    line byte-identical. Classes are named by the analyzer's entity name in its
+    default ``:`` namespace (the same names its ``owl:Class`` lines use).
+    """
+    if not owl_turtle or not _OWL_DEFAULT_PREFIX.search(owl_turtle):
+        return owl_turtle
+    phys = _OWL_PHYS_PREFIX.search(owl_turtle)
+    prefix_line = "" if phys else "@prefix phys: <http://arangodb.com/schema/physical#> .\n"
+    lines = [
+        f":{name} phys:typeFieldIsArray {'true' if is_array else 'false'} ."
+        for name, is_array in sorted(probed.items())
+        if _PN_LOCAL_SAFE.match(name)
+    ]
+    if not lines:
+        return owl_turtle
+    return (
+        owl_turtle.rstrip("\n")
+        + "\n\n# Label-field shape (arango-sparql-py, issue #10)\n"
+        + prefix_line
+        + "\n".join(lines)
+        + "\n"
     )
 
 
