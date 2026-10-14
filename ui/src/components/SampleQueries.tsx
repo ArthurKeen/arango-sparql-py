@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getSampleQueries, type SampleQuery } from "../api/client";
+import { MINED_CATEGORY, type MinedExample } from "../utils/minedExamples";
 
 interface Props {
   onSelect: (sparql: string) => void;
   onClose: () => void;
+  // Verified examples mined from the connected database (PRD §7.7); listed first.
+  minedExamples?: MinedExample[];
 }
 
 interface StaticSample {
@@ -66,7 +69,7 @@ const STATIC_SAMPLES: StaticSample[] = [
   },
 ];
 
-export default function SampleQueries({ onSelect, onClose }: Props) {
+export default function SampleQueries({ onSelect, onClose, minedExamples = [] }: Props) {
   const [apiQueries, setApiQueries] = useState<SampleQuery[]>([]);
   const [filter, setFilter] = useState("");
   const [dataset, setDataset] = useState<string>("");
@@ -81,7 +84,10 @@ export default function SampleQueries({ onSelect, onClose }: Props) {
   }, [dataset]);
 
   const allItems = useMemo(() => {
-    const items: { name: string; sparql: string; category: string }[] = [];
+    const items: { name: string; sparql: string; category: string; detail?: string }[] = [];
+    for (const e of minedExamples) {
+      items.push({ name: e.question, sparql: e.sparql, category: MINED_CATEGORY, detail: e.source.name });
+    }
     for (const s of STATIC_SAMPLES) {
       items.push(s);
     }
@@ -93,7 +99,7 @@ export default function SampleQueries({ onSelect, onClose }: Props) {
       });
     }
     return items;
-  }, [apiQueries]);
+  }, [apiQueries, minedExamples]);
 
   const filtered = useMemo(() => {
     const term = filter.toLowerCase();
@@ -112,7 +118,9 @@ export default function SampleQueries({ onSelect, onClose }: Props) {
       list.push(q);
       map.set(q.category, list);
     }
-    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+    return Array.from(map.entries()).sort(([a], [b]) =>
+      a === MINED_CATEGORY ? -1 : b === MINED_CATEGORY ? 1 : a.localeCompare(b),
+    );
   }, [filtered]);
 
   const datasets = useMemo(
@@ -198,6 +206,9 @@ export default function SampleQueries({ onSelect, onClose }: Props) {
                           {q.name}
                         </span>
                       </div>
+                      {q.detail && (
+                        <div className="text-[10px] text-gray-500 mb-1 truncate">from saved query: {q.detail}</div>
+                      )}
                       <code className="text-[11px] text-indigo-400/80 block truncate">
                         {q.sparql}
                       </code>

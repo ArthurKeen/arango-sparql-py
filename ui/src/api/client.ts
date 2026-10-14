@@ -13,6 +13,8 @@
 // caller (`SampleQueries.tsx`) degrades gracefully to the built-in static
 // samples, so the missing route is a swallowed 404 rather than a failure.
 
+import type { MinedExample } from "../utils/minedExamples";
+
 export interface ConnectRequest {
   url: string;
   database: string;
@@ -255,6 +257,15 @@ export interface GraphInfo {
   vertexCollections: string[];
   orphanCollections: string[];
   collectionCount: number;
+}
+
+// Verified examples mined from the session's database (GET /examples, PRD §7.7);
+// scoped server-side to the bound named graph. Shape: utils/minedExamples.ts.
+export async function getMinedExamples(
+  token: string,
+  limit: number = 50,
+): Promise<{ examples: MinedExample[] }> {
+  return request(`/examples?limit=${limit}`, { headers: authHeaders(token) });
 }
 
 export async function listGraphs(token: string): Promise<{ graphs: GraphInfo[] }> {

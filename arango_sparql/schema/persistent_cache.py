@@ -29,7 +29,7 @@ collection, no permission, a corrupt document) is a miss; a write that fails
 in-process cache. Neither ever fails a request.
 
 The collection is not a system collection, so schema analysis would treat it
-as user data; ``schema/acquire.py::hide_schema_cache_collections`` keeps it
+as user data; ``schema/acquire.py::hide_service_collections`` keeps it
 (and cypher's) out.
 """
 

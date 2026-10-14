@@ -35,6 +35,7 @@ import {
   suggestNlQueries,
   listGraphs,
   bindGraph,
+  getMinedExamples,
   isAuthError,
   schemaIntrospectUntilReady,
   SchemaPollSuperseded,
@@ -47,6 +48,7 @@ import {
   isBusy as pipelineBusy,
 } from "./utils/pipeline";
 import { resultAffordances, type AffordanceId } from "./utils/affordances";
+import { examplesForGraph, mergeSuggestions, type MinedExample } from "./utils/minedExamples";
 
 // App.tsx implements the chat-first "Query Workbench Shell" (PRD §10.0),
 // mirroring `references/arango-cypher-py/ui/src/App.tsx`:
@@ -104,6 +106,12 @@ export default function App() {
   );
   const [nlInput, setNlInput] = useState("");
   const [nlSamples, setNlSamples] = useState<string[]>([]);
+  // Verified examples mined from this database's own saved queries (PRD §7.7);
+  // fetched once per connection and filtered by the selected graph on the
+  // client, so a graph switch never races the server-side graph binding.
+  // Tagged with the connection they were loaded for, so a reconnect or a
+  // database switch shows none until its own arrive (no stale examples).
+  const [mined, setMined] = useState<{ key: string; examples: MinedExample[] } | null>(null);
   const [graphs, setGraphs] = useState<GraphInfo[]>([]);
   const [graphScope, setGraphScope] = useState<string | null>(null);
   const [graphBusy, setGraphBusy] = useState(false);
@@ -177,6 +185,31 @@ export default function App() {
       cancelled = true;
     };
   }, [state.ontologyTtl, state.connection.url, state.connection.database]);
+
+  // Mined examples for the connected database. A database never mined, or a
+  // user who cannot read the collection, simply has none; the rest of the UI
+  // is unaffected.
+  const minedKey = state.connection.token ? `${state.connection.token}|${state.connection.database}` : null;
+  useEffect(() => {
+    const token = state.connection.token;
+    if (!token || !minedKey) return;
+    let cancelled = false;
+    getMinedExamples(token)
+      .then((resp) => {
+        if (!cancelled) setMined({ key: minedKey, examples: resp.examples ?? [] });
+      })
+      .catch((err) => {
+        console.warn("Loading mined examples failed:", err);
+        if (!cancelled) setMined({ key: minedKey, examples: [] });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [minedKey, state.connection.token]);
+  const minedExamples = useMemo(
+    () => (mined !== null && mined.key === minedKey ? mined.examples : []),
+    [mined, minedKey],
+  );
 
   // Load the connected database's named graphs so the scope picker can
   // offer them. Resets the scope on every (re)connect. Best-effort: a DB
@@ -829,20 +862,14 @@ export default function App() {
     dispatch,
   ]);
 
-  // Ask-bar suggestions: recent questions first, then schema-derived
-  // examples (POST /nl-samples), de-duplicated case-insensitively.
-  const nlSuggestions = (() => {
-    const seen = new Set<string>();
-    const merged: string[] = [];
-    for (const text of [...state.nlHistory, ...nlSamples]) {
-      const key = text.trim().toLowerCase();
-      if (key && !seen.has(key)) {
-        seen.add(key);
-        merged.push(text);
-      }
-    }
-    return merged.slice(0, 10);
-  })();
+  // Ask-bar suggestions: recent questions first, then the database's verified
+  // (mined) examples for the selected graph, then schema-derived examples
+  // (POST /nl-samples), de-duplicated case-insensitively.
+  const scopedExamples = useMemo(
+    () => examplesForGraph(minedExamples, graphScope),
+    [minedExamples, graphScope],
+  );
+  const nlSuggestions = mergeSuggestions(state.nlHistory, scopedExamples, nlSamples);
 
   const sparqlPane = (
     <div className="flex flex-col h-full min-h-0">
@@ -1206,6 +1233,7 @@ export default function App() {
         <SampleQueries
           onSelect={(sparql) => dispatch({ type: "SET_SPARQL", sparql })}
           onClose={() => setShowSamples(false)}
+          minedExamples={scopedExamples}
         />
       )}
 

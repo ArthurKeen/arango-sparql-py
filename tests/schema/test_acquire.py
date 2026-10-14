@@ -48,7 +48,6 @@ from arango_sparql.schema.acquire import (
 )
 from arango_sparql.schema.cache import (
     L2_COLLECTION_NAME,
-    SCHEMA_CACHE_COLLECTIONS,
     SISTER_CACHE_COLLECTION_NAME,
 )
 from arango_sparql.translate.mapping import MappingBundle
@@ -1034,7 +1033,12 @@ def test_db_shape_fingerprint_excludes_the_schema_cache_collections(
 
     monkeypatch.setattr(schema_analyzer, "fingerprint_physical_shape", fake_shape)
     db_shape_fingerprint(_empty_db())
-    assert seen["exclude"] == {"arango_sparql_schema_cache", "arango_cypher_schema_cache"}
+    assert seen["exclude"] == {
+        "arango_sparql_schema_cache",
+        "arango_cypher_schema_cache",
+        "arango_sparql_examples",
+        "arango_cypher_examples",
+    }
 
 
 def test_db_counts_fingerprint_handles_old_analyzer_signature(
@@ -1142,13 +1146,29 @@ def test_other_analyzer_strings_stay_warnings() -> None:
 
 
 def _pg_db_with_schema_caches() -> MockDb:
-    """``_pg_db`` plus both transpilers' cache collections, each holding the
-    one cache document they really hold."""
+    """``_pg_db`` plus both transpilers' cache and examples collections, each
+    holding the kind of document they really hold."""
     cache_doc = [{"_key": "mapping", "schema_version": 1, "bundle": {"metadata": {}}}]
     base = _pg_db()
     return MockDb(
-        collections=[*base.collections(), _doc(L2_COLLECTION_NAME), _doc(SISTER_CACHE_COLLECTION_NAME)],
-        samples={**base.aql.samples, L2_COLLECTION_NAME: cache_doc, SISTER_CACHE_COLLECTION_NAME: cache_doc},
+        collections=[
+            *base.collections(),
+            _doc(L2_COLLECTION_NAME),
+            _doc(SISTER_CACHE_COLLECTION_NAME),
+            _doc("arango_sparql_examples"),
+            _doc("arango_cypher_examples"),
+        ],
+        samples={
+            **base.aql.samples,
+            L2_COLLECTION_NAME: cache_doc,
+            SISTER_CACHE_COLLECTION_NAME: cache_doc,
+            "arango_sparql_examples": [
+                {"_key": "mined-1", "kind": "mined", "question": "q", "sparql": "SELECT"}
+            ],
+            "arango_cypher_examples": [
+                {"_key": "mined-1", "kind": "mined", "question": "q", "cypher": "MATCH"}
+            ],
+        },
     )
 
 
@@ -1174,18 +1194,20 @@ def test_the_analyzer_never_sees_a_schema_cache(monkeypatch: pytest.MonkeyPatch)
 
 def test_the_cache_filter_only_narrows_the_collection_listing() -> None:
     db = _pg_db_with_schema_caches()
-    view = acquire_mod.hide_schema_cache_collections(db)
+    view = acquire_mod.hide_service_collections(db)
     assert {c["name"] for c in view.collections()} == {"Person", "Company"}
     assert view.name == db.name and view.aql is db.aql  # everything else is the real handle
-    assert acquire_mod.hide_schema_cache_collections(view) is view  # idempotent
-    assert {c["name"] for c in db.collections()} >= SCHEMA_CACHE_COLLECTIONS  # the real db is untouched
+    assert acquire_mod.hide_service_collections(view) is view  # idempotent
+    assert {
+        c["name"] for c in db.collections()
+    } >= acquire_mod.service_collections()  # the real db is untouched
 
 
 def test_the_cache_filter_passes_a_non_list_listing_through() -> None:
     # python-arango's async/batch modes return a job, not a list; filtering it
     # would break the caller, so it is handed back unchanged.
     job = object()
-    view = acquire_mod.hide_schema_cache_collections(SimpleNamespace(collections=lambda: job))
+    view = acquire_mod.hide_service_collections(SimpleNamespace(collections=lambda: job))
     assert view.collections() is job
 
 

@@ -24,9 +24,9 @@ all three at once) and asserts:
   shape fingerprint; a new collection moves the shape (§6.3.3).
 * **Named-graph scope** — ``graph_name`` down-selects to that graph's
   collections (§6.3.2).
-* **Schema caches stay out** — this service's and arango-cypher-py's cache
-  collections never become classes, shard families, statistics or OWL, and
-  writing them does not move the fingerprints (§6.3.3).
+* **Service collections stay out** — this service's and arango-cypher-py's
+  cache and examples collections never become classes, shard families,
+  statistics or OWL, and writing them does not move the fingerprints (§6.3.3).
 
 Every test runs both acquisition strategies where both apply: ``heuristic``
 (this repo's detector) and ``auto`` (the analyzer, with this repo's
@@ -59,8 +59,8 @@ from arango_sparql.schema.acquire import (
     analyzer_available,
     db_counts_fingerprint,
     db_shape_fingerprint,
+    service_collections,
 )
-from arango_sparql.schema.cache import SCHEMA_CACHE_COLLECTIONS
 from arango_sparql.schema.detect import classify_schema
 from arango_sparql.translate.mapping import MappingBundle
 from arango_sparql.translate.resolver import SchemaResolver
@@ -479,8 +479,9 @@ def test_a_new_collection_moves_the_shape(scratch_db: Any) -> None:
 
 
 def _write_schema_caches(db: Any, revision: int) -> None:
-    """Write the one document each transpiler keeps in its cache collection."""
-    for name in sorted(SCHEMA_CACHE_COLLECTIONS):
+    """Write a document like the ones each transpiler keeps in its cache and
+    examples collections."""
+    for name in sorted(service_collections()):
         col = db.collection(name) if db.has_collection(name) else db.create_collection(name)
         col.insert(
             {"_key": "mapping", "schema_version": 1, "revision": revision, "bundle": {"metadata": {}}},
@@ -504,6 +505,7 @@ def test_cache_collections_never_reach_the_analyzed_schema(scratch_db: Any, stra
     # (The scratch database is named after the test, so the test name must not
     # contain "schema_cache" — the analyzer records the database name.)
     assert "schema_cache" not in dumped and "SchemaCache" not in dumped
+    assert "_examples" not in dumped and "Examples" not in dumped
     entity_collections = {s["collectionName"] for s in bundle.physical_mapping["entities"].values()}
     assert entity_collections == {"docs", "persons", "places", "users"}
 
@@ -517,7 +519,7 @@ def test_cache_writes_do_not_move_the_fingerprints(scratch_db: Any) -> None:
     shape, counts = db_shape_fingerprint(scratch_db), db_counts_fingerprint(scratch_db)
 
     _write_schema_caches(scratch_db, revision=1)
-    for name in SCHEMA_CACHE_COLLECTIONS:
+    for name in service_collections():
         scratch_db.collection(name).insert({"_key": "graph-scoped", "bundle": {}})  # count moves too
 
     assert (db_shape_fingerprint(scratch_db), db_counts_fingerprint(scratch_db)) == (shape, counts)
