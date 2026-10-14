@@ -2025,7 +2025,8 @@ A single **gear popover** in the header that consolidates what used to be
 a row of header buttons, keeping the shell decluttered:
 
 - **Panel triggers:** Ontology/mapping (§10.4), Clause outline, Sample
-  queries, Query history, Command palette (`Mod-K`, §10.7).
+  queries, Query history, Command palette (`Mod-K`, §10.7), and
+  **Report a problem** (§10.19).
 - **Behaviour toggles:** auto-translate, auto-run, NL-direct mode,
   open-inspector-on-error, results table density, and (v1.1) theme.
 - Preferences that affect persistence are stored per the §10.7 keys;
@@ -2062,6 +2063,47 @@ mirroring the sister project's schema-graph work:
   focuses matches; non-matches dim.
 - **Click-to-expand** — clicking a bundle or class reveals its members
   incrementally rather than rendering the full graph up front.
+
+### 10.19 Report a problem (`ui/src/components/ReportProblem.tsx`)
+
+Ported from `arango-cypher-py` (its PRD's "Report a problem" requirement;
+`ui/src/utils/bugReport.ts`, `focusReturn.ts`). The Workbench MUST offer
+"Report a problem" in the settings menu (§10.16) and beside the query error
+banner and the NL → SPARQL error banner; the report files the error of the
+banner it was opened from (from the menu: whichever error is showing).
+
+* It builds a GitHub issue for `arango-solutions-org/arango-sparql-py` — a
+  **public** repository — and opens GitHub's pre-filled new-issue page in the
+  user's own browser: no token in the service, nothing filed until the user
+  submits it there, and **Copy** for users without a GitHub account (when the
+  clipboard is unavailable, the full report is shown selected for copying).
+* The user sees and can edit the full text first. Their own "What happened"
+  text is kept apart from the generated details, so changing an option never
+  discards it.
+* By default a report carries only the app and analyzer versions
+  (`GET /health` reports `service`, `version` and `analyzer_version` — the
+  same keys as `arango-cypher-py`), the error and the browser, under a fixed
+  title ("Arango SPARQL problem").
+* Errors can quote the query, so the error is reduced by default: quoted text
+  (straight, backtick and typographic quotes, not apostrophes in prose) and
+  long digit runs are masked, and an IRI written outside quotes keeps only its
+  local name (`<http://acme.example/ont#salary>` → `<…#salary>`) — an IRI's
+  namespace usually names the organisation. That IRI rule is this repo's
+  addition; cypher's cut of the "attempted query" is not ported, because a
+  failed NL → SPARQL generation returns the SPARQL it tried as a separate
+  field (`routes/nl.py`), never inside the error text.
+* The SPARQL, the AQL and the unreduced error are included only when the user
+  ticks "include my query"; the dialog warns that other values can still
+  appear and must be checked.
+* A report too long for GitHub's link limit (7000 characters) is shortened —
+  the user's own text first, then the details from the end, so the versions
+  always survive — the dialog says so, and Copy keeps the full text.
+* Keyboard: focus starts in "What happened", Tab stays in the dialog, Escape
+  closes it, and focus returns to what opened it — or to the Settings button
+  when a menu item did (`focusReturn.ts`).
+
+Tests: `ui/src/utils/bugReport.test.ts`, `focusReturn.test.ts`,
+`tests/test_service_sparql_routes.py::test_health_reports_what_a_bug_report_needs`.
 
 ---
 

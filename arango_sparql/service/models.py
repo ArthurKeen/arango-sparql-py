@@ -270,8 +270,13 @@ class ErrorResponse(BaseModel):
 
 
 class HealthResponse(BaseModel):
+    """``/health`` — liveness, plus what a bug report needs (PRD §10.19):
+    which service and versions answered. Same keys as arango-cypher-py's."""
+
     status: str
+    service: str = "arango-sparql-py"
     version: str
+    analyzer_version: str | None = None
 
 
 class ReadyResponse(BaseModel):
