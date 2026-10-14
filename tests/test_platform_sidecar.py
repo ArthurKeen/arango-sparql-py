@@ -276,7 +276,9 @@ class TestBackgroundWarm:
         monkeypatch.setattr(schema_warm, "take_error", lambda name: None)
         monkeypatch.setattr(schema_warm, "is_warming", lambda name: bool(started))
         monkeypatch.setattr(
-            schema_warm, "schedule_warm", lambda db, strategy="auto": started.append(db) or True
+            schema_warm,
+            "schedule_warm",
+            lambda db, strategy="auto", revalidate=False: started.append(db) or True,
         )
         made: list[str] = []
 

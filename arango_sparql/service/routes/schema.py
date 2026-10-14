@@ -37,9 +37,10 @@ from ...schema.acquire import (
     analyzer_available,
     db_counts_fingerprint,
     db_shape_fingerprint,
+    refresh_statistics,
 )
 from ...schema.cache import SchemaCache
-from ...schema.fingerprint import BundleFingerprint, FingerprintDrift
+from ...schema.fingerprint import FingerprintDrift, classify_live_drift
 from ...schema.graph_scope import scope_bundle_to_graph
 from ...translate.mapping import (
     MappingBundle,
@@ -296,7 +297,12 @@ def _scoped_cache_key(db_name: str, graph_name: str | None) -> str:
     return f"{db_name}::graph::{graph_name}"
 
 
-def _build_and_cache_full_bundle(db: Any, *, strategy: Strategy = "auto") -> MappingBundle:
+def _build_and_cache_full_bundle(
+    db: Any,
+    *,
+    strategy: Strategy = "auto",
+    fingerprints: tuple[str | None, str | None] | None = None,
+) -> MappingBundle:
     """Analyze the WHOLE database and store the result in the cache.
 
     The one place a full analysis runs. Always builds unscoped and with
@@ -305,9 +311,16 @@ def _build_and_cache_full_bundle(db: Any, *, strategy: Strategy = "auto") -> Map
     every scope, and the OWL export is cheap next to the physical scan.
     Called synchronously by explicit paths (``force-reacquire``, the
     heuristic strategy) and in the background by
-    :mod:`arango_sparql.service.schema_warm`.
+    :mod:`arango_sparql.service.schema_warm`. *fingerprints* passes live
+    ``(shape, counts)`` fingerprints a caller just took.
     """
 
+    # The live fingerprints are taken *before* the analysis, so a change that
+    # lands while it runs is caught by the next drift check rather than
+    # recorded as already analyzed.
+    db_shape, db_counts = (
+        fingerprints if fingerprints is not None else (db_shape_fingerprint(db), db_counts_fingerprint(db))
+    )
     bundle = acquire_mapping_bundle(
         db,
         include_owl=True,
@@ -317,7 +330,54 @@ def _build_and_cache_full_bundle(db: Any, *, strategy: Strategy = "auto") -> Map
     )
     db_name = getattr(db, "name", "") or ""
     if db_name:
-        _resolve_schema_cache().put(db_name, bundle)
+        # ``db=`` writes through to the persistent tier, so the next process
+        # (a redeploy) serves this analysis instead of repeating it.
+        _resolve_schema_cache().put(db_name, bundle, db=db, db_shape=db_shape, db_counts=db_counts)
+    return bundle
+
+
+def _revalidate_or_rebuild(db: Any, *, strategy: Strategy = "auto") -> MappingBundle:
+    """The TTL refresh: re-analyze only when the database actually changed.
+
+    PRD §6.3.3's two-fingerprint policy — the slow path of
+    ``arango-cypher-py``'s ``get_mapping``. The live shape and counts
+    fingerprints (seconds) are compared with the ones stored with the cached
+    bundle:
+
+    * both match → the cached bundle is re-stamped and kept (no analysis);
+    * only the counts differ → statistics are recounted on the cached mapping
+      (:func:`~arango_sparql.schema.acquire.refresh_statistics`);
+    * the shape differs, or there is nothing trustworthy to compare (no entry,
+      an entry another build produced, no live fingerprints) → full analysis.
+
+    Runs in the background (``schema_warm``), so the stale bundle is served
+    throughout.
+    """
+
+    db_name = getattr(db, "name", "") or ""
+    cache = _resolve_schema_cache()
+    entry = cache.peek(db_name, db=db)[0] if db_name else None
+    if entry is None or not entry.is_from_current_code() or entry.db_shape is None:
+        return _build_and_cache_full_bundle(db, strategy=strategy)
+
+    shape, counts = db_shape_fingerprint(db), db_counts_fingerprint(db)
+    if shape is None:
+        logger.info("schema drift check: no live fingerprint for db=%s; re-analyzing", db_name)
+        return _build_and_cache_full_bundle(db, strategy=strategy, fingerprints=(shape, counts))
+    drift = classify_live_drift(
+        stored_shape=entry.db_shape,
+        stored_counts=entry.db_counts,
+        current_shape=shape,
+        current_counts=counts,
+    )
+    logger.info("schema drift check: db=%s result=%s", db_name, drift.value)
+    if drift is FingerprintDrift.SHAPE_CHANGED:
+        return _build_and_cache_full_bundle(db, strategy=strategy, fingerprints=(shape, counts))
+    if drift is FingerprintDrift.UNCHANGED:
+        cache.revalidated(db_name, db=db, db_counts=counts)
+        return entry.bundle
+    bundle = refresh_statistics(db, entry.bundle)
+    cache.put(db_name, bundle, db=db, db_shape=shape, db_counts=counts)
     return bundle
 
 
@@ -351,7 +411,7 @@ def _get_or_acquire(
 
     db_name = getattr(db, "name", "") or ""
     if not force and db_name:
-        entry = _resolve_schema_cache().get(db_name)
+        entry = _resolve_schema_cache().get(db_name, db=db)
         if _usable(entry, include_owl=include_owl):
             return _scoped(db, entry.bundle, graph_name), True
     return _scoped(db, _build_and_cache_full_bundle(db, strategy=strategy), graph_name), False
@@ -374,10 +434,18 @@ def _read_or_warm(
 
     * miss → start a background analysis, return ``(None, False, True)``;
       the caller answers ``pending`` and the client retries;
-    * TTL-expired entry → serve it (stale-while-revalidate) and refresh in
-      the background, so the hourly TTL never re-blocks the UI;
+    * TTL-expired entry → serve it (stale-while-revalidate) and check it
+      against the live database in the background
+      (:func:`_revalidate_or_rebuild`): a full re-analysis only if the
+      database's structure changed;
     * ``force`` ("Refresh schema") → refresh in the background while still
-      serving the current entry, with ``warming=True`` until it lands.
+      serving the current entry, with ``warming=True`` until it lands;
+    * an entry another build of the acquisition code produced (the stored
+      copy a previous release left, PRD §6.3.3) → served, and replaced in
+      the background, so a release's schema fixes take effect.
+
+    An L1 miss first reads the persistent tier, so the first request after a
+    restart is served from the stored analysis instead of starting one.
 
     A background failure is re-raised once to the next caller (so the
     route's existing error mapping applies) instead of leaving the client
@@ -403,22 +471,30 @@ def _read_or_warm(
         return bundle, hit, False
 
     cache = _resolve_schema_cache()
-    entry, expired = cache.peek(db_name)
+    entry, expired = cache.peek(db_name, db=db)
     usable = _usable(entry, include_owl=include_owl)
+    outdated = entry is not None and not entry.is_from_current_code()
     # A cache hit means "served what was already cached"; a bundle that this
     # call's own warm just built (inline, under test) is a fresh acquisition.
     cache_hit = usable and not force
-    if force or expired or not usable:
+    if force or expired or outdated or not usable:
+        # Only the TTL ran out → a drift check suffices; anything else needs
+        # a full analysis.
+        revalidate = not (force or outdated or not usable)
         failure = schema_warm.take_error(db_name)
         if failure is not None and not usable:
             raise failure
         if not schema_warm.is_warming(db_name):
             warm_db = background_db() if background_db is not None else db
-            schema_warm.schedule_warm(warm_db, strategy=strategy)
+            schema_warm.schedule_warm(warm_db, strategy=strategy, revalidate=revalidate)
+        elif not revalidate:
+            # A drift check in flight must not absorb a requested re-analysis.
+            schema_warm.request_rebuild(db_name)
         # A warm may complete inline (the test seam); re-read so the caller
-        # sees a bundle that is already there.
+        # sees a bundle that is already there. A revalidation keeps the same
+        # bundle, so it is still a cache hit.
         refreshed, _ = cache.peek(db_name)
-        if refreshed is not entry:
+        if refreshed is None or entry is None or refreshed.bundle is not entry.bundle:
             cache_hit = False
         entry = refreshed
         usable = _usable(entry, include_owl=include_owl)
@@ -1017,59 +1093,55 @@ def schema_statistics(
 def schema_status(
     session: _Session = Depends(_get_session),
 ) -> SchemaStatusResponse:
-    """Cheap drift report. Compares the live DB's two analyzer
-    fingerprints against the cached bundle's fingerprints (Slice 3
-    mappings). When the analyzer extra is missing, falls back to
-    the bundle-side fingerprints — less precise but still
-    actionable.
+    """Cheap drift report: the live database's two analyzer fingerprints
+    against the ones stored with the cached bundle when it was analyzed
+    (PRD §6.3.3) — the comparison the background drift check acts on.
 
     Status values: ``unchanged``, ``stats_only``, ``shape_changed``,
-    ``no_cache``.
+    ``no_cache``. Without fingerprints on either side (analyzer missing, a
+    transient error, a bundle stored without them) the report degrades to
+    ``unchanged`` rather than claim a change it cannot see.
+
+    Before 2026-10-13 this compared the live fingerprints with a hash of the
+    *bundle* — a different hash domain — so with the analyzer installed it
+    reported ``shape_changed`` for every cached schema.
     """
 
     t0 = time.perf_counter()
     cache = _resolve_schema_cache()
     db_name = getattr(session.db, "name", "") or ""
 
-    cached_entry = cache.get(db_name) if db_name else None
+    # peek, not get: an entry past its TTL is still the cached schema.
+    cached_entry = cache.peek(db_name, db=session.db)[0] if db_name else None
 
     current_shape = db_shape_fingerprint(session.db)
     current_counts = db_counts_fingerprint(session.db)
 
-    # When the analyzer's live fingerprints are unavailable (extra
-    # missing or transient error), use the cached bundle's own
-    # fingerprints as a "shape stable iff cache exists" stand-in.
-    # Less precise — it cannot detect drift before the cache hits —
-    # but it never reports a false-positive shape change.
     if cached_entry is None:
         status = "no_cache"
         cached_block = SchemaFingerprintBlock()
         unchanged = False
         needs_full = True
     else:
-        cached_fp = cached_entry.fingerprint
-        cached_block = SchemaFingerprintBlock(shape=cached_fp.shape, counts=cached_fp.counts)
-        if current_shape is None or current_counts is None:
-            # Cannot compute live fingerprints — degrade to "we
-            # have a cache but cannot tell if it's stale". Treat
-            # as unchanged so the UI does not flap, but flag in
-            # the log so an operator notices the analyzer-down
-            # condition.
+        cached_block = SchemaFingerprintBlock(shape=cached_entry.db_shape, counts=cached_entry.db_counts)
+        if current_shape is None or cached_entry.db_shape is None:
+            # Nothing to compare — degrade to "we have a cache but cannot
+            # tell if it's stale". Treat as unchanged so the UI does not
+            # flap, but log it so an operator notices.
             logger.info(
-                "schema_status: live fingerprints unavailable; reporting cache as stable for db=%r",
+                "schema_status: live or stored fingerprints unavailable; reporting cache as stable for db=%r",
                 db_name,
             )
             status = "unchanged"
             unchanged = True
             needs_full = False
         else:
-            current_fp = BundleFingerprint(
-                shape=current_shape,
-                counts=current_counts,
-                payload_version=cached_fp.payload_version,
-                computed_at=cached_fp.computed_at,
+            drift = classify_live_drift(
+                stored_shape=cached_entry.db_shape,
+                stored_counts=cached_entry.db_counts,
+                current_shape=current_shape,
+                current_counts=current_counts,
             )
-            drift = current_fp.drift_from(cached_fp)
             status = drift.value
             unchanged = drift is FingerprintDrift.UNCHANGED
             needs_full = drift is FingerprintDrift.SHAPE_CHANGED
@@ -1107,29 +1179,31 @@ def schema_invalidate_cache(
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SchemaInvalidateCacheResponse:
-    """Drop the cached mapping for the connected DB. Returns
-    ``invalidated=true`` iff an L1 entry was actually evicted.
+    """Drop the cached mapping for the connected DB from both tiers.
 
-    L2 (persistent) tier is a stub today — ``persistent_dropped``
-    is always ``False`` until the follow-up slice lands. The flag
-    is emitted in the response so a future-compatible client can
-    reason about it without a version check.
+    ``invalidated`` is true iff either tier held an entry;
+    ``persistent_dropped`` iff the stored copy (PRD §6.3.3 L2) was deleted —
+    false when there was none, or when this user may not delete it (it is
+    then still dropped from memory, and replaced by the next analysis).
     """
 
     t0 = time.perf_counter()
     cache = _resolve_schema_cache()
     db_name = getattr(session.db, "name", "") or ""
-    invalidated = bool(db_name) and cache.invalidate(db_name)
+    dropped_l1 = bool(db_name) and cache.invalidate(db_name)
+    persistent_dropped = bool(db_name) and cache.invalidate_persistent(session.db)
+    invalidated = dropped_l1 or persistent_dropped
     log_endpoint_timing(
         "/schema/invalidate-cache",
         round((time.perf_counter() - t0) * 1000, 1),
         invalidated=invalidated,
+        persistent_dropped=persistent_dropped,
         db=db_name or "unknown",
     )
     return SchemaInvalidateCacheResponse(
         invalidated=invalidated,
         db_name=db_name,
-        persistent_dropped=False,
+        persistent_dropped=persistent_dropped,
     )
 
 

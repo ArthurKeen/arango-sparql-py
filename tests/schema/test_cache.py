@@ -8,13 +8,11 @@ Covers:
 * Env-var TTL override (``SCHEMA_MAPPING_CACHE_TTL_SECONDS``).
 * Drift detection through :class:`FingerprintDrift`.
 * Status snapshot does not consume the entry.
-* L2 stub no-op is honoured (no exceptions, no state changes).
+* L2 read-through / write-through when a ``db`` handle is passed, against
+  a python-arango-shaped in-memory store (``tests/helpers/fake_arango_store.py``);
+  ``tests/integration/test_persistent_schema_cache_live.py`` covers a real
+  ArangoDB.
 * Multiple instances do not share L1 state.
-
-Tests do not touch a live ArangoDB — the cache layer is purely in-
-process in v0.x. The L2 persistent layer (PRD §6.3.3 row 2) is a
-documented stub and tested as such; integration tests for the L2
-layer will land with the slice that implements it.
 """
 
 from __future__ import annotations
@@ -40,7 +38,9 @@ from arango_sparql.schema.fingerprint import (
     bundle_shape_fingerprint,
     compute_bundle_fingerprint,
 )
-from arango_sparql.translate.mapping import MappingBundle, MappingSource
+from arango_sparql.schema.persistent_cache import current_producer
+from arango_sparql.translate.mapping import MappingBundle, MappingSource, mapping_to_wire_dict
+from tests.helpers.fake_arango_store import FakeDatabase
 
 # ---------------------------------------------------------------------------
 # Bundle fixture helpers
@@ -423,55 +423,143 @@ def test_separate_cache_instances_have_separate_l1_state() -> None:
 
 
 # ---------------------------------------------------------------------------
-# L2 stub semantics
+# L2 — the persistent tier (read-through on a miss, write-through on put)
 # ---------------------------------------------------------------------------
 
-
-def test_l2_read_stub_returns_none() -> None:
-    """L2 stub: empty cache + L2 stub returns None → get returns
-    None without raising. Verifies the documented no-op.
-    """
-
-    cache = SchemaCache()
-    # Reach into the protected hook intentionally — its no-op-ness
-    # is part of the documented contract for v0.x.
-    assert cache._read_from_l2("any") is None
+_T0 = datetime(2026, 10, 13, 12, 0, tzinfo=UTC)
 
 
-def test_l2_write_stub_does_not_raise() -> None:
-    cache = SchemaCache()
+def test_a_restarted_process_reads_the_stored_schema_back() -> None:
+    """The point of L2: a new process (redeploy) serves the last analysis."""
+
+    db = FakeDatabase()
     bundle = _bundle()
-    fp = compute_bundle_fingerprint(bundle)
-    entry = CachedEntry(bundle=bundle, fingerprint=fp, acquired_at=datetime.now(UTC))
-    # Should never raise — the stub is a documented no-op.
-    cache._persist_to_l2("any", entry)
-    cache._invalidate_l2("any")
+    SchemaCache().put("db1", bundle, db=db, db_shape="shape-1", db_counts="counts-1", now=_T0)
+
+    restarted = SchemaCache()
+    entry = restarted.get("db1", db=db, now=_T0 + timedelta(minutes=1))
+
+    assert entry is not None
+    assert mapping_to_wire_dict(entry.bundle) == mapping_to_wire_dict(bundle)
+    assert (entry.db_shape, entry.db_counts) == ("shape-1", "counts-1")
+    assert entry.acquired_at == _T0
+    assert entry.producer == current_producer() and entry.is_from_current_code()
+    assert len(restarted) == 1  # hydrated into L1
 
 
-def test_l2_hydration_path_when_subclass_overrides_read(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """When a subclass (or future implementation) overrides
-    :meth:`_read_from_l2`, the L1 should hydrate from it on miss
-    and serve subsequent reads from L1 directly.
-    """
+def test_the_ttl_keeps_counting_across_a_restart() -> None:
+    db = FakeDatabase()
+    SchemaCache(ttl_seconds=60).put("db1", _bundle(), db=db, now=_T0)
 
+    entry, expired = SchemaCache(ttl_seconds=60).peek("db1", db=db, now=_T0 + timedelta(seconds=61))
+
+    assert entry is not None and expired
+
+
+def test_without_a_db_handle_l2_is_never_touched() -> None:
+    db = FakeDatabase()
+    SchemaCache().put("db1", _bundle())
+    assert not db.has_collection(L2_COLLECTION_NAME)
+
+    SchemaCache().put("db1", _bundle(), db=db)
+    assert SchemaCache().get("db1") is None  # no handle → no read-through
+
+
+def test_concurrent_misses_share_one_l2_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The UI fires introspect + statistics + OWL at once after a restart;
+    one stored-document read must serve them all."""
+
+    db = FakeDatabase()
+    SchemaCache().put("db1", _bundle(), db=db)
     cache = SchemaCache()
+    reads: list[int] = []
+    real_get = cache._l2.get
+    start = threading.Barrier(6)
+
+    def slow_get(handle: Any) -> Any:
+        reads.append(1)
+        threading.Event().wait(0.05)
+        return real_get(handle)
+
+    monkeypatch.setattr(cache._l2, "get", slow_get)
+    seen: list[Any] = []
+
+    def reader() -> None:
+        start.wait()
+        seen.append(cache.peek("db1", db=db)[0])
+
+    threads = [threading.Thread(target=reader) for _ in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert len(reads) == 1
+    assert len(seen) == 6 and all(e is seen[0] for e in seen) and seen[0] is not None
+
+
+def test_a_read_only_user_keeps_the_in_memory_cache() -> None:
+    db = FakeDatabase(read_only=True)
+    cache = SchemaCache()
+
+    entry = cache.put("db1", _bundle(), db=db)
+
+    assert cache.get("db1") is entry
+    assert not db.has_collection(L2_COLLECTION_NAME)
+
+
+def test_an_unreachable_store_is_a_miss_not_an_error() -> None:
+    assert SchemaCache().get("db1", db=FakeDatabase(unreachable=True)) is None
+    assert SchemaCache().peek("db1", db=FakeDatabase(unreachable=True)) == (None, False)
+
+
+def test_invalidate_persistent_drops_the_stored_copy() -> None:
+    db = FakeDatabase()
+    cache = SchemaCache()
+    cache.put("db1", _bundle(), db=db)
+
+    assert cache.invalidate("db1") is True
+    assert cache.invalidate_persistent(db) is True
+    assert cache.get("db1", db=db) is None
+    assert cache.invalidate_persistent(db) is False
+
+
+@pytest.mark.parametrize(
+    "producer", ["0123456789abcdef/analyzer=0.1.0", None], ids=["older-build", "unrecorded"]
+)
+def test_a_stored_copy_from_other_code_reads_as_outdated(producer: str | None) -> None:
+    db = FakeDatabase()
+    SchemaCache().put("db1", _bundle(), db=db)
+    doc = db.collection(L2_COLLECTION_NAME).docs["mapping"]
+    doc["producer"] = producer
+
+    entry = SchemaCache().get("db1", db=db)
+
+    assert entry is not None and not entry.is_from_current_code()
+
+
+def test_revalidated_restarts_the_ttl_and_restamps_the_stored_copy() -> None:
+    db = FakeDatabase()
+    cache = SchemaCache(ttl_seconds=60)
     bundle = _bundle()
-    fp = compute_bundle_fingerprint(bundle)
-    entry = CachedEntry(bundle=bundle, fingerprint=fp, acquired_at=datetime.now(UTC))
-    calls: list[str] = []
+    cache.put("db1", bundle, db=db, db_shape="s", db_counts="c", now=_T0)
+    later = _T0 + timedelta(hours=2)
+    assert cache.peek("db1", now=later)[1] is True  # expired
 
-    def fake_read(db_name: str) -> CachedEntry | None:
-        calls.append(db_name)
-        return entry if db_name == "db1" else None
+    entry = cache.revalidated("db1", db=db, db_counts="c", now=later)
 
-    monkeypatch.setattr(cache, "_read_from_l2", fake_read)
-    fetched = cache.get("db1")
-    assert fetched is entry
-    # Second call should hit L1 directly — L2 is not consulted again.
-    cache.get("db1")
-    assert calls == ["db1"]
+    assert entry is not None and entry.bundle is bundle and entry.acquired_at == later
+    assert cache.peek("db1", now=later + timedelta(seconds=1)) == (entry, False)
+    restarted = SchemaCache(ttl_seconds=60).peek("db1", db=db, now=later + timedelta(seconds=1))
+    assert restarted[0] is not None and restarted[1] is False  # the stored copy carries the new stamp
+
+
+def test_revalidated_without_an_entry_is_a_no_op() -> None:
+    assert SchemaCache().revalidated("missing", db_counts="c") is None
+
+
+def test_entries_built_in_process_are_current() -> None:
+    assert SchemaCache().put("db1", _bundle()).is_from_current_code()
 
 
 # ---------------------------------------------------------------------------

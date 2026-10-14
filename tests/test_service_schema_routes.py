@@ -651,35 +651,35 @@ def test_status_no_cache_when_nothing_introspected(client: TestClient, session_t
     assert body["cached"]["counts"] is None
 
 
-def test_status_unchanged_after_introspect_with_matching_fingerprints(
+def _live_fingerprints(monkeypatch: pytest.MonkeyPatch, shape: str | None, counts: str | None) -> None:
+    """What the analyzer's live fingerprint functions report for the database."""
+    monkeypatch.setattr(schema_route_mod, "db_shape_fingerprint", lambda _db: shape)
+    monkeypatch.setattr(schema_route_mod, "db_counts_fingerprint", lambda _db: counts)
+
+
+def test_status_unchanged_when_the_database_did_not_change(
     client: TestClient,
     session_token: str,
     stub_acquire: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """After an introspect, the cached fingerprint matches the live
-    fingerprint (we monkey-patch both to the same value), so status
-    reports unchanged.
+    """The live fingerprints taken at analysis time still match.
+
+    Regression: the route compared the live fingerprints with a hash of the
+    *bundle* — a different hash domain — so an untouched database reported
+    ``shape_changed`` whenever the analyzer was installed.
     """
 
     headers = {"X-Arango-Session": session_token}
+    _live_fingerprints(monkeypatch, "shape-A", "counts-A")
     client.get("/schema/introspect", headers=headers)
-    cached_fp = compute_bundle_fingerprint(stub_acquire["bundle"])
-    monkeypatch.setattr(
-        schema_route_mod,
-        "db_shape_fingerprint",
-        lambda _db: cached_fp.shape,
-    )
-    monkeypatch.setattr(
-        schema_route_mod,
-        "db_counts_fingerprint",
-        lambda _db: cached_fp.counts,
-    )
-    resp = client.get("/schema/status", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
+
+    body = client.get("/schema/status", headers=headers).json()
+
     assert body["status"] == "unchanged"
-    assert body["unchanged"] is True
+    assert body["unchanged"] is True and body["needs_full_rebuild"] is False
+    assert body["cached"] == {"shape": "shape-A", "counts": "counts-A"}
+    assert body["current"] == {"shape": "shape-A", "counts": "counts-A"}
 
 
 def test_status_stats_only_when_counts_drift(
@@ -689,22 +689,12 @@ def test_status_stats_only_when_counts_drift(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     headers = {"X-Arango-Session": session_token}
+    _live_fingerprints(monkeypatch, "shape-A", "counts-A")
     client.get("/schema/introspect", headers=headers)
-    cached_fp = compute_bundle_fingerprint(stub_acquire["bundle"])
-    # Same shape, different counts → STATS_ONLY drift.
-    monkeypatch.setattr(
-        schema_route_mod,
-        "db_shape_fingerprint",
-        lambda _db: cached_fp.shape,
-    )
-    monkeypatch.setattr(
-        schema_route_mod,
-        "db_counts_fingerprint",
-        lambda _db: "different-counts-fingerprint",
-    )
-    resp = client.get("/schema/status", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
+    _live_fingerprints(monkeypatch, "shape-A", "counts-B")  # rows written since
+
+    body = client.get("/schema/status", headers=headers).json()
+
     assert body["status"] == "stats_only"
     assert body["unchanged"] is False
     assert body["needs_full_rebuild"] is False
@@ -717,22 +707,34 @@ def test_status_shape_changed_when_topology_differs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     headers = {"X-Arango-Session": session_token}
+    _live_fingerprints(monkeypatch, "shape-A", "counts-A")
     client.get("/schema/introspect", headers=headers)
-    monkeypatch.setattr(
-        schema_route_mod,
-        "db_shape_fingerprint",
-        lambda _db: "shape-after-ddl",
-    )
-    monkeypatch.setattr(
-        schema_route_mod,
-        "db_counts_fingerprint",
-        lambda _db: "counts-after-ddl",
-    )
-    resp = client.get("/schema/status", headers=headers)
-    assert resp.status_code == 200
-    body = resp.json()
+    _live_fingerprints(monkeypatch, "shape-after-ddl", "counts-after-ddl")
+
+    body = client.get("/schema/status", headers=headers).json()
+
     assert body["status"] == "shape_changed"
     assert body["needs_full_rebuild"] is True
+
+
+def test_status_degrades_when_the_cached_schema_has_no_fingerprints(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A schema analyzed without the analyzer (heuristic) stored no live
+    fingerprints; with nothing to compare, report unchanged, not a change."""
+
+    headers = {"X-Arango-Session": session_token}
+    _live_fingerprints(monkeypatch, None, None)
+    client.get("/schema/introspect", headers=headers)
+    _live_fingerprints(monkeypatch, "shape-A", "counts-A")
+
+    body = client.get("/schema/status", headers=headers).json()
+
+    assert body["status"] == "unchanged"
+    assert body["cached"] == {"shape": None, "counts": None}
 
 
 def test_status_degrades_to_unchanged_when_live_fingerprints_unavailable(

@@ -37,6 +37,7 @@ from arango_sparql.schema.fingerprint import (
     FingerprintDrift,
     bundle_counts_fingerprint,
     bundle_shape_fingerprint,
+    classify_live_drift,
     compute_bundle_fingerprint,
 )
 from arango_sparql.translate.mapping import MappingBundle, mapping_from_wire_dict
@@ -525,3 +526,35 @@ def test_fingerprint_payload_version_is_positive_int() -> None:
 
     assert isinstance(FINGERPRINT_PAYLOAD_VERSION, int)
     assert FINGERPRINT_PAYLOAD_VERSION >= 1
+
+
+# ---------------------------------------------------------------------------
+# classify_live_drift — live database fingerprints, stored vs now
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("stored", "current", "expected"),
+    [
+        (("s", "c"), ("s", "c"), FingerprintDrift.UNCHANGED),
+        (("s", "c"), ("s", "c2"), FingerprintDrift.STATS_ONLY),
+        (("s", "c"), ("s2", "c"), FingerprintDrift.SHAPE_CHANGED),
+        (("s", "c"), ("s2", "c2"), FingerprintDrift.SHAPE_CHANGED),
+        # An unknown counts fingerprint on either side is recounted, never
+        # assumed unchanged.
+        (("s", None), ("s", "c"), FingerprintDrift.STATS_ONLY),
+        (("s", "c"), ("s", None), FingerprintDrift.STATS_ONLY),
+    ],
+)
+def test_classify_live_drift(
+    stored: tuple[str, str | None], current: tuple[str, str | None], expected: FingerprintDrift
+) -> None:
+    assert (
+        classify_live_drift(
+            stored_shape=stored[0],
+            stored_counts=stored[1],
+            current_shape=current[0],
+            current_counts=current[1],
+        )
+        is expected
+    )

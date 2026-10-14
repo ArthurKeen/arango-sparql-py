@@ -36,6 +36,11 @@ Three tiers, in priority order:
    overwritten — so it closes the analyzer's cross-collection gap
    without fighting it.
 
+Every tier sees the database through :func:`hide_schema_cache_collections`,
+so the collections that hold a transpiler's own cached schema (this
+service's and arango-cypher-py's, :data:`SCHEMA_CACHE_COLLECTIONS`) never
+become classes in the analyzed schema.
+
 Public surface:
 
 * :func:`acquire_mapping_bundle` — the orchestration entry point.
@@ -56,12 +61,14 @@ straightforward.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from arango_sparql.schema.cache import SCHEMA_CACHE_COLLECTIONS
 from arango_sparql.schema.detect import (
     build_heuristic_mapping,
     detect_rpt_pattern,
@@ -181,6 +188,7 @@ def acquire_mapping_bundle(
         raise ValueError(f"strategy must be one of {_VALID_STRATEGIES!r}, got {strategy!r}")
 
     when = now if now is not None else datetime.now(UTC)
+    db = hide_schema_cache_collections(db)
     # `force_refresh` is accepted for signature compat with the
     # cache-wrapping orchestrator (PRD signature includes it). The
     # acquisition path itself is stateless so the flag does not
@@ -211,6 +219,90 @@ def acquire_mapping_bundle(
 
         bundle = scope_bundle_to_graph(db, bundle, graph_name)
     return bundle
+
+
+class _SchemaCacheHidden:
+    """A database handle whose ``collections()`` leaves out the schema caches.
+
+    Every analysis pass enumerates collections through ``db.collections()``
+    (the analyzer's snapshot and statistics, this module's RPT and edge
+    passes, the heuristic detector), and the analyzer offers no way to
+    exclude one. Filtering the enumeration once keeps the caches out of every
+    derived artifact at the same time: classes, shard families, statistics,
+    the sharding profile and the OWL export. Everything else is delegated to
+    the wrapped handle unchanged.
+    """
+
+    def __init__(self, db: Any) -> None:
+        self._db = db
+
+    def collections(self) -> Any:
+        rows = self._db.collections()
+        if not isinstance(rows, list):
+            return rows
+        return [
+            row for row in rows if not (isinstance(row, dict) and row.get("name") in SCHEMA_CACHE_COLLECTIONS)
+        ]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._db, name)
+
+
+def hide_schema_cache_collections(db: Any) -> Any:
+    """Return *db* seen without :data:`SCHEMA_CACHE_COLLECTIONS` (idempotent)."""
+
+    return db if isinstance(db, _SchemaCacheHidden) else _SchemaCacheHidden(db)
+
+
+def refresh_statistics(db: Any, bundle: MappingBundle) -> MappingBundle:
+    """Re-derive *bundle*'s ``metadata.statistics`` against *db*, keeping its mapping.
+
+    The stats-only branch of the drift policy (PRD §6.3.3): the live shape
+    fingerprint still matches, so the conceptual schema and physical mapping
+    are reused and only the cardinality block is recomputed — the same
+    ``schema_analyzer.statistics.compute_statistics`` the full analysis runs,
+    fed the cheap collection listing it needs instead of a full snapshot
+    (mirrors ``schema_analyzer.incremental.refresh_statistics``, which works
+    on an ``AnalysisResult`` rather than this repo's enriched bundle).
+
+    Best-effort, like cypher's ``_safe_refresh_statistics``: without the
+    analyzer, or when the recount fails, *bundle* is returned unchanged and
+    the failure logged — stale statistics never cost the caller its mapping.
+    """
+
+    try:
+        from schema_analyzer.statistics import compute_statistics
+    except ImportError:
+        return bundle
+
+    view = hide_schema_cache_collections(db)
+    try:
+        rows = view.collections()
+        snapshot = {
+            "collections": [
+                {"name": row["name"], "type": row.get("type")}
+                for row in (rows if isinstance(rows, list) else [])
+                if isinstance(row, dict)
+                and isinstance(row.get("name"), str)
+                and not row["name"].startswith("_")
+            ]
+        }
+        stats = compute_statistics(
+            view, snapshot, bundle.physical_mapping or {}, bundle.conceptual_schema or {}
+        )
+    except Exception:  # noqa: BLE001 — best-effort; the mapping is still valid
+        logger.warning(
+            "statistics refresh failed for db=%r; keeping the previous statistics",
+            getattr(db, "name", "?"),
+            exc_info=True,
+        )
+        return bundle
+    if not isinstance(stats, dict):
+        return bundle
+    metadata = dict(bundle.metadata or {})
+    metadata["statistics"] = stats
+    metadata["statisticsStatus"] = stats.get("status")
+    return dataclasses.replace(bundle, metadata=metadata)
 
 
 def analyzer_available() -> bool:
@@ -1046,8 +1138,6 @@ def _live_fingerprint(db: Any, *, kind: Literal["shape", "counts"]) -> str | Non
     """
 
     try:
-        from arango_sparql.schema.cache import L2_COLLECTION_NAME
-
         if kind == "shape":
             from schema_analyzer import fingerprint_physical_shape as fn
         else:
@@ -1056,7 +1146,7 @@ def _live_fingerprint(db: Any, *, kind: Literal["shape", "counts"]) -> str | Non
         return None
 
     try:
-        return fn(db, exclude_collections={L2_COLLECTION_NAME})
+        return fn(db, exclude_collections=set(SCHEMA_CACHE_COLLECTIONS))
     except TypeError:
         # Older analyzer releases (< 0.5) did not accept
         # exclude_collections. Re-try without it; the cache row will
@@ -1092,4 +1182,6 @@ __all__ = [
     "analyzer_available",
     "db_counts_fingerprint",
     "db_shape_fingerprint",
+    "hide_schema_cache_collections",
+    "refresh_statistics",
 ]

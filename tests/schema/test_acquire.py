@@ -46,6 +46,11 @@ from arango_sparql.schema.acquire import (
     db_counts_fingerprint,
     db_shape_fingerprint,
 )
+from arango_sparql.schema.cache import (
+    L2_COLLECTION_NAME,
+    SCHEMA_CACHE_COLLECTIONS,
+    SISTER_CACHE_COLLECTION_NAME,
+)
 from arango_sparql.translate.mapping import MappingBundle
 
 # ---------------------------------------------------------------------------
@@ -393,7 +398,11 @@ def test_analyzer_path_passes_db_to_analyze_physical_schema(
     _install_analyzer_mock(monkeypatch, analyzer_cls=TracingAnalyzer, export_fn=fn)
     db = _empty_db()
     acquire_mapping_bundle(db, strategy="analyzer")
-    assert seen == [db]
+    # The analyzer sees *db* through the schema-cache filter: same handle
+    # underneath (queries go to it), with only collections() filtered.
+    assert len(seen) == 1
+    assert seen[0].aql is db.aql
+    assert seen[0].collections() == db.collections()
 
 
 def test_analyzer_path_with_include_owl_carries_turtle(
@@ -1005,12 +1014,14 @@ def test_db_counts_fingerprint_returns_none_when_analyzer_missing(
     assert db_counts_fingerprint(_empty_db()) is None
 
 
-def test_db_shape_fingerprint_excludes_l2_cache_collection(
+def test_db_shape_fingerprint_excludes_the_schema_cache_collections(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Cache-self-loop guard: the shape fingerprint must exclude the
     L2 cache collection so writing the cache row does not
-    invalidate the fingerprint that just landed in it.
+    invalidate the fingerprint that just landed in it — and
+    arango-cypher-py's cache too, which it writes into the same
+    databases on its own schedule.
     """
 
     import schema_analyzer
@@ -1023,7 +1034,7 @@ def test_db_shape_fingerprint_excludes_l2_cache_collection(
 
     monkeypatch.setattr(schema_analyzer, "fingerprint_physical_shape", fake_shape)
     db_shape_fingerprint(_empty_db())
-    assert seen["exclude"] == {"arango_sparql_schema_cache"}
+    assert seen["exclude"] == {"arango_sparql_schema_cache", "arango_cypher_schema_cache"}
 
 
 def test_db_counts_fingerprint_handles_old_analyzer_signature(
@@ -1123,3 +1134,125 @@ def test_other_analyzer_strings_stay_warnings() -> None:
         "message": "OpenAI request failed",
         "severity": "warning",
     }
+
+
+# ---------------------------------------------------------------------------
+# Schema-cache collections stay out of the analysis (PRD §6.3.3)
+# ---------------------------------------------------------------------------
+
+
+def _pg_db_with_schema_caches() -> MockDb:
+    """``_pg_db`` plus both transpilers' cache collections, each holding the
+    one cache document they really hold."""
+    cache_doc = [{"_key": "mapping", "schema_version": 1, "bundle": {"metadata": {}}}]
+    base = _pg_db()
+    return MockDb(
+        collections=[*base.collections(), _doc(L2_COLLECTION_NAME), _doc(SISTER_CACHE_COLLECTION_NAME)],
+        samples={**base.aql.samples, L2_COLLECTION_NAME: cache_doc, SISTER_CACHE_COLLECTION_NAME: cache_doc},
+    )
+
+
+def test_the_heuristic_tier_never_sees_a_schema_cache() -> None:
+    bundle = acquire_mapping_bundle(_pg_db_with_schema_caches(), strategy="heuristic")
+    collections = {spec.get("collectionName") for spec in bundle.entities().values()}
+    assert collections == {"Person", "Company"}
+
+
+def test_the_analyzer_never_sees_a_schema_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    listed: list[set[str]] = []
+    cls, fn = _make_analyzer_mock()
+
+    class ListingAnalyzer(cls):  # type: ignore[misc, valid-type]
+        def analyze_physical_schema(self, db: Any, **kwargs: Any) -> Any:
+            listed.append({c["name"] for c in db.collections()})
+            return super().analyze_physical_schema(db, **kwargs)
+
+    _install_analyzer_mock(monkeypatch, analyzer_cls=ListingAnalyzer, export_fn=fn)
+    acquire_mapping_bundle(_pg_db_with_schema_caches(), strategy="analyzer")
+    assert listed == [{"Person", "Company"}]
+
+
+def test_the_cache_filter_only_narrows_the_collection_listing() -> None:
+    db = _pg_db_with_schema_caches()
+    view = acquire_mod.hide_schema_cache_collections(db)
+    assert {c["name"] for c in view.collections()} == {"Person", "Company"}
+    assert view.name == db.name and view.aql is db.aql  # everything else is the real handle
+    assert acquire_mod.hide_schema_cache_collections(view) is view  # idempotent
+    assert {c["name"] for c in db.collections()} >= SCHEMA_CACHE_COLLECTIONS  # the real db is untouched
+
+
+def test_the_cache_filter_passes_a_non_list_listing_through() -> None:
+    # python-arango's async/batch modes return a job, not a list; filtering it
+    # would break the caller, so it is handed back unchanged.
+    job = object()
+    view = acquire_mod.hide_schema_cache_collections(SimpleNamespace(collections=lambda: job))
+    assert view.collections() is job
+
+
+# ---------------------------------------------------------------------------
+# refresh_statistics — the stats-only drift branch (PRD §6.3.3)
+# ---------------------------------------------------------------------------
+
+
+def _bundle_with_stale_stats() -> MappingBundle:
+    return MappingBundle(
+        conceptual_schema={"entities": [{"name": "Person"}]},
+        physical_mapping={"entities": {"Person": {"style": "COLLECTION", "collectionName": "Person"}}},
+        metadata={"statistics": {"entities": {"Person": {"estimated_count": 5}}}, "warnings": []},
+    )
+
+
+def test_refresh_statistics_recounts_and_keeps_the_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    import schema_analyzer.statistics as stats_mod
+
+    seen: dict[str, Any] = {}
+
+    def fake_compute(
+        db: Any,
+        snapshot: dict[str, Any],
+        physical_mapping: dict[str, Any],
+        conceptual_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        seen["collections"] = {c["name"] for c in snapshot["collections"]}
+        seen["listed"] = {c["name"] for c in db.collections()}
+        return {"status": "ok", "entities": {"Person": {"estimated_count": 6}}}
+
+    monkeypatch.setattr(stats_mod, "compute_statistics", fake_compute)
+    before = _bundle_with_stale_stats()
+
+    after = acquire_mod.refresh_statistics(_pg_db_with_schema_caches(), before)
+
+    assert after.metadata["statistics"]["entities"]["Person"]["estimated_count"] == 6
+    assert after.metadata["statisticsStatus"] == "ok"
+    assert after.physical_mapping is before.physical_mapping
+    assert after.conceptual_schema is before.conceptual_schema
+    assert before.metadata["statistics"]["entities"]["Person"]["estimated_count"] == 5  # input untouched
+    # The schema caches are neither counted nor listed.
+    assert seen["collections"] == seen["listed"] == {"Person", "Company"}
+
+
+def test_refresh_statistics_keeps_the_old_block_when_the_recount_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import schema_analyzer.statistics as stats_mod
+
+    def boom(
+        db: Any,
+        snapshot: dict[str, Any],
+        physical_mapping: dict[str, Any],
+        conceptual_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        raise RuntimeError("forbidden: COLLECT on edges")
+
+    monkeypatch.setattr(stats_mod, "compute_statistics", boom)
+    before = _bundle_with_stale_stats()
+
+    with caplog.at_level("WARNING", logger="arango_sparql.schema.acquire"):
+        assert acquire_mod.refresh_statistics(_pg_db(), before) is before
+    assert "statistics refresh failed" in caplog.text
+
+
+def test_refresh_statistics_without_the_analyzer_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    _block_schema_analyzer(monkeypatch)
+    before = _bundle_with_stale_stats()
+    assert acquire_mod.refresh_statistics(_pg_db(), before) is before
