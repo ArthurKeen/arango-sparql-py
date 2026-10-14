@@ -134,3 +134,50 @@ def test_live_analysis_detects_the_shapes(db: Any) -> None:
     out = acquire._apply_label_shape_enrichment(db, bundle, when=datetime.now(UTC))
     assert out.physical_mapping["entities"]["Person"]["typeFieldIsArray"] is True
     assert out.physical_mapping["entities"]["Order"]["typeFieldIsArray"] is False
+
+
+def test_the_analyzer_and_the_translator_read_label_arrays_end_to_end() -> None:
+    """arangodb-schema-analyzer >= 0.15 groups an array type field by its
+    primary label, so r2g's nodes become LABEL entities on ``labels`` (before,
+    one ``Node`` entity); the live shape probe then flags the field as an
+    array, and ``?p a :Person`` finds every Person — including one whose
+    second label is Customer."""
+    from importlib.metadata import version
+
+    from arango import ArangoClient
+    from packaging.version import Version
+
+    if Version(version("arangodb-schema-analyzer")) < Version("0.15.0"):
+        pytest.skip("label arrays discriminate entities from arangodb-schema-analyzer 0.15.0")
+    name = "sparql_label_arrays_e2e"
+    client = ArangoClient(hosts=DEFAULT_ARANGO_URL)
+    sys_db = client.db("_system", username=DEFAULT_ARANGO_USER, password=DEFAULT_ARANGO_PASSWORD)
+    if sys_db.has_database(name):
+        sys_db.delete_database(name)
+    sys_db.create_database(name)
+    try:
+        db = client.db(name, username=DEFAULT_ARANGO_USER, password=DEFAULT_ARANGO_PASSWORD)
+        nodes = db.create_collection("nodes")
+        people = [
+            ("Ada", ["Person", "Customer"]),
+            ("Bo", ["Person"]),
+            ("Cy", ["Person", "Customer"]),
+            ("Di", ["Person"]),
+        ]
+        nodes.insert_many([{"name": n, "labels": labels} for n, labels in people])
+        nodes.insert_many([{"name": f"org-{i}", "labels": ["Organization"]} for i in range(3)])
+        nodes.insert_many([{"name": f"product-{i}", "labels": ["Product"]} for i in range(3)])
+
+        bundle = acquire.acquire_mapping_bundle(db, strategy="auto")
+        person = bundle.physical_mapping["entities"]["Person"]
+        assert (person["style"], person["typeField"], person["typeValue"]) == ("LABEL", "labels", "Person")
+        assert person["typeFieldIsArray"] is True
+
+        res = translate(
+            "SELECT ?n WHERE { ?p a <urn:arango-sparql:concept#Person> ; <urn:arango-sparql:concept#name> ?n }",
+            resolver=SchemaResolver.from_mapping_bundle(bundle),
+        )
+        rows = list(db.aql.execute(res.aql, bind_vars=res.bind_vars))
+        assert sorted(r["n"] for r in rows) == ["Ada", "Bo", "Cy", "Di"]
+    finally:
+        sys_db.delete_database(name, ignore_missing=True)
