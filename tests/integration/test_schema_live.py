@@ -24,6 +24,9 @@ all three at once) and asserts:
   shape fingerprint; a new collection moves the shape (§6.3.3).
 * **Named-graph scope** — ``graph_name`` down-selects to that graph's
   collections (§6.3.2).
+* **Schema caches stay out** — this service's and arango-cypher-py's cache
+  collections never become classes, shard families, statistics or OWL, and
+  writing them does not move the fingerprints (§6.3.3).
 
 Every test runs both acquisition strategies where both apply: ``heuristic``
 (this repo's detector) and ``auto`` (the analyzer, with this repo's
@@ -57,6 +60,7 @@ from arango_sparql.schema.acquire import (
     db_counts_fingerprint,
     db_shape_fingerprint,
 )
+from arango_sparql.schema.cache import SCHEMA_CACHE_COLLECTIONS
 from arango_sparql.schema.detect import classify_schema
 from arango_sparql.translate.mapping import MappingBundle
 from arango_sparql.translate.resolver import SchemaResolver
@@ -472,6 +476,51 @@ def test_a_new_collection_moves_the_shape(scratch_db: Any) -> None:
     scratch_db.create_collection("studios")
 
     assert db_shape_fingerprint(scratch_db) != shape
+
+
+def _write_schema_caches(db: Any, revision: int) -> None:
+    """Write the one document each transpiler keeps in its cache collection."""
+    for name in sorted(SCHEMA_CACHE_COLLECTIONS):
+        col = db.collection(name) if db.has_collection(name) else db.create_collection(name)
+        col.insert(
+            {"_key": "mapping", "schema_version": 1, "revision": revision, "bundle": {"metadata": {}}},
+            overwrite=True,
+        )
+
+
+@pytest.mark.parametrize("strategy", STRATEGIES)
+def test_cache_collections_never_reach_the_analyzed_schema(scratch_db: Any, strategy: str) -> None:
+    """Before the filter the analyzer turned both caches into classes, put them
+    in an invented ``SchemaCache`` shard family, counted them in the
+    statistics and exported them as OWL classes."""
+    SEEDS["pg"](scratch_db)
+    _write_schema_caches(scratch_db, revision=1)
+
+    bundle = _acquire(scratch_db, strategy, include_owl=True)
+
+    dumped = json.dumps(
+        [bundle.conceptual_schema, bundle.physical_mapping, bundle.metadata, bundle.owl_turtle or ""]
+    )
+    # (The scratch database is named after the test, so the test name must not
+    # contain "schema_cache" — the analyzer records the database name.)
+    assert "schema_cache" not in dumped and "SchemaCache" not in dumped
+    entity_collections = {s["collectionName"] for s in bundle.physical_mapping["entities"].values()}
+    assert entity_collections == {"docs", "persons", "places", "users"}
+
+
+def test_cache_writes_do_not_move_the_fingerprints(scratch_db: Any) -> None:
+    """A cache write must not mark the cache it just wrote as stale — nor may
+    arango-cypher-py's cache writes make this service re-analyze."""
+    if not analyzer_available():
+        pytest.skip("live fingerprints come from arangodb-schema-analyzer")
+    SEEDS["pg"](scratch_db)
+    shape, counts = db_shape_fingerprint(scratch_db), db_counts_fingerprint(scratch_db)
+
+    _write_schema_caches(scratch_db, revision=1)
+    for name in SCHEMA_CACHE_COLLECTIONS:
+        scratch_db.collection(name).insert({"_key": "graph-scoped", "bundle": {}})  # count moves too
+
+    assert (db_shape_fingerprint(scratch_db), db_counts_fingerprint(scratch_db)) == (shape, counts)
 
 
 # ---------------------------------------------------------------------------

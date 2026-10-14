@@ -36,6 +36,11 @@ Three tiers, in priority order:
    overwritten — so it closes the analyzer's cross-collection gap
    without fighting it.
 
+Every tier sees the database through :func:`hide_schema_cache_collections`,
+so the collections that hold a transpiler's own cached schema (this
+service's and arango-cypher-py's, :data:`SCHEMA_CACHE_COLLECTIONS`) never
+become classes in the analyzed schema.
+
 Public surface:
 
 * :func:`acquire_mapping_bundle` — the orchestration entry point.
@@ -61,6 +66,7 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+from arango_sparql.schema.cache import SCHEMA_CACHE_COLLECTIONS
 from arango_sparql.schema.detect import (
     build_heuristic_mapping,
     detect_rpt_pattern,
@@ -180,6 +186,7 @@ def acquire_mapping_bundle(
         raise ValueError(f"strategy must be one of {_VALID_STRATEGIES!r}, got {strategy!r}")
 
     when = now if now is not None else datetime.now(UTC)
+    db = hide_schema_cache_collections(db)
     # `force_refresh` is accepted for signature compat with the
     # cache-wrapping orchestrator (PRD signature includes it). The
     # acquisition path itself is stateless so the flag does not
@@ -209,6 +216,39 @@ def acquire_mapping_bundle(
 
         bundle = scope_bundle_to_graph(db, bundle, graph_name)
     return bundle
+
+
+class _SchemaCacheHidden:
+    """A database handle whose ``collections()`` leaves out the schema caches.
+
+    Every analysis pass enumerates collections through ``db.collections()``
+    (the analyzer's snapshot and statistics, this module's RPT and edge
+    passes, the heuristic detector), and the analyzer offers no way to
+    exclude one. Filtering the enumeration once keeps the caches out of every
+    derived artifact at the same time: classes, shard families, statistics,
+    the sharding profile and the OWL export. Everything else is delegated to
+    the wrapped handle unchanged.
+    """
+
+    def __init__(self, db: Any) -> None:
+        self._db = db
+
+    def collections(self) -> Any:
+        rows = self._db.collections()
+        if not isinstance(rows, list):
+            return rows
+        return [
+            row for row in rows if not (isinstance(row, dict) and row.get("name") in SCHEMA_CACHE_COLLECTIONS)
+        ]
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._db, name)
+
+
+def hide_schema_cache_collections(db: Any) -> Any:
+    """Return *db* seen without :data:`SCHEMA_CACHE_COLLECTIONS` (idempotent)."""
+
+    return db if isinstance(db, _SchemaCacheHidden) else _SchemaCacheHidden(db)
 
 
 def analyzer_available() -> bool:
@@ -944,8 +984,6 @@ def _live_fingerprint(db: Any, *, kind: Literal["shape", "counts"]) -> str | Non
     """
 
     try:
-        from arango_sparql.schema.cache import L2_COLLECTION_NAME
-
         if kind == "shape":
             from schema_analyzer import fingerprint_physical_shape as fn
         else:
@@ -954,7 +992,7 @@ def _live_fingerprint(db: Any, *, kind: Literal["shape", "counts"]) -> str | Non
         return None
 
     try:
-        return fn(db, exclude_collections={L2_COLLECTION_NAME})
+        return fn(db, exclude_collections=set(SCHEMA_CACHE_COLLECTIONS))
     except TypeError:
         # Older analyzer releases (< 0.5) did not accept
         # exclude_collections. Re-try without it; the cache row will
@@ -990,4 +1028,5 @@ __all__ = [
     "analyzer_available",
     "db_counts_fingerprint",
     "db_shape_fingerprint",
+    "hide_schema_cache_collections",
 ]

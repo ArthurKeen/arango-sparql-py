@@ -64,6 +64,18 @@ DEFAULT_TTL_SECONDS: int = 3600
 # definition.
 L2_COLLECTION_NAME: str = "arango_sparql_schema_cache"
 
+# arango-cypher-py's persistent cache (``arango_cypher/schema_cache.py``
+# ``DEFAULT_CACHE_COLLECTION``). Both transpilers analyze the same customer
+# databases, so each one's cache collection sits next to the other's data.
+SISTER_CACHE_COLLECTION_NAME: str = "arango_cypher_schema_cache"
+
+# Collections that hold a transpiler's own cached schema, never user data.
+# Schema analysis and the live fingerprints skip them: left in, each cache
+# becomes a class in the analyzed schema (the analyzer even invents a
+# ``SchemaCache`` superclass for the pair), and every cache write moves the
+# fingerprints that decide whether the cache is stale.
+SCHEMA_CACHE_COLLECTIONS: frozenset[str] = frozenset({L2_COLLECTION_NAME, SISTER_CACHE_COLLECTION_NAME})
+
 # Env var keyword for the TTL override. Held as a constant so the
 # Appendix A.5 row, the unit tests, and the runtime resolution all
 # point at the same string.
@@ -397,6 +409,8 @@ def _resolve_ttl_from_env() -> int:
 __all__ = [
     "DEFAULT_TTL_SECONDS",
     "L2_COLLECTION_NAME",
+    "SCHEMA_CACHE_COLLECTIONS",
+    "SISTER_CACHE_COLLECTION_NAME",
     "TTL_ENV_VAR",
     "CacheStatus",
     "CachedEntry",

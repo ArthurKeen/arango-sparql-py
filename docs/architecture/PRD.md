@@ -743,6 +743,18 @@ When `/schema/status` reports `stats_changed` but `shape_unchanged`, the
 mapping itself is reused but the `metadata.statistics` block is
 re-derived. When shape changes, the full mapping is re-acquired.
 
+**Cache collections are invisible to analysis.** The two transpilers keep
+their caches in the databases they analyze: `arango_sparql_schema_cache`
+(this service) and `arango_cypher_schema_cache` (`arango-cypher-py`), the
+pair named by `schema/cache.py::SCHEMA_CACHE_COLLECTIONS`. Neither is a
+system collection (no leading `_`), and the analyzer cannot be told to skip a
+collection, so before 2026-10-13 each cache became a class in the other
+service's schema — with statistics, OWL, and an invented `SchemaCache` shard
+family. Every acquisition tier now enumerates collections through
+`acquire.py::hide_schema_cache_collections`, and both live fingerprints pass
+the same pair as `exclude_collections`, so a cache write never marks a cache
+stale (`tests/integration/test_schema_live.py`).
+
 #### 6.3.4 Required-analyzer guard at startup
 
 Mirrors `arango-cypher-py`. `arango_sparql/service/app.py` calls
