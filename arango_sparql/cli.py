@@ -180,7 +180,7 @@ if typer is not None:
         draft a question and SPARQL, and keeps a draft only if its translated
         AQL returns the same resources. Verified examples are written to the
         arango_sparql_examples collection in the same database, where the
-        Workbench shows them (PRD §7.6).
+        Workbench shows them (PRD §7.7).
         """
         from rich.console import Console
         from rich.table import Table

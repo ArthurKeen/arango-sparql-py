@@ -1,6 +1,6 @@
 """``GET /examples`` — verified examples mined from the connected database.
 
-Ported from arango-cypher-py's ``service/routes/examples.py`` (PRD §7.6).
+Ported from arango-cypher-py's ``service/routes/examples.py`` (PRD §7.7).
 Written offline by ``arango-sparql-py mine-examples`` into the database's
 ``arango_sparql_examples`` collection; served here without an LLM, so a
 deployment with no API key still shows them. Scoped to the session's database

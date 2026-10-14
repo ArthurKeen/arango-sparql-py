@@ -1,6 +1,6 @@
 """Mine a database's saved AQL queries for verified NL → SPARQL examples.
 
-Ported from arango-cypher-py's ``arango_cypher/query_mining`` (PRD §7.6).
+Ported from arango-cypher-py's ``arango_cypher/query_mining`` (PRD §7.7).
 
 ArangoDB databases often carry hand-written AQL with descriptive text: the
 graph visualizer's saved queries (``_queries``) and canvas actions

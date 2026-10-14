@@ -316,6 +316,7 @@ that already speak our shape.
 | `POST` | `/nl-explain` | session-optional + NL rate-limited | NL question → SPARQL → AQL → human-readable explanation |
 | `POST` | `/nl-execute` | session + NL rate-limited + compute rate-limited | NL question → SPARQL → AQL → bindings |
 | `POST` | `/nl-samples` | session-optional + NL rate-limited | Schema-derived (optionally LLM-authored) example NL questions for the workbench suggestions dropdown — see §7.5 |
+| `GET` | `/examples` | session | Verified examples mined from the session database's saved AQL (question, SPARQL, the AQL that was verified, provenance), scoped to the bound named graph — no LLM — see §7.7 |
 | `GET`  | `/schema/introspect` | session + rate-limited | Live schema acquisition (analyzer or heuristic) — see §6.4 |
 | `GET`  | `/schema/properties` | session + rate-limited | Per-collection inferred property catalog |
 | `GET`  | `/schema/summary` | rate-limited | Conceptual summary derived from a client-supplied mapping body (no DB access) |
@@ -791,7 +792,7 @@ schema.)
 their own state in the databases they analyze: the schema caches
 `arango_sparql_schema_cache` / `arango_cypher_schema_cache`
 (`schema/cache.py::SCHEMA_CACHE_COLLECTIONS`) and the mined examples
-`arango_sparql_examples` / `arango_cypher_examples` (§7.6,
+`arango_sparql_examples` / `arango_cypher_examples` (§7.7,
 `query_mining/store.py::example_collections`) — together
 `acquire.py::service_collections`. None is a system collection (no leading
 `_`), and the analyzer cannot be told to skip a collection, so before
@@ -1402,6 +1403,58 @@ both services:
    is deliberately **no** rule-based NL→SPARQL fallback — unlike NL
    *suggestions* (§7.5), translating a question without an LLM has no
    safe analogue.
+
+### 7.7 Mined examples (saved-query mining, build-time)
+
+Ported from `arango-cypher-py` (its PRD's "Mined examples";
+`arango_cypher/query_mining`). `arango-sparql-py mine-examples` turns a
+database's own saved AQL — the graph visualizer's saved queries (`_queries`)
+and canvas actions (`_canvasActions`), and the query editor's saves
+(`_editor_saved_queries`), with their names and descriptions — into verified
+NL → SPARQL examples (`arango_sparql/query_mining/`):
+
+- a saved query whose EXPLAIN plan writes MUST NOT be executed; every source
+  and candidate run is read-only, bounded server-side (30 s) and read to at most
+  2 000 rows — more is *too large to compare*, never compared on a prefix;
+- canvas actions run on selected nodes, so start vertices are sampled from
+  vertices that have edges in the graph, from collections the action's own text
+  names first;
+- the LLM drafts a question and a SPARQL **SELECT** over the ontology — the
+  prompt carries the NL schema summary (§7.2) and a physical → ontology name
+  table, terms as `:Name` in the ontology's default namespace, values inline;
+  the provider is an explicit flag (`--provider openai|anthropic|openrouter`,
+  each reading its own key, then `NL2SPARQL_API_KEY`), never inferred;
+- the draft is translated with the resolver the Workbench uses (the bundle's
+  OWL merged with its physical mapping), run, and kept only if it returns **the
+  same resources** as the saved query — not merely non-empty. SPARQL binds a
+  resource's *identity* (`_uri`, else `_id`: `builder.subject_ref`), not the
+  document, so the saved query's documents are mapped to those identities
+  first, one `DOCUMENT()` lookup through that same expression; an edge counts
+  through its endpoints (SPARQL binds no edge documents). Rows with no
+  resources compare by **value** — an order-free multiset per row, since AQL
+  names its columns and SPARQL its variables — floats to 6 places. Verdicts:
+  `identical`, `same_vertices` (the saved query also returned edges),
+  `same_values`; anything else fails. A failed draft (no JSON, not a SELECT —
+  decided by rdflib's parser —, does not translate, does not run, different
+  results) is fed back with its reason, up to three times;
+- verified examples are stored in the mined database (`arango_sparql_examples`,
+  configurable via `ARANGO_SPARQL_EXAMPLES_COLLECTION`) with provenance —
+  source query and fingerprint, verdict, the mapping's shape hash
+  (`bundle_shape_fingerprint`) and the model — one per saved query: re-mining
+  replaces it, a query that no longer verifies loses it, a provider failure
+  keeps it. The collection, like arango-cypher-py's `arango_cypher_examples`,
+  is hidden from schema analysis and the fingerprints (§6.3.3);
+- the service serves them without an LLM (`GET /examples`), and the Workbench
+  shows them first in Sample Queries ("From this database", naming the saved
+  query) and after the user's own history in the Ask suggestions (§10.12).
+  They are **not** few-shot examples until an eval run justifies the prompt
+  change, as in `arango-cypher-py`.
+
+Tests: `tests/test_query_mining_{source,generate,store,cli}.py`,
+`tests/test_examples_endpoint.py`, `ui/src/utils/minedExamples.test.ts`, and
+end to end on ArangoDB `tests/integration/test_query_mining_live.py` (the real
+command, real analyzer, mixed `_uri`/`_id` identities, a writing query that
+never runs).
 
 ---
 
@@ -2028,9 +2081,10 @@ project's NL affordance). Behaviour:
   in-flight/last-call state; an error banner shows the structured error
   (e.g. `503 E_NL_PROVIDER_UNAVAILABLE` when no provider is configured).
 - **Suggestions dropdown** merges the user's recent NL history
-  (persisted in local state, deduped) with schema-derived examples from
-  `/nl-samples` (§7.5), each tagged `recent` or `example`. It refetches
-  examples when the `(database, ontology)` pair changes.
+  (persisted in local state, deduped), then the database's verified mined
+  examples for the selected graph (`/examples`, §7.7), then schema-derived
+  examples from `/nl-samples` (§7.5), each tagged `recent` or `example`. It
+  refetches examples when the `(database, ontology)` pair changes.
 - Manual edits to the SPARQL pane reset provenance to
   `sparqlSource = "user"`, so the telemetry never misattributes a
   hand-written query to the LLM.
@@ -2055,7 +2109,7 @@ The always-visible L0 surface (§10.0). It is the evolution of the flat NL
   composer and shows a **cancel** control while a pipeline is in flight.
 - A **status strip** (`role="status"`) reports the staged pipeline
   progress and, when disconnected, an inline "Connect to run".
-- The suggestions dropdown (recent NL history + `/nl-samples`, §10.12)
+- The suggestions dropdown (recent NL history + mined examples + `/nl-samples`, §10.12)
   anchors to the composer; the active tenant/graph scope is shown as an
   inline context chip.
 - Provenance is recorded exactly as §10.12 specifies

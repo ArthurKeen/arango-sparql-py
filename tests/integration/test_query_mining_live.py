@@ -1,4 +1,4 @@
-"""Query mining end to end on a real ArangoDB (PRD §7.6).
+"""Query mining end to end on a real ArangoDB (PRD §7.7).
 
 A database seeded like one a team has used: people who know each other, a
 named graph over them, and the saved queries ArangoDB's own tools write — a
