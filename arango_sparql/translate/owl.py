@@ -291,6 +291,7 @@ _PHYS_TO_ENTITY_FIELD: dict[str, str] = {
     "edgeCollectionName": "edgeCollectionName",
     "typeField": "typeField",
     "typeValue": "typeValue",
+    "typeFieldIsArray": "typeFieldIsArray",
     "triplesCollection": "triplesCollection",
     "subjectColumn": "subjectColumn",
     "predicateColumn": "predicateColumn",

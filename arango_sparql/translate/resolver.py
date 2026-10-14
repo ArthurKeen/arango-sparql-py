@@ -10,7 +10,9 @@ attaches three annotation properties under the ``phys:`` namespace:
 - ``phys:edgeCollectionName "..."`` on every ``owl:ObjectProperty`` →
   ArangoDB edge collection name.
 - ``phys:typeField`` / ``phys:typeValue`` for hybrid (multi-class)
-  collections — used to emit ``FILTER doc.<typeField> == <typeValue>``.
+  collections — used to emit the type test (``builder.type_predicate``):
+  ``doc.<typeField> == <typeValue>`` for a scalar field, ``<typeValue> IN
+  doc.<typeField>`` for an array of labels (``phys:typeFieldIsArray``).
 
 The resolver normalizes every spelling of the physical IRI seen in the
 wild so callers do not have to care which mapper version produced the
@@ -34,6 +36,7 @@ from urllib.parse import quote
 from rdflib import OWL, RDF, RDFS, Graph, Literal, Namespace, URIRef
 
 from ..errors import SchemaResolutionError
+from .builder import parse_flag
 
 if TYPE_CHECKING:
     from .mapping import MappingBundle
@@ -95,6 +98,11 @@ class ResolvedClass:
     collection: str
     type_field: str | None = None
     type_value: str | None = None
+    type_field_is_array: bool | None = None
+    """``phys:typeFieldIsArray``: whether ``type_field`` holds an array of
+    labels (r2g's LPG ``labels``) rather than one value. ``None`` = unknown —
+    the visitor then emits a test that is correct for both shapes (issue #10;
+    ``builder.type_predicate``)."""
     style: str | None = None
     """One of ``COLLECTION`` / ``LABEL`` / ``RPT`` / ``DOCUMENT``
     (PRD §6.1) when the OWL ontology declared ``phys:mappingStyle``;
@@ -492,6 +500,7 @@ class SchemaResolver:
             collection = physical
         type_field = self._physical_string(ref, "typeField")
         type_value = self._physical_string(ref, "typeValue")
+        type_field_is_array = parse_flag(self._physical_string(ref, "typeFieldIsArray"))
         style = self._physical_string(ref, "mappingStyle")
         # RPT classes default the resolver-visible "collection" to the
         # triples table — that's where the engine reads rows. Inline
@@ -525,6 +534,7 @@ class SchemaResolver:
             collection=collection,
             type_field=type_field,
             type_value=type_value,
+            type_field_is_array=type_field_is_array,
             style=style,
             tenant_field=tenant_field,
             tenant_entity=tenant_entity,
@@ -738,6 +748,7 @@ class SchemaResolver:
 _BUNDLE_ENTITY_ANNOTATIONS: tuple[tuple[str, str], ...] = (
     ("typeField", "typeField"),
     ("typeValue", "typeValue"),
+    ("typeFieldIsArray", "typeFieldIsArray"),
     ("triplesCollection", "triplesCollection"),
     ("subjectColumn", "subjectColumn"),
     ("predicateColumn", "predicateColumn"),
