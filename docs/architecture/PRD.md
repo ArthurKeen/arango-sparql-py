@@ -2236,7 +2236,15 @@ Already covered in §6.3; restated here for the integration map:
   mutually exclusive bands are unsatisfiable — a lower ceiling silently
   downgrades a co-installed newer analyzer and breaks its consumers (observed
   2026-09-06, CDF `make seed`). Raising the band is therefore a coordinated
-  change across both repositories, never a unilateral one.
+  change across both repositories, never a unilateral one. "Aligned" means
+  precisely: the two bands **share a ceiling and overlap**; a floor may lead in
+  one repo while it adopts a fix release first (arango-cypher-py raised to 0.14.1
+  on 2026-10-05; this repo followed on 2026-10-13 for the same IAM
+  relationship-naming fix). **Enforced** by `tests/test_analyzer_band_parity.py`,
+  which reads the sister band from `references/arango-cypher-py` or, in CI, from
+  GitHub, and fails on a differing ceiling or non-overlapping bands (issue #8).
+  The startup guard's install hint (`ANALYZER_VERSION_RANGE`) is pinned to the
+  declared band by `tests/test_service_startup_guard.py`.
 - **Consumed contracts**:
   - `AgenticSchemaAnalyzer.analyze_physical_schema(db, ...)` →
     canonical `AnalysisResult`.
