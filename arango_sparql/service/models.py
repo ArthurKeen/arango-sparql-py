@@ -534,7 +534,8 @@ class SchemaInvalidateCacheResponse(BaseModel):
     """Response body for ``POST /schema/invalidate-cache`` (PRD §6.4 row 6).
 
     ``invalidated`` is ``True`` iff a cache entry was actually
-    evicted (matches :meth:`SchemaCache.invalidate`'s return value).
+    evicted from either tier; ``persistent_dropped`` iff the stored
+    copy in the database (PRD §6.3.3 L2) was deleted.
     The ``db_name`` echo lets a caller confirm they invalidated the
     expected database when one process is talking to multiple DBs.
     """

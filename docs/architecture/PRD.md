@@ -722,7 +722,33 @@ Two-tier persistence:
 | Layer | Where | Keyed by | Lifetime |
 | --- | --- | --- | --- |
 | In-process LRU | `SchemaCache` L1 | `db.name` — the **whole-database** bundle | TTL 3600 s (`SCHEMA_MAPPING_CACHE_TTL_SECONDS`, Appendix A.5); an expired entry is served while it refreshes (§6.3.5) |
-| Persistent | `arango_sparql_schema_cache` collection in the customer's own DB | `(db.name, key="mapping")` | Until invalidated — **not implemented yet** (`SchemaCache._persist_to_l2` / `_read_from_l2` are stubs), so a restart or redeploy starts cold |
+| Persistent | `arango_sparql_schema_cache` collection in the customer's own DB (`schema/persistent_cache.py::ArangoSchemaCache`, ported from `arango-cypher-py`'s `schema_cache.py`) | one document, `_key: "mapping"`, per database | Until replaced or invalidated. Read through on an L1 miss, so a restart or redeploy serves the last analysis; written through on every analysis |
+
+**Persistent document.** `schema_version` (format; a mismatch is a miss),
+`bundle` (the canonical wire dict, OWL included), `shape_fingerprint` /
+`full_fingerprint` (the *live database* fingerprints taken just before the
+analysis — `null` without the analyzer), `producer`, `updated_at` (when the
+bundle was built or last revalidated — the TTL counts from here, across
+restarts) and `created_at`. Field names match `arango-cypher-py`'s document.
+
+* **`producer`** (deviation from cypher, which relies on a hand-bumped format
+  version): a digest of the code that builds bundles (`schema/acquire.py`,
+  `schema/detect.py`, `translate/mapping.py`) plus the analyzer version. A
+  stored bundle with a different producer is still served but replaced in the
+  background, so a release's schema fixes take effect without waiting for the
+  database to change. The cost: an edit to those files — even a comment —
+  makes the next deploy re-analyze once, in the background.
+* **Best-effort.** Any failed read (no collection, no permission, a corrupt
+  or foreign-format document) is a miss; a failed write — e.g. a read-only
+  user, whom the server refuses the collection — leaves the service on its
+  in-process cache. Neither fails a request.
+* **Concurrency.** Concurrent L1 misses for one database share one document
+  read (the Workbench fires introspect, statistics and OWL together).
+* **Round-trip.** Equal by value, not byte-for-byte: ArangoDB returns an
+  integral double as an integer (`1.0` → `1`).
+* **Access.** The document is readable by anyone who can read the database —
+  it describes that database's own collections — and a read-only user reads
+  what an admin stored (`tests/integration/test_persistent_schema_cache_live.py`).
 
 A named-graph scope (§6.8) is **not** a separate cache slot: the analysis
 always runs over the whole database, and a scoped view is derived on read by
@@ -820,8 +846,9 @@ interactive schema read goes through `routes/schema.py::_read_or_warm`:
 Not ported from cypher: the out-of-band **sidecar** (`configs/catalog.yml` +
 `scripts/catalog_sync.py`) that pre-warms registered databases — a BYOC
 deployment runs no second process, so the on-demand warm above is what
-applies. Together with the persistent tier (§6.3.3) it is the follow-up that
-would make the *first* read after a redeploy instant.
+applies. The persistent tier (§6.3.3) covers what the sidecar is for after
+the first analysis: a redeploy serves the stored schema at once. Only a
+database never analyzed before still waits for its first analysis.
 
 ### 6.4 Schema HTTP surface
 
@@ -836,7 +863,7 @@ Mirrors the sister project's `arango_cypher.service.routes.schema` and
 | `GET` | `/schema/summary` | body: `{mapping}` (no DB access) | conceptual summary | Used by the UI when it already has a mapping in hand |
 | `GET` | `/schema/statistics` | — | `metadata.statistics` block | Cardinality, in/out degree, selectivity per relationship |
 | `GET` | `/schema/status` | — | `{stats_changed, shape_unchanged, fingerprints, last_acquired_at}` | Schema-drift report; cheap |
-| `POST` | `/schema/invalidate-cache` | — | `{invalidated: bool}` | Drops the cache entry for the connected DB |
+| `POST` | `/schema/invalidate-cache` | — | `{invalidated, db_name, persistent_dropped}` | Drops the connected DB's entry from both tiers; `persistent_dropped` reports the stored document (§6.3.3) |
 | `POST` | `/schema/force-reacquire` | — | fresh `MappingBundle` | Re-runs analyzer; `503` if both `SCHEMA_ANALYZER_REQUIRED` and `ARANGO_SPARQL_ALLOW_HEURISTIC` are `false` — see §6.3.4 |
 | `POST` | `/mapping/import-owl` | body: `text/turtle` | `{accepted: bool, mapping}` | Replaces the active mapping with one parsed from a posted OWL ontology |
 | `POST` | `/mapping/export-owl` | — | `text/turtle` | Renders the active mapping as Turtle |
@@ -2997,8 +3024,9 @@ test enforcement, security-testing rows) gate the public release tag.
   layers on top of the analyzer's PG/LPG output)
 - `arango_sparql.schema.acquire.acquire_mapping_bundle` (analyzer-backed
   with heuristic fallback; `strategy ∈ {auto, analyzer, heuristic}`)
-- `arango_sparql.schema.cache.ArangoSchemaCache` (persistent in
-  `arango_sparql_schema_cache` collection; two-tier with in-process LRU)
+- `arango_sparql.schema.persistent_cache.ArangoSchemaCache` (persistent in
+  `arango_sparql_schema_cache` collection; two-tier with the in-process
+  `schema.cache.SchemaCache`)
 - `_require_analyzer_unless_opted_out()` startup guard, gated by
   `SCHEMA_ANALYZER_REQUIRED` (boot-time) + `ARANGO_SPARQL_ALLOW_HEURISTIC`
   (per-request fallback) — the four combinations documented in §6.3.4
@@ -3221,7 +3249,7 @@ The Redis-backed session store is a v2 roadmap item (§14).
 | Data | Where | Sizing |
 | --- | --- | --- |
 | **Schema cache (L1, in-process)** | RAM | ≤ 50 MiB per active mapping; ≤ 256 MiB cap (`SCHEMA_L1_CACHE_MAX_BYTES`) |
-| **Schema cache (L2, ArangoDB)** | The session-bound DB, system-prefixed collection `_arango_sparql_schema_cache` | ≤ 5 MiB per `(tenant, fingerprint)` tuple; auto-evicted at `SCHEMA_CACHE_MAX_ENTRIES` (default 200) |
+| **Schema cache (L2, ArangoDB)** | The analyzed database itself, collection `arango_sparql_schema_cache` (not system-prefixed — §6.3.3) | One document per database (the latest analysis, OWL included), overwritten in place — no eviction needed |
 | **NL prompt-prefix cache** | RAM | ≤ 100 KiB per cached prefix; ≤ 64 MiB cap |
 | **Logs** | stdout (operator-collected) | ~ 2 KiB / request avg; size your log aggregator accordingly |
 | **Metrics scrape** | Prometheus (operator-managed) | < 200 series per replica (mostly histogram buckets) |
@@ -3247,8 +3275,9 @@ MUST have a corresponding play.
 ### 15.7 Backup, DR, and migration
 
 * **Service state**: stateless modulo the schema-cache L2 collection
-  (`_arango_sparql_schema_cache`). Loss is non-fatal — caches re-warm on
-  next request. Operators may exclude it from backup.
+  (`arango_sparql_schema_cache`, one document per database). Loss is
+  non-fatal — the next request re-analyzes in the background. Operators may
+  exclude it from backup.
 * **Tenant data**: not owned by this service; backed up by ArangoDB's
   own DR (Hot Backup, `arangodump`).
 * **Configuration**: `.env` and Helm values are the only persisted
@@ -3489,7 +3518,7 @@ log-redaction, metric-labelling, and retention rules below.
 | **A. Tenant query content** | SPARQL request bodies, NL prompts, AQL produced, query results | None (request-scoped) | Never written to disk by this service; only sizes (`sparql_len`, `aql_len`, `rows`) are logged |
 | **B. Tenant identifiers** | Tenant IDs, ArangoDB DB names, OWL graph IRIs that name tenants | None | Per-request log inclusion is governed by §17.2 below |
 | **C. Authentication material** | Bearer tokens, JWT payloads, ArangoDB passwords from `/connect` | None (sessions hold opaque session-IDs only, not raw passwords) | Never logged; redacted by `_sanitize_error` |
-| **D. Schema metadata** | `MappingBundle` payloads, OWL turtle, schema fingerprints | L1 (in-process) + L2 (per-tenant ArangoDB collection `_arango_sparql_schema_cache`) | Per-tenant; never crosses the tenant boundary |
+| **D. Schema metadata** | `MappingBundle` payloads, OWL turtle, schema fingerprints | L1 (in-process) + L2 (collection `arango_sparql_schema_cache` inside the analyzed database) | Per-database; the stored copy never leaves the database it describes |
 | **E. NL pipeline byproducts** | LLM prompts, completions, repair attempts | Optionally cached prompt-prefix; never logged in full | `prompt_tokens` / `completion_tokens` / `cost_usd` are metrics-only |
 
 ### 17.2 Tenant ID & session ID inclusion in logs/metrics
@@ -3767,7 +3796,7 @@ provisioning.
 | `SCHEMA_ANALYZER_MODEL` | provider default | no | Model for the opt-in analyzer LLM |
 | `SCHEMA_ANALYZER_TIMEOUT_MS` | `180000` | no | The analyzer's **total** budget (physical scan + LLM call); only matters with `SCHEMA_ANALYZER_PROVIDER` set — the LLM call gets what the scan leaves (floored at 1 s by the analyzer) |
 | `SCHEMA_L1_CACHE_MAX_BYTES` | `268435456` (256 MiB) | no | In-process mapping cache cap |
-| `SCHEMA_CACHE_MAX_ENTRIES` | `200` | no | L2 (ArangoDB-backed) cache cap per service install |
+| `SCHEMA_CACHE_MAX_ENTRIES` | `200` | no | **Not read.** Reserved from an earlier L2 design; the shipped L2 tier holds one document per database (§6.3.3), so there is nothing to cap |
 | `SCHEMA_ANALYZER_REQUIRED` | `true` | no | **Startup** gate (distinct from the per-request fallback gate `ARANGO_SPARQL_ALLOW_HEURISTIC` in A.2). When `true`, the service refuses to boot if `arangodb-schema-analyzer` is not importable. See the four-cell decision table in §6.3.4. |
 | `SCHEMA_ANALYZER_ALLOWED_HOSTS` | empty | no | Subset of `CONNECT_ALLOWED_HOSTS` analyzer may also reach (defaults to the same allowlist) |
 | `SCHEMA_ANALYZER_CACHE_ROOT` | `/var/cache/arango-schema-analyzer` | no | Analyzer-side cache root; mount as PVC in K8s |

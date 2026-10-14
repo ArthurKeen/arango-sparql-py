@@ -308,6 +308,11 @@ def _build_and_cache_full_bundle(db: Any, *, strategy: Strategy = "auto") -> Map
     :mod:`arango_sparql.service.schema_warm`.
     """
 
+    # The live fingerprints are taken *before* the analysis, so a change that
+    # lands while it runs is caught by the next drift check rather than
+    # recorded as already analyzed.
+    db_shape = db_shape_fingerprint(db)
+    db_counts = db_counts_fingerprint(db)
     bundle = acquire_mapping_bundle(
         db,
         include_owl=True,
@@ -317,7 +322,9 @@ def _build_and_cache_full_bundle(db: Any, *, strategy: Strategy = "auto") -> Map
     )
     db_name = getattr(db, "name", "") or ""
     if db_name:
-        _resolve_schema_cache().put(db_name, bundle)
+        # ``db=`` writes through to the persistent tier, so the next process
+        # (a redeploy) serves this analysis instead of repeating it.
+        _resolve_schema_cache().put(db_name, bundle, db=db, db_shape=db_shape, db_counts=db_counts)
     return bundle
 
 
@@ -351,7 +358,7 @@ def _get_or_acquire(
 
     db_name = getattr(db, "name", "") or ""
     if not force and db_name:
-        entry = _resolve_schema_cache().get(db_name)
+        entry = _resolve_schema_cache().get(db_name, db=db)
         if _usable(entry, include_owl=include_owl):
             return _scoped(db, entry.bundle, graph_name), True
     return _scoped(db, _build_and_cache_full_bundle(db, strategy=strategy), graph_name), False
@@ -377,7 +384,13 @@ def _read_or_warm(
     * TTL-expired entry → serve it (stale-while-revalidate) and refresh in
       the background, so the hourly TTL never re-blocks the UI;
     * ``force`` ("Refresh schema") → refresh in the background while still
-      serving the current entry, with ``warming=True`` until it lands.
+      serving the current entry, with ``warming=True`` until it lands;
+    * an entry another build of the acquisition code produced (the stored
+      copy a previous release left, PRD §6.3.3) → served, and replaced in
+      the background, so a release's schema fixes take effect.
+
+    An L1 miss first reads the persistent tier, so the first request after a
+    restart is served from the stored analysis instead of starting one.
 
     A background failure is re-raised once to the next caller (so the
     route's existing error mapping applies) instead of leaving the client
@@ -403,12 +416,13 @@ def _read_or_warm(
         return bundle, hit, False
 
     cache = _resolve_schema_cache()
-    entry, expired = cache.peek(db_name)
+    entry, expired = cache.peek(db_name, db=db)
     usable = _usable(entry, include_owl=include_owl)
+    outdated = entry is not None and not entry.is_from_current_code()
     # A cache hit means "served what was already cached"; a bundle that this
     # call's own warm just built (inline, under test) is a fresh acquisition.
     cache_hit = usable and not force
-    if force or expired or not usable:
+    if force or expired or outdated or not usable:
         failure = schema_warm.take_error(db_name)
         if failure is not None and not usable:
             raise failure
@@ -1107,29 +1121,31 @@ def schema_invalidate_cache(
     _: None = Depends(_check_compute_rate_limit),
     session: _Session = Depends(_get_session),
 ) -> SchemaInvalidateCacheResponse:
-    """Drop the cached mapping for the connected DB. Returns
-    ``invalidated=true`` iff an L1 entry was actually evicted.
+    """Drop the cached mapping for the connected DB from both tiers.
 
-    L2 (persistent) tier is a stub today — ``persistent_dropped``
-    is always ``False`` until the follow-up slice lands. The flag
-    is emitted in the response so a future-compatible client can
-    reason about it without a version check.
+    ``invalidated`` is true iff either tier held an entry;
+    ``persistent_dropped`` iff the stored copy (PRD §6.3.3 L2) was deleted —
+    false when there was none, or when this user may not delete it (it is
+    then still dropped from memory, and replaced by the next analysis).
     """
 
     t0 = time.perf_counter()
     cache = _resolve_schema_cache()
     db_name = getattr(session.db, "name", "") or ""
-    invalidated = bool(db_name) and cache.invalidate(db_name)
+    dropped_l1 = bool(db_name) and cache.invalidate(db_name)
+    persistent_dropped = bool(db_name) and cache.invalidate_persistent(session.db)
+    invalidated = dropped_l1 or persistent_dropped
     log_endpoint_timing(
         "/schema/invalidate-cache",
         round((time.perf_counter() - t0) * 1000, 1),
         invalidated=invalidated,
+        persistent_dropped=persistent_dropped,
         db=db_name or "unknown",
     )
     return SchemaInvalidateCacheResponse(
         invalidated=invalidated,
         db_name=db_name,
-        persistent_dropped=False,
+        persistent_dropped=persistent_dropped,
     )
 
 

@@ -6,13 +6,12 @@ Two-tier persistence per the spec:
   ``db.name``). TTL ``SCHEMA_MAPPING_CACHE_TTL_SECONDS`` (env var,
   default 3600 s — Appendix A.5).
 * **L2 — Persistent** (``arango_sparql_schema_cache`` collection in
-  the customer's own DB, keyed by ``(db.name, key="mapping")``,
-  until invalidated). **Stubbed in v0.x** — :meth:`SchemaCache.put`
-  and :meth:`SchemaCache.get` only touch L1. The L2 hooks
-  (:meth:`SchemaCache._persist_to_l2`, :meth:`SchemaCache._read_from_l2`)
-  are explicit no-ops with the contract documented so the follow-up
-  slice can implement them without changing this module's public
-  API. PRD §6.3.3 acknowledges L2 as a separate concern.
+  the customer's own DB, one document keyed ``"mapping"``; see
+  :mod:`arango_sparql.schema.persistent_cache`, ported from
+  arango-cypher-py). Used whenever the caller passes the ``db`` handle:
+  an L1 miss reads through to L2 (so a restart or redeploy serves the
+  last analysis) and every :meth:`SchemaCache.put` writes through.
+  Callers without a handle (and tests) get the L1-only behaviour.
 
 Drift detection uses Slice 3's bundle-side fingerprints
 (:func:`compute_bundle_fingerprint`). When the analyzer is reachable,
@@ -28,8 +27,8 @@ Public surface (deliberately small):
 * :class:`SchemaCache` — the cache itself.
 * :class:`CachedEntry` — what's stored per ``db.name``.
 * :data:`DEFAULT_TTL_SECONDS` — pinned default for sentinel tests.
-* :data:`L2_COLLECTION_NAME` — the future L2 collection name (kept
-  as a constant so route layer can also reference it).
+* :data:`L2_COLLECTION_NAME` — the L2 collection name (kept as a
+  constant so the route layer can also reference it).
 
 The cache is intentionally *not* a singleton: every consumer that
 needs caching gets a :class:`SchemaCache` instance from the FastAPI
@@ -40,17 +39,22 @@ isolated cache state per case.
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from arango_sparql.schema.fingerprint import (
     BundleFingerprint,
     FingerprintDrift,
     compute_bundle_fingerprint,
 )
+from arango_sparql.schema.persistent_cache import ArangoSchemaCache, current_producer
 from arango_sparql.translate.mapping import MappingBundle
+
+logger = logging.getLogger(__name__)
 
 # PRD Appendix A.5 default. Held here as the single source of truth
 # so a future env-var lookup mismatch surfaces as a sentinel-test
@@ -91,11 +95,24 @@ class CachedEntry:
     eviction; ``fingerprint`` lets callers compare against a freshly-
     computed fingerprint to detect schema drift without re-reading
     the bundle.
+
+    ``db_shape`` / ``db_counts`` are the *live database* fingerprints
+    (``acquire.db_shape_fingerprint`` / ``db_counts_fingerprint``) taken
+    when the bundle was built — a different hash domain from
+    ``fingerprint``, which hashes the bundle itself; drift checks compare
+    a live database against these. ``None`` when not taken (no analyzer,
+    or a caller that stores a bundle it did not analyze).
+    ``producer`` is :func:`~arango_sparql.schema.persistent_cache.current_producer`
+    of the process that built the bundle; ``None`` only for entries a
+    caller constructed without one.
     """
 
     bundle: MappingBundle
     fingerprint: BundleFingerprint
     acquired_at: datetime
+    db_shape: str | None = None
+    db_counts: str | None = None
+    producer: str | None = None
 
     def age(self, *, now: datetime | None = None) -> timedelta:
         """Return how long ago this entry was acquired. Injectable
@@ -119,20 +136,30 @@ class CachedEntry:
             return False
         return self.age(now=now).total_seconds() >= ttl_seconds
 
+    def is_from_current_code(self) -> bool:
+        """``False`` when a different build of the acquisition code (or a
+        different analyzer) produced this bundle — e.g. a bundle a previous
+        release persisted. Such a bundle is still served, but replaced.
+        """
+
+        return self.producer is None or self.producer == current_producer()
+
 
 class SchemaCache:
     """Two-tier schema-mapping cache (PRD §6.3.3).
 
-    L1 (in-process) is fully implemented. L2 (persistent ArangoDB
-    collection) is a documented stub — its read/write methods exist
-    but no-op until the follow-up slice lands.
+    L1 is in-process; L2 is the persistent collection
+    (:class:`~arango_sparql.schema.persistent_cache.ArangoSchemaCache`),
+    consulted only when a call passes the ``db`` handle.
 
     Thread safety: the L1 dict is guarded by a per-instance
     ``threading.Lock``. FastAPI route handlers run on a single
     asyncio event loop in the default Uvicorn worker, so contention
     is negligible; the lock is here for the
     multi-thread / sync-thread-pool case where uvicorn workers may
-    spawn worker threads for blocking analyzer calls.
+    spawn worker threads for blocking analyzer calls. L2 round-trips run
+    outside that lock; concurrent L1 misses for one database share a
+    single L2 read (the UI fires several schema requests at once).
     """
 
     def __init__(
@@ -143,8 +170,30 @@ class SchemaCache:
     ) -> None:
         self._ttl_seconds = ttl_seconds if ttl_seconds is not None else _resolve_ttl_from_env()
         self._l2_collection_name = l2_collection_name
+        self._l2 = ArangoSchemaCache(collection_name=l2_collection_name)
         self._l1: dict[str, CachedEntry] = {}
         self._lock = threading.Lock()
+        self._hydration_locks: dict[str, threading.Lock] = {}
+
+    def _lookup(self, db_name: str, db: Any | None) -> CachedEntry | None:
+        """L1, else (with a *db* handle) L2 — hydrating L1 on an L2 hit."""
+
+        with self._lock:
+            entry = self._l1.get(db_name)
+            if entry is not None or db is None:
+                return entry
+            hydration_lock = self._hydration_locks.setdefault(db_name, threading.Lock())
+        with hydration_lock:
+            with self._lock:
+                entry = self._l1.get(db_name)
+            if entry is not None:
+                return entry  # a concurrent miss already hydrated it
+            hydrated = self._read_from_l2(db_name, db)
+            if hydrated is None:
+                return None
+            with self._lock:
+                # A put that landed during the read is newer than the stored copy.
+                return self._l1.setdefault(db_name, hydrated)
 
     # ------------------------------------------------------------------
     # Read paths
@@ -154,37 +203,32 @@ class SchemaCache:
         self,
         db_name: str,
         *,
+        db: Any | None = None,
         now: datetime | None = None,
     ) -> CachedEntry | None:
         """Return the cached entry for *db_name*, or ``None`` on miss
         or expiry.
 
-        Expired entries are evicted on read so a stale slot does not
-        linger across the next put. The L2 read is a no-op stub —
-        a future slice will hydrate L1 from L2 here.
+        Expired entries are evicted from L1 on read so a stale slot does
+        not linger across the next put. With *db*, an L1 miss reads
+        through to L2.
         """
 
-        with self._lock:
-            entry = self._l1.get(db_name)
-            if entry is None:
-                # Future: hydrate L1 from L2. For now the L2 stub
-                # always returns None, so we just return the miss
-                # signal directly.
-                hydrated = self._read_from_l2(db_name)
-                if hydrated is not None:
-                    self._l1[db_name] = hydrated
-                    entry = hydrated
-                else:
-                    return None
-            if entry.is_expired(ttl_seconds=self._ttl_seconds, now=now):
-                self._l1.pop(db_name, None)
-                return None
-            return entry
+        entry = self._lookup(db_name, db)
+        if entry is None:
+            return None
+        if entry.is_expired(ttl_seconds=self._ttl_seconds, now=now):
+            with self._lock:
+                if self._l1.get(db_name) is entry:
+                    self._l1.pop(db_name, None)
+            return None
+        return entry
 
     def peek(
         self,
         db_name: str,
         *,
+        db: Any | None = None,
         now: datetime | None = None,
     ) -> tuple[CachedEntry | None, bool]:
         """Return ``(entry, expired)`` for *db_name* WITHOUT evicting.
@@ -194,18 +238,14 @@ class SchemaCache:
         multi-minute re-analysis, so the caller serves it and schedules a
         background refresh (``service/schema_warm.py``) when ``expired`` is
         true. :meth:`get` keeps its evict-on-expiry contract for every
-        existing caller.
+        existing caller. With *db*, an L1 miss reads through to L2 — the
+        first read after a restart.
         """
 
-        with self._lock:
-            entry = self._l1.get(db_name)
-            if entry is None:
-                hydrated = self._read_from_l2(db_name)
-                if hydrated is None:
-                    return None, False
-                self._l1[db_name] = hydrated
-                entry = hydrated
-            return entry, entry.is_expired(ttl_seconds=self._ttl_seconds, now=now)
+        entry = self._lookup(db_name, db)
+        if entry is None:
+            return None, False
+        return entry, entry.is_expired(ttl_seconds=self._ttl_seconds, now=now)
 
     def has_fresh_entry(
         self,
@@ -247,6 +287,9 @@ class SchemaCache:
         db_name: str,
         bundle: MappingBundle,
         *,
+        db: Any | None = None,
+        db_shape: str | None = None,
+        db_counts: str | None = None,
         fingerprint: BundleFingerprint | None = None,
         now: datetime | None = None,
     ) -> CachedEntry:
@@ -256,37 +299,49 @@ class SchemaCache:
         *fingerprint* is computed via :func:`compute_bundle_fingerprint`
         when not supplied — callers that already have a fingerprint
         in hand (e.g. from a freshness check) should pass it through
-        to avoid redundant SHA-256 work.
+        to avoid redundant SHA-256 work. *db_shape* / *db_counts* are the
+        live database fingerprints taken for this bundle. With *db*, the
+        entry is also written to L2 (best-effort; a failure is logged and
+        leaves the entry in L1 only).
         """
 
         when = now if now is not None else datetime.now(UTC)
         fp = fingerprint if fingerprint is not None else compute_bundle_fingerprint(bundle, now=when)
-        entry = CachedEntry(bundle=bundle, fingerprint=fp, acquired_at=when)
+        entry = CachedEntry(
+            bundle=bundle,
+            fingerprint=fp,
+            acquired_at=when,
+            db_shape=db_shape,
+            db_counts=db_counts,
+            producer=current_producer(),
+        )
         with self._lock:
             self._l1[db_name] = entry
-            # Future: persist to L2 here. The stub records nothing.
-            self._persist_to_l2(db_name, entry)
+        if db is not None:
+            self._persist_to_l2(db_name, entry, db)
         return entry
 
     def invalidate(self, db_name: str) -> bool:
-        """Drop the cached entry for *db_name* from both tiers.
+        """Drop the L1 entry for *db_name*.
 
-        Returns ``True`` iff an L1 entry was actually removed
-        (callers can use this to surface a 404-shaped "no cache
-        entry to invalidate" message). The L2 invalidation is best-
-        effort — the stub returns silently.
+        Returns ``True`` iff an L1 entry was actually removed. The
+        persistent copy is dropped separately by
+        :meth:`invalidate_persistent`, which needs the database handle.
         """
 
         with self._lock:
-            removed = self._l1.pop(db_name, None) is not None
-            self._invalidate_l2(db_name)
-        return removed
+            return self._l1.pop(db_name, None) is not None
+
+    def invalidate_persistent(self, db: Any) -> bool:
+        """Drop *db*'s L2 document. ``True`` iff one was deleted."""
+
+        return self._l2.invalidate(db)
 
     def clear(self) -> int:
         """Drop *every* cached entry from L1. Returns the count of
         evicted entries. Used by the test suite and by the
         ``ops/warm-cache.py`` script (PRD §15.4) when prepping a
-        clean cache state. L2 untouched (stub).
+        clean cache state. L2 is untouched.
         """
 
         with self._lock:
@@ -317,31 +372,47 @@ class SchemaCache:
         return current_fingerprint.drift_from(entry.fingerprint)
 
     # ------------------------------------------------------------------
-    # L2 stubs (deliberately no-op until the follow-up slice)
+    # L2 (persistent tier)
     # ------------------------------------------------------------------
 
-    def _read_from_l2(self, db_name: str) -> CachedEntry | None:
-        """Future: read from the persistent ``arango_sparql_schema_cache``
-        collection. Currently a documented no-op so the get/put
-        contract is identical with or without an L2 implementation.
-        Tests can monkeypatch this to simulate an L2 hit.
+    def _read_from_l2(self, db_name: str, db: Any) -> CachedEntry | None:
+        """Decode *db*'s L2 document as a :class:`CachedEntry`.
+
+        ``acquired_at`` is the document's ``updated_at`` (when the bundle
+        was built or last revalidated), so the TTL keeps counting across a
+        restart instead of restarting from zero. A document without a
+        ``producer`` was written by unknown code and reads as outdated.
         """
 
-        return None
+        persisted = self._l2.get(db)
+        if persisted is None:
+            return None
+        logger.info(
+            "schema cache: loaded the stored schema for db=%r (built %s)", db_name, persisted.updated_at
+        )
+        return CachedEntry(
+            bundle=persisted.bundle,
+            fingerprint=compute_bundle_fingerprint(persisted.bundle, now=persisted.updated_at),
+            acquired_at=persisted.updated_at,
+            db_shape=persisted.shape_fingerprint,
+            db_counts=persisted.full_fingerprint,
+            producer=persisted.producer or "unknown",
+        )
 
-    def _persist_to_l2(self, db_name: str, entry: CachedEntry) -> None:
-        """Future: serialise *entry* into the persistent collection.
-        Stub no-op for v0.x.
-        """
+    def _persist_to_l2(self, db_name: str, entry: CachedEntry, db: Any) -> bool:
+        """Write *entry* to *db*'s L2 document (best-effort)."""
 
-        return None
-
-    def _invalidate_l2(self, db_name: str) -> None:
-        """Future: delete *db_name*'s row from the persistent
-        collection. Stub no-op for v0.x.
-        """
-
-        return None
+        stored = self._l2.set(
+            db,
+            bundle=entry.bundle,
+            shape_fingerprint=entry.db_shape,
+            full_fingerprint=entry.db_counts,
+            producer=entry.producer or current_producer(),
+            updated_at=entry.acquired_at,
+        )
+        if stored:
+            logger.info("schema cache: stored the analyzed schema for db=%r", db_name)
+        return stored
 
     # ------------------------------------------------------------------
     # Diagnostics
@@ -355,8 +426,8 @@ class SchemaCache:
 
     @property
     def l2_collection_name(self) -> str:
-        """The name of the (future) L2 collection. Exposed so route
-        layer can reference it without re-importing the constant.
+        """The name of the L2 collection. Exposed so the route layer
+        can reference it without re-importing the constant.
         """
 
         return self._l2_collection_name
