@@ -47,13 +47,13 @@ cases:
       FILTER HAS(doc1, "name")
       LET minus_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
-        FILTER doc2._uri == doc1._uri
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
         FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
       ))
       FILTER minus_probe3 == 0
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -74,7 +74,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -166,13 +166,13 @@ cases:
       FILTER HAS(doc1, "name")
       LET exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
-        FILTER doc2._uri == doc1._uri
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
         FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
       ))
       FILTER exists_probe3 > 0
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -193,13 +193,13 @@ cases:
       FILTER HAS(doc1, "name")
       LET not_exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
-        FILTER doc2._uri == doc1._uri
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
         FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
       ))
       FILTER not_exists_probe3 == 0
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -228,7 +228,7 @@ cases:
         RETURN 1
       ))
       FILTER not_exists_probe3 == 0
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -248,7 +248,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
-      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.name}]
+      RETURN [{subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p1_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_uri": "http://ex.org/name"
@@ -267,7 +267,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "age")
       FILTER HAS(doc1, "name")
-      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.age}, {subject: doc1._uri, predicate: @_p2_uri, object: doc1.name}]
+      RETURN [{subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p1_uri, object: doc1.age}, {subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p2_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_uri": "http://ex.org/age"

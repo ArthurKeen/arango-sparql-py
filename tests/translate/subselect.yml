@@ -40,10 +40,10 @@ cases:
       FOR row3 IN (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "age")
-        RETURN { s: doc2._uri }
+        RETURN { s: NOT_NULL(doc2._uri, doc2._id) }
       )
-      FILTER row3.s == doc1._uri
-      RETURN { s: doc1._uri, n: doc1.name }
+      FILTER row3.s == NOT_NULL(doc1._uri, doc1._id)
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -69,14 +69,14 @@ cases:
           FOR doc2 IN @@c2_Document
           FOR k3 IN ATTRIBUTES(doc2, true)
           FILTER k3 NOT IN @_p1_sys_attrs
-          COLLECT grp4 = doc2._uri WITH COUNT INTO agg5
+          COLLECT grp4 = NOT_NULL(doc2._uri, doc2._id) WITH COUNT INTO agg5
           RETURN { s: grp4, c: agg5 }
         )
         FOR result7 IN (LENGTH(results6) == 0 ? [{}] : results6)
         RETURN result7
       )
-      FILTER row8.s == doc1._uri
-      RETURN { s: doc1._uri, c: row8.c }
+      FILTER row8.s == NOT_NULL(doc1._uri, doc1._id)
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), c: row8.c }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -100,7 +100,7 @@ cases:
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "name")
         LIMIT 5
-        RETURN { s: doc1._uri }
+        RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
       )
       RETURN { s: row2.s }
     expected_bind_vars:
@@ -123,7 +123,7 @@ cases:
         FILTER HAS(doc1, "name")
         SORT doc1.name ASC
         LIMIT 10
-        RETURN { s: doc1._uri, n: doc1.name }
+        RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
       )
       RETURN { s: row2.s, n: row2.n }
     expected_bind_vars:
@@ -170,7 +170,7 @@ cases:
         COLLECT AGGREGATE agg3 = MAX(doc2.p)
         RETURN { max: agg3 }
       )
-      RETURN { x: doc1._uri, max: row4.max }
+      RETURN { x: NOT_NULL(doc1._uri, doc1._id), max: row4.max }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -192,8 +192,8 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       FOR row2 IN @_p1_values
-      FILTER row2.s == doc1._uri
-      RETURN { s: doc1._uri, n: doc1.name }
+      FILTER row2.s == NOT_NULL(doc1._uri, doc1._id)
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_values":
@@ -217,8 +217,8 @@ cases:
       FILTER HAS(doc1, "name")
       FOR row2 IN @_p1_values
       FILTER row2.n == doc1.name
-      FILTER row2.s == doc1._uri
-      RETURN { s: doc1._uri, n: doc1.name }
+      FILTER row2.s == NOT_NULL(doc1._uri, doc1._id)
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_values":

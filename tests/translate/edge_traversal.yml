@@ -52,7 +52,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
-      RETURN { a: doc1._uri, b: v2._uri }
+      RETURN { a: NOT_NULL(doc1._uri, doc1._id), b: NOT_NULL(v2._uri, v2._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
@@ -68,7 +68,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FOR v2, e3 IN OUTBOUND doc1 @@c2_rel
       FILTER e3.type == @_p1_type
-      RETURN { a: doc1._uri, b: v2._uri }
+      RETURN { a: NOT_NULL(doc1._uri, doc1._id), b: NOT_NULL(v2._uri, v2._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_rel": "rel"
@@ -91,9 +91,9 @@ cases:
       FOR doc1 IN @@c1_Person
       FOR doc2 IN @@c1_Person
       FOR v3, e4 IN OUTBOUND doc2 @@c2_knows
-      FILTER v3._uri == doc1._uri
+      FILTER NOT_NULL(v3._uri, v3._id) == NOT_NULL(doc1._uri, doc1._id)
       FILTER HAS(doc1, "name")
-      RETURN { a: doc2._uri, b: doc1._uri, n: doc1.name }
+      RETURN { a: NOT_NULL(doc2._uri, doc2._id), b: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
@@ -107,9 +107,9 @@ cases:
       SELECT ?b WHERE { :alice :knows ?b . }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
-      FILTER doc1._uri == @_p1_uri
+      FILTER (doc1._uri == @_p1_uri || (doc1._uri == null && doc1._id == @_p1_uri))
       FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
-      RETURN { b: v2._uri }
+      RETURN { b: NOT_NULL(v2._uri, v2._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_uri": "http://ex.org/alice"
@@ -127,8 +127,8 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
-      FILTER v2._uri == @_p1_uri
-      RETURN { a: doc1._uri }
+      FILTER (v2._uri == @_p1_uri || (v2._uri == null && v2._id == @_p1_uri))
+      RETURN { a: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
@@ -155,7 +155,7 @@ cases:
       FILTER e3.type == @_p1_type
       FOR v4, e5 IN OUTBOUND doc1 @@c2_rel
       FILTER e5.type == @_p2_type
-      RETURN { a: doc1._uri, c: v4._uri, p: v2._uri }
+      RETURN { a: NOT_NULL(doc1._uri, doc1._id), c: NOT_NULL(v4._uri, v4._id), p: NOT_NULL(v2._uri, v2._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_rel": "rel"
@@ -175,8 +175,8 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN v3._uri)[0]
-      RETURN { s: doc1._uri, b: opt2 }
+      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN NOT_NULL(v3._uri, v3._id))[0]
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), b: opt2 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
@@ -193,8 +193,8 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_rel FILTER e4.type == @_p1_type LIMIT 1 RETURN v3._uri)[0]
-      RETURN { s: doc1._uri, c: opt2 }
+      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_rel FILTER e4.type == @_p1_type LIMIT 1 RETURN NOT_NULL(v3._uri, v3._id))[0]
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), c: opt2 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_rel": "rel"
@@ -212,10 +212,10 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN v3._uri)[0]
+      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN NOT_NULL(v3._uri, v3._id))[0]
       LET opt5 = ((doc1.email != null && opt2 != null) ? doc1.email : null)
       LET opt6 = ((doc1.email != null && opt2 != null) ? opt2 : null)
-      RETURN { s: doc1._uri, email: opt5, b: opt6 }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), email: opt5, b: opt6 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"

@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 from rdflib import Literal, URIRef, Variable
 
 from ..errors import AqlEmitError, UnsupportedSparqlError
+from .builder import subject_ref
 
 if TYPE_CHECKING:
     from .resolver import ResolvedProperty
@@ -326,7 +327,7 @@ def _emit_document_edge_union(
         child.return_object(
             [
                 ("predicate", predicate_bind),
-                ("object", f"{vertex_alias}._uri"),
+                ("object", subject_ref(vertex_alias)),
             ]
         )
         arm_aqls.append(visitor.builder.absorb_child(child))

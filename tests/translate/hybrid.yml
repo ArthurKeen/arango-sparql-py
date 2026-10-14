@@ -65,7 +65,7 @@ cases:
       FOR doc3 IN @@c1__triples
       FILTER doc3.predicate == @_p3_pred
       FILTER doc3.subject_uri == doc1.subject_uri
-      RETURN { p: doc2._uri, c: doc1.subject_uri, n: NOT_NULL(doc3.object_uri, doc3.object_value) }
+      RETURN { p: NOT_NULL(doc2._uri, doc2._id), c: doc1.subject_uri, n: NOT_NULL(doc3.object_uri, doc3.object_value) }
     expected_bind_vars:
       "@c1__triples": "_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -94,7 +94,7 @@ cases:
       FOR doc3 IN @@c1__triples
       FILTER doc3.predicate == @_p4_pred
       FILTER doc3.subject_uri == doc1.subject_uri
-      RETURN { o: doc2._uri, a: doc1.subject_uri, msg: NOT_NULL(doc3.object_uri, doc3.object_value) }
+      RETURN { o: NOT_NULL(doc2._uri, doc2._id), a: doc1.subject_uri, msg: NOT_NULL(doc3.object_uri, doc3.object_value) }
     expected_bind_vars:
       "@c1__triples": "_triples"
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
@@ -128,8 +128,8 @@ cases:
       FILTER HAS(doc1, "auditedBy")
       FILTER doc1.auditedBy == doc2.subject_uri
       FILTER HAS(doc3, "placed")
-      FILTER doc3.placed == doc1._uri
-      RETURN { p: doc3._uri, o: doc1._uri, a: doc2.subject_uri }
+      FILTER doc3.placed == NOT_NULL(doc1._uri, doc1._id)
+      RETURN { p: NOT_NULL(doc3._uri, doc3._id), o: NOT_NULL(doc1._uri, doc1._id), a: doc2.subject_uri }
     expected_bind_vars:
       "@c1_Records": "Records"
       "_p1_kind": "order"

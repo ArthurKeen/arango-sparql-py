@@ -70,7 +70,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER doc1.tenant_id == @_p1_tenant
       FILTER HAS(doc1, "name")
-      RETURN { s: doc1._uri, n: doc1.name }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_tenant": "tenant-alpha"
@@ -94,7 +94,7 @@ cases:
       FILTER doc1.tenant_id == @_p1_tenant
       FOR doc2 IN @@c2_Person
       FILTER doc2.tenant_id == @_p1_tenant
-      RETURN { s: doc2._uri, d: doc1._uri }
+      RETURN { s: NOT_NULL(doc2._uri, doc2._id), d: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Doc": "Doc"
       "@c2_Person": "Person"
@@ -119,7 +119,7 @@ cases:
       FOR doc1 IN @@c1_PublicRef
       FOR doc2 IN @@c2_Person
       FILTER doc2.tenant_id == @_p1_tenant
-      RETURN { s: doc2._uri, p: doc1._uri }
+      RETURN { s: NOT_NULL(doc2._uri, doc2._id), p: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_PublicRef": "PublicRef"
       "@c2_Person": "Person"

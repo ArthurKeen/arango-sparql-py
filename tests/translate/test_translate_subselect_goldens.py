@@ -128,7 +128,7 @@ def test_subselect_class_bound_subject() -> None:
         resolver=resolver,
     )
     assert result.aql == (
-        "FOR row2 IN (\n  FOR doc1 IN @@c1_Person\n  RETURN { s: doc1._uri }\n)\nRETURN { s: row2.s }"
+        "FOR row2 IN (\n  FOR doc1 IN @@c1_Person\n  RETURN { s: NOT_NULL(doc1._uri, doc1._id) }\n)\nRETURN { s: row2.s }"
     ), result.aql
     assert result.bind_vars == {"@c1_Person": "Person"}
 

@@ -782,7 +782,10 @@ def run_aql_subset(
                 new_let[alias] = value
             for alias, agg_expr in aggregates:
                 func, _, paren_arg = agg_expr.partition("(")
-                arg = paren_arg.rstrip(")")
+                # Drop exactly the aggregate's own closing paren: rstrip(")")
+                # also ate a nested call's, so COUNT(NOT_NULL(a, b)) became the
+                # unbalanced "NOT_NULL(a, b" (#18 subject identity).
+                arg = paren_arg[:-1] if paren_arg.endswith(")") else paren_arg
                 values = [_eval_expr(arg, env, bind_vars, let_env) for env, let_env in members]
                 new_let[alias] = _aggregate_apply(func.strip(), values)
             if collect_count_into is not None:

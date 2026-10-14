@@ -35,7 +35,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "n")
       LET bv3 = (FOR ifc2 IN [(doc1.n > @_p1)] RETURN ifc2 == null ? null : (ifc2 ? (@_p2) : (@_p3)))[0]
-      RETURN { s: doc1._uri, sign: bv3 }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), sign: bv3 }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": 0
@@ -52,7 +52,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "n")
       FILTER (FOR ifc2 IN [(doc1.n > @_p1)] RETURN ifc2 == null ? null : (ifc2 ? (@_p2) : (@_p3)))[0]
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": 0
@@ -96,7 +96,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "n")
       FILTER ("" != '' && (@_p1 == '*' || LOWER("") == LOWER(@_p1) || STARTS_WITH(LOWER(""), CONCAT(LOWER(@_p1), '-'))))
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": "en"
@@ -113,7 +113,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "n")
       FILTER ("" != '' && (@_p1 == '*' || LOWER("") == LOWER(@_p1) || STARTS_WITH(LOWER(""), CONCAT(LOWER(@_p1), '-'))))
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": "*"
@@ -134,7 +134,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       FILTER (SUBSTRING(doc1.name, (@_p1) - 1, @_p2) == @_p3)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": 1
@@ -154,7 +154,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       FILTER (SUBSTRING(doc1.name, (@_p1) - 1) == @_p2)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1": 2
@@ -271,7 +271,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       LET bv2 = CONCAT('_:b', MD5(TO_STRING(doc1.name)))
-      RETURN { s: doc1._uri, b: bv2 }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), b: bv2 }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -294,7 +294,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "date")
       LET bv2 = (REGEX_TEST(TO_STRING(doc1.date), "Z$") ? "Z" : (REGEX_TEST(TO_STRING(doc1.date), "[+-][0-9]{2}:[0-9]{2}$") ? SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6) : ""))
-      RETURN { s: doc1._uri, x: bv2 }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), x: bv2 }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -316,7 +316,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "date")
       LET bv2 = (REGEX_TEST(TO_STRING(doc1.date), "Z$") ? "PT0S" : (REGEX_TEST(TO_STRING(doc1.date), "[+-][0-9]{2}:[0-9]{2}$") ? ((TO_NUMBER(SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 1, 2)) == 0 && TO_NUMBER(SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 4, 2)) == 0) ? "PT0S" : CONCAT((SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 0, 1) == "-" ? "-" : ""), "PT", (TO_NUMBER(SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 1, 2)) > 0 ? CONCAT(TO_STRING(TO_NUMBER(SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 1, 2))), "H") : ""), (TO_NUMBER(SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 4, 2)) > 0 ? CONCAT(TO_STRING(TO_NUMBER(SUBSTRING(SUBSTRING(TO_STRING(doc1.date), LENGTH(TO_STRING(doc1.date)) - 6), 4, 2))), "M") : ""))) : null))
-      RETURN { s: doc1._uri, x: bv2 }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), x: bv2 }
     expected_bind_vars:
       "@c1_Document": "Document"
 

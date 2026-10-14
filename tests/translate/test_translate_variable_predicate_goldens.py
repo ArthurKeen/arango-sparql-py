@@ -163,7 +163,7 @@ def test_variable_predicate_pg_class_bound_subject() -> None:
         "FOR doc1 IN @@c1_Person\n"
         "FOR k2 IN ATTRIBUTES(doc1, true)\n"
         "FILTER k2 NOT IN @_p1_sys_attrs\n"
-        "RETURN { s: doc1._uri, p: k2, o: doc1[k2] }"
+        "RETURN { s: NOT_NULL(doc1._uri, doc1._id), p: k2, o: doc1[k2] }"
     ), result.aql
     assert result.bind_vars == {
         "@c1_Person": "Person",
@@ -184,7 +184,7 @@ def test_variable_predicate_unifies_document_attributes_and_edges() -> None:
     assert " IN ATTRIBUTES(doc1, true)" in result.aql
     assert " IN OUTBOUND doc1 " in result.aql
     assert "RETURN { predicate:" in result.aql
-    assert "RETURN { s: doc1._uri, p: triple" in result.aql
+    assert "RETURN { s: NOT_NULL(doc1._uri, doc1._id), p: triple" in result.aql
     assert "http://ex.org/owner" in result.bind_vars.values()
     assert "owner" in result.bind_vars.values()
 

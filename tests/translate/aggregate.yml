@@ -150,7 +150,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "dept")
-      COLLECT grp2 = doc1.dept AGGREGATE agg3 = COUNT(doc1._uri), agg4 = COUNT(doc1._uri)
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = COUNT(NOT_NULL(doc1._uri, doc1._id)), agg4 = COUNT(NOT_NULL(doc1._uri, doc1._id))
       FILTER (agg4 > @_p1)
       RETURN { d: grp2, c: agg3 }
     expected_bind_vars:

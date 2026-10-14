@@ -27,7 +27,14 @@ from ..errors import (
     SchemaResolutionError,
     UnsupportedSparqlError,
 )
-from .builder import AqlQueryBuilder, attribute_ref, is_aql_identifier
+from .builder import (
+    AqlQueryBuilder,
+    attribute_ref,
+    is_aql_identifier,
+    subject_in,
+    subject_matches,
+    subject_ref,
+)
 from .filter_builtins import translate_builtin, translate_function
 from .minus_exists import emit_minus
 from .optional_crosssubject import (
@@ -498,7 +505,7 @@ class AlgebraVisitor:
 
         alias = self._open_collection(self.resolver.default_collection)
         bind = self.builder.bind(str(uri), hint="uri")
-        self.builder.filter_eq(f"{alias}._uri", bind)
+        self.builder.filter_raw(subject_matches(alias, bind))
         return self._describe_pg_attributes_subquery(alias)
 
     def _describe_pg_attributes_subquery(self, alias: str) -> str:
@@ -520,7 +527,7 @@ class AlgebraVisitor:
         return (
             f"FOR k IN ATTRIBUTES({alias}) "
             f"FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] "
-            f"RETURN {{subject: {alias}._uri, predicate: k, "
+            f"RETURN {{subject: {subject_ref(alias)}, predicate: k, "
             f"object: {alias}[k]}}"
         )
 
@@ -570,7 +577,7 @@ class AlgebraVisitor:
 
         alias = self._open_collection(self.resolver.default_collection)
         iri_binds = [self.builder.bind(str(r), hint="uri") for r in resources]
-        self.builder.filter_raw(f"{alias}._uri IN [{', '.join(iri_binds)}]")
+        self.builder.filter_raw(subject_in(alias, f"[{', '.join(iri_binds)}]"))
         subquery = self._describe_pg_attributes_subquery(alias)
         self.builder.return_triples_subquery(subquery)
 
@@ -1644,7 +1651,7 @@ class AlgebraVisitor:
             # PG/RPT mixed binding. Emit an equality FILTER so the
             # cross-product collapses to the SPARQL join.
             existing_uri_expr = (
-                f"{existing_alias}._uri"
+                subject_ref(existing_alias)
                 if existing_alias and name not in self.state.var_to_rpt_class
                 else existing_expr
             )
@@ -1810,7 +1817,7 @@ class AlgebraVisitor:
         # references the edge document itself; ``v_alias`` is the
         # traversal vertex and is what binds to the SPARQL object.
         self.state.doc_to_collection[v_alias] = prop.edge_collection
-        target_uri_expr = f"{v_alias}._uri"
+        target_uri_expr = subject_ref(v_alias)
 
         if isinstance(obj, Variable):
             o_name = str(obj)
@@ -1829,14 +1836,14 @@ class AlgebraVisitor:
             # an equality filter on ``_uri`` so the cross-product gets
             # pruned to the SPARQL join semantics, mirroring the
             # ``_bind_subject`` branch for repeat type patterns.
-            existing_uri_expr = f"{existing_alias}._uri" if existing_alias else existing_expr
+            existing_uri_expr = subject_ref(existing_alias) if existing_alias else existing_expr
             if existing_uri_expr != target_uri_expr:
                 self.builder.filter_raw(f"{target_uri_expr} == {existing_uri_expr}")
             return
 
         if isinstance(obj, URIRef):
             bind = self.builder.bind(str(obj), hint="uri")
-            self.builder.filter_eq(target_uri_expr, bind)
+            self.builder.filter_raw(subject_matches(v_alias, bind))
             return
 
         # SPARQL technically allows literal objects on object properties
@@ -1890,7 +1897,7 @@ class AlgebraVisitor:
             # expression. Without this FILTER, the AQL plan would
             # cross-product the two FORs and silently over-count.
             prior_expr = self.state.var_to_expr.get(str(subject))
-            new_expr = f"{alias}._uri"
+            new_expr = subject_ref(alias)
             if prior_expr is not None and prior_expr != new_expr:
                 self.builder.filter_raw(f"{new_expr} == {prior_expr}")
             self._bind_subject(subject, alias)
@@ -1906,7 +1913,7 @@ class AlgebraVisitor:
                 )
             alias = self._open_collection(self.resolver.default_collection)
             bind = self.builder.bind(str(subject), hint="uri")
-            self.builder.filter_eq(f"{alias}._uri", bind)
+            self.builder.filter_raw(subject_matches(alias, bind))
             return alias
         raise UnsupportedSparqlError(f"subject term type {type(subject).__name__!r} is not supported")
 
@@ -1927,11 +1934,11 @@ class AlgebraVisitor:
         existing_alias = self.state.var_to_doc_alias.get(name)
         if existing_alias is None:
             self.state.var_to_doc_alias[name] = alias
-            self.state.var_to_expr.setdefault(name, f"{alias}._uri")
+            self.state.var_to_expr.setdefault(name, subject_ref(alias))
             return
         if existing_alias == alias:
             return
-        self.builder.filter_raw(f"{alias}._uri == {existing_alias}._uri")
+        self.builder.filter_raw(f"{subject_ref(alias)} == {subject_ref(existing_alias)}")
 
     def _value_match_expr(self, attr_path: str, value_expr: str) -> str:
         """Equality between an attribute read and a value expression.

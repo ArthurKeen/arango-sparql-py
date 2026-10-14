@@ -44,7 +44,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
-      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.name}]
+      RETURN [{subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p1_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_uri": "http://xmlns.com/foaf/0.1/name"
@@ -68,7 +68,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER HAS(doc1, "name")
-      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: doc1.age}, {subject: doc1._uri, predicate: @_p2_uri, object: doc1.name}]
+      RETURN [{subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p1_uri, object: doc1.age}, {subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p2_uri, object: doc1.name}]
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_uri": "http://xmlns.com/foaf/0.1/age"
@@ -82,7 +82,7 @@ cases:
       WHERE { ?s a :Person }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      RETURN [{subject: doc1._uri, predicate: @_p1_uri, object: @_p2_uri}]
+      RETURN [{subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p1_uri, object: @_p2_uri}]
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_uri": "http://xmlns.com/foaf/0.1/knows"
@@ -98,7 +98,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER (doc1.age > @_p1)
-      RETURN [{subject: doc1._uri, predicate: @_p2_uri, object: doc1.age}]
+      RETURN [{subject: NOT_NULL(doc1._uri, doc1._id), predicate: @_p2_uri, object: doc1.age}]
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 18
