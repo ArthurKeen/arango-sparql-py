@@ -148,3 +148,88 @@ def test_invalidate_deletes_the_stored_document(db: Any) -> None:
     assert cache.invalidate_persistent(db) is True
     assert db.collection(L2_COLLECTION_NAME).get("mapping") is None
     assert SchemaCache().get(_DB, db=db) is None
+
+
+# ---------------------------------------------------------------------------
+# Drift checking on a real database (PRD §6.3.3 two-fingerprint policy)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def analyses(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
+    """Counts full analyses (a spy around the real acquisition — it still runs)."""
+    from arango_sparql.service.routes import schema as schema_routes
+
+    if not analyzer_available():
+        pytest.skip("drift checking compares the analyzer's live fingerprints")
+    calls: list[str] = []
+    real = schema_routes.acquire_mapping_bundle
+
+    def counting(db: Any, **kwargs: Any) -> Any:
+        calls.append(getattr(db, "name", "?"))
+        return real(db, **kwargs)
+
+    monkeypatch.setattr(schema_routes, "acquire_mapping_bundle", counting)
+    schema_routes._reset_cache()
+    yield calls
+    schema_routes._reset_cache()
+
+
+def _routes() -> Any:
+    from arango_sparql.service.routes import schema as schema_routes
+
+    return schema_routes
+
+
+def _entity_for(bundle: Any, collection: str) -> str:
+    return next(
+        n for n, s in bundle.physical_mapping["entities"].items() if s.get("collectionName") == collection
+    )
+
+
+def test_an_unchanged_database_is_revalidated_not_reanalyzed(db: Any, analyses: list[str]) -> None:
+    routes = _routes()
+    built = routes._build_and_cache_full_bundle(db)
+    stamped = db.collection(L2_COLLECTION_NAME).get("mapping")["updated_at"]
+
+    kept = routes._revalidate_or_rebuild(db)
+
+    assert analyses == [_DB]
+    assert kept is built
+    assert db.collection(L2_COLLECTION_NAME).get("mapping")["updated_at"] > stamped
+
+
+def test_new_rows_recount_statistics_on_the_kept_mapping(db: Any, analyses: list[str]) -> None:
+    routes = _routes()
+    built = routes._build_and_cache_full_bundle(db)
+    person = _entity_for(built, "persons")
+    before = built.metadata["statistics"]["entities"][person]["estimated_count"]
+
+    db.collection("persons").insert({"name": "Late Arrival"})
+    refreshed = routes._revalidate_or_rebuild(db)
+
+    assert analyses == [_DB]  # no second analysis
+    assert refreshed.physical_mapping == built.physical_mapping
+    assert refreshed.metadata["statistics"]["entities"][person]["estimated_count"] == before + 1
+    assert db.collection(L2_COLLECTION_NAME).get("mapping")["full_fingerprint"] == db_counts_fingerprint(db)
+
+
+def test_a_new_collection_triggers_a_reanalysis(db: Any, analyses: list[str]) -> None:
+    routes = _routes()
+    routes._build_and_cache_full_bundle(db)
+
+    db.create_collection("studios").insert({"name": "Aardman"})
+    rebuilt = routes._revalidate_or_rebuild(db)
+
+    assert analyses == [_DB, _DB]
+    assert "studios" in {s["collectionName"] for s in rebuilt.physical_mapping["entities"].values()}
+
+
+def test_after_a_restart_the_check_uses_the_stored_fingerprints(db: Any, analyses: list[str]) -> None:
+    routes = _routes()
+    routes._build_and_cache_full_bundle(db)
+
+    routes._reset_cache()  # a redeploy: memory gone, the stored copy remains
+    routes._revalidate_or_rebuild(db)
+
+    assert analyses == [_DB]

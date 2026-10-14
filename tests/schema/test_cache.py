@@ -538,6 +538,26 @@ def test_a_stored_copy_from_other_code_reads_as_outdated(producer: str | None) -
     assert entry is not None and not entry.is_from_current_code()
 
 
+def test_revalidated_restarts_the_ttl_and_restamps_the_stored_copy() -> None:
+    db = FakeDatabase()
+    cache = SchemaCache(ttl_seconds=60)
+    bundle = _bundle()
+    cache.put("db1", bundle, db=db, db_shape="s", db_counts="c", now=_T0)
+    later = _T0 + timedelta(hours=2)
+    assert cache.peek("db1", now=later)[1] is True  # expired
+
+    entry = cache.revalidated("db1", db=db, db_counts="c", now=later)
+
+    assert entry is not None and entry.bundle is bundle and entry.acquired_at == later
+    assert cache.peek("db1", now=later + timedelta(seconds=1)) == (entry, False)
+    restarted = SchemaCache(ttl_seconds=60).peek("db1", db=db, now=later + timedelta(seconds=1))
+    assert restarted[0] is not None and restarted[1] is False  # the stored copy carries the new stamp
+
+
+def test_revalidated_without_an_entry_is_a_no_op() -> None:
+    assert SchemaCache().revalidated("missing", db_counts="c") is None
+
+
 def test_entries_built_in_process_are_current() -> None:
     assert SchemaCache().put("db1", _bundle()).is_from_current_code()
 

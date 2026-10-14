@@ -61,6 +61,7 @@ straightforward.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 from datetime import UTC, datetime
@@ -249,6 +250,57 @@ def hide_schema_cache_collections(db: Any) -> Any:
     """Return *db* seen without :data:`SCHEMA_CACHE_COLLECTIONS` (idempotent)."""
 
     return db if isinstance(db, _SchemaCacheHidden) else _SchemaCacheHidden(db)
+
+
+def refresh_statistics(db: Any, bundle: MappingBundle) -> MappingBundle:
+    """Re-derive *bundle*'s ``metadata.statistics`` against *db*, keeping its mapping.
+
+    The stats-only branch of the drift policy (PRD §6.3.3): the live shape
+    fingerprint still matches, so the conceptual schema and physical mapping
+    are reused and only the cardinality block is recomputed — the same
+    ``schema_analyzer.statistics.compute_statistics`` the full analysis runs,
+    fed the cheap collection listing it needs instead of a full snapshot
+    (mirrors ``schema_analyzer.incremental.refresh_statistics``, which works
+    on an ``AnalysisResult`` rather than this repo's enriched bundle).
+
+    Best-effort, like cypher's ``_safe_refresh_statistics``: without the
+    analyzer, or when the recount fails, *bundle* is returned unchanged and
+    the failure logged — stale statistics never cost the caller its mapping.
+    """
+
+    try:
+        from schema_analyzer.statistics import compute_statistics
+    except ImportError:
+        return bundle
+
+    view = hide_schema_cache_collections(db)
+    try:
+        rows = view.collections()
+        snapshot = {
+            "collections": [
+                {"name": row["name"], "type": row.get("type")}
+                for row in (rows if isinstance(rows, list) else [])
+                if isinstance(row, dict)
+                and isinstance(row.get("name"), str)
+                and not row["name"].startswith("_")
+            ]
+        }
+        stats = compute_statistics(
+            view, snapshot, bundle.physical_mapping or {}, bundle.conceptual_schema or {}
+        )
+    except Exception:  # noqa: BLE001 — best-effort; the mapping is still valid
+        logger.warning(
+            "statistics refresh failed for db=%r; keeping the previous statistics",
+            getattr(db, "name", "?"),
+            exc_info=True,
+        )
+        return bundle
+    if not isinstance(stats, dict):
+        return bundle
+    metadata = dict(bundle.metadata or {})
+    metadata["statistics"] = stats
+    metadata["statisticsStatus"] = stats.get("status")
+    return dataclasses.replace(bundle, metadata=metadata)
 
 
 def analyzer_available() -> bool:
@@ -1029,4 +1081,5 @@ __all__ = [
     "db_counts_fingerprint",
     "db_shape_fingerprint",
     "hide_schema_cache_collections",
+    "refresh_statistics",
 ]

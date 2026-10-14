@@ -39,6 +39,7 @@ isolated cache state per case.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import os
 import threading
@@ -319,6 +320,31 @@ class SchemaCache:
             self._l1[db_name] = entry
         if db is not None:
             self._persist_to_l2(db_name, entry, db)
+        return entry
+
+    def revalidated(
+        self,
+        db_name: str,
+        *,
+        db: Any | None = None,
+        db_counts: str | None,
+        now: datetime | None = None,
+    ) -> CachedEntry | None:
+        """Record that *db_name*'s entry was just checked against the live
+        database and still holds: restart its TTL (and, with *db*, re-stamp
+        the stored copy without rewriting the bundle). Returns the re-stamped
+        entry, or ``None`` when there is no L1 entry to re-stamp.
+        """
+
+        when = now if now is not None else datetime.now(UTC)
+        with self._lock:
+            entry = self._l1.get(db_name)
+            if entry is None:
+                return None
+            entry = dataclasses.replace(entry, acquired_at=when, db_counts=db_counts)
+            self._l1[db_name] = entry
+        if db is not None:
+            self._l2.touch(db, full_fingerprint=db_counts, updated_at=when)
         return entry
 
     def invalidate(self, db_name: str) -> bool:

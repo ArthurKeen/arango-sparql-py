@@ -388,6 +388,30 @@ class BundleFingerprint:
         return self.drift_from(other) is FingerprintDrift.UNCHANGED
 
 
+def classify_live_drift(
+    *,
+    stored_shape: str,
+    stored_counts: str | None,
+    current_shape: str,
+    current_counts: str | None,
+) -> FingerprintDrift:
+    """Classify drift between the *live database* fingerprints stored with a
+    cached bundle and the ones the database reports now.
+
+    The analyzer's ``fingerprint_physical_shape`` / ``_counts`` hash the
+    database; :func:`compute_bundle_fingerprint` hashes a bundle. The two are
+    different hash domains and never compare equal, so a drift check must
+    compare live against live. An unknown counts fingerprint on either side
+    reads as ``STATS_ONLY`` (recount rather than assume nothing changed).
+    """
+
+    if current_shape != stored_shape:
+        return FingerprintDrift.SHAPE_CHANGED
+    if current_counts is None or stored_counts is None or current_counts != stored_counts:
+        return FingerprintDrift.STATS_ONLY
+    return FingerprintDrift.UNCHANGED
+
+
 def compute_bundle_fingerprint(bundle: MappingBundle, *, now: datetime | None = None) -> BundleFingerprint:
     """Compute both fingerprints in one pass.
 
@@ -410,5 +434,6 @@ __all__ = [
     "FingerprintDrift",
     "bundle_counts_fingerprint",
     "bundle_shape_fingerprint",
+    "classify_live_drift",
     "compute_bundle_fingerprint",
 ]

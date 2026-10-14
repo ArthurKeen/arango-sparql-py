@@ -765,9 +765,27 @@ Refresh policy uses the analyzer's two cheap fingerprints:
 - `fingerprint_physical_counts(db)` — shape fingerprint + per-collection
   `count()`. **Fires when row volume drifts** (used by `/schema/status`).
 
-When `/schema/status` reports `stats_changed` but `shape_unchanged`, the
-mapping itself is reused but the `metadata.statistics` block is
-re-derived. When shape changes, the full mapping is re-acquired.
+Both are taken just before each analysis and stored with the bundle (L1 entry
+and L2 document). When the TTL runs out, the background warm **checks
+instead of re-analyzing** (`routes/schema.py::_revalidate_or_rebuild`, the
+slow path of `arango-cypher-py`'s `get_mapping`), comparing the stored pair
+with the live one (`fingerprint.py::classify_live_drift`):
+
+| Live vs stored | Action | Cost |
+| --- | --- | --- |
+| Both match | Keep the bundle; restart its TTL; re-stamp the stored copy (no bundle rewrite) | Two fingerprint walks |
+| Counts differ, shape matches | Keep the mapping; recount `metadata.statistics` (`acquire.py::refresh_statistics` → the analyzer's `compute_statistics`) and store | Fingerprints + one count per collection |
+| Shape differs — or no stored fingerprints, or an outdated `producer` | Full re-analysis | Minutes on a large database |
+
+The stale bundle is served throughout. A "Refresh schema" (`force`) always
+re-analyzes — one requested while a check is running is queued behind it
+(`schema_warm.request_rebuild`), never answered by a check that found nothing.
+
+`/schema/status` reports the same comparison without acting on it. (Before
+2026-10-13 it compared the live fingerprints with a hash of the *bundle* —
+`fingerprint.py::compute_bundle_fingerprint`, a different hash domain — so
+with the analyzer installed it reported `shape_changed` for every cached
+schema.)
 
 **Cache collections are invisible to analysis.** The two transpilers keep
 their caches in the databases they analyze: `arango_sparql_schema_cache`
@@ -823,9 +841,10 @@ interactive schema read goes through `routes/schema.py::_read_or_warm`:
 
 | Cache state | Response | Background work |
 | --- | --- | --- |
-| Fresh entry | `status: "ready"`, the (scoped) schema | none |
-| Expired entry (past the TTL) | `status: "ready"`, the stale schema, `warming: true` | one re-analysis |
-| No entry | `status: "pending"`, empty payload, `SCHEMA_PENDING` info note | one analysis |
+| Fresh entry (in memory, or the stored copy after a restart) | `status: "ready"`, the (scoped) schema | none |
+| Expired entry (past the TTL) | `status: "ready"`, the stale schema, `warming: true` | one drift check (§6.3.3) — re-analysis only if the structure changed |
+| Entry built by other code (a previous release's stored copy) | `status: "ready"`, that schema, `warming: true` | one re-analysis |
+| No entry (none in memory, none stored — §6.3.3) | `status: "pending"`, empty payload, `SCHEMA_PENDING` info note | one analysis |
 | `force=true` ("Refresh schema") | `status: "ready"`, the current schema, `warming: true` (or `pending` if none) | one re-analysis |
 
 * Warms are **deduped per database** (one analysis serves every scope) and run
@@ -862,7 +881,7 @@ Mirrors the sister project's `arango_cypher.service.routes.schema` and
 | `GET` | `/schema/properties` | — | `{<collection>: {<attr>: {type, sample}}}` | Per-collection inferred property catalog (samples 20 docs) |
 | `GET` | `/schema/summary` | body: `{mapping}` (no DB access) | conceptual summary | Used by the UI when it already has a mapping in hand |
 | `GET` | `/schema/statistics` | — | `metadata.statistics` block | Cardinality, in/out degree, selectivity per relationship |
-| `GET` | `/schema/status` | — | `{stats_changed, shape_unchanged, fingerprints, last_acquired_at}` | Schema-drift report; cheap |
+| `GET` | `/schema/status` | — | `{status, unchanged, needs_full_rebuild, current, cached, last_acquired_at}` | Schema-drift report; cheap. Live vs stored live fingerprints (§6.3.3); `status ∈ {unchanged, stats_only, shape_changed, no_cache}` |
 | `POST` | `/schema/invalidate-cache` | — | `{invalidated, db_name, persistent_dropped}` | Drops the connected DB's entry from both tiers; `persistent_dropped` reports the stored document (§6.3.3) |
 | `POST` | `/schema/force-reacquire` | — | fresh `MappingBundle` | Re-runs analyzer; `503` if both `SCHEMA_ANALYZER_REQUIRED` and `ARANGO_SPARQL_ALLOW_HEURISTIC` are `false` — see §6.3.4 |
 | `POST` | `/mapping/import-owl` | body: `text/turtle` | `{accepted: bool, mapping}` | Replaces the active mapping with one parsed from a posted OWL ontology |
@@ -3791,7 +3810,7 @@ provisioning.
 
 | Env var | Default | Required? | Description |
 | --- | --- | --- | --- |
-| `SCHEMA_MAPPING_CACHE_TTL_SECONDS` | `3600` | no | Soft TTL on cached `MappingBundle`; superseded by fingerprint mismatch. An expired entry is still **served** while a background re-analysis refreshes it (stale-while-revalidate, §6.3.5) |
+| `SCHEMA_MAPPING_CACHE_TTL_SECONDS` | `3600` | no | How long a cached `MappingBundle` is trusted without a check; counts from the last analysis or check, across restarts. An expired entry is still **served** while a background drift check revalidates it — a re-analysis only if the database's structure changed (§6.3.3, §6.3.5) |
 | `SCHEMA_ANALYZER_PROVIDER` | empty (no LLM) | no | Opt-in LLM for the schema analyzer: `openai` / `anthropic` / `openrouter`. **Unset by default — the analyzer runs its deterministic baseline, as in `arango-cypher-py`.** Not inherited from `LLM_PROVIDER` or the API keys (those belong to NL). See §6.3.2 |
 | `SCHEMA_ANALYZER_MODEL` | provider default | no | Model for the opt-in analyzer LLM |
 | `SCHEMA_ANALYZER_TIMEOUT_MS` | `180000` | no | The analyzer's **total** budget (physical scan + LLM call); only matters with `SCHEMA_ANALYZER_PROVIDER` set — the LLM call gets what the scan leaves (floored at 1 s by the analyzer) |

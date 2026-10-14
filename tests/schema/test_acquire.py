@@ -1187,3 +1187,72 @@ def test_the_cache_filter_passes_a_non_list_listing_through() -> None:
     job = object()
     view = acquire_mod.hide_schema_cache_collections(SimpleNamespace(collections=lambda: job))
     assert view.collections() is job
+
+
+# ---------------------------------------------------------------------------
+# refresh_statistics — the stats-only drift branch (PRD §6.3.3)
+# ---------------------------------------------------------------------------
+
+
+def _bundle_with_stale_stats() -> MappingBundle:
+    return MappingBundle(
+        conceptual_schema={"entities": [{"name": "Person"}]},
+        physical_mapping={"entities": {"Person": {"style": "COLLECTION", "collectionName": "Person"}}},
+        metadata={"statistics": {"entities": {"Person": {"estimated_count": 5}}}, "warnings": []},
+    )
+
+
+def test_refresh_statistics_recounts_and_keeps_the_mapping(monkeypatch: pytest.MonkeyPatch) -> None:
+    import schema_analyzer.statistics as stats_mod
+
+    seen: dict[str, Any] = {}
+
+    def fake_compute(
+        db: Any,
+        snapshot: dict[str, Any],
+        physical_mapping: dict[str, Any],
+        conceptual_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        seen["collections"] = {c["name"] for c in snapshot["collections"]}
+        seen["listed"] = {c["name"] for c in db.collections()}
+        return {"status": "ok", "entities": {"Person": {"estimated_count": 6}}}
+
+    monkeypatch.setattr(stats_mod, "compute_statistics", fake_compute)
+    before = _bundle_with_stale_stats()
+
+    after = acquire_mod.refresh_statistics(_pg_db_with_schema_caches(), before)
+
+    assert after.metadata["statistics"]["entities"]["Person"]["estimated_count"] == 6
+    assert after.metadata["statisticsStatus"] == "ok"
+    assert after.physical_mapping is before.physical_mapping
+    assert after.conceptual_schema is before.conceptual_schema
+    assert before.metadata["statistics"]["entities"]["Person"]["estimated_count"] == 5  # input untouched
+    # The schema caches are neither counted nor listed.
+    assert seen["collections"] == seen["listed"] == {"Person", "Company"}
+
+
+def test_refresh_statistics_keeps_the_old_block_when_the_recount_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import schema_analyzer.statistics as stats_mod
+
+    def boom(
+        db: Any,
+        snapshot: dict[str, Any],
+        physical_mapping: dict[str, Any],
+        conceptual_schema: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        raise RuntimeError("forbidden: COLLECT on edges")
+
+    monkeypatch.setattr(stats_mod, "compute_statistics", boom)
+    before = _bundle_with_stale_stats()
+
+    with caplog.at_level("WARNING", logger="arango_sparql.schema.acquire"):
+        assert acquire_mod.refresh_statistics(_pg_db(), before) is before
+    assert "statistics refresh failed" in caplog.text
+
+
+def test_refresh_statistics_without_the_analyzer_is_a_no_op(monkeypatch: pytest.MonkeyPatch) -> None:
+    _block_schema_analyzer(monkeypatch)
+    before = _bundle_with_stale_stats()
+    assert acquire_mod.refresh_statistics(_pg_db(), before) is before

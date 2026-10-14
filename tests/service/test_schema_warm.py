@@ -221,3 +221,52 @@ def test_schedule_warm_skips_a_handle_without_a_name(threads: _Threads) -> None:
 
     assert schema_warm.schedule_warm(_Nameless()) is False
     assert threads.pending == []
+
+
+def _record_warm_kinds(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Replace both warm bodies (same signatures as the real ones) with recorders."""
+    ran: list[str] = []
+
+    def revalidate(db: Any, *, strategy: str = "auto") -> None:
+        ran.append("revalidate")
+
+    def rebuild(db: Any, *, strategy: str = "auto", fingerprints: Any = None) -> None:
+        ran.append("rebuild")
+
+    monkeypatch.setattr(schema_route_mod, "_revalidate_or_rebuild", revalidate)
+    monkeypatch.setattr(schema_route_mod, "_build_and_cache_full_bundle", rebuild)
+    return ran
+
+
+def test_a_rebuild_requested_during_a_revalidation_runs_after_it(
+    threads: _Threads, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran = _record_warm_kinds(monkeypatch)
+
+    class _Db:
+        name = "handoff_db"
+
+    assert schema_warm.schedule_warm(_Db(), revalidate=True) is True
+    schema_warm.request_rebuild("handoff_db")
+    threads.finish_all()
+
+    assert ran == ["revalidate", "rebuild"]
+    assert schema_warm.is_warming("handoff_db") is False
+
+
+def test_request_rebuild_only_queues_behind_a_revalidation(
+    threads: _Threads, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ran = _record_warm_kinds(monkeypatch)
+
+    class _Db:
+        name = "handoff_db"
+
+    schema_warm.request_rebuild("handoff_db")  # nothing in flight: no effect
+    schema_warm.schedule_warm(_Db())  # a re-analysis is already one
+    schema_warm.request_rebuild("handoff_db")
+    threads.finish_all()
+    schema_warm.schedule_warm(_Db(), revalidate=True)
+    threads.finish_all()
+
+    assert ran == ["rebuild", "revalidate"]
