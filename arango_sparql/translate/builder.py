@@ -72,6 +72,42 @@ def subject_in(alias: str, values: str) -> str:
     return f"({alias}._uri IN {values} || ({alias}._uri == null && {alias}._id IN {values}))"
 
 
+def type_predicate(alias: str, field: str, value_bind: str, *, is_array: bool | None) -> str:
+    """The type-discriminator test for a ``LABEL`` (multi-class) collection.
+
+    Issue #10: r2g's LPG layout keeps a node's labels in an ARRAY
+    (``labels: ["Person", "Customer"]``). ``doc.labels == @v`` is false for
+    every such document — zero rows, no error. The form depends on the field's
+    shape, because each form is served by a different index:
+
+    * ``is_array=True``  → ``@v IN doc.labels`` (the ``labels[*]`` array index)
+    * ``is_array=False`` → ``doc.type == @v``   (a plain persistent index)
+    * ``is_array=None``  → ``(doc.f == @v || @v IN doc.f)`` — shape unknown
+      (hand-written ontology, CSI without the flag). Correct for both shapes;
+      it cannot use either index, which is the visible cost of not knowing,
+      never a wrong answer. Live analysis records the shape
+      (``schema/acquire.py``), so the Workbench/BYOC path never lands here.
+    """
+    ref = attribute_ref(alias, field)
+    if is_array is True:
+        return f"{value_bind} IN {ref}"
+    if is_array is False:
+        return f"{ref} == {value_bind}"
+    return f"({ref} == {value_bind} || {value_bind} IN {ref})"
+
+
+def parse_flag(value: str | None) -> bool | None:
+    """A ``phys:`` boolean annotation (``true``/``false``, any case, ``1``/``0``)."""
+    if value is None:
+        return None
+    lowered = str(value).strip().lower()
+    if lowered in ("true", "1", "yes"):
+        return True
+    if lowered in ("false", "0", "no"):
+        return False
+    return None
+
+
 def is_aql_identifier(name: str) -> bool:
     """Whether *name* can be written bare after a dot (``doc.name``)."""
     return bool(_AQL_IDENT_RE.match(name or ""))

@@ -266,6 +266,33 @@ def test_health(client: TestClient) -> None:
     assert isinstance(body["version"], str) and body["version"]
 
 
+def test_health_reports_what_a_bug_report_needs(client: TestClient) -> None:
+    """ "Report a problem" files the service and the analyzer that read the schema."""
+    from importlib.metadata import version
+
+    body = client.get("/health").json()
+    assert body["service"] == "arango-sparql-py"
+    assert body["analyzer_version"] == version("arangodb-schema-analyzer")
+
+
+def test_health_without_the_analyzer_reports_none(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from importlib.metadata import PackageNotFoundError
+
+    from arango_sparql.service.routes import health as health_mod
+
+    def missing(_name: str) -> str:
+        raise PackageNotFoundError(_name)
+
+    health_mod._analyzer_version.cache_clear()
+    monkeypatch.setattr(health_mod, "version", missing)
+    try:
+        assert client.get("/health").json()["analyzer_version"] is None
+    finally:
+        health_mod._analyzer_version.cache_clear()
+
+
 def test_health_ready_unconfigured_is_ok(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
     # BYOC deployment: no default ArangoDB configured → readiness
     # degrades to liveness (200, arango="unconfigured").

@@ -34,6 +34,7 @@ from .builder import (
     subject_in,
     subject_matches,
     subject_ref,
+    type_predicate,
 )
 from .filter_builtins import translate_builtin, translate_function
 from .minus_exists import emit_minus
@@ -1312,8 +1313,13 @@ class AlgebraVisitor:
                 # Hybrid (multi-class) collection: the mapper emits a
                 # discriminator field; gate the FOR with it so we don't
                 # bleed unrelated documents into the result set.
-                bind = self.builder.bind(resolved.type_value, hint=resolved.type_field)
-                self.builder.filter_eq(f"{alias}.{resolved.type_field}", bind)
+                bind = self.builder.bind(
+                    resolved.type_value,
+                    hint=resolved.type_field if is_aql_identifier(resolved.type_field) else None,
+                )
+                self.builder.filter_raw(
+                    type_predicate(alias, resolved.type_field, bind, is_array=resolved.type_field_is_array)
+                )
             self._enforce_tenant_scope(alias, resolved)
             self._bind_subject(s, alias)
             return

@@ -246,6 +246,7 @@ _SPEC_FIELD_ALIASES: dict[str, str] = {
     "edge_collection_name": "edgeCollectionName",
     "type_field": "typeField",
     "type_value": "typeValue",
+    "type_field_is_array": "typeFieldIsArray",
     "triples_collection": "triplesCollection",
     "subject_column": "subjectColumn",
     "predicate_column": "predicateColumn",

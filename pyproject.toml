@@ -46,8 +46,12 @@ analyzer = [
   # candidates, `_fromType`/`_toType` endpoints) so LABEL / GENERIC_WITH_TYPE
   # entries arrive already decided (fast suite green on 0.14.0). Raised together
   # with arango-cypher-py's band on 2026-09-14 (0.13) and 2026-09-15 (0.14) under
-  # the PRD §12.1 invariant.
-  "arangodb-schema-analyzer[anthropic,openai]>=0.12.1,<0.15.0",
+  # the PRD §12.1 invariant. Floor 0.14.1 (2026-10-13, matching arango-cypher-py's
+  # 2026-10-05 raise): 0.14.1 stops reading an edge field that copies the endpoint
+  # collection names as the relationship type — on prod.demo IAM, which this
+  # service queries, that renamed CAN_ACCESS / CAN_ASSUME / … after their target
+  # collections. tests/test_analyzer_band_parity.py enforces the shared ceiling.
+  "arangodb-schema-analyzer[anthropic,openai]>=0.14.1,<0.15.0",
 ]
 service = [
   "arango-sparql-py[analyzer]",

@@ -475,7 +475,7 @@ ArangoDB database typically uses one or, increasingly, a mix of several
 | Style ID (in OWL `phys:mappingStyle` and JSON `physicalMapping.entities[*].style`) | Friendly name | Stored as | Read pattern |
 | --- | --- | --- | --- |
 | `COLLECTION` | **PG** — Property Graph | One ArangoDB document collection per OWL class | `FOR doc IN @@coll` |
-| `LABEL` | **LPG** — Labeled Property Graph | One shared document collection holding multiple OWL classes, discriminated by a `typeField` (e.g. `type`, `_type`, `entityType`, `label`) | `FOR doc IN @@coll FILTER doc.<typeField> == @typeValue` |
+| `LABEL` | **LPG** — Labeled Property Graph | One shared document collection holding multiple OWL classes, discriminated by a `typeField` (e.g. `type`, `_type`, `entityType`, `label`) — or by an **array** of labels (r2g's `labels: ["Person","Customer"]`) | `FOR doc IN @@coll FILTER doc.<typeField> == @typeValue` (scalar), `FILTER @typeValue IN doc.<typeField>` (array), see *Label fields* below |
 | `RPT` | **RDF / Resource-style triples** | A triple-row collection (the legacy Foxx default was `_triples`) with `subject_uri`, `predicate`, `object_uri`, `object_value` columns and `_:` prefix for blank nodes | `FOR t IN @@triples FILTER t.predicate == @p AND t.subject_uri == @s` plus `NOT_NULL(t.object_uri, t.object_value)` to bind the object |
 | `DOCUMENT` | Plain document | Document collection with no class-discriminator field; OWL class derived from collection name only | Same as `COLLECTION` |
 
@@ -510,6 +510,22 @@ matched exactly — `doc._uri == @iri`, or `doc._id == @iri` for a document with
 identity can be pasted back as a constant (`<aws_iam_role/0123>`). Known limit:
 a constant subject is still looked up in the default collection, not in the
 collection its `_id` names; and `isIRI()` is false for an `_id` identity.
+
+**Label fields** (`LABEL` style). The type test depends on the field's shape,
+because each form is served by a different index (`translate/builder.py::
+type_predicate`, issue #10): `phys:typeFieldIsArray true` → `@v IN doc.f`
+(an array index `f[*]`, as r2g provisions); `false` → `doc.f == @v`; unknown →
+`(doc.f == @v || @v IN doc.f)`, correct for both shapes but unable to use
+either index. Live analysis records the shape with a one-row probe per LABEL
+collection (`schema/acquire.py::_apply_label_shape_enrichment`), writing
+`typeFieldIsArray` into the mapping and appending `phys:typeFieldIsArray` to
+the analyzer's OWL, so the Workbench never takes the unknown path; a
+hand-written ontology or a CSI import without the flag does. A node carrying
+several labels answers every class it carries. Edge type fields
+(`GENERIC_WITH_TYPE`) stay scalar equality — no known producer writes array
+edge types — and property paths unroll one traversal per hop, each testing its
+own edge, so the "filter on `e` only constrains the last hop" trap does not
+arise; `p.edges[*]` is never emitted.
 
 **Hybrid** is not a fifth style; it is the *case where two or more of the
 above coexist in one database*. Concretely, a single SPARQL query can
@@ -2139,7 +2155,8 @@ A single **gear popover** in the header that consolidates what used to be
 a row of header buttons, keeping the shell decluttered:
 
 - **Panel triggers:** Ontology/mapping (§10.4), Clause outline, Sample
-  queries, Query history, Command palette (`Mod-K`, §10.7).
+  queries, Query history, Command palette (`Mod-K`, §10.7), and
+  **Report a problem** (§10.19).
 - **Behaviour toggles:** auto-translate, auto-run, NL-direct mode,
   open-inspector-on-error, results table density, and (v1.1) theme.
 - Preferences that affect persistence are stored per the §10.7 keys;
@@ -2176,6 +2193,47 @@ mirroring the sister project's schema-graph work:
   focuses matches; non-matches dim.
 - **Click-to-expand** — clicking a bundle or class reveals its members
   incrementally rather than rendering the full graph up front.
+
+### 10.19 Report a problem (`ui/src/components/ReportProblem.tsx`)
+
+Ported from `arango-cypher-py` (its PRD's "Report a problem" requirement;
+`ui/src/utils/bugReport.ts`, `focusReturn.ts`). The Workbench MUST offer
+"Report a problem" in the settings menu (§10.16) and beside the query error
+banner and the NL → SPARQL error banner; the report files the error of the
+banner it was opened from (from the menu: whichever error is showing).
+
+* It builds a GitHub issue for `arango-solutions-org/arango-sparql-py` — a
+  **public** repository — and opens GitHub's pre-filled new-issue page in the
+  user's own browser: no token in the service, nothing filed until the user
+  submits it there, and **Copy** for users without a GitHub account (when the
+  clipboard is unavailable, the full report is shown selected for copying).
+* The user sees and can edit the full text first. Their own "What happened"
+  text is kept apart from the generated details, so changing an option never
+  discards it.
+* By default a report carries only the app and analyzer versions
+  (`GET /health` reports `service`, `version` and `analyzer_version` — the
+  same keys as `arango-cypher-py`), the error and the browser, under a fixed
+  title ("Arango SPARQL problem").
+* Errors can quote the query, so the error is reduced by default: quoted text
+  (straight, backtick and typographic quotes, not apostrophes in prose) and
+  long digit runs are masked, and an IRI written outside quotes keeps only its
+  local name (`<http://acme.example/ont#salary>` → `<…#salary>`) — an IRI's
+  namespace usually names the organisation. That IRI rule is this repo's
+  addition; cypher's cut of the "attempted query" is not ported, because a
+  failed NL → SPARQL generation returns the SPARQL it tried as a separate
+  field (`routes/nl.py`), never inside the error text.
+* The SPARQL, the AQL and the unreduced error are included only when the user
+  ticks "include my query"; the dialog warns that other values can still
+  appear and must be checked.
+* A report too long for GitHub's link limit (7000 characters) is shortened —
+  the user's own text first, then the details from the end, so the versions
+  always survive — the dialog says so, and Copy keeps the full text.
+* Keyboard: focus starts in "What happened", Tab stays in the dialog, Escape
+  closes it, and focus returns to what opened it — or to the Settings button
+  when a menu item did (`focusReturn.ts`).
+
+Tests: `ui/src/utils/bugReport.test.ts`, `focusReturn.test.ts`,
+`tests/test_service_sparql_routes.py::test_health_reports_what_a_bug_report_needs`.
 
 ---
 
@@ -2334,7 +2392,15 @@ Already covered in §6.3; restated here for the integration map:
   mutually exclusive bands are unsatisfiable — a lower ceiling silently
   downgrades a co-installed newer analyzer and breaks its consumers (observed
   2026-09-06, CDF `make seed`). Raising the band is therefore a coordinated
-  change across both repositories, never a unilateral one.
+  change across both repositories, never a unilateral one. "Aligned" means
+  precisely: the two bands **share a ceiling and overlap**; a floor may lead in
+  one repo while it adopts a fix release first (arango-cypher-py raised to 0.14.1
+  on 2026-10-05; this repo followed on 2026-10-13 for the same IAM
+  relationship-naming fix). **Enforced** by `tests/test_analyzer_band_parity.py`,
+  which reads the sister band from `references/arango-cypher-py` or, in CI, from
+  GitHub, and fails on a differing ceiling or non-overlapping bands (issue #8).
+  The startup guard's install hint (`ANALYZER_VERSION_RANGE`) is pinned to the
+  declared band by `tests/test_service_startup_guard.py`.
 - **Consumed contracts**:
   - `AgenticSchemaAnalyzer.analyze_physical_schema(db, ...)` →
     canonical `AnalysisResult`.
