@@ -494,6 +494,22 @@ control character, or one over 256 bytes is refused, as a translation error
 to an identifier (`@@c1_IAM_TERRAFORM_DOCS_DEMO_Relations`); the bound value
 is the real name (`translate/builder.py::bind_collection`).
 
+**Subject identity.** A document's RDF identity — what a subject or object
+variable binds to, and what joins compare — is its `_uri` when present, else its
+`_id` (`collection/key`): `NOT_NULL(doc._uri, doc._id)`
+(`translate/builder.py::subject_ref`). `_uri` is an RDF-import convention;
+ordinary ArangoDB data has none, and reading `_uri` alone bound every subject to
+`null` and collapsed `COUNT(DISTINCT ?s)` to 1 (issue #18; prod.demo IAM: 1
+instead of 37,516). `_id` needs no invented namespace, is unique and stable in a
+database, and is what the RDF results serializer already falls back to. Every
+emitter builds identity through the one helper, so an edge's target vertex and a
+separately-bound subject compare the same expression. A constant subject is
+matched exactly — `doc._uri == @iri`, or `doc._id == @iri` for a document with no
+`_uri` — in a form that keeps both indexes usable (`subject_matches`). A result
+identity can be pasted back as a constant (`<aws_iam_role/0123>`). Known limit:
+a constant subject is still looked up in the default collection, not in the
+collection its `_id` names; and `isIRI()` is false for an `_id` identity.
+
 **Hybrid** is not a fifth style; it is the *case where two or more of the
 above coexist in one database*. Concretely, a single SPARQL query can
 have one BGP triple resolve to `COLLECTION` (read a PG collection

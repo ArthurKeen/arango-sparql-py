@@ -39,12 +39,12 @@ cases:
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
-        RETURN { o: doc1.p, s: doc1._uri }
+        RETURN { o: doc1.p, s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "q")
-        RETURN { o: doc2.q, s: doc2._uri }
+        RETURN { o: doc2.q, s: NOT_NULL(doc2._uri, doc2._id) }
       )
       )
       RETURN { s: row3.s, o: row3.o }
@@ -67,12 +67,12 @@ cases:
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
-        RETURN { o: doc1.p, s: doc1._uri, z: null }
+        RETURN { o: doc1.p, s: NOT_NULL(doc1._uri, doc1._id), z: null }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "q")
-        RETURN { o: doc2.q, s: null, z: doc2._uri }
+        RETURN { o: doc2.q, s: null, z: NOT_NULL(doc2._uri, doc2._id) }
       )
       )
       RETURN { s: row3.s, o: row3.o, z: row3.z }
@@ -100,18 +100,18 @@ cases:
       FOR row4 IN UNION(
       (
         FOR doc2 IN @@c2_Document
-        FILTER doc2._uri == doc1._uri
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
         FILTER HAS(doc2, "p")
         RETURN { o: doc2.p }
       ),
       (
         FOR doc3 IN @@c3_Document
-        FILTER doc3._uri == doc1._uri
+        FILTER NOT_NULL(doc3._uri, doc3._id) == NOT_NULL(doc1._uri, doc1._id)
         FILTER HAS(doc3, "q")
         RETURN { o: doc3.q }
       )
       )
-      RETURN { s: doc1._uri, n: doc1.name, o: row4.o }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name, o: row4.o }
     expected_bind_vars:
       "@c1_Document": "Document"
       "@c2_Document": "Document"
@@ -131,12 +131,12 @@ cases:
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
-        RETURN { o: doc1.p, s: doc1._uri }
+        RETURN { o: doc1.p, s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "q")
-        RETURN { o: doc2.q, s: doc2._uri }
+        RETURN { o: doc2.q, s: NOT_NULL(doc2._uri, doc2._id) }
       )
       )
       RETURN { s: row3.s, o: row3.o }
@@ -157,17 +157,17 @@ cases:
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
-        RETURN { o: doc1.p, s: doc1._uri }
+        RETURN { o: doc1.p, s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "q")
-        RETURN { o: doc2.q, s: doc2._uri }
+        RETURN { o: doc2.q, s: NOT_NULL(doc2._uri, doc2._id) }
       ),
       (
         FOR doc3 IN @@c3_Document
         FILTER HAS(doc3, "r")
-        RETURN { o: doc3.r, s: doc3._uri }
+        RETURN { o: doc3.r, s: NOT_NULL(doc3._uri, doc3._id) }
       )
       )
       RETURN { s: row4.s, o: row4.o }

@@ -38,6 +38,40 @@ def _valid_collection_name(name: str) -> bool:
     return all(ch.isprintable() for ch in name)
 
 
+def subject_ref(alias: str) -> str:
+    """A document's RDF identity: its ``_uri`` when present, else its ``_id``.
+
+    Issue #18: the translator used to read identity from ``_uri`` only — an
+    RDF-import convention. Ordinary ArangoDB data has no ``_uri``, so every
+    subject bound ``null`` and ``COUNT(DISTINCT ?s)`` collapsed to 1 (prod.demo
+    IAM: 1 instead of 37,516 roles). ``_id`` (``collection/key``) is unique and
+    stable within a database, needs no namespace to be invented, and is what
+    the RDF results serializer already falls back to
+    (``service/protocol/results_rdf.py``). Every emitter builds identity
+    through this one function, so a join between a subject and an edge's
+    target vertex compares the same expression on both sides. A constant IRI
+    in a query (``<aws_iam_role/0123>``) round-trips: rdflib keeps it as written.
+    """
+    return f"NOT_NULL({alias}._uri, {alias}._id)"
+
+
+def subject_matches(alias: str, rhs: str) -> str:
+    """``subject_ref(alias) == rhs``, written so ArangoDB can still use an index.
+
+    ``NOT_NULL(...)`` hides both attributes from the optimizer, which would
+    turn an indexed ``_uri`` lookup (DESCRIBE, a constant subject) into a full
+    scan on RDF-loaded data. This form is exactly equivalent — a document with
+    a ``_uri`` is never matched by its ``_id`` — and leaves ``_uri`` and the
+    primary ``_id`` index usable.
+    """
+    return f"({alias}._uri == {rhs} || ({alias}._uri == null && {alias}._id == {rhs}))"
+
+
+def subject_in(alias: str, values: str) -> str:
+    """``subject_ref(alias) IN values``, index-friendly like :func:`subject_matches`."""
+    return f"({alias}._uri IN {values} || ({alias}._uri == null && {alias}._id IN {values}))"
+
+
 def is_aql_identifier(name: str) -> bool:
     """Whether *name* can be written bare after a dot (``doc.name``)."""
     return bool(_AQL_IDENT_RE.match(name or ""))
@@ -429,7 +463,7 @@ class AqlQueryBuilder:
             bind = self.bind(type_value, hint=type_field)
             parts.append(f"FILTER {e_alias}.{type_field} == {bind}")
         parts.append("LIMIT 1")
-        parts.append(f"RETURN {v_alias}._uri")
+        parts.append(f"RETURN {subject_ref(v_alias)}")
         subquery = " ".join(parts)
         self._body_clauses.append(_Clause(_ClauseKind.LET, f"LET {let_alias} = ({subquery})[0]"))
         return self

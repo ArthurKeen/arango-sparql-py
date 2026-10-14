@@ -70,6 +70,7 @@ from rdflib.paths import (
 )
 
 from ..errors import UnsupportedSparqlError
+from .builder import subject_ref
 
 if TYPE_CHECKING:
     from .visitor import AlgebraVisitor
@@ -469,7 +470,7 @@ def _emit_zero_hop_path(
 ) -> None:
     """Identity arm for ``:p*`` / ``:p?`` — bind ``?o`` to the same URI as ``?s``."""
     subject_alias = visitor._ensure_subject_alias(subject)
-    uri_expr = f"{subject_alias}._uri"
+    uri_expr = subject_ref(subject_alias)
     if isinstance(obj, Variable):
         o_name = str(obj)
         existing = visitor.state.var_to_expr.get(o_name)

@@ -47,7 +47,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER doc1.name == @_p1_name
-      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: doc1._uri, predicate: k, object: doc1[k]})
+      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: NOT_NULL(doc1._uri, doc1._id), predicate: k, object: doc1[k]})
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_name": "Alice"
@@ -60,8 +60,8 @@ cases:
       DESCRIBE <http://ex.org/alice>
     expected_aql: |-
       FOR doc1 IN @@c1_Document
-      FILTER doc1._uri IN [@_p1_uri]
-      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: doc1._uri, predicate: k, object: doc1[k]})
+      FILTER (doc1._uri IN [@_p1_uri] || (doc1._uri == null && doc1._id IN [@_p1_uri]))
+      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: NOT_NULL(doc1._uri, doc1._id), predicate: k, object: doc1[k]})
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_uri": "http://ex.org/alice"
@@ -77,8 +77,8 @@ cases:
       DESCRIBE <http://ex.org/a> <http://ex.org/b>
     expected_aql: |-
       FOR doc1 IN @@c1_Document
-      FILTER doc1._uri IN [@_p1_uri, @_p2_uri]
-      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: doc1._uri, predicate: k, object: doc1[k]})
+      FILTER (doc1._uri IN [@_p1_uri, @_p2_uri] || (doc1._uri == null && doc1._id IN [@_p1_uri, @_p2_uri]))
+      RETURN (FOR k IN ATTRIBUTES(doc1) FILTER k NOT IN ['_id', '_key', '_rev', '_uri', '_type'] RETURN {subject: NOT_NULL(doc1._uri, doc1._id), predicate: k, object: doc1[k]})
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_uri": "http://ex.org/a"

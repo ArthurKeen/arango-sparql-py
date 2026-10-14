@@ -158,7 +158,7 @@ cases:
       )
       FILTER doc2.predicate == @_p1_rdftype
       FILTER doc2.object_uri == @_p2_cls
-      RETURN { s: doc2.subject_uri, d: doc1._uri }
+      RETURN { s: doc2.subject_uri, d: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Doc": "Doc"
       "@c2__triples_eu": "_triples_eu"
@@ -193,7 +193,7 @@ cases:
         (FOR doc3 IN @@c2_Person_us RETURN doc3)
       )
       FILTER HAS(doc1, "name")
-      RETURN { s: doc1._uri, n: doc1.name }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Person_eu": "Person_eu"
       "@c2_Person_us": "Person_us"
@@ -228,7 +228,7 @@ cases:
         (FOR doc3 IN @@c2_Person_us RETURN doc3)
       )
       FILTER doc1.tenant_id == @_p1_tenant
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person_eu": "Person_eu"
       "@c2_Person_us": "Person_us"

@@ -42,7 +42,7 @@ def _resolver() -> SchemaResolver:
 def test_canonical_key_added_to_projection() -> None:
     result = translate_partition(PARTITION, resolver=_resolver(), canonical_keys=["?p"])
     assert result.aql == (
-        'FOR doc1 IN @@c1_Person\nFILTER HAS(doc1, "name")\nRETURN { name: doc1.name, p: doc1._uri }'
+        'FOR doc1 IN @@c1_Person\nFILTER HAS(doc1, "name")\nRETURN { name: doc1.name, p: NOT_NULL(doc1._uri, doc1._id) }'
     )
     assert result.projected_vars == ["name", "p"]
     assert result.canonical_key_columns == {"p": "p"}
@@ -95,7 +95,7 @@ def test_seed_bindings_become_values_pushdown() -> None:
     # The seed loop + equality join must appear in the AQL, with rows
     # travelling as a bind variable (never inlined).
     assert "IN @_p1_values" in result.aql
-    assert "row2.p == doc1._uri" in result.aql
+    assert "row2.p == NOT_NULL(doc1._uri, doc1._id)" in result.aql
     assert result.bind_vars["_p1_values"] == [
         {"p": "http://ex.org/alice"},
         {"p": "http://ex.org/bob"},

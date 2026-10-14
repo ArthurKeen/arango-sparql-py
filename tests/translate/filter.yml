@@ -19,7 +19,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER (doc1.name == @_p1)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "Alice"
@@ -32,7 +32,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER ((doc1.age > @_p1) && (doc1.age < @_p2))
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 18
@@ -46,7 +46,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER REGEX_TEST(doc1.name, @_p1, true)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "^a"
@@ -59,7 +59,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER (doc1.name != null)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -71,7 +71,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER !((doc1.name != null))
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -83,7 +83,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER (TO_STRING(doc1.name) == @_p1)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "Alice"
@@ -96,7 +96,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER CONTAINS(doc1.name, @_p1)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "li"
@@ -109,7 +109,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER (((doc1.name == @_p1) || (doc1.name == @_p2)) && (doc1.name != null))
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "Alice"
@@ -123,7 +123,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER ((FOR num2 IN [doc1.age] FOR num3 IN [@_p1] RETURN IS_NUMBER(num2) && IS_NUMBER(num3) ? (num2 + num3) : null)[0] > @_p2)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 1
@@ -137,7 +137,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER (doc1.name != @_p1)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "Alice"
@@ -168,7 +168,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER (null == @_p1)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 3
@@ -181,7 +181,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
       FILTER STARTS_WITH(doc1.name, @_p1)
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": "Al"
@@ -199,7 +199,7 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER (doc1.age IN [@_p1, @_p2])
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 18
@@ -220,6 +220,6 @@ cases:
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "age")
       FILTER (doc1.age NOT IN [])
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"

@@ -23,7 +23,7 @@ cases:
       SELECT ?s WHERE { ?s a :Person }
     expected_aql: |
       FOR doc1 IN @@c1_Person
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -34,7 +34,7 @@ cases:
     expected_aql: |
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
-      RETURN { s: doc1._uri, n: doc1.name }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -45,7 +45,7 @@ cases:
     expected_aql: |
       FOR doc1 IN @@c1_Person
       FILTER doc1.name == @_p1_name
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_name": "Alice"
@@ -57,7 +57,7 @@ cases:
     expected_aql: |
       FOR doc1 IN @@c1_Orders
       FILTER doc1.kind == @_p1_kind
-      RETURN { o: doc1._uri }
+      RETURN { o: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Orders": "Orders"
       "_p1_kind": "order"
@@ -86,7 +86,7 @@ cases:
     expected_aql: |
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
-      RETURN { s: doc1._uri, n: doc1.name }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -97,7 +97,7 @@ cases:
     expected_aql: |
       FOR doc1 IN @@c1_Person
       FILTER doc1.age == @_p1_age
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_age": 30

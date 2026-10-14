@@ -152,7 +152,7 @@ cases:
       FILTER HAS(doc1, "tag")
       FOR doc2 IN @@c1_Document
       FILTER HAS(doc2, "name")
-      RETURN { g: doc2._graph, s: doc1._uri, n: doc2.name }
+      RETURN { g: doc2._graph, s: NOT_NULL(doc1._uri, doc1._id), n: doc2.name }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -210,12 +210,12 @@ cases:
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
-        RETURN { g: doc1._graph, o: doc1.p, s: doc1._uri }
+        RETURN { g: doc1._graph, o: doc1.p, s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "q")
-        RETURN { g: doc2._graph, o: doc2.q, s: doc2._uri }
+        RETURN { g: doc2._graph, o: doc2.q, s: NOT_NULL(doc2._uri, doc2._id) }
       )
       )
       RETURN { g: row3.g, o: row3.o }
@@ -246,7 +246,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FOR k2 IN ATTRIBUTES(doc1, true)
       FILTER k2 NOT IN @_p1_sys_attrs
-      RETURN { g: doc1._graph, s: doc1._uri, p: k2, o: doc1[k2] }
+      RETURN { g: doc1._graph, s: NOT_NULL(doc1._uri, doc1._id), p: k2, o: doc1[k2] }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":

@@ -46,9 +46,9 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER doc2._uri == doc1.p
+      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
       FILTER HAS(doc2, "q")
-      RETURN { s: doc1._uri, o: doc2.q }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc2.q }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -65,12 +65,12 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER doc2._uri == doc1.p
+      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
       FILTER HAS(doc2, "q")
       FOR doc3 IN @@c1_Document
-      FILTER doc3._uri == doc2.q
+      FILTER NOT_NULL(doc3._uri, doc3._id) == doc2.q
       FILTER HAS(doc3, "r")
-      RETURN { s: doc1._uri, o: doc3.r }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc3.r }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -89,9 +89,9 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER doc2._uri == doc1.p
+      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
       FILTER doc2.q == @_p1_q
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_q": "Alice"
@@ -108,9 +108,9 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER doc2._uri == doc1.p
+      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
       FILTER doc2.q == @_p1_q
-      RETURN { s: doc1._uri }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_q": "http://ex.org/alice"
@@ -130,7 +130,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
-      RETURN { s: doc1.p, o: doc1._uri }
+      RETURN { s: doc1.p, o: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -146,7 +146,7 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FILTER doc1.p == @_p1_p
-      RETURN { o: doc1._uri }
+      RETURN { o: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_p": "http://ex.org/alice"
@@ -166,9 +166,9 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER doc2._uri == doc1.p
+      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
       FILTER HAS(doc2, "q")
-      RETURN { s: doc2.q, o: doc1._uri }
+      RETURN { s: doc2.q, o: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -200,12 +200,12 @@ cases:
       FOR row3 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
-        RETURN { o: doc1._uri, s: doc1._uri }
+        RETURN { o: NOT_NULL(doc1._uri, doc1._id), s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "p")
-        RETURN { o: doc2.p, s: doc2._uri }
+        RETURN { o: doc2.p, s: NOT_NULL(doc2._uri, doc2._id) }
       )
       )
       RETURN { s: row3.s, o: row3.o }
@@ -225,15 +225,15 @@ cases:
       (
         FOR doc1 IN @@c1_Document
         FILTER HAS(doc1, "p")
-        RETURN { o: doc1.p, s: doc1._uri }
+        RETURN { o: doc1.p, s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "p")
         FOR doc3 IN @@c2_Document
-        FILTER doc3._uri == doc2.p
+        FILTER NOT_NULL(doc3._uri, doc3._id) == doc2.p
         FILTER HAS(doc3, "p")
-        RETURN { o: doc3.p, s: doc2._uri }
+        RETURN { o: doc3.p, s: NOT_NULL(doc2._uri, doc2._id) }
       )
       )
       RETURN { s: row4.s, o: row4.o }
@@ -251,20 +251,20 @@ cases:
       FOR row5 IN UNION_DISTINCT(
       (
         FOR doc1 IN @@c1_Document
-        RETURN { o: doc1._uri, s: doc1._uri }
+        RETURN { o: NOT_NULL(doc1._uri, doc1._id), s: NOT_NULL(doc1._uri, doc1._id) }
       ),
       (
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "p")
-        RETURN { o: doc2.p, s: doc2._uri }
+        RETURN { o: doc2.p, s: NOT_NULL(doc2._uri, doc2._id) }
       ),
       (
         FOR doc3 IN @@c3_Document
         FILTER HAS(doc3, "p")
         FOR doc4 IN @@c3_Document
-        FILTER doc4._uri == doc3.p
+        FILTER NOT_NULL(doc4._uri, doc4._id) == doc3.p
         FILTER HAS(doc4, "p")
-        RETURN { o: doc4.p, s: doc3._uri }
+        RETURN { o: doc4.p, s: NOT_NULL(doc3._uri, doc3._id) }
       )
       )
       RETURN { s: row5.s, o: row5.o }
@@ -286,10 +286,10 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER doc2._uri == doc1.p
+      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
       FILTER HAS(doc2, "q")
       FILTER HAS(doc1, "name")
-      RETURN { s: doc1._uri, o: doc2.q, n: doc1.name }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc2.q, n: doc1.name }
     expected_bind_vars:
       "@c1_Document": "Document"
 
@@ -309,7 +309,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FOR k2 IN ATTRIBUTES(doc1, true)
       FILTER k2 NOT IN @_p1_neg_path_skip
-      RETURN { s: doc1._uri, o: doc1[k2] }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc1[k2] }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_neg_path_skip":
@@ -330,7 +330,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FOR k2 IN ATTRIBUTES(doc1, true)
       FILTER k2 NOT IN @_p1_neg_path_skip
-      RETURN { s: doc1._uri, o: doc1[k2] }
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc1[k2] }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_neg_path_skip":
@@ -352,7 +352,7 @@ cases:
       SELECT ?x WHERE { in:a !(ex:p1|ex:p2) ?x }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
-      FILTER doc1._uri == @_p1_uri
+      FILTER (doc1._uri == @_p1_uri || (doc1._uri == null && doc1._id == @_p1_uri))
       FOR k2 IN ATTRIBUTES(doc1, true)
       FILTER k2 NOT IN @_p2_neg_path_skip
       RETURN { x: doc1[k2] }
