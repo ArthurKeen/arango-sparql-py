@@ -183,6 +183,13 @@ class FakeDb:
     def has_collection(self, name: str) -> bool:
         return name in self._collections
 
+    def collections(self) -> list[dict[str, Any]]:
+        """``StandardDatabase.collections()``: python-arango's formatted rows."""
+        return [
+            {"name": n, "system": n.startswith("_"), "type": "document", "status": "loaded"}
+            for n in sorted(self._collections)
+        ]
+
     def collection(self, name: str) -> FakeCollection:
         return FakeCollection(self._collections[name])
 
