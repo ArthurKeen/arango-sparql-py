@@ -16,9 +16,9 @@ inventing parallel ones:
 * **Repair rules** (seam 4) — :func:`arango_sparql.nl2sparql.repair.format_repair_context`,
   which embeds the stable error code and nudges unsupported-feature
   failures toward translatable SPARQL 1.1 alternatives.
-* **Guardrails** (seam 5) — allow-all in v1: the fabric P1 deployment
-  is single-tenant, and tenant gating already happens deterministically
-  inside ``translate()`` (``CrossTenantJoinError``). A SPARQL-algebra
+* **Guardrails** (seam 5) — allow-all in v1: tenant gating already
+  happens deterministically inside ``translate()``
+  (``CrossTenantJoinError``). A SPARQL-algebra
   tenant-scope validator (the analog of cypher-py's ``tenant_ast_*``)
   slots in here when multi-tenant NL arrives.
 * **Entity/instance grounding** (seam 6) — explicit-injection-only, same

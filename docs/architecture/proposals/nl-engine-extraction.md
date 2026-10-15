@@ -19,7 +19,9 @@ Arthur 2026-07-16: adapters stay in their transpiler repos (no
 separate nl2cypher/nl2sparql repos); PyPI publication when the seam
 API survives the nl2cypher re-point; distribution name stays
 `arango-query-core` (conceptual-model identity signaled at the
-subpackage level, not the name). Step 3 also shipped (2026-07-17): `arango_sparql.nl2sparql` now runs on the shared engine via `SparqlLanguageAdapter` (adapter.py — five seams over parse+translate validation), a 22-example seed corpus (`corpora/base.yml`), and a real `nl_to_sparql` entry point; the service routes keep `NlPipeline` until step 2 settles the seam API. Steps 2 (nl2cypher re-point, PJ) and 4 (PyPI + fabric pin) remain.
+subpackage level, not the name). Step 3 also shipped (2026-07-17): `arango_sparql.nl2sparql` now runs on the shared engine via `SparqlLanguageAdapter` (adapter.py — five seams over parse+translate validation), a 22-example seed corpus (`corpora/base.yml`), and a real `nl_to_sparql` entry point; the service routes' `NlPipeline` has since moved onto the same engine too (through `EngineProviderBridge`).
+
+**Status of the remaining steps (2026-10-15).** Step 4's PyPI half is done (`arango-query-core` 0.2.0, `arango-sparql-py` 0.2.0). Its fabric half is **not**: the contextual-data-fabric built its own NL loop on 2026-07-18, two days after this proposal was accepted, taking only this package's model client — the fork the proposal was written to prevent. Moving it onto the engine is arango-solutions-org/contextual-data-fabric#176. Step 2 is partly done: `nl2cypher` uses the shared providers, few-shot index and postconditions, and its `CypherAdapter` exists, but `nl_to_cypher` still runs its own loop (arango-cypher `main` at 503a04b).
 
 ## Problem — three engines are about to exist
 

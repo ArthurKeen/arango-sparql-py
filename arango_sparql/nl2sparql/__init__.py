@@ -21,11 +21,13 @@ tooling. Public surface:
 library entry point backed by the SHARED engine
 (``arango_query_core.nl`` + this repo's
 :class:`~arango_sparql.nl2sparql.adapter.SparqlLanguageAdapter` — the
-five language seams). It is what external consumers (the
-contextual-data-fabric's NL front-end, M5 WP-D1) call. The service
-routes still run :class:`NlPipeline` for its richer per-call
-telemetry; the two converge once the cypher-side re-point settles the
-seam API (nl-engine-extraction proposal). The adapter is imported
+five language seams). :class:`NlPipeline`, which the service's ``/nl-*``
+routes run, drives the same engine, adding per-call audit and cost
+records through :class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`.
+The contextual-data-fabric does **not** call either yet: its NL front-end
+uses only this package's model client (:mod:`.client`) with a loop of its
+own, and moving it onto the shared engine is tracked in
+arango-solutions-org/contextual-data-fabric#176. The adapter is imported
 lazily (``arango_sparql.nl2sparql.adapter``) so this package stays
 import-safe without the ``nl`` extra installed.
 
