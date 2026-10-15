@@ -521,7 +521,11 @@ collection (`schema/acquire.py::_apply_label_shape_enrichment`), writing
 `typeFieldIsArray` into the mapping and appending `phys:typeFieldIsArray` to
 the analyzer's OWL, so the Workbench never takes the unknown path; a
 hand-written ontology or a CSI import without the flag does. A node carrying
-several labels answers every class it carries. Edge type fields
+several labels answers every class it carries. The analyzer finds these
+entities itself from arangodb-schema-analyzer 0.15 on: it groups an array type
+field by its primary (first) label, where 0.14 collapsed an r2g collection
+into one `Node` entity (`tests/integration/test_label_arrays_live.py::
+test_the_analyzer_and_the_translator_read_label_arrays_end_to_end`). Edge type fields
 (`GENERIC_WITH_TYPE`) stay scalar equality — no known producer writes array
 edge types — and property paths unroll one traversal per hop, each testing its
 own edge, so the "filter on `e` only constrains the last hop" trap does not
