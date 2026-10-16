@@ -5,9 +5,11 @@ repo's :class:`~arango_sparql.nl2sparql.adapter.SparqlLanguageAdapter`
 (the five language seams — grammar prompt, corpus, transpiler-backed
 validation, repair rules, guardrails). This replaces the original
 bootstrap stub. It was written for the contextual-data-fabric's NL
-front-end (M5 WP-D1), which does not call it yet: that front-end uses only
-this package's model client with a loop of its own, and moving it onto the
-shared engine is arango-solutions-org/contextual-data-fabric#176.
+front-end (M5 WP-D1), which does not call it: since 2026-10-15 the fabric
+runs the shared engine directly with an adapter of its own (its federation
+planner checks each query), using this package's model client and
+:class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`
+(arango-solutions-org/contextual-data-fabric#176).
 
 The FastAPI ``/nl-*`` routes run :class:`~arango_sparql.nl2sparql.pipeline.NlPipeline`,
 which drives the same engine and adds richer per-call telemetry

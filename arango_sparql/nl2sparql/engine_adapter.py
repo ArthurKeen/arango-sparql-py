@@ -25,6 +25,12 @@ pipeline injects into the engine:
   ``ontology_ttl`` is ``""`` but the resolver is populated) validates
   against the same schema the pipeline's final re-translate will use.
 
+The contextual-data-fabric also wires :class:`EngineProviderBridge` into an
+engine of its own (arango-solutions-org/contextual-data-fabric#176): it
+builds the bridge from a client, lets the engine call ``generate``, and reads
+``records`` (one per call, ``error`` set on a failed one) to tell a provider
+failure from its own. Those three are a contract with that repository.
+
 The pipeline (see :mod:`arango_sparql.nl2sparql.pipeline`) wires these two
 into ``NLQueryEngine`` in Wave 3; isolating them here lets the
 verdict-reproduction, record-accounting, and resolver-parity invariants be
