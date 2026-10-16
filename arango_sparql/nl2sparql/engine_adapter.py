@@ -45,8 +45,9 @@ check a change here against them:
   for an unpriced ``(provider, model)``, never raises (the fabric reports such
   a cost as unknown).
 
-The pipeline (see :mod:`arango_sparql.nl2sparql.pipeline`) wires these two
-into ``NLQueryEngine`` in Wave 3; isolating them here lets the
+The pipeline (see :mod:`arango_sparql.nl2sparql.pipeline`) wires
+:class:`EngineProviderBridge` and :class:`SparqlAdapter` into
+``NLQueryEngine`` in Wave 3; isolating them here lets the
 verdict-reproduction, record-accounting, and resolver-parity invariants be
 proven independently of the pipeline re-point.
 """
