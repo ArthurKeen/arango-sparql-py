@@ -25,10 +25,13 @@ five language seams). :class:`NlPipeline`, which the service's ``/nl-*``
 routes run, drives the same engine, adding per-call audit and cost
 records through :class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`.
 The contextual-data-fabric calls neither: since 2026-10-15 it runs the
-shared engine directly with an adapter of its own (its federation planner
-checks each query), using this package's model client (:mod:`.client`) and
-:class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`
-(arango-solutions-org/contextual-data-fabric#176). The adapter is imported
+shared engine directly by default, with an adapter of its own (its federation
+planner checks each query), using this package's model client (:mod:`.client`)
+and :class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`
+(arango-solutions-org/contextual-data-fabric#178). Its older loop stays
+selectable until a follow-up removes it
+(arango-solutions-org/contextual-data-fabric#176). What the fabric relies on
+here is listed in :mod:`.engine_adapter`. The adapter is imported
 lazily (``arango_sparql.nl2sparql.adapter``) so this package stays
 import-safe without the ``nl`` extra installed.
 

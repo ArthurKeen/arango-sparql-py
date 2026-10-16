@@ -26,10 +26,24 @@ pipeline injects into the engine:
   against the same schema the pipeline's final re-translate will use.
 
 The contextual-data-fabric also wires :class:`EngineProviderBridge` into an
-engine of its own (arango-solutions-org/contextual-data-fabric#176): it
-builds the bridge from a client, lets the engine call ``generate``, and reads
-``records`` (one per call, ``error`` set on a failed one) to tell a provider
-failure from its own. Those three are a contract with that repository.
+engine of its own (arango-solutions-org/contextual-data-fabric#178), and
+relies on these behaviours, which are a contract with that repository —
+check a change here against them:
+
+* :class:`EngineProviderBridge` is built from a client alone
+  (``EngineProviderBridge(client)``).
+* ``generate(system, user)`` returns ``(content, usage)`` with ``content``
+  already run through :func:`extract_sparql_from_response`, so a fenced reply
+  comes back fence-free.
+* ``records`` holds one :class:`~arango_sparql.nl2sparql.models.LLMCallRecord`
+  per call. On a failed call the record has ``error`` set and the exception is
+  **re-raised**; the fabric tells a provider failure from its own by reading
+  ``records[-1].error``.
+* :func:`~arango_sparql.nl2sparql.client.get_default_client` returns ``None``
+  when no API key resolves (the fabric then answers only overridden questions).
+* :func:`~arango_sparql.nl2sparql.cost.estimate_llm_cost_usd` returns ``0.0``
+  for an unpriced ``(provider, model)``, never raises (the fabric reports such
+  a cost as unknown).
 
 The pipeline (see :mod:`arango_sparql.nl2sparql.pipeline`) wires these two
 into ``NLQueryEngine`` in Wave 3; isolating them here lets the

@@ -19,8 +19,10 @@ Repository = "https://github.com/arango-solutions/arango-sparql-py"
 Issues = "https://github.com/arango-solutions/arango-sparql-py/issues"
 
 [tool.hatch.metadata]
-# The nl extra git-pins arango-query-core (deliberate, CC-9); hatchling
-# requires this flag for direct references.
+# No dependency is a direct reference today: the nl and dense extras take
+# arango-query-core from PyPI (ece1646 dropped the git pin). Hatchling needs
+# this flag for direct references, so it lets a deliberate git pin (CC-9) go
+# back in without a build change.
 allow-direct-references = true
 
 [project.optional-dependencies]

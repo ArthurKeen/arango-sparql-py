@@ -6,10 +6,11 @@ repo's :class:`~arango_sparql.nl2sparql.adapter.SparqlLanguageAdapter`
 validation, repair rules, guardrails). This replaces the original
 bootstrap stub. It was written for the contextual-data-fabric's NL
 front-end (M5 WP-D1), which does not call it: since 2026-10-15 the fabric
-runs the shared engine directly with an adapter of its own (its federation
-planner checks each query), using this package's model client and
+runs the shared engine directly by default, with an adapter of its own (its
+federation planner checks each query), using this package's model client and
 :class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`
-(arango-solutions-org/contextual-data-fabric#176).
+(arango-solutions-org/contextual-data-fabric#178; its older loop stays
+selectable until #176's follow-up removes it).
 
 The FastAPI ``/nl-*`` routes run :class:`~arango_sparql.nl2sparql.pipeline.NlPipeline`,
 which drives the same engine and adds richer per-call telemetry

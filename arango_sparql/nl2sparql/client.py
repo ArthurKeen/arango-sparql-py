@@ -27,6 +27,9 @@ Tests that exercise the pipeline never hit a real provider — the
 :class:`LLMClient` protocol is satisfied by a ``_FakeLLMClient`` test
 double that returns canned strings (see
 ``tests/nl2sparql/test_pipeline.py`` for the pattern).
+
+The contextual-data-fabric calls :func:`get_default_client`; what it relies
+on is listed in :mod:`arango_sparql.nl2sparql.engine_adapter`.
 """
 
 from __future__ import annotations
