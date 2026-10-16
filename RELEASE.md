@@ -1,9 +1,8 @@
 # Releasing `arango-sparql-py` to PyPI
 
-This repo is **not yet published** to PyPI (`pip install arango-sparql-py` → 404).
-It runs fine from source and via the git-pinned dependency graph; publishing is
-the separate **REQ-public-release-readiness** milestone. This runbook is the
-scaffold for that milestone. The workflow that does the upload —
+**Published on PyPI**: 0.2.0 (2026-09-21, a `workflow_dispatch` run with
+`target: pypi`) and 0.3.0 (2026-10-16, tag `v0.3.0`). Later releases follow
+"Cut a release" below, minus the one-time setup. The workflow that does the upload —
 [`.github/workflows/publish.yml`](.github/workflows/publish.yml) — is **inert
 until a `v*` tag is pushed**, and mirrors `arango-query-core`'s proven setup
 (Trusted Publishing / OIDC, no API tokens).
@@ -81,13 +80,17 @@ mirror to arango-solutions is a clean no-op there.
    uploads to <https://test.pypi.org/project/arango-sparql-py/> confirms the
    publisher is registered and working. A red `invalid-publisher` here is the
    analyzer's trap — fix the PyPI entry and re-run; **no tag has been burned.**
-5. Tag and push the real release (dual-push sends it to both remotes; the
-   workflow fires only on ArthurKeen, is skipped on the mirror):
+5. Bump `[project].version` in `pyproject.toml` **and** `arango_sparql.__version__`
+   (`tests/test_version_parity.py` keeps them equal), merge, then tag the merge
+   commit and push the tag (dual-push sends it to both remotes; the workflow fires
+   only on ArthurKeen, is skipped on the mirror):
    ```bash
-   git tag v0.2.0 && git push origin v0.2.0
+   git tag -a v0.3.0 -m "Release 0.3.0" && git push origin v0.3.0
    ```
-6. Verify: `pip install arango-sparql-py==0.2.0` in a clean venv.
-7. Switch CDF's dependency from the commit pin to `arango-sparql-py>=0.2.0,<0.3.0`.
+6. Verify: `pip install arango-sparql-py==<version>` in a clean venv.
+7. CDF pins this package **exactly** (`deploy/pins/arango-sparql-py.txt`, its
+   CC-9): move that pin by a CDF PR and run CDF's engine-free suite and live
+   golden gate on it.
 
 ## Notes
 
