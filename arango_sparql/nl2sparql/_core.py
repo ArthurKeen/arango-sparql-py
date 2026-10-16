@@ -4,14 +4,19 @@
 repo's :class:`~arango_sparql.nl2sparql.adapter.SparqlLanguageAdapter`
 (the five language seams — grammar prompt, corpus, transpiler-backed
 validation, repair rules, guardrails). This replaces the original
-bootstrap stub and is the surface the contextual-data-fabric's NL
-front-end (M5 WP-D1) consumes as a library.
+bootstrap stub. It was written for the contextual-data-fabric's NL
+front-end (M5 WP-D1), which does not call it: since 2026-10-15 the fabric
+runs the shared engine directly by default, with an adapter of its own (its
+federation planner checks each query), using this package's model client and
+:class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`
+(arango-solutions-org/contextual-data-fabric#178). Its older loop stays
+selectable until a follow-up removes it
+(arango-solutions-org/contextual-data-fabric#176).
 
-The FastAPI ``/nl`` routes still run :class:`~arango_sparql.nl2sparql.pipeline.NlPipeline`,
-which carries richer per-call telemetry (``LLMCallRecord`` list, cost
-envelope) than the engine's aggregate counters; folding NlPipeline onto
-the engine follows once the cypher-side re-point settles the seam API
-(nl-engine-extraction proposal, steps 2/3).
+The FastAPI ``/nl-*`` routes run :class:`~arango_sparql.nl2sparql.pipeline.NlPipeline`,
+which drives the same engine and adds richer per-call telemetry
+(``LLMCallRecord`` list, cost envelope) than the engine's aggregate
+counters, through :class:`~arango_sparql.nl2sparql.engine_adapter.EngineProviderBridge`.
 
 :class:`NL2SparqlResult` mirrors ``arango_cypher.nl2cypher.NL2CypherResult``
 field-for-field where the semantics carry over.

@@ -25,6 +25,8 @@ Unknown ``(provider, model)`` pairs return ``0.0`` rather than raising
 so a new model name added upstream doesn't crash the request — the
 audit calls for ``cost`` on the log line, not for cost accuracy.
 Treat ``cost_usd=0.0`` as "unpriced" not "free" when scanning logs.
+The contextual-data-fabric's metering relies on that reading; see
+:mod:`arango_sparql.nl2sparql.engine_adapter` for what it depends on here.
 """
 
 from __future__ import annotations
