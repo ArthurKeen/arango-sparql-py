@@ -1219,11 +1219,13 @@ a port of `arango-cypher-py`'s `_build_schema_summary` (SPARQL prefixed names
 instead of Cypher labels). The bundle is the connected session's cached analyzer
 mapping (`/nl-translate`, `/nl-explain`, `/nl-execute`); it is read cache-only
 and never waits on an analysis (§6.3.5), and it is omitted when there is no
-session or no `:` namespace. It is load-bearing, not decoration: the analyzer's
-OWL export declares classes and object properties but **no datatype
-properties**, so without the summary the model never sees a field name — on
-prod.demo `IAM` (1,576 fields) it guessed `:fileName` (0 rows) where the summary
-gives `:file_name` (the real answer). Cache hit-rate is observable as the
+session or no `:` namespace. It was load-bearing while the analyzer's OWL
+export declared no datatype properties (arangodb-schema-analyzer < 0.15.1):
+on prod.demo `IAM` (1,576 fields) the model guessed `:fileName` (0 rows) where
+the summary gives `:file_name` (the real answer). From 0.15.1 the OWL declares
+every field as `owl:DatatypeProperty` (a union domain when several classes
+share a name); the summary remains the compact per-class index the prompt
+leads with (`MAX_PROPS` per class, relationships with their endpoints). Cache hit-rate is observable as the
 `cached_tokens / prompt_tokens` ratio in `NL2SparqlResult`.
 
 ### 7.3 Repair-loop algorithm

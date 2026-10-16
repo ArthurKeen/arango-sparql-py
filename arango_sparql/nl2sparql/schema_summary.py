@@ -1,11 +1,13 @@
 """Schema summary for the NL→SPARQL prompt, built from the analyzer's mapping.
 
-The prompt used to carry only the OWL ontology, and the schema analyzer's OWL
-export (arangodb-schema-analyzer 0.14) declares classes and object properties
-but **no datatype properties** — so the model never saw a single field name.
-On prod.demo ``IAM`` the analyzer found 1,576 fields across 113 types, yet the
-model had to guess, and reached for the ``phys:typeValue`` storage annotation
-(2026-10-08).
+The prompt used to carry only the OWL ontology, and until
+arangodb-schema-analyzer 0.15.1 its OWL export declared classes and object
+properties but **no datatype properties** — so the model never saw a single
+field name. On prod.demo ``IAM`` the analyzer found 1,576 fields across 113
+types, yet the model had to guess, and reached for the ``phys:typeValue``
+storage annotation (2026-10-08). From 0.15.1 the OWL declares every field
+(``owl:DatatypeProperty``); this summary stays the compact per-class index the
+prompt leads with (PRD §7.2).
 
 Ported from arango-cypher-py's ``nl2cypher._core._build_schema_summary``,
 which never relies on OWL for its NL context: every type with up to
