@@ -353,3 +353,63 @@ def test_a_non_transport_failure_reports_itself_not_transport(monkeypatch: pytes
     messages = " ".join(w.get("message", "") for w in outcome.warnings)
     assert "ValueError" in messages and "IAM-TERRAFORM" in messages
     assert "transport" not in messages
+
+
+# ---------------------------------------------------------------------------
+# Caller postconditions (the engine's semantic-invariant seam)
+# ---------------------------------------------------------------------------
+
+
+class _RejectFirst:
+    """A postcondition that rejects the first valid candidate it sees."""
+
+    code = "reject_first"
+
+    def __init__(self) -> None:
+        self.seen: list[str] = []
+
+    def check(self, query, *, context):
+        from arango_query_core.nl.postconditions import PostconditionViolation
+
+        self.seen.append(query)
+        if len(self.seen) == 1:
+            return PostconditionViolation(reason="Returned no rows.", suggested_hint="Check the labels.")
+        return None
+
+    def prompt_section(self) -> str:
+        return ""
+
+
+class TestPostconditions:
+    def test_a_violation_is_fed_back_and_the_next_candidate_is_kept(self) -> None:
+        client = ScriptedLLMClient(
+            [_llm_response(_wrap(GOOD_SPARQL)), _llm_response(_wrap(ANOTHER_GOOD_SPARQL))],
+            latency_ms=0,
+        )
+        check = _RejectFirst()
+        outcome = NlPipeline(
+            client=client, resolver=_resolver(), ontology_ttl=ONTOLOGY, postconditions=[check]
+        ).run("Find all people")
+        assert outcome.aql
+        assert outcome.sparql.strip() == ANOTHER_GOOD_SPARQL
+        assert check.seen == [GOOD_SPARQL, ANOTHER_GOOD_SPARQL]
+        retry_turn = client.calls[1][-1]["content"]
+        assert "Returned no rows." in retry_turn and "Check the labels." in retry_turn
+
+    def test_a_violation_with_no_budget_left_fails_closed(self) -> None:
+        client = ScriptedLLMClient([_llm_response(_wrap(GOOD_SPARQL))], latency_ms=0)
+        outcome = NlPipeline(
+            client=client,
+            resolver=_resolver(),
+            ontology_ttl=ONTOLOGY,
+            max_repairs=0,
+            postconditions=[_RejectFirst()],
+        ).run("Find all people")
+        assert outcome.aql == ""
+        assert any(w.get("code") == "W_NL_TRANSLATION_FAILED" for w in outcome.warnings)
+
+    def test_no_postconditions_leaves_the_loop_unchanged(self) -> None:
+        client = ScriptedLLMClient([_llm_response(_wrap(GOOD_SPARQL))], latency_ms=0)
+        pipeline = NlPipeline(client=client, resolver=_resolver(), ontology_ttl=ONTOLOGY)
+        assert pipeline.postconditions == ()
+        assert pipeline.run("Find all people").llm_calls == 1

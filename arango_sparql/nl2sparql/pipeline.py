@@ -55,12 +55,14 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from arango_query_core.nl import FewShotIndex
 from arango_query_core.nl.engine import NLQueryEngine
 from arango_query_core.nl.grounding import LabelIndex
+from arango_query_core.nl.postconditions import Postcondition
 
 if TYPE_CHECKING:
     # Seam 7 (predicate/schema-convention grounding, 07.4) — PredicateIndex is
@@ -156,6 +158,7 @@ class NlPipeline:
         path_k: int = 5,
         path_index: ClassPathIndex | None = None,
         schema_summary: str = "",
+        postconditions: Sequence[Postcondition] = (),
     ) -> None:
         self.client = client
         self.resolver = resolver
@@ -186,6 +189,11 @@ class NlPipeline:
         # SparqlAdapter.path_index() returns as-is (ungrounded, no-op).
         self.path_k = path_k
         self.path_index = path_index
+        # Caller postconditions (the engine's semantic-invariant seam): run on
+        # every valid candidate, a violation is fed back into the next attempt
+        # through the same repair budget, and generation fails closed when the
+        # budget is spent. Empty (the default) leaves the loop unchanged.
+        self.postconditions = tuple(postconditions)
 
     # ------------------------------------------------------------------
     # Public surface
@@ -224,6 +232,7 @@ class NlPipeline:
             predicate_k=self.predicate_k,
             path_k=self.path_k,
             max_retries=self.repair_loop.max_repairs,
+            postconditions=self.postconditions,
         )
         t0 = time.perf_counter()
 
