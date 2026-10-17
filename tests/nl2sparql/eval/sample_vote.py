@@ -81,21 +81,33 @@ def answer_signature(store: Any, sparql: str, aql: str, label_map: dict[str, str
     projected columns still make a different signature — the judge's projection
     tolerance needs the gold's arity, which a selector does not have.
     """
+    if not aql:
+        return SIG_ERROR
+    return executed_signature(store, sparql, label_map)[0]
+
+
+def executed_signature(store: Any, sparql: str, label_map: dict[str, str]) -> tuple[str, str | None]:
+    """Execute ``sparql`` and return ``(signature, error)``; see :func:`answer_signature`.
+
+    ``error`` is the engine's message when execution failed (signature
+    :data:`SIG_ERROR`), else ``None``. The caller has already established that
+    the query transpiles.
+    """
     from tests.helpers.oxi import oxi_query
     from tests.nl2sparql.eval.runner import _execution_row_key
 
-    if not aql or not sparql.strip():
-        return SIG_ERROR
+    if not sparql.strip():
+        return SIG_ERROR, "empty query"
     try:
         result = oxi_query(store, sparql.replace("xsd:int(", "xsd:integer("))
-    except (SyntaxError, RuntimeError, ValueError):
-        return SIG_ERROR
+    except (SyntaxError, RuntimeError, ValueError) as exc:
+        return SIG_ERROR, f"{type(exc).__name__}: {exc}"
     if result.kind == "ask":
-        return f"ASK:{bool(result.boolean)}"
+        return f"ASK:{bool(result.boolean)}", None
     keys = sorted({_execution_row_key(r, label_map) for r in result.rows or []})
     if not keys:
-        return SIG_EMPTY
-    return json.dumps(keys, ensure_ascii=False)
+        return SIG_EMPTY, None
+    return json.dumps(keys, ensure_ascii=False), None
 
 
 def vote(candidates: Sequence[Candidate], rule: str) -> int:

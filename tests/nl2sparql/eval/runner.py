@@ -17,6 +17,7 @@ import math
 import random
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -640,13 +641,24 @@ class Arm:
     path_k: int
     path_index: Any
 
-    def pipeline(self, case: dict[str, Any], client: LLMClient | None = None) -> NlPipeline:
+    def pipeline(
+        self,
+        case: dict[str, Any],
+        client: LLMClient | None = None,
+        *,
+        max_repairs: int | None = None,
+        postconditions: Sequence[Any] = (),
+    ) -> NlPipeline:
+        """One case's pipeline. ``max_repairs`` overrides the config's budget and
+        ``postconditions`` reach the engine's semantic-check seam (W1b's
+        execution feedback); both default to the config's own behaviour."""
         ontology_ttl = case.get("ontology", self.shared_ontology)
         return NlPipeline(
             client=client if client is not None else _client_for(self.config, case),
             resolver=SchemaResolver.from_turtle(ontology_ttl),
             ontology_ttl=ontology_ttl,
-            max_repairs=self.max_repairs,
+            max_repairs=self.max_repairs if max_repairs is None else max_repairs,
+            postconditions=postconditions,
             few_shot_k=self.few_shot_k,
             few_shot_index=self.few_shot_index,
             grounding_k=self.grounding_k,
