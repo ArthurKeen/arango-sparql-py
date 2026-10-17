@@ -321,9 +321,10 @@ def _sample(args: argparse.Namespace) -> int:
                 fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
             if n_done % 25 == 0 or n_done == len(todo):
                 print(f"  {n_done}/{len(todo)} done, ${spent[0]:.3f} so far, {errors} raised")
+    stopped = f" (spend stop ${args.budget_usd:.2f} reached)" if skipped else ""
     print(
         f"wrote {out}; this invocation ${spent[0]:.3f}, {errors} chains raised, "
-        f"{skipped} not started (budget ${args.budget_usd:.2f} reached)"
+        f"{skipped} not started{stopped}"
     )
     return 1 if errors or skipped else 0
 
