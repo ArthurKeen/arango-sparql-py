@@ -174,6 +174,18 @@ def chain_budget(replayed: bool) -> tuple[int, int]:
     return real_calls - 1, CANDIDATE_BUDGET - 1
 
 
+def apply_budget(pipeline: Any, max_repairs: int) -> Any:
+    """Give ``pipeline`` exactly ``max_repairs`` retries.
+
+    ``RepairLoop`` clamps a requested budget at the product ceiling
+    (``MAX_REPAIRS_CEILING`` = 5), which would hold a chain to five real calls
+    against the resample arm's twelve. The experiment needs the equal budget,
+    so it sets the loop's public attribute after construction.
+    """
+    pipeline.repair_loop.max_repairs = max_repairs
+    return pipeline
+
+
 def select(executed: Sequence[dict[str, Any]]) -> int | None:
     """Index of the candidate to answer with: the first that returned something,
     else the first that ran (an empty answer), else ``None``."""
@@ -239,7 +251,7 @@ def _sample(args: argparse.Namespace) -> int:
         client = _client_for(arm.config, case)
         if replayed:
             client = ReplayFirstClient(client, base["sparql"])
-        pipeline = arm.pipeline(case, client, max_repairs=max_repairs, postconditions=[check])
+        pipeline = apply_budget(arm.pipeline(case, client, postconditions=[check]), max_repairs)
         t0 = time.perf_counter()
         outcome = pipeline.run(case["nl"], params=case.get("params"))
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -272,6 +284,8 @@ def _sample(args: argparse.Namespace) -> int:
             "sample": base["sample"],
             "replayed": replayed,
             "engine_ok": bool(outcome.aql),
+            # Why the engine stopped when it did (budget, transport, guardrail).
+            "warnings": [f"{w.get('code')}: {str(w.get('message', ''))[:300]}" for w in outcome.warnings],
             "candidates": [
                 {"signature": c["signature"][:200], "error": c["error"], "attempt": c["attempt"]}
                 for c in check.executed

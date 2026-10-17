@@ -646,18 +646,16 @@ class Arm:
         case: dict[str, Any],
         client: LLMClient | None = None,
         *,
-        max_repairs: int | None = None,
         postconditions: Sequence[Any] = (),
     ) -> NlPipeline:
-        """One case's pipeline. ``max_repairs`` overrides the config's budget and
-        ``postconditions`` reach the engine's semantic-check seam (W1b's
-        execution feedback); both default to the config's own behaviour."""
+        """One case's pipeline. ``postconditions`` reach the engine's
+        semantic-check seam (W1b's execution feedback); none by default."""
         ontology_ttl = case.get("ontology", self.shared_ontology)
         return NlPipeline(
             client=client if client is not None else _client_for(self.config, case),
             resolver=SchemaResolver.from_turtle(ontology_ttl),
             ontology_ttl=ontology_ttl,
-            max_repairs=self.max_repairs if max_repairs is None else max_repairs,
+            max_repairs=self.max_repairs,
             postconditions=postconditions,
             few_shot_k=self.few_shot_k,
             few_shot_index=self.few_shot_index,

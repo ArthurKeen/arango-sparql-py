@@ -15,6 +15,7 @@ from tests.nl2sparql.eval.feedback_retry import (
     EMPTY_REASON,
     ExecutionFeedback,
     ReplayFirstClient,
+    apply_budget,
     chain_budget,
     compare,
     disjoint_runs,
@@ -185,6 +186,31 @@ def test_a_chain_that_stays_empty_stops_at_the_cap(store, labels) -> None:
     assert len(check.executed) == CANDIDATE_BUDGET
     assert len(inner.calls) == CANDIDATE_BUDGET - 1
     assert select(check.executed) == 0  # all empty: the first that ran
+
+
+def test_a_chain_gets_its_whole_budget_past_the_product_ceiling(store, labels) -> None:
+    """Regression (W1b smoke run): RepairLoop clamps max_repairs at 5, so chains
+    stopped after five real calls instead of the pre-registered twelve."""
+    from arango_sparql.nl2sparql import LLMResponse, NlPipeline, ScriptedLLMClient
+    from arango_sparql.translate.resolver import SchemaResolver
+
+    bad = LLMResponse(content="```sparql\nSELECT WHERE { broken\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2)
+    good = LLMResponse(content=f"```sparql\n{ANSWERED}\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2)
+    inner = ScriptedLLMClient([bad] * 8 + [good], latency_ms=0)
+    max_repairs, cap = chain_budget(replayed=True)
+    check = ExecutionFeedback(store=store, label_map=labels, cap=cap)
+    pipeline = NlPipeline(
+        client=ReplayFirstClient(inner, EMPTY),
+        resolver=SchemaResolver.from_turtle(ONTOLOGY),
+        ontology_ttl=ONTOLOGY,
+        max_repairs=max_repairs,
+        postconditions=[check],
+    )
+    assert pipeline.repair_loop.max_repairs == 5  # the product ceiling
+    outcome = apply_budget(pipeline, max_repairs).run("Who are the people?")
+    assert pipeline.repair_loop.max_repairs == 12
+    assert outcome.aql and outcome.sparql == ANSWERED
+    assert len(inner.calls) == 9
 
 
 # --- scoring ----------------------------------------------------------------
