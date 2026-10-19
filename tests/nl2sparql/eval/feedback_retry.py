@@ -270,8 +270,13 @@ def _sample(args: argparse.Namespace) -> int:
                 except (SparqlError, ValueError):
                     aql, bind_vars = "", {}
                 judged = PipelineOutcome(
-                    nl=case["nl"], sparql=chosen_sparql, aql=aql, bind_vars=bind_vars,
-                    warnings=[], latency_ms=0, repaired=False,
+                    nl=case["nl"],
+                    sparql=chosen_sparql,
+                    aql=aql,
+                    bind_vars=bind_vars,
+                    warnings=[],
+                    latency_ms=0,
+                    repaired=False,
                 )
             passed, note = _judge(arm.judge_name, case, judged, arm.data_ttl)
         real_calls = outcome.llm_calls - (1 if replayed else 0)
@@ -362,7 +367,9 @@ def per_question(
         n = len(mine)
         bad = [s for s in mine if _bad(s["signature"])]
         if any(s["passed"] for s in bad):
-            raise ValueError(f"{case}: an empty or failed sample passed; the continuation model assumes none do")
+            raise ValueError(
+                f"{case}: an empty or failed sample passed; the continuation model assumes none do"
+            )
         p_e = len(bad) / n
         p_np = sum(s["passed"] for s in mine if not _bad(s["signature"])) / n
         missing = [s["sample"] for s in bad if (case, s["sample"]) not in chains_by]
@@ -494,7 +501,9 @@ def _score(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     sub = parser.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("sample", help="one feedback chain per empty-or-failed W1a sample (model calls)")
     p.add_argument("--samples", required=True, help="W1a's sample_vote.py JSONL")

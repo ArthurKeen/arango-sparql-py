@@ -44,7 +44,7 @@ DATA = """
 :ada a :Person ; :name "Ada" .
 """
 
-ANSWERED = 'PREFIX : <http://ex.org/>\nSELECT ?n WHERE { ?s a :Person ; :name ?n }'
+ANSWERED = "PREFIX : <http://ex.org/>\nSELECT ?n WHERE { ?s a :Person ; :name ?n }"
 EMPTY = 'PREFIX : <http://ex.org/>\nSELECT ?n WHERE { ?s a :Person ; :name ?n FILTER(?n = "Nobody") }'
 
 
@@ -110,7 +110,9 @@ def test_feedback_adds_nothing_to_the_system_prompt(store, labels) -> None:
 def test_replay_returns_the_recorded_query_once_at_no_cost_then_delegates() -> None:
     from arango_sparql.nl2sparql import LLMResponse, ScriptedLLMClient
 
-    inner = ScriptedLLMClient([LLMResponse(content="later", prompt_tokens=7, completion_tokens=3, total_tokens=10)])
+    inner = ScriptedLLMClient(
+        [LLMResponse(content="later", prompt_tokens=7, completion_tokens=3, total_tokens=10)]
+    )
     client = ReplayFirstClient(inner, "SELECT * WHERE { ?s ?p ?o }")
     first = client.generate([{"role": "user", "content": "q"}])
     assert "SELECT * WHERE" in first.content and first.prompt_tokens == 0 and first.completion_tokens == 0
@@ -145,7 +147,11 @@ def test_a_chain_replays_the_empty_base_feeds_back_and_keeps_the_answer(store, l
     from arango_sparql.translate.resolver import SchemaResolver
 
     inner = ScriptedLLMClient(
-        [LLMResponse(content=f"```sparql\n{ANSWERED}\n```", prompt_tokens=10, completion_tokens=5, total_tokens=15)],
+        [
+            LLMResponse(
+                content=f"```sparql\n{ANSWERED}\n```", prompt_tokens=10, completion_tokens=5, total_tokens=15
+            )
+        ],
         latency_ms=0,
     )
     max_repairs, cap = chain_budget(replayed=True)
@@ -171,7 +177,11 @@ def test_a_chain_that_stays_empty_stops_at_the_cap(store, labels) -> None:
     from arango_sparql.translate.resolver import SchemaResolver
 
     inner = ScriptedLLMClient(
-        [LLMResponse(content=f"```sparql\n{EMPTY}\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2)],
+        [
+            LLMResponse(
+                content=f"```sparql\n{EMPTY}\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2
+            )
+        ],
         latency_ms=0,
     )
     max_repairs, cap = chain_budget(replayed=True)
@@ -194,8 +204,12 @@ def test_a_chain_gets_its_whole_budget_past_the_product_ceiling(store, labels) -
     from arango_sparql.nl2sparql import LLMResponse, NlPipeline, ScriptedLLMClient
     from arango_sparql.translate.resolver import SchemaResolver
 
-    bad = LLMResponse(content="```sparql\nSELECT WHERE { broken\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2)
-    good = LLMResponse(content=f"```sparql\n{ANSWERED}\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2)
+    bad = LLMResponse(
+        content="```sparql\nSELECT WHERE { broken\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2
+    )
+    good = LLMResponse(
+        content=f"```sparql\n{ANSWERED}\n```", prompt_tokens=1, completion_tokens=1, total_tokens=2
+    )
     inner = ScriptedLLMClient([bad] * 8 + [good], latency_ms=0)
     max_repairs, cap = chain_budget(replayed=True)
     check = ExecutionFeedback(store=store, label_map=labels, cap=cap)
@@ -233,11 +247,25 @@ def test_resample_continuation_matches_enumeration() -> None:
 
 
 def _s(case, j, sig, passed, calls=1, cost=0.01):
-    return {"case": case, "sample": j, "signature": sig, "passed": passed, "llm_calls": calls, "cost_usd": cost}
+    return {
+        "case": case,
+        "sample": j,
+        "signature": sig,
+        "passed": passed,
+        "llm_calls": calls,
+        "cost_usd": cost,
+    }
 
 
 def _c(case, j, passed, calls=2, cost=0.02):
-    return {"case": case, "sample": j, "passed": passed, "real_calls": calls, "cost_usd": cost, "engine_ok": passed}
+    return {
+        "case": case,
+        "sample": j,
+        "passed": passed,
+        "real_calls": calls,
+        "cost_usd": cost,
+        "engine_ok": passed,
+    }
 
 
 def test_per_question_needs_a_chain_for_every_failed_sample() -> None:
