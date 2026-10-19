@@ -894,12 +894,19 @@ class AlgebraVisitor:
         # Visit the BGP / OPTIONAL / FILTER chain so every variable the
         # aggregates and group keys reference is bound in var_to_expr.
         self.visit(group.p)
+        # The pre-COLLECT scope, for aggregate arguments. Only variables bound
+        # before the COLLECT are visible inside ``AGGREGATE`` — a COLLECT key
+        # alias there is ArangoDB ERR 1512 ("use of unknown variable … in
+        # AGGREGATE expression") — but the samples pass below rebinds each
+        # GROUP BY variable to its key alias for the projection.
+        pattern_scope = dict(self.state.var_to_expr)
 
         # Pre-allocate the COLLECT-key aliases for every Aggregate_Sample_
-        # (one per GROUP BY variable). We do this in a first pass so the
-        # main pass can see those bindings already in place when it
-        # emits the AGGREGATE list — important for nested expressions
-        # like ``COUNT(?d)`` over a grouping variable ``?d``.
+        # (one per GROUP BY variable), and rebind each GROUP BY variable to
+        # its key alias — what the projection, HAVING and ORDER BY read after
+        # the COLLECT. Aggregate *arguments* read ``pattern_scope`` instead:
+        # ``COUNT(?d)`` over a grouping variable ``?d`` must count ``doc.d``,
+        # since the key alias is not visible inside AGGREGATE.
         keys: list[tuple[str, str]] = []  # (alias, expression) for COLLECT
         sample_remap: dict[str, str] = {}  # __agg_N__ for samples → key alias
         for agg in node.A:
@@ -923,14 +930,16 @@ class AlgebraVisitor:
         count_into: str | None = None
         non_sample_aggs = [a for a in node.A if a.name != "Aggregate_Sample"]
 
-        # Fast-path: a single COUNT (any var, no DISTINCT) collapses to
-        # the AQL idiom ``WITH COUNT INTO <c>`` — more readable than
-        # ``AGGREGATE c = COUNT(<expr>)`` and the planner treats them
-        # identically.
+        # Fast-path: a single non-DISTINCT COUNT collapses to the AQL idiom
+        # ``WITH COUNT INTO <c>``. That counts rows, while SPARQL's COUNT
+        # counts the rows where its argument has a value (§18.5.1.2) and an
+        # unbound variable is null here (issue #46), so the idiom stands in
+        # only when every row binds the argument (:meth:`_counts_every_row`).
         is_count_shorthand = (
             len(non_sample_aggs) == 1
             and non_sample_aggs[0].name == "Aggregate_Count"
             and non_sample_aggs[0].distinct != "DISTINCT"
+            and self._counts_every_row(non_sample_aggs[0], pattern_scope)
         )
 
         for agg in non_sample_aggs:
@@ -947,13 +956,38 @@ class AlgebraVisitor:
             if aql_func is None:
                 raise UnsupportedSparqlError(f"SPARQL aggregate {agg.name!r} is not yet supported")
 
-            arg_expr = self._aggregate_arg_expr(agg)
-
             if agg.name == "Aggregate_Count":
-                # Generic COUNT path (mixed with other aggregates, or
-                # COUNT DISTINCT). ``COUNT_DISTINCT`` is an AQL builtin.
-                func = "COUNT_DISTINCT" if distinct else "COUNT"
-                aggregates.append((agg_alias, f"{func}({arg_expr})"))
+                if distinct and agg.vars == "*":
+                    # Counting distinct *solutions* needs every in-scope
+                    # variable as one value; ``COUNT_DISTINCT(1)`` (what this
+                    # used to emit) is 1 whatever the data. Refuse until it is
+                    # built and cross-validated.
+                    raise UnsupportedSparqlError(
+                        "COUNT(DISTINCT *) is not supported yet; count DISTINCT over named variables"
+                    )
+                # A variable the pattern never binds is unbound in every
+                # solution, so it counts nothing: ``null`` below.
+                arg_expr = self._aggregate_arg_expr(agg, pattern_scope, unbound="null")
+                # AQL's COUNT and COUNT_DISTINCT both count null, and an
+                # unbound variable is null here (issue #46), so count only
+                # the rows where the argument has a value — except where
+                # every row has one, and the cheaper COUNT is the same.
+                if distinct:
+                    # UNIQUE keeps null as one of the values; it is dropped
+                    # where the count is read (projection / HAVING / ORDER
+                    # BY), as GROUP_CONCAT applies its separator below.
+                    aggregates.append((agg_alias, f"UNIQUE({arg_expr})"))
+                    self.state.var_to_expr[agg_var] = f"LENGTH(REMOVE_VALUE({agg_alias}, null))"
+                    continue
+                if self._counts_every_row(agg, pattern_scope):
+                    aggregates.append((agg_alias, f"COUNT({arg_expr})"))
+                else:
+                    aggregates.append((agg_alias, f"SUM({arg_expr} != null ? 1 : 0)"))
+                    if not keys:
+                        # Ungrouped over no rows, SUM is null and the
+                        # SPARQL count is 0.
+                        self.state.var_to_expr[agg_var] = f"NOT_NULL({agg_alias}, 0)"
+                        continue
             elif agg.name == "Aggregate_GroupConcat":
                 # SPARQL GROUP_CONCAT defaults to a single-space
                 # separator; the user can override via ``SEPARATOR=…``,
@@ -975,6 +1009,7 @@ class AlgebraVisitor:
                 # positional argument controls variable substitution. Calling
                 # ``agg.get("separator", " ")`` therefore returned the key
                 # name ``"separator"`` when the clause omitted SEPARATOR.
+                arg_expr = self._aggregate_arg_expr(agg, pattern_scope)
                 raw_sep = getattr(agg, "separator", None)
                 separator = _term_to_python(raw_sep) if raw_sep is not None else " "
                 sep_bind = self.builder.bind(separator, hint="sep")
@@ -991,6 +1026,7 @@ class AlgebraVisitor:
                     raise UnsupportedSparqlError(
                         f"DISTINCT is only supported on COUNT aggregates; got DISTINCT inside {agg.name!r}"
                     )
+                arg_expr = self._aggregate_arg_expr(agg, pattern_scope)
                 aggregates.append((agg_alias, f"{aql_func}({arg_expr})"))
 
             self.state.var_to_expr[agg_var] = agg_alias
@@ -1009,12 +1045,16 @@ class AlgebraVisitor:
         if keys:
             self.builder.set_empty_result_fallback()
 
-    def _aggregate_arg_expr(self, agg: Any) -> str:
+    def _aggregate_arg_expr(self, agg: Any, scope: dict[str, str], *, unbound: str | None = None) -> str:
         """Translate the argument of a SPARQL aggregate to an AQL expression.
 
         Handles three input shapes rdflib produces:
           * ``vars == '*'`` (only legal for COUNT(*)) → AQL ``1``
-          * ``vars`` is a Variable → look up via ``var_to_expr``
+          * ``vars`` is a Variable → look up in ``scope``, the pre-COLLECT
+            bindings (a GROUP BY variable's key alias is not visible inside
+            ``AGGREGATE``). A variable the pattern never binds returns
+            ``unbound`` when the caller gives one (COUNT: ``null``, which
+            counts nothing) and is refused otherwise.
           * ``vars`` is a richer expression node → fall through to the
             FILTER expression translator.
         """
@@ -1022,11 +1062,32 @@ class AlgebraVisitor:
         if v == "*":
             return "1"
         if isinstance(v, Variable):
-            mapped = self.state.var_to_expr.get(str(v))
+            mapped = scope.get(str(v))
             if mapped is None:
+                if unbound is not None:
+                    return unbound
                 raise UnsupportedSparqlError(f"aggregate references unbound variable ?{v}")
             return mapped
         return self._translate_expr(v)
+
+    def _counts_every_row(self, agg: Any, scope: dict[str, str]) -> bool:
+        """Whether ``COUNT(<agg's argument>)`` equals the number of rows.
+
+        True for ``COUNT(*)``, and for a variable bound to the identity of a
+        document this builder scans at the top level
+        (:meth:`AqlQueryBuilder.scanned_aliases`): that document exists in
+        every row, and ``subject_ref`` falls back to its ``_id``, so the value
+        is never null. Anything else — an attribute, an OPTIONAL variable, a
+        UNION arm's column, an expression — may be null in some rows.
+        """
+        if agg.vars == "*":
+            return True
+        if not isinstance(agg.vars, Variable):
+            return False
+        expr = scope.get(str(agg.vars))
+        return expr is not None and any(
+            expr == subject_ref(alias) for alias in self.builder.scanned_aliases()
+        )
 
     # ------------------------------------------------------------------
     # ORDER BY — list of OrderConditions, each with expr + direction

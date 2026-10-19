@@ -183,6 +183,9 @@ class AqlQueryBuilder:
     _bind_vars: dict[str, Any] = field(default_factory=dict)
     _body_clauses: list[_Clause] = field(default_factory=list)
     """FOR / FILTER / LET / RAW clauses, in the order the visitor adds them."""
+    _scanned_aliases: list[str] = field(default_factory=list)
+    """Aliases bound by a collection scan in *this* builder's body
+    (:meth:`for_` / :meth:`for_sharded`); see :meth:`scanned_aliases`."""
     _with_collections: list[str] = field(default_factory=list)
     """Sharded-family member collection names whose ``@@coll`` bind
     references must appear in the leading ``WITH`` clause that
@@ -281,7 +284,20 @@ class AqlQueryBuilder:
             raise ValueError(f"invalid FOR alias: {alias!r}")
         coll_ref = self.bind_collection(collection)
         self._body_clauses.append(_Clause(_ClauseKind.FOR, f"FOR {alias} IN {coll_ref}"))
+        self._scanned_aliases.append(alias)
         return self
+
+    def scanned_aliases(self) -> tuple[str, ...]:
+        """Aliases of the documents this builder's own body scans.
+
+        Each one is a document in every row the body produces, never null:
+        it is bound by a top-level ``FOR`` over a collection (or a shard
+        family), and every subquery — OPTIONAL, MINUS / EXISTS, sub-select,
+        UNION arm — is built in a child builder (:meth:`create_child`), so
+        its scans are not listed here. ``COUNT`` relies on this to know when
+        counting rows equals counting bound values (issue #46).
+        """
+        return tuple(self._scanned_aliases)
 
     def for_traversal(
         self,
@@ -385,6 +401,7 @@ class AqlQueryBuilder:
         body = ",\n  ".join(sub_scans)
         clause = f"FOR {alias} IN UNION_DISTINCT(\n  {body}\n)"
         self._body_clauses.append(_Clause(_ClauseKind.FOR, clause))
+        self._scanned_aliases.append(alias)
         return self
 
     def filter_eq(self, lhs: str, rhs_bind_placeholder: str) -> AqlQueryBuilder:

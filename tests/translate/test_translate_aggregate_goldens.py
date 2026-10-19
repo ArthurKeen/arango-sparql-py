@@ -13,6 +13,7 @@ import pytest
 import yaml
 
 from arango_sparql.api import translate
+from arango_sparql.errors import UnsupportedSparqlError
 from arango_sparql.translate.resolver import SchemaResolver
 
 GOLDEN_PATH = Path(__file__).parent / "aggregate.yml"
@@ -119,3 +120,13 @@ def test_having_does_not_turn_filtered_groups_into_an_empty_solution() -> None:
 
     assert "LET results" not in result.aql
     assert "FILTER" in result.aql
+
+
+def test_count_distinct_star_is_refused_not_mistranslated() -> None:
+    """COUNT(DISTINCT *) counts distinct solutions. It used to emit
+    ``COUNT_DISTINCT(1)``, which is 1 whatever the data (found with #46)."""
+    with pytest.raises(UnsupportedSparqlError, match=r"COUNT\(DISTINCT \*\)"):
+        translate(
+            "PREFIX : <http://example/> SELECT (COUNT(DISTINCT *) AS ?c) WHERE { ?s :p ?o }",
+            resolver=SchemaResolver.from_turtle(""),
+        )
