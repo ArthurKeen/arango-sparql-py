@@ -219,6 +219,20 @@ per commit — if you can't describe it in one line it's too big. Use scoped,
 descriptive messages (`fix(curation): atomic reparent endpoint`), not "updates" or
 "wip".
 
+### Fix upstream, don't fork
+We own arango-query-core, r2g, arango-schema-analyzer, arango-cypher-py and
+arango-entity-resolution, and other repos consume this one. When an owned library
+lacks something or gets it wrong, fix it in the library or file an issue on the
+repo that leads (the one with recent pull requests — check both owners with
+`gh pr list`), not here. A workaround that cannot wait for a release sits behind
+the seam the library would provide and is marked on one line —
+`# upstream: <owner>/<repo>#<n> — remove when <condition>` — which
+`tests/test_upstream_markers.py` checks; it is removed in the pin bump that ships
+the fix. Copying library code, re-implementing its entry point around its
+low-level pieces, or naming a class after one it exports is a fork; a deliberate
+one is an ADR here plus an issue there. Full text:
+`.cursor/rules/fix-upstream-dont-fork.mdc`.
+
 ## Arango UI design rules
 
 All interfaces must match the ArangoDB web platform (Agentic AI Suite, chat,
