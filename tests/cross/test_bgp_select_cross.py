@@ -385,6 +385,12 @@ AGGREGATE_CASES = [
         "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?d) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d",
         id="group_by_count_of_the_group_key",
     ),
+    # Any aggregate of a GROUP BY variable reads the pre-COLLECT value; the
+    # COLLECT key alias inside AGGREGATE is ArangoDB ERR 1512.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (MAX(?d) AS ?m) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d",
+        id="group_by_max_of_the_group_key",
+    ),
     pytest.param(
         "PREFIX : <http://ex.org/> SELECT (COUNT(?e) AS ?c) (MAX(?a) AS ?m) WHERE { "
         "?s a :Person ; :age ?a OPTIONAL { ?s :email ?e } }",

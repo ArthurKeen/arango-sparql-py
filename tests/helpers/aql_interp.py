@@ -300,11 +300,32 @@ def _aggregate_apply(func: str, values: list[Any]) -> Any:
     raise AssertionError(f"interpreter does not implement aggregate {func!r}")
 
 
+def _aql_identity(value: Any) -> Any:
+    """A hashable key that is equal exactly when AQL calls two values equal.
+
+    Python's ``==`` makes ``True == 1``; AQL does not (``UNIQUE([1, true])`` is
+    ``[1, true]`` on ArangoDB 3.12), while it does treat ``1`` and ``1.0`` as
+    one number. Applied recursively, so arrays and objects compare the same way.
+    """
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int | float):
+        return ("number", float(value))
+    if isinstance(value, list):
+        return ("array", tuple(_aql_identity(v) for v in value))
+    if isinstance(value, dict):
+        return ("object", tuple(sorted((k, _aql_identity(v)) for k, v in value.items())))
+    return (type(value).__name__, value)
+
+
 def _unique(values: list[Any]) -> list[Any]:
     """Distinct values in first-seen order, by AQL equality (null is a value)."""
+    seen: set[Any] = set()
     out: list[Any] = []
     for v in values:
-        if v not in out:
+        key = _aql_identity(v)
+        if key not in seen:
+            seen.add(key)
             out.append(v)
     return out
 

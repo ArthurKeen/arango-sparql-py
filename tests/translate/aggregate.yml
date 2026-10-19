@@ -284,3 +284,41 @@ cases:
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1": 0
+
+  # ---- Any aggregate over a GROUP BY variable (found reviewing #47) -
+  # Before, the argument read the COLLECT key alias (``MAX(grp2)``), which
+  # ArangoDB rejects: ERR 1512 "use of unknown variable 'grp2' in AGGREGATE
+  # expression". The pre-COLLECT expression is what each group aggregates.
+
+  - name: group_by_max_of_the_group_key
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (MAX(?d) AS ?m) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = MAX(doc1.dept)
+        RETURN { d: grp2, m: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_group_concat_of_the_group_key
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (GROUP_CONCAT(?d) AS ?g) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.dept)
+        RETURN { d: grp2, g: CONCAT_SEPARATOR(@_p1_sep, agg3) }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_sep": " "

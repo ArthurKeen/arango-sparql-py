@@ -151,3 +151,32 @@ def test_count_matches_oxigraph(db: Any, oxi_store: Any, body: str, expected: li
     rows = _arango(db, body)
     assert _multiset(rows) == _multiset(expected)
     assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        (
+            "SELECT ?d (MAX(?d) AS ?m) WHERE { ?p a :Person ; :dept ?d } GROUP BY ?d",
+            [
+                {"d": "eng", "m": "eng"},
+                {"d": "ops", "m": "ops"},
+            ],
+        ),
+        (
+            "SELECT ?d (GROUP_CONCAT(?d) AS ?g) WHERE { ?p a :Person ; :dept ?d } GROUP BY ?d",
+            [
+                {"d": "eng", "g": "eng eng"},
+                {"d": "ops", "g": "ops ops"},
+            ],
+        ),
+    ],
+)
+def test_an_aggregate_of_the_group_key_runs(
+    db: Any, oxi_store: Any, body: str, expected: list[dict[str, Any]]
+) -> None:
+    """Found reviewing #47: the argument read the COLLECT key alias, which
+    ArangoDB rejects inside AGGREGATE (ERR 1512)."""
+    rows = _arango(db, body)
+    assert _multiset(rows) == _multiset(expected)
+    assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))
