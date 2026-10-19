@@ -96,13 +96,14 @@ All five rdflib path classes are handled (`paths.py`).
 
 | Aggregate | Status | Notes / evidence |
 | --- | --- | --- |
-| `COUNT` (incl. `DISTINCT`, `COUNT(*)`) | ✅ | `visitor.py:870,922` |
-| `SUM` / `MIN` / `MAX` / `AVG` | ✅ | `visitor.py:871-874` |
-| `SAMPLE` | ✅ | `visitor.py:890` |
-| `GROUP_CONCAT` (+ `SEPARATOR`) | ✅ | `visitor.py:949` |
+| `COUNT` (incl. `DISTINCT`, `COUNT(*)`) | ✅ | `visitor.py:958`. Counts only the solutions where the argument has a value: an unbound variable is null on the AQL side and AQL's counts include null, so `COUNT(expr)` is `SUM(expr != null ? 1 : 0)` and `COUNT(DISTINCT expr)` is `UNIQUE` with the null removed. `WITH COUNT INTO` is kept for `COUNT(*)` and for a scanned document's identity, which every row binds (`visitor.py:1073`; until 2026-10-19 every lone `COUNT` counted rows, issue #46) |
+| `SUM` / `MIN` / `MAX` / `AVG` | ✅ | `visitor.py:879-882` |
+| `SAMPLE` | ✅ | `visitor.py:913` |
+| `GROUP_CONCAT` (+ `SEPARATOR`) | ✅ | `visitor.py:991` |
 
 **Caveat:** `DISTINCT` is supported on `COUNT` only; `DISTINCT SUM/AVG/MIN/MAX`
-is rejected (`visitor.py:982`).
+is rejected (`visitor.py:1027`), and so is `COUNT(DISTINCT *)` (`visitor.py:960`),
+which used to count 1 whatever the data.
 
 ## 6. Expressions & built-in functions
 

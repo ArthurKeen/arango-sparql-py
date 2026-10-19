@@ -194,6 +194,10 @@ _AQL_BUILTINS: dict[str, Any] = {
     "LOWER": lambda v: None if v is None else str(v).lower(),
     "UPPER": lambda v: None if v is None else str(v).upper(),
     "LENGTH": lambda v: None if v is None else len(v),
+    # ``REMOVE_VALUE(array, value)`` drops every element equal to ``value``;
+    # the COUNT DISTINCT read (``LENGTH(REMOVE_VALUE(agg, null))``) uses it
+    # to drop the null that UNIQUE keeps (issue #46).
+    "REMOVE_VALUE": lambda arr, value: None if arr is None else [x for x in arr if x != value],
     "IS_STRING": lambda v: isinstance(v, str),
     "IS_NUMBER": lambda v: isinstance(v, int | float) and not isinstance(v, bool),
     "IS_BOOL": lambda v: isinstance(v, bool),
@@ -266,18 +270,26 @@ def _parse_collect_clause(
 def _aggregate_apply(func: str, values: list[Any]) -> Any:
     """Apply an AQL aggregate function name to a list of row values.
 
-    Mirrors AQL semantics for null handling: ``MIN`` / ``MAX`` /
-    ``AVG`` / ``SUM`` skip nulls; ``COUNT`` counts every row regardless
-    of value (matching the AQL spec, which is a known divergence from
-    SPARQL's ``COUNT(?x)`` "count bound rows" semantics — the visitor
-    accepts that for now and the cross test exercises the AQL side).
+    Mirrors ArangoDB, null handling included, and deliberately *not* SPARQL —
+    the cross tests compare these results with pyoxigraph, so an interpreter
+    that quietly applied SPARQL semantics would pass AQL that ArangoDB gets
+    wrong (issue #46; #39 was the same blind spot). Checked on ArangoDB 3.12:
+
+    * ``COUNT`` counts every value, null included; ``COUNT_DISTINCT`` counts
+      null as one more distinct value; ``UNIQUE`` keeps null as a value.
+    * ``MIN`` / ``MAX`` / ``AVG`` / ``SUM`` skip nulls; ``SUM`` over no rows
+      is null (over only nulls it is 0).
     """
     non_null = [v for v in values if v is not None]
     if func == "COUNT":
         return len(values)
     if func == "COUNT_DISTINCT":
-        return len({v for v in values if v is not None})
+        return len(_unique(values))
+    if func == "UNIQUE":
+        return _unique(values)
     if func == "SUM":
+        if not values:
+            return None
         return sum(non_null) if non_null else 0
     if func == "AVG":
         return sum(non_null) / len(non_null) if non_null else None
@@ -286,6 +298,15 @@ def _aggregate_apply(func: str, values: list[Any]) -> Any:
     if func == "MAX":
         return max(non_null) if non_null else None
     raise AssertionError(f"interpreter does not implement aggregate {func!r}")
+
+
+def _unique(values: list[Any]) -> list[Any]:
+    """Distinct values in first-seen order, by AQL equality (null is a value)."""
+    out: list[Any] = []
+    for v in values:
+        if v not in out:
+            out.append(v)
+    return out
 
 
 def _matching_delimiter(text: str, start: int, opening: str, closing: str) -> int:
@@ -782,6 +803,10 @@ def run_aql_subset(
         for env, let_env in envs:
             key_tuple = tuple(_eval_expr(expr, env, bind_vars, let_env) for _, expr in keys)
             groups.setdefault(key_tuple, []).append((env, let_env))
+        if not keys and not groups:
+            # A COLLECT with no group keys returns one row even over no input
+            # (WITH COUNT INTO → 0, SUM → null), as ArangoDB does.
+            groups[()] = []
         new_envs: list[tuple[dict, dict]] = []
         try:
             sorted_keys = sorted(groups.keys())

@@ -89,15 +89,18 @@ cases:
     # ``?S ?P ?O`` pattern. The COLLECT layer wraps the
     # ATTRIBUTES fan-out unchanged; one binding row per
     # attribute → COUNT returns the total non-system-attribute
-    # count across all documents.
+    # count across all documents. An attribute stored as null binds
+    # ``?O`` to null, which COUNT must not count, so this counts the
+    # rows where ``doc1[k2]`` has a value rather than every row; SUM over
+    # no rows is null, hence NOT_NULL(…, 0) (issue #46).
     sparql: |
       SELECT (COUNT(?O) AS ?C) WHERE { ?S ?P ?O }
     expected_aql: |-
       FOR doc1 IN @@c1_Document
       FOR k2 IN ATTRIBUTES(doc1, true)
       FILTER k2 NOT IN @_p1_sys_attrs
-      COLLECT WITH COUNT INTO agg3
-      RETURN { C: agg3 }
+      COLLECT AGGREGATE agg3 = SUM(doc1[k2] != null ? 1 : 0)
+      RETURN { C: NOT_NULL(agg3, 0) }
     expected_bind_vars:
       "@c1_Document": "Document"
       "_p1_sys_attrs":

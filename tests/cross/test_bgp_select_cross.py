@@ -365,6 +365,46 @@ AGGREGATE_CASES = [
         "?s a :Person ; :dept ?d } GROUP BY ?d HAVING (COUNT(?s) > 1)",
         id="group_by_having",
     ),
+    # ---- COUNT counts bound values only (issue #46). Only Alice has an
+    # email, so a count over the OPTIONAL ?e is 1, not the 3 rows the
+    # OPTIONAL keeps; a variable the pattern never binds counts 0.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (COUNT(?e) AS ?c) WHERE { ?s a :Person OPTIONAL { ?s :email ?e } }",
+        id="count_optional_var",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (COUNT(?o) AS ?c) WHERE { ?s a :Person }",
+        id="count_never_bound_var",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?e) AS ?c) WHERE { "
+        "?s a :Person ; :dept ?d OPTIONAL { ?s :email ?e } } GROUP BY ?d",
+        id="group_by_count_optional_var",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?d) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d",
+        id="group_by_count_of_the_group_key",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (COUNT(?e) AS ?c) (MAX(?a) AS ?m) WHERE { "
+        "?s a :Person ; :age ?a OPTIONAL { ?s :email ?e } }",
+        id="count_optional_var_with_max",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (COUNT(DISTINCT ?e) AS ?c) WHERE { ?s a :Person OPTIONAL { ?s :email ?e } }",
+        id="count_distinct_optional_var",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d WHERE { ?s a :Person ; :dept ?d OPTIONAL { ?s :email ?e } } "
+        "GROUP BY ?d HAVING (COUNT(DISTINCT ?e) > 0)",
+        id="having_count_distinct_optional_var",
+    ),
+    # No input rows at all: an ungrouped COUNT is still one row, 0.
+    pytest.param(
+        'PREFIX : <http://ex.org/> SELECT (COUNT(?e) AS ?c) WHERE { ?s a :Person ; :name "Nobody" '
+        "OPTIONAL { ?s :email ?e } }",
+        id="count_optional_var_over_no_rows",
+    ),
 ]
 
 
