@@ -43,7 +43,7 @@ from .optional_crosssubject import (
     is_rpt_cross_subject_optional,
 )
 from .paths import emit_path_triple
-from .resolver import ResolvedClass, SchemaResolver
+from .resolver import ResolvedClass, ResolvedProperty, SchemaResolver
 from .subselect import emit_to_multiset
 from .union_paths import emit_union
 from .variable_predicates import emit_variable_predicate_triple
@@ -671,6 +671,11 @@ class AlgebraVisitor:
         # (``opt2``) for object properties. The downstream emitter does
         # not need to distinguish the two.
         new_bindings: list[tuple[str, str]] = []  # (sparql_var, source_expr)
+        # Object-property bindings, emitted together below: an edge can match
+        # more than once, so they need rows, not a scalar (issue #48).
+        edge_bindings: list[
+            tuple[str, ResolvedProperty, str, str]
+        ] = []  # (var, prop, edge collection, subject alias)
         seen_vars: set[str] = set()
         for triple in getattr(p2, "triples", []) or []:
             s, p, o = triple
@@ -710,11 +715,6 @@ class AlgebraVisitor:
             prop = self.resolver.resolve_property(p)
             subject_alias = self.state.var_to_doc_alias[str(s)]
             if prop.is_object_property:
-                # Object-property OPTIONAL: emit a LET subquery that
-                # follows the edge once and returns the target's
-                # ``_uri``, or ``null`` if no edge matches. The LET
-                # alias becomes the binding's source expression — same
-                # downstream treatment as an attribute path.
                 if prop.edge_collection is None:
                     raise SchemaResolutionError(
                         f"object property {prop.iri!r} in OPTIONAL has no "
@@ -722,6 +722,14 @@ class AlgebraVisitor:
                         f"must declare which ArangoDB edge collection backs "
                         f"this relationship (PRD §6.2)"
                     )
+                if not is_rebind:
+                    edge_bindings.append((o_name, prop, prop.edge_collection, subject_alias))
+                    seen_vars.add(o_name)
+                    continue
+                # The MINUS-probe compatibility test below (a re-bound
+                # variable) still compares against the first matching edge's
+                # target; it is unchanged by issue #48, which is about the
+                # rows an OPTIONAL produces.
                 let_alias = self.builder.fresh_alias(prefix="opt")
                 if prop.mapping_style == "GENERIC_WITH_TYPE":
                     self.builder.let_outbound_first_uri(
@@ -761,7 +769,7 @@ class AlgebraVisitor:
             new_bindings.append((o_name, value_expr))
             seen_vars.add(o_name)
 
-        if not new_bindings:
+        if not new_bindings and not edge_bindings:
             # Empty OPTIONAL (e.g. only a FILTER, no triples) is a
             # no-op under our same-subject restriction — return cleanly
             # rather than emit dead AQL.
@@ -769,6 +777,10 @@ class AlgebraVisitor:
 
         expr = getattr(node, "expr", None)
         has_filter = expr is not None and getattr(expr, "name", "") != "TrueFilter"
+
+        if edge_bindings:
+            self._emit_optional_rows(edge_bindings, new_bindings, expr if has_filter else None)
+            return
 
         # Fast path: a single new binding, no inner FILTER. For both
         # attribute-path bindings (``doc.attr`` returns null when the
@@ -810,6 +822,80 @@ class AlgebraVisitor:
             alias = self.builder.fresh_alias(prefix="opt")
             self.builder.let(alias, f"({match_expr} ? {source_expr} : null)")
             self.state.var_to_expr[var] = alias
+
+    def _emit_optional_rows(
+        self,
+        edge_bindings: list[tuple[str, ResolvedProperty, str, str]],
+        attr_bindings: list[tuple[str, str]],
+        filter_expr: Any,
+    ) -> None:
+        """An OPTIONAL block with object-property triples, as a padded left join.
+
+        SPARQL's LeftJoin keeps every compatible solution of the OPTIONAL
+        block (SPARQL 1.1 §18.5), so a subject with two matching edges gives
+        two solutions, and one that matches nothing keeps its single solution
+        with the block's variables unbound. The block's matches become a
+        correlated subquery and the outer query iterates them, padded with one
+        ``null`` row when there are none — the shape the RPT cross-subject
+        OPTIONAL already emits (``optional_crosssubject.py``)::
+
+            LET <optsub> = (
+              FOR <v>, <e> IN OUTBOUND <subject> @@<edges>   -- per edge triple
+              [FILTER <e>.<type_field> == @<type>]          -- GENERIC_WITH_TYPE
+              FILTER <subject>.<attr> != null               -- per attribute triple
+              [FILTER <inner filter>]
+              RETURN {f0: <target identity>, f1: <subject>.<attr>, …}
+            )
+            FOR <optrow> IN (LENGTH(<optsub>) > 0 ? <optsub> : [null])
+
+        The whole block is one subquery, so it still matches as a unit: an
+        edge without the block's attribute, or a row the inner FILTER rejects,
+        is not a match. It used to follow the first edge only
+        (``LIMIT 1 … [0]``), losing a row per extra edge (issue #48). The
+        legacy ``aql-translator.js#processOptionalPatterns`` did the same; this
+        follows SPARQL, with pyoxigraph as the reference, instead.
+        """
+        child = self.builder.create_child()
+        fields: list[tuple[str, str]] = []  # (sparql_var, source expression in the subquery)
+        for var, prop, edge_collection, subject_alias in edge_bindings:
+            v_alias = child.fresh_alias(prefix="v")
+            e_alias = child.fresh_alias(prefix="e")
+            child.for_traversal(v_alias, e_alias, subject_alias, edge_collection)
+            # The same edge-type filter the required-side triple applies
+            # (``_emit_edge_triple``).
+            if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
+                bind = child.bind(prop.type_value, hint=prop.type_field)
+                child.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+            fields.append((var, subject_ref(v_alias)))
+        for var, source_expr in attr_bindings:
+            child.filter_raw(f"{source_expr} != null")
+            fields.append((var, source_expr))
+        if filter_expr is not None:
+            # The inner FILTER reads the block's variables by SPARQL name, so
+            # they resolve to their subquery expressions while it translates;
+            # the visitor writes to the child meanwhile, so any bind variable
+            # the FILTER needs is minted there and merged by absorb_child.
+            for var, source_expr in fields:
+                self.state.var_to_expr[var] = source_expr
+            parent = self.builder
+            self.builder = child
+            try:
+                aql_filter = self._translate_expr(filter_expr)
+            finally:
+                self.builder = parent
+            child.filter_raw(aql_filter)
+        names = [f"f{i}" for i in range(len(fields))]
+        projection = ", ".join(f"{name}: {source}" for name, (_, source) in zip(names, fields, strict=True))
+        child.return_scalar("{" + projection + "}")
+
+        inner_aql = self.builder.absorb_child(child)
+        indented = "\n".join("  " + line for line in inner_aql.splitlines())
+        sub_alias = self.builder.fresh_alias(prefix="optsub")
+        self.builder.let(sub_alias, f"(\n{indented}\n)")
+        row_alias = self.builder.fresh_alias(prefix="optrow")
+        self.builder.for_inline(row_alias, f"(LENGTH({sub_alias}) > 0 ? {sub_alias} : [null])")
+        for name, (var, _source) in zip(names, fields, strict=True):
+            self.state.var_to_expr[var] = f"{row_alias}.{name}"
 
     # ------------------------------------------------------------------
     # BIND / agg-result rename — Extend(p=inner, var=?v, expr=<sparql expr>)
