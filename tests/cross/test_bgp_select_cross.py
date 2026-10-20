@@ -405,6 +405,16 @@ AGGREGATE_CASES = [
         "GROUP BY ?d HAVING (COUNT(DISTINCT ?e) > 0)",
         id="having_count_distinct_optional_var",
     ),
+    # Ungrouped SUM / AVG over no rows are 0, MIN / MAX unbound (issue #49).
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) (MIN(?a) AS ?m) WHERE { "
+        '?s a :Person ; :name "Nobody" ; :age ?a }',
+        id="sum_avg_min_over_no_rows",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) WHERE { ?s a :Person ; :age ?a }",
+        id="sum_avg_over_rows",
+    ),
     # No input rows at all: an ungrouped COUNT is still one row, 0.
     pytest.param(
         'PREFIX : <http://ex.org/> SELECT (COUNT(?e) AS ?c) WHERE { ?s a :Person ; :name "Nobody" '

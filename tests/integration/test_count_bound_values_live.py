@@ -1,4 +1,5 @@
-"""Issue #46 — ``COUNT(?x)`` counts only the solutions where ``?x`` has a value.
+"""Issue #46 — ``COUNT(?x)`` counts only the solutions where ``?x`` has a value
+(and issue #49 — ungrouped ``SUM`` / ``AVG`` over no solutions are 0).
 
 SPARQL's COUNT(expr) skips solutions in which ``expr`` is unbound
 (SPARQL 1.1 §18.5.1.2). An unbound variable is null on the AQL side, and AQL's
@@ -177,6 +178,27 @@ def test_an_aggregate_of_the_group_key_runs(
 ) -> None:
     """Found reviewing #47: the argument read the COLLECT key alias, which
     ArangoDB rejects inside AGGREGATE (ERR 1512)."""
+    rows = _arango(db, body)
+    assert _multiset(rows) == _multiset(expected)
+    assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # Issue #49: SPARQL's Sum and Avg of an empty group are 0; AQL's are
+        # null, so these came back unbound. MIN of an empty group is unbound.
+        (
+            'SELECT (SUM(?n) AS ?s) (AVG(?n) AS ?v) (MIN(?n) AS ?m) WHERE { ?p a :Person ; :name "Nobody" ; :name ?n }',
+            [{"s": 0, "v": 0}],
+        ),
+        # Control, already right: over rows the values come straight through.
+        ("SELECT (COUNT(?d) AS ?c) WHERE { ?p a :Person ; :dept ?d }", [{"c": 4}]),
+    ],
+)
+def test_sum_and_avg_over_no_rows_are_zero(
+    db: Any, oxi_store: Any, body: str, expected: list[dict[str, Any]]
+) -> None:
     rows = _arango(db, body)
     assert _multiset(rows) == _multiset(expected)
     assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))

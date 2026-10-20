@@ -1132,6 +1132,13 @@ class AlgebraVisitor:
                     )
                 arg_expr = self._aggregate_arg_expr(agg, pattern_scope)
                 aggregates.append((agg_alias, f"{aql_func}({arg_expr})"))
+                if not keys and agg.name in ("Aggregate_Sum", "Aggregate_Avg"):
+                    # Ungrouped over no rows, AQL's SUM / AVG are null; SPARQL's
+                    # Sum and Avg of an empty group are 0 (SPARQL 1.1
+                    # §18.5.1.3-4) — the read COUNT already uses (issue #49).
+                    # MIN / MAX of an empty group are unbound in both.
+                    self.state.var_to_expr[agg_var] = f"NOT_NULL({agg_alias}, 0)"
+                    continue
 
             self.state.var_to_expr[agg_var] = agg_alias
 
