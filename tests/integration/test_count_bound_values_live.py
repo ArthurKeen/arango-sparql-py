@@ -202,3 +202,37 @@ def test_sum_and_avg_over_no_rows_are_zero(
     rows = _arango(db, body)
     assert _multiset(rows) == _multiset(expected)
     assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # Issue #58: each name has one dept, so the sample is fixed. It used
+        # to group on ?d as well, which gave the same rows here only by luck.
+        (
+            "SELECT ?n (SAMPLE(?d) AS ?x) WHERE { ?p a :Person ; :name ?n ; :dept ?d } GROUP BY ?n",
+            [
+                {"n": "Ada", "x": "eng"},
+                {"n": "Ben", "x": "eng"},
+                {"n": "Cy", "x": "ops"},
+                {"n": "Ed", "x": "ops"},
+            ],
+        ),
+        # Two Samples of the group key share one COLLECT key; the second read
+        # the first's alias and returned garbage for ?d.
+        (
+            "SELECT ?d (SAMPLE(?d) AS ?x) WHERE { ?p a :Person ; :dept ?d } GROUP BY ?d",
+            [{"d": "eng", "x": "eng"}, {"d": "ops", "x": "ops"}],
+        ),
+    ],
+)
+def test_sample_matches_oxigraph(db: Any, oxi_store: Any, body: str, expected: list[dict[str, Any]]) -> None:
+    rows = _arango(db, body)
+    assert _multiset(rows) == _multiset(expected)
+    assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))
+
+
+def test_an_ungrouped_sample_is_one_row_holding_one_of_the_values(db: Any) -> None:
+    """Issue #58: it returned one row per distinct dept."""
+    rows = _arango(db, "SELECT (SAMPLE(?d) AS ?x) WHERE { ?p a :Person ; :dept ?d }")
+    assert len(rows) == 1 and rows[0]["x"] in {"eng", "ops"}
