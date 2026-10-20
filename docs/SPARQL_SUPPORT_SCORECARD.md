@@ -54,12 +54,12 @@ does not emit — both counted out-of-scope alongside the Protocol / Service-Des
 | Basic Graph Pattern (BGP) | ✅ | `visitor.py:1139`, incl. empty-BGP identity semantics |
 | Join | ✅ | `visitor.py:1057` |
 | `UNION` | ✅ | `visitor.py:1091` → `union_paths.py` |
-| `MINUS` | ✅ | `visitor.py:1083` → `minus_exists.py` |
+| `MINUS` | ✅ | `visitor.py:1238` → `minus_exists.py`. A subject shared with the outer row is joined to it even when the probe types it again (`?s a :C`; `visitor.py:2066`; until 2026-10-20 that probe ignored the outer row, issue #51) |
 | `FILTER` | ✅ | `visitor.py:610` |
 | `FILTER EXISTS` / `NOT EXISTS` | ✅ | `filter_builtins.py:121,129` (probe recipe) |
 | `GRAPH` (named graphs, IRI + var) | ✅ | `visitor.py:1104` (storage model per ADR-0001) |
 | `BIND` | ✅ | `visitor.py:809` |
-| `VALUES` (incl. empty) | ✅ | `subselect.py:67,165` |
+| `VALUES` (incl. empty) | ✅ | `subselect.py:67,165`. A type pattern on a VALUES (or BIND) variable joins to its value (`visitor.py:2066`; it crossed every document of the class until issue #51) |
 | Sub-`SELECT` | ✅ | `visitor.py:1133` → `subselect.py:79` |
 | `OPTIONAL` (LeftJoin) | 🟡 | `visitor.py:636`. Works for the common bound-subject BGP case; an object-property (edge) OPTIONAL yields one solution per matching edge, or one unbound when none matches (`visitor.py:826`; until 2026-10-20 it kept the first edge only, issue #48). **Restrictions:** body must be a plain BGP (not UNION/SERVICE); predicate must be var/IRI; object restrictions apply; an `OPTIONAL` whose subject is not already bound by the required side is not yet supported. Cross-subject handled via ADR-0002 (`optional_crosssubject.py`) |
 

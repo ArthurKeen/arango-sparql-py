@@ -2044,15 +2044,8 @@ class AlgebraVisitor:
                     f"which collection to scan."
                 )
             alias = self._open_collection(self.resolver.default_collection)
-            # Enforce the implicit join the SPARQL spec demands: if the
-            # variable was already bound to an AQL expression by an
-            # earlier triple, the new FOR's ``_uri`` must equal that
-            # expression. Without this FILTER, the AQL plan would
-            # cross-product the two FORs and silently over-count.
-            prior_expr = self.state.var_to_expr.get(str(subject))
-            new_expr = subject_ref(alias)
-            if prior_expr is not None and prior_expr != new_expr:
-                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
+            # ``_bind_subject`` joins the new FOR to any prior binding of
+            # the variable (the implicit join the SPARQL spec demands).
             self._bind_subject(subject, alias)
             return alias
         if isinstance(subject, URIRef):
@@ -2080,6 +2073,17 @@ class AlgebraVisitor:
         silently dropping the second alias's relationship to the
         variable. Otherwise the second FOR would float free of the
         first and the engine would emit the Cartesian product.
+
+        The same holds when the variable already has a *value* but no
+        document: a VALUES row, a BIND, an earlier triple's object, a
+        sub-select column, or — inside a MINUS / EXISTS probe — the outer
+        row's identity, which ``minus_exists`` pre-seeds so that "shared
+        variables turn into equality FILTERs". The new FOR's identity must
+        equal that value. Without the FILTER the FOR ranges over every
+        document of the class: a cross product, or a probe that ignores the
+        outer row (issue #51). This was enforced only on the
+        default-collection path (``_ensure_subject_alias``); a type pattern
+        reaches here directly.
         """
         if not isinstance(subject, Variable):
             return
@@ -2087,7 +2091,12 @@ class AlgebraVisitor:
         existing_alias = self.state.var_to_doc_alias.get(name)
         if existing_alias is None:
             self.state.var_to_doc_alias[name] = alias
-            self.state.var_to_expr.setdefault(name, subject_ref(alias))
+            prior_expr = self.state.var_to_expr.get(name)
+            new_expr = subject_ref(alias)
+            if prior_expr is None:
+                self.state.var_to_expr[name] = new_expr
+            elif prior_expr != new_expr:
+                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
             return
         if existing_alias == alias:
             return

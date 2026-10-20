@@ -66,6 +66,9 @@ _SUBQUERY_PAREN_END_RE = re.compile(r"^\)\s*$")
 # ``_FOR_RE`` (collection bind) and ``_FOR_TRAVERSAL_RE`` (OUTBOUND) by
 # the parenthesised expression source; checked after both.
 _FOR_INLINE_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\(.+\))\s*$")
+# FOR over an array literal — the empty-BGP scope opener the visitor emits
+# before a BIND with no pattern of its own: ``FOR empty1 IN [1]``.
+_FOR_ARRAY_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\[.*\])\s*$")
 # FOR over a list-valued bind variable — the SPARQL VALUES shape the
 # visitor emits via ``builder.for_values`` (``FOR row1 IN @_p1_values``)
 # and the federation entry point's seed-binding pushdown reuses.
@@ -713,7 +716,7 @@ def run_aql_subset(
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, values_var = m.groups()
             pre_collect_plan.append(("FOR_VALUES", alias, bind_vars[values_var]))
-        elif m := _FOR_INLINE_RE.match(line):
+        elif m := _FOR_INLINE_RE.match(line) or _FOR_ARRAY_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, inline_expr = m.groups()
