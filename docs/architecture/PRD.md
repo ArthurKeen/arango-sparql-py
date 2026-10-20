@@ -854,6 +854,14 @@ Both opt-outs are *deliberately verbose* so a heuristic-only or
 schema-less deployment is a conscious operator decision, not a silent
 default.
 
+The guard gates the **service** only. Importing the library
+(`arango_sparql.api`, `arango_sparql.translate`, `arango_sparql.nl2sparql`)
+never imports `arango_sparql.service`, so it never runs the guard, and an
+`[nl]` install without `[analyzer]` can use `NlPipeline` and `nl_to_sparql`.
+`arango_sparql.nl2sparql` re-exports the service's Pydantic contract models
+(`NlTranslateRequest` and the rest) lazily, resolving them on first use
+(`tests/nl2sparql/test_import_without_analyzer.py`, issue #66).
+
 #### 6.3.5 Request path never blocks on analysis (catalog model)
 
 Module: `arango_sparql/service/schema_warm.py` — ported from
