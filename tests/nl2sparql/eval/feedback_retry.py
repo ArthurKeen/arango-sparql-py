@@ -66,6 +66,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from arango_query_core.nl.postconditions import PostconditionContext, PostconditionViolation
+
 REPO = Path(__file__).resolve().parents[3]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
@@ -114,8 +116,7 @@ class ExecutionFeedback:
     code: str = "execution_feedback"
     executed: list[dict[str, Any]] = field(default_factory=list)
 
-    def check(self, query: str, *, context: Any) -> Any:
-        from arango_query_core.nl.postconditions import PostconditionViolation
+    def check(self, query: str, *, context: PostconditionContext) -> PostconditionViolation | None:
 
         signature, error = executed_signature(self.store, query, self.label_map)
         self.executed.append(

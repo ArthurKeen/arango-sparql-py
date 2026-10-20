@@ -5,9 +5,9 @@ model. No network, no key."""
 from __future__ import annotations
 
 import itertools
-import types
 
 import pytest
+from arango_query_core.nl.postconditions import PostconditionContext
 
 from tests.nl2sparql.eval.feedback_retry import (
     CANDIDATE_BUDGET,
@@ -63,8 +63,8 @@ def labels(store):
     return _build_label_map(store)
 
 
-def _ctx(attempt: int = 0):
-    return types.SimpleNamespace(attempt=attempt)
+def _ctx(attempt: int = 0) -> PostconditionContext:
+    return PostconditionContext(schema_summary="", question="q", attempt=attempt)
 
 
 # --- the postcondition ------------------------------------------------------
