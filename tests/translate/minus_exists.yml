@@ -235,6 +235,77 @@ cases:
 
   # ---- CONSTRUCT WHERE (template-less) ------------------------------
 
+  # ---- Typed shared subject (issue #51) --------------------------
+  # The cases above use the empty ontology, so every probe subject took
+  # the default-collection path, which already joined to the outer row.
+  # A type pattern inside the probe opened its FOR without that join, so
+  # the probe ignored the outer row: any Person with an email removed
+  # *every* Person from a MINUS.
+
+  - name: minus_typed_shared_subject
+    ontology: &person_ontology |
+      @prefix : <http://ex.org/> .
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      @prefix phys: <https://arango.solutions/phys#> .
+      :Person a owl:Class ; phys:collectionName "Person" .
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person . MINUS { ?s a :Person ; :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET minus_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Person
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc2, "email")
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER minus_probe3 == 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
+
+  - name: not_exists_typed_shared_subject
+    ontology: *person_ontology
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person . FILTER NOT EXISTS { ?s a :Person ; :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET not_exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Person
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc2, "email")
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER not_exists_probe3 == 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
+
+  - name: exists_typed_shared_subject
+    ontology: *person_ontology
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person . FILTER EXISTS { ?s a :Person ; :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Person
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc2, "email")
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER exists_probe3 > 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
+
   - name: construct_where_single_triple
     # ``CONSTRUCT WHERE { ?s :name ?n }`` — SPARQL 1.1 §16.2.1
     # short-form where the WHERE BGP doubles as the output

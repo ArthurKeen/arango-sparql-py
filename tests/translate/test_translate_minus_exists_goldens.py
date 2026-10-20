@@ -51,7 +51,10 @@ def _load() -> list[tuple[str, str, str, str, dict]]:
         out.append(
             (
                 case["name"],
-                ttl,
+                # A per-case ``ontology`` overrides the file-level default
+                # (as in test_translate_variable_predicate_goldens): the
+                # typed-subject probes need declared classes.
+                case.get("ontology", ttl),
                 case["sparql"],
                 case["expected_aql"].rstrip("\n"),
                 case["expected_bind_vars"],
