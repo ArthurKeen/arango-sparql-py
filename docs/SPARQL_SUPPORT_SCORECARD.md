@@ -54,14 +54,14 @@ does not emit — both counted out-of-scope alongside the Protocol / Service-Des
 | Basic Graph Pattern (BGP) | ✅ | `visitor.py:1139`, incl. empty-BGP identity semantics |
 | Join | ✅ | `visitor.py:1057` |
 | `UNION` | ✅ | `visitor.py:1091` → `union_paths.py` |
-| `MINUS` | ✅ | `visitor.py:1083` → `minus_exists.py` |
+| `MINUS` | ✅ | `visitor.py:1238` → `minus_exists.py`. A subject shared with the outer row is joined to it even when the probe types it again (`?s a :C`; `visitor.py:2066`; until 2026-10-20 that probe ignored the outer row, issue #51). An `OPTIONAL` inside it that re-binds an edge variable is compatible when *some* edge matches (or none exists); it compared the first edge only (issue #52) |
 | `FILTER` | ✅ | `visitor.py:610` |
 | `FILTER EXISTS` / `NOT EXISTS` | ✅ | `filter_builtins.py:121,129` (probe recipe) |
 | `GRAPH` (named graphs, IRI + var) | ✅ | `visitor.py:1104` (storage model per ADR-0001) |
 | `BIND` | ✅ | `visitor.py:809` |
-| `VALUES` (incl. empty) | ✅ | `subselect.py:67,165` |
+| `VALUES` (incl. empty) | ✅ | `subselect.py:67,165`. A type pattern on a VALUES (or BIND) variable joins to its value (`visitor.py:2066`; it crossed every document of the class until issue #51) |
 | Sub-`SELECT` | ✅ | `visitor.py:1133` → `subselect.py:79` |
-| `OPTIONAL` (LeftJoin) | 🟡 | `visitor.py:628`. Works for the common bound-subject BGP case. **Restrictions:** body must be a plain BGP (not UNION/SERVICE); predicate must be var/IRI; object restrictions apply; an `OPTIONAL` whose subject is not already bound by the required side is not yet supported. Cross-subject handled via ADR-0002 (`optional_crosssubject.py`) |
+| `OPTIONAL` (LeftJoin) | 🟡 | `visitor.py:636`. Works for the common bound-subject BGP case; an object-property (edge) OPTIONAL yields one solution per matching edge, or one unbound when none matches (`visitor.py:826`; until 2026-10-20 it kept the first edge only, issue #48). Under the resolver's `fan_out_list_values`, an attribute OPTIONAL likewise yields one solution per list element, as a required triple does (issue #53). **Restrictions:** body must be a plain BGP (not UNION/SERVICE); predicate must be var/IRI; object restrictions apply; an `OPTIONAL` whose subject is not already bound by the required side is not yet supported. Cross-subject handled via ADR-0002 (`optional_crosssubject.py`) |
 
 ## 3. Property paths
 
@@ -96,13 +96,14 @@ All five rdflib path classes are handled (`paths.py`).
 
 | Aggregate | Status | Notes / evidence |
 | --- | --- | --- |
-| `COUNT` (incl. `DISTINCT`, `COUNT(*)`) | ✅ | `visitor.py:870,922` |
-| `SUM` / `MIN` / `MAX` / `AVG` | ✅ | `visitor.py:871-874` |
-| `SAMPLE` | ✅ | `visitor.py:890` |
-| `GROUP_CONCAT` (+ `SEPARATOR`) | ✅ | `visitor.py:949` |
+| `COUNT` (incl. `DISTINCT`, `COUNT(*)`) | ✅ | `visitor.py:958`. Counts only the solutions where the argument has a value: an unbound variable is null on the AQL side and AQL's counts include null, so `COUNT(expr)` is `SUM(expr != null ? 1 : 0)` and `COUNT(DISTINCT expr)` is `UNIQUE` with the null removed. `WITH COUNT INTO` is kept for `COUNT(*)` and for a scanned document's identity, which every row binds (`visitor.py:1073`; until 2026-10-19 every lone `COUNT` counted rows, issue #46) |
+| `SUM` / `MIN` / `MAX` / `AVG` | ✅ | `visitor.py:879-882`. Over a GROUP BY variable too: aggregate arguments read the pre-COLLECT value (`visitor.py:902`), because the COLLECT key alias is not visible inside `AGGREGATE` (it was ArangoDB ERR 1512 until 2026-10-20). Ungrouped over no rows, `SUM`/`AVG` read as 0, as SPARQL's Sum and Avg of an empty group are (issue #49). An unbound value inside the group (an OPTIONAL / UNION / VALUES `UNDEF` binding) makes the result unbound, as in SPARQL; a required triple's stored null is still skipped (issue #59) |
+| `SAMPLE` | ✅ | `visitor.py:993`. A Sample of a GROUP BY variable is a COLLECT key; an explicit `SAMPLE(?x)` of anything else picks one value per group (`MAX`); until 2026-10-20 it was grouped on, one row per distinct value (issue #58) |
+| `GROUP_CONCAT` (+ `SEPARATOR`) | ✅ | `visitor.py:1137`. An unbound value in the group makes the result unbound, as for SUM / AVG / MIN / MAX (issue #59) |
 
 **Caveat:** `DISTINCT` is supported on `COUNT` only; `DISTINCT SUM/AVG/MIN/MAX`
-is rejected (`visitor.py:982`).
+is rejected (`visitor.py:1027`), and so is `COUNT(DISTINCT *)` (`visitor.py:960`),
+which used to count 1 whatever the data.
 
 ## 6. Expressions & built-in functions
 

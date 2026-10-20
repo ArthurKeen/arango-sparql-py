@@ -43,7 +43,7 @@ from .optional_crosssubject import (
     is_rpt_cross_subject_optional,
 )
 from .paths import emit_path_triple
-from .resolver import ResolvedClass, SchemaResolver
+from .resolver import ResolvedClass, ResolvedProperty, SchemaResolver
 from .subselect import emit_to_multiset
 from .union_paths import emit_union
 from .variable_predicates import emit_variable_predicate_triple
@@ -91,6 +91,14 @@ class _BindingState:
     Without the cache each FOR would mint its own bind, multiplying
     the bind-vars dict and obscuring the AQL."""
 
+    maybe_unbound: set[str] = field(default_factory=set)
+    """SPARQL variables that can be unbound in a solution: bound by an
+    OPTIONAL, a UNION arm that not every arm binds, a VALUES ``UNDEF``, a
+    sub-select column that can be unbound, or an expression over one of
+    these. A null in such a variable is SPARQL's *unbound*, which is an
+    error inside SUM / AVG / MIN / MAX / GROUP_CONCAT (issue #59). A null
+    anywhere else is a stored null on a required triple — no triple, which
+    those aggregates already skip — and is left alone."""
     var_to_rpt_class: dict[str, ResolvedClass] = field(default_factory=dict)
     """SPARQL subject variable → :class:`ResolvedClass` for the RPT
     triples table that backs this subject's class.
@@ -671,6 +679,11 @@ class AlgebraVisitor:
         # (``opt2``) for object properties. The downstream emitter does
         # not need to distinguish the two.
         new_bindings: list[tuple[str, str]] = []  # (sparql_var, source_expr)
+        # Object-property bindings, emitted together below: an edge can match
+        # more than once, so they need rows, not a scalar (issue #48).
+        edge_bindings: list[
+            tuple[str, ResolvedProperty, str, str]
+        ] = []  # (var, prop, edge collection, subject alias)
         seen_vars: set[str] = set()
         for triple in getattr(p2, "triples", []) or []:
             s, p, o = triple
@@ -710,11 +723,6 @@ class AlgebraVisitor:
             prop = self.resolver.resolve_property(p)
             subject_alias = self.state.var_to_doc_alias[str(s)]
             if prop.is_object_property:
-                # Object-property OPTIONAL: emit a LET subquery that
-                # follows the edge once and returns the target's
-                # ``_uri``, or ``null`` if no edge matches. The LET
-                # alias becomes the binding's source expression — same
-                # downstream treatment as an attribute path.
                 if prop.edge_collection is None:
                     raise SchemaResolutionError(
                         f"object property {prop.iri!r} in OPTIONAL has no "
@@ -722,22 +730,18 @@ class AlgebraVisitor:
                         f"must declare which ArangoDB edge collection backs "
                         f"this relationship (PRD §6.2)"
                     )
-                let_alias = self.builder.fresh_alias(prefix="opt")
-                if prop.mapping_style == "GENERIC_WITH_TYPE":
-                    self.builder.let_outbound_first_uri(
-                        let_alias,
-                        start_alias=subject_alias,
-                        edge_collection=prop.edge_collection,
-                        type_field=prop.type_field,
-                        type_value=prop.type_value,
-                    )
-                else:
-                    self.builder.let_outbound_first_uri(
-                        let_alias,
-                        start_alias=subject_alias,
-                        edge_collection=prop.edge_collection,
-                    )
-                value_expr = let_alias
+                if not is_rebind:
+                    edge_bindings.append((o_name, prop, prop.edge_collection, subject_alias))
+                    seen_vars.add(o_name)
+                    continue
+                # Re-bound inside a MINUS / EXISTS probe: the compatibility test
+                # below must hold for *some* matching edge (or there is none),
+                # so the probe gets one row per edge target, padded with one
+                # null row, and the per-row test is unchanged (issue #52; it
+                # compared the first edge only).
+                [(_, value_expr)] = self._emit_padded_rows(
+                    [(o_name, prop, prop.edge_collection, subject_alias)], [], None
+                )
             else:
                 value_expr = attribute_ref(subject_alias, prop.attribute)
 
@@ -761,7 +765,7 @@ class AlgebraVisitor:
             new_bindings.append((o_name, value_expr))
             seen_vars.add(o_name)
 
-        if not new_bindings:
+        if not new_bindings and not edge_bindings:
             # Empty OPTIONAL (e.g. only a FILTER, no triples) is a
             # no-op under our same-subject restriction — return cleanly
             # rather than emit dead AQL.
@@ -769,6 +773,14 @@ class AlgebraVisitor:
 
         expr = getattr(node, "expr", None)
         has_filter = expr is not None and getattr(expr, "name", "") != "TrueFilter"
+
+        # Rows, not scalars, whenever a binding can match more than once: an
+        # edge (issue #48), or — under ``fan_out_list_values``, where a
+        # list-valued attribute is one triple per element as in a required
+        # triple — any attribute (issue #53).
+        if edge_bindings or (new_bindings and self.resolver.fan_out_list_values):
+            self._emit_optional_rows(edge_bindings, new_bindings, expr if has_filter else None)
+            return
 
         # Fast path: a single new binding, no inner FILTER. For both
         # attribute-path bindings (``doc.attr`` returns null when the
@@ -779,6 +791,7 @@ class AlgebraVisitor:
         if not has_filter and len(new_bindings) == 1:
             var, source_expr = new_bindings[0]
             self.state.var_to_expr[var] = source_expr
+            self.state.maybe_unbound.add(var)
             return
 
         # Multi-binding or filtered OPTIONAL needs the all-or-nothing
@@ -810,6 +823,108 @@ class AlgebraVisitor:
             alias = self.builder.fresh_alias(prefix="opt")
             self.builder.let(alias, f"({match_expr} ? {source_expr} : null)")
             self.state.var_to_expr[var] = alias
+            self.state.maybe_unbound.add(var)
+
+    def _emit_optional_rows(
+        self,
+        edge_bindings: list[tuple[str, ResolvedProperty, str, str]],
+        attr_bindings: list[tuple[str, str]],
+        filter_expr: Any,
+    ) -> None:
+        """An OPTIONAL block with object-property triples: emit its padded rows
+        (:meth:`_emit_padded_rows`) and bind the block's variables to them."""
+        for var, row_expr in self._emit_padded_rows(edge_bindings, attr_bindings, filter_expr):
+            self.state.var_to_expr[var] = row_expr
+            self.state.maybe_unbound.add(var)
+
+    def _emit_padded_rows(
+        self,
+        edge_bindings: list[tuple[str, ResolvedProperty, str, str]],
+        attr_bindings: list[tuple[str, str]],
+        filter_expr: Any,
+    ) -> list[tuple[str, str]]:
+        """An OPTIONAL block with object-property triples, as a padded left join.
+
+        Returns ``(sparql_var, row expression)`` per variable of the block and
+        installs nothing: :meth:`_emit_optional_rows` binds the variables to
+        them, and the MINUS / EXISTS re-bind test in :meth:`visit_LeftJoin`
+        compares each row against the outer value instead (issue #52).
+
+        SPARQL's LeftJoin keeps every compatible solution of the OPTIONAL
+        block (SPARQL 1.1 §18.5), so a subject with two matching edges gives
+        two solutions, and one that matches nothing keeps its single solution
+        with the block's variables unbound. The block's matches become a
+        correlated subquery and the outer query iterates them, padded with one
+        ``null`` row when there are none — the shape the RPT cross-subject
+        OPTIONAL already emits (``optional_crosssubject.py``)::
+
+            LET <optsub> = (
+              FOR <v>, <e> IN OUTBOUND <subject> @@<edges>   -- per edge triple
+              [FILTER <e>.<type_field> == @<type>]          -- GENERIC_WITH_TYPE
+              FILTER <subject>.<attr> != null               -- per attribute triple
+            -- (under fan_out_list_values: FOR <lv> IN FLATTEN([<subject>.<attr>])
+            --  FILTER <lv> != null, one row per list element; issue #53)
+              [FILTER <inner filter>]
+              RETURN {f0: <target identity>, f1: <subject>.<attr>, …}
+            )
+            FOR <optrow> IN (LENGTH(<optsub>) > 0 ? <optsub> : [null])
+
+        The whole block is one subquery, so it still matches as a unit: an
+        edge without the block's attribute, or a row the inner FILTER rejects,
+        is not a match. It used to follow the first edge only
+        (``LIMIT 1 … [0]``), losing a row per extra edge (issue #48). The
+        legacy ``aql-translator.js#processOptionalPatterns`` did the same; this
+        follows SPARQL, with pyoxigraph as the reference, instead.
+        """
+        child = self.builder.create_child()
+        fields: list[tuple[str, str]] = []  # (sparql_var, source expression in the subquery)
+        for var, prop, edge_collection, subject_alias in edge_bindings:
+            v_alias = child.fresh_alias(prefix="v")
+            e_alias = child.fresh_alias(prefix="e")
+            child.for_traversal(v_alias, e_alias, subject_alias, edge_collection)
+            # The same edge-type filter the required-side triple applies
+            # (``_emit_edge_triple``).
+            if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
+                bind = child.bind(prop.type_value, hint=prop.type_field)
+                child.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+            fields.append((var, subject_ref(v_alias)))
+        for var, source_expr in attr_bindings:
+            if self.resolver.fan_out_list_values:
+                # One row per element, the fan-out a required triple gets
+                # (``visit_BGP``): FLATTEN([attr]) is the list's elements, or
+                # ``[scalar]``; a missing attribute is ``[null]``, no match.
+                value_alias = child.fresh_alias(prefix="lv")
+                child.for_inline(value_alias, self._fan_out_source(source_expr))
+                child.filter_raw(f"{value_alias} != null")
+                fields.append((var, value_alias))
+            else:
+                child.filter_raw(f"{source_expr} != null")
+                fields.append((var, source_expr))
+        if filter_expr is not None:
+            # The inner FILTER reads the block's variables by SPARQL name, so
+            # they resolve to their subquery expressions while it translates;
+            # the visitor writes to the child meanwhile, so any bind variable
+            # the FILTER needs is minted there and merged by absorb_child.
+            for var, source_expr in fields:
+                self.state.var_to_expr[var] = source_expr
+            parent = self.builder
+            self.builder = child
+            try:
+                aql_filter = self._translate_expr(filter_expr)
+            finally:
+                self.builder = parent
+            child.filter_raw(aql_filter)
+        names = [f"f{i}" for i in range(len(fields))]
+        projection = ", ".join(f"{name}: {source}" for name, (_, source) in zip(names, fields, strict=True))
+        child.return_scalar("{" + projection + "}")
+
+        inner_aql = self.builder.absorb_child(child)
+        indented = "\n".join("  " + line for line in inner_aql.splitlines())
+        sub_alias = self.builder.fresh_alias(prefix="optsub")
+        self.builder.let(sub_alias, f"(\n{indented}\n)")
+        row_alias = self.builder.fresh_alias(prefix="optrow")
+        self.builder.for_inline(row_alias, f"(LENGTH({sub_alias}) > 0 ? {sub_alias} : [null])")
+        return [(var, f"{row_alias}.{name}") for name, (var, _source) in zip(names, fields, strict=True)]
 
     # ------------------------------------------------------------------
     # BIND / agg-result rename — Extend(p=inner, var=?v, expr=<sparql expr>)
@@ -842,6 +957,8 @@ class AlgebraVisitor:
         # after COLLECT, so the overwrite matches AQL scoping.
         if isinstance(expr, Variable) and str(expr) in self.state.var_to_expr:
             self.state.var_to_expr[var_name] = self.state.var_to_expr[str(expr)]
+            if str(expr) in self.state.maybe_unbound:
+                self.state.maybe_unbound.add(var_name)
             return
 
         if var_name in self.state.var_to_expr:
@@ -860,16 +977,19 @@ class AlgebraVisitor:
         alias = self.builder.fresh_alias(prefix="bv")
         self.builder.let(alias, aql_expr)
         self.state.var_to_expr[var_name] = alias
+        if _expression_variable_names(expr) & self.state.maybe_unbound:
+            self.state.maybe_unbound.add(var_name)
 
     # ------------------------------------------------------------------
     # GROUP BY + aggregates — AggregateJoin(A=[…aggs…], p=Group(p=BGP, expr=keys|None))
     # ------------------------------------------------------------------
-    # Map rdflib ``Aggregate_<Name>_`` → AQL aggregate function. SAMPLE
-    # is handled separately because rdflib synthesises a Sample for
-    # every GROUP BY key (it's the SPARQL spec's convenience for
-    # "any value within the group, since they're all equal anyway"),
-    # and we route those into COLLECT key aliases instead of AQL
-    # aggregate functions.
+    # Map rdflib ``Aggregate_<Name>_`` → AQL aggregate function. rdflib
+    # synthesises a Sample for every GROUP BY variable the query projects
+    # (the SPARQL spec's "any value within the group, since they're all
+    # equal anyway"); those become COLLECT key aliases instead
+    # (``_is_group_key_sample``). A SAMPLE the query writes over anything
+    # else is a real aggregate: AQL's MAX returns one of the group's values
+    # and skips null, as SPARQL's Sample skips an unbound value (#58).
     # The class names rdflib uses (e.g. ``Aggregate_Count``) — note no
     # trailing underscore, despite ``pprintAlgebra`` rendering them as
     # ``Aggregate_Count_{...}`` (the ``_{`` is a separator before the
@@ -881,7 +1001,23 @@ class AlgebraVisitor:
         "Aggregate_Min": "MIN",
         "Aggregate_Max": "MAX",
         "Aggregate_GroupConcat": "CONCAT_SEPARATOR",
+        "Aggregate_Sample": "MAX",
     }
+
+    @staticmethod
+    def _is_group_key_sample(agg: Any, group_vars: set[str]) -> bool:
+        """Whether *agg* is a Sample of a GROUP BY variable — a COLLECT key.
+
+        rdflib synthesises one for each GROUP BY variable the query projects,
+        and a ``SAMPLE(?d)`` the query writes over a grouping variable is the
+        same value. Any other Sample — ``SAMPLE(?a)`` over a non-key variable,
+        or any SAMPLE in an ungrouped query — picks a value from the group and
+        must not group on it: treating it as a key returned one row per
+        distinct value (issue #58).
+        """
+        return (
+            agg.name == "Aggregate_Sample" and isinstance(agg.vars, Variable) and str(agg.vars) in group_vars
+        )
 
     def visit_AggregateJoin(self, node: Any) -> Any:
         group = node.p
@@ -894,23 +1030,39 @@ class AlgebraVisitor:
         # Visit the BGP / OPTIONAL / FILTER chain so every variable the
         # aggregates and group keys reference is bound in var_to_expr.
         self.visit(group.p)
+        # The pre-COLLECT scope, for aggregate arguments. Only variables bound
+        # before the COLLECT are visible inside ``AGGREGATE`` — a COLLECT key
+        # alias there is ArangoDB ERR 1512 ("use of unknown variable … in
+        # AGGREGATE expression") — but the samples pass below rebinds each
+        # GROUP BY variable to its key alias for the projection.
+        pattern_scope = dict(self.state.var_to_expr)
+        group_vars = {str(v) for v in (getattr(group, "expr", None) or []) if isinstance(v, Variable)}
 
         # Pre-allocate the COLLECT-key aliases for every Aggregate_Sample_
-        # (one per GROUP BY variable). We do this in a first pass so the
-        # main pass can see those bindings already in place when it
-        # emits the AGGREGATE list — important for nested expressions
-        # like ``COUNT(?d)`` over a grouping variable ``?d``.
+        # (one per GROUP BY variable), and rebind each GROUP BY variable to
+        # its key alias — what the projection, HAVING and ORDER BY read after
+        # the COLLECT. Aggregate *arguments* read ``pattern_scope`` instead:
+        # ``COUNT(?d)`` over a grouping variable ``?d`` must count ``doc.d``,
+        # since the key alias is not visible inside AGGREGATE.
         keys: list[tuple[str, str]] = []  # (alias, expression) for COLLECT
         sample_remap: dict[str, str] = {}  # __agg_N__ for samples → key alias
+        key_alias_by_var: dict[str, str] = {}
         for agg in node.A:
-            if agg.name != "Aggregate_Sample":
+            if not self._is_group_key_sample(agg, group_vars):
                 continue
             sparql_var = str(agg.vars)
-            attr_expr = self.state.var_to_expr.get(sparql_var)
-            if attr_expr is None:
-                raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{sparql_var}")
-            key_alias = self.builder.fresh_alias(prefix="grp")
-            keys.append((key_alias, attr_expr))
+            # One COLLECT key per GROUP BY variable. A second Sample of it (a
+            # ``SAMPLE(?d)`` the query writes beside the projected ``?d``)
+            # reuses the key; it used to read the first key's alias as its
+            # expression (``grp3 = grp2``), which a COLLECT key cannot see.
+            key_alias = key_alias_by_var.get(sparql_var)
+            if key_alias is None:
+                attr_expr = pattern_scope.get(sparql_var)
+                if attr_expr is None:
+                    raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{sparql_var}")
+                key_alias = self.builder.fresh_alias(prefix="grp")
+                keys.append((key_alias, attr_expr))
+                key_alias_by_var[sparql_var] = key_alias
             sample_remap[str(agg.res)] = key_alias
             # Also rebind the user-facing var: post-COLLECT it must
             # reference the COLLECT key alias, not the (now out-of-scope)
@@ -918,19 +1070,22 @@ class AlgebraVisitor:
             self.state.var_to_expr[sparql_var] = key_alias
             self.state.var_to_expr[str(agg.res)] = key_alias
 
-        # Real aggregates (everything except Aggregate_Sample_).
+        # Real aggregates: everything but the group-key Samples.
         aggregates: list[tuple[str, str]] = []  # (alias, "AGG(expr)")
+        null_counts: dict[str, str] = {}  # argument expression → alias counting its nulls
         count_into: str | None = None
-        non_sample_aggs = [a for a in node.A if a.name != "Aggregate_Sample"]
+        non_sample_aggs = [a for a in node.A if not self._is_group_key_sample(a, group_vars)]
 
-        # Fast-path: a single COUNT (any var, no DISTINCT) collapses to
-        # the AQL idiom ``WITH COUNT INTO <c>`` — more readable than
-        # ``AGGREGATE c = COUNT(<expr>)`` and the planner treats them
-        # identically.
+        # Fast-path: a single non-DISTINCT COUNT collapses to the AQL idiom
+        # ``WITH COUNT INTO <c>``. That counts rows, while SPARQL's COUNT
+        # counts the rows where its argument has a value (§18.5.1.2) and an
+        # unbound variable is null here (issue #46), so the idiom stands in
+        # only when every row binds the argument (:meth:`_counts_every_row`).
         is_count_shorthand = (
             len(non_sample_aggs) == 1
             and non_sample_aggs[0].name == "Aggregate_Count"
             and non_sample_aggs[0].distinct != "DISTINCT"
+            and self._counts_every_row(non_sample_aggs[0], pattern_scope)
         )
 
         for agg in non_sample_aggs:
@@ -947,13 +1102,38 @@ class AlgebraVisitor:
             if aql_func is None:
                 raise UnsupportedSparqlError(f"SPARQL aggregate {agg.name!r} is not yet supported")
 
-            arg_expr = self._aggregate_arg_expr(agg)
-
             if agg.name == "Aggregate_Count":
-                # Generic COUNT path (mixed with other aggregates, or
-                # COUNT DISTINCT). ``COUNT_DISTINCT`` is an AQL builtin.
-                func = "COUNT_DISTINCT" if distinct else "COUNT"
-                aggregates.append((agg_alias, f"{func}({arg_expr})"))
+                if distinct and agg.vars == "*":
+                    # Counting distinct *solutions* needs every in-scope
+                    # variable as one value; ``COUNT_DISTINCT(1)`` (what this
+                    # used to emit) is 1 whatever the data. Refuse until it is
+                    # built and cross-validated.
+                    raise UnsupportedSparqlError(
+                        "COUNT(DISTINCT *) is not supported yet; count DISTINCT over named variables"
+                    )
+                # A variable the pattern never binds is unbound in every
+                # solution, so it counts nothing: ``null`` below.
+                arg_expr = self._aggregate_arg_expr(agg, pattern_scope, unbound="null")
+                # AQL's COUNT and COUNT_DISTINCT both count null, and an
+                # unbound variable is null here (issue #46), so count only
+                # the rows where the argument has a value — except where
+                # every row has one, and the cheaper COUNT is the same.
+                if distinct:
+                    # UNIQUE keeps null as one of the values; it is dropped
+                    # where the count is read (projection / HAVING / ORDER
+                    # BY), as GROUP_CONCAT applies its separator below.
+                    aggregates.append((agg_alias, f"UNIQUE({arg_expr})"))
+                    self.state.var_to_expr[agg_var] = f"LENGTH(REMOVE_VALUE({agg_alias}, null))"
+                    continue
+                if self._counts_every_row(agg, pattern_scope):
+                    aggregates.append((agg_alias, f"COUNT({arg_expr})"))
+                else:
+                    aggregates.append((agg_alias, f"SUM({arg_expr} != null ? 1 : 0)"))
+                    if not keys:
+                        # Ungrouped over no rows, SUM is null and the
+                        # SPARQL count is 0.
+                        self.state.var_to_expr[agg_var] = f"NOT_NULL({agg_alias}, 0)"
+                        continue
             elif agg.name == "Aggregate_GroupConcat":
                 # SPARQL GROUP_CONCAT defaults to a single-space
                 # separator; the user can override via ``SEPARATOR=…``,
@@ -975,15 +1155,21 @@ class AlgebraVisitor:
                 # positional argument controls variable substitution. Calling
                 # ``agg.get("separator", " ")`` therefore returned the key
                 # name ``"separator"`` when the clause omitted SEPARATOR.
+                arg_expr = self._aggregate_arg_expr(agg, pattern_scope)
                 raw_sep = getattr(agg, "separator", None)
                 separator = _term_to_python(raw_sep) if raw_sep is not None else " "
                 sep_bind = self.builder.bind(separator, hint="sep")
                 collect_func = "UNIQUE" if distinct else "PUSH"
                 aggregates.append((agg_alias, f"{collect_func}({arg_expr})"))
-                self.state.var_to_expr[agg_var] = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
+                read = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
+                if self._argument_may_be_unbound(agg):
+                    read = self._unbound_is_error(read, arg_expr, aggregates, null_counts)
+                    self.state.maybe_unbound.add(agg_var)
+                self.state.var_to_expr[agg_var] = read
                 continue
             else:
-                if distinct:
+                if distinct and agg.name != "Aggregate_Sample":
+                    # (SAMPLE(DISTINCT x) is SAMPLE(x): any value either way.)
                     # SUM / AVG / MIN / MAX with DISTINCT: AQL doesn't
                     # have native DISTINCT-aggregates, so we'd need to
                     # rewrite into a COLLECT … INTO subquery. Refuse
@@ -991,7 +1177,23 @@ class AlgebraVisitor:
                     raise UnsupportedSparqlError(
                         f"DISTINCT is only supported on COUNT aggregates; got DISTINCT inside {agg.name!r}"
                     )
+                arg_expr = self._aggregate_arg_expr(agg, pattern_scope)
                 aggregates.append((agg_alias, f"{aql_func}({arg_expr})"))
+                read = agg_alias
+                if not keys and agg.name in ("Aggregate_Sum", "Aggregate_Avg"):
+                    # Ungrouped over no rows, AQL's SUM / AVG are null; SPARQL's
+                    # Sum and Avg of an empty group are 0 (SPARQL 1.1
+                    # §18.5.1.3-4) — the read COUNT already uses (issue #49).
+                    # MIN / MAX of an empty group are unbound in both.
+                    read = f"NOT_NULL({agg_alias}, 0)"
+                if agg.name in ("Aggregate_Min", "Aggregate_Max", "Aggregate_Sample"):
+                    self.state.maybe_unbound.add(agg_var)
+                # SAMPLE skips an unbound value, as COUNT does; the others fail.
+                if agg.name != "Aggregate_Sample" and self._argument_may_be_unbound(agg):
+                    read = self._unbound_is_error(read, arg_expr, aggregates, null_counts)
+                    self.state.maybe_unbound.add(agg_var)
+                self.state.var_to_expr[agg_var] = read
+                continue
 
             self.state.var_to_expr[agg_var] = agg_alias
 
@@ -1009,12 +1211,16 @@ class AlgebraVisitor:
         if keys:
             self.builder.set_empty_result_fallback()
 
-    def _aggregate_arg_expr(self, agg: Any) -> str:
+    def _aggregate_arg_expr(self, agg: Any, scope: dict[str, str], *, unbound: str | None = None) -> str:
         """Translate the argument of a SPARQL aggregate to an AQL expression.
 
         Handles three input shapes rdflib produces:
           * ``vars == '*'`` (only legal for COUNT(*)) → AQL ``1``
-          * ``vars`` is a Variable → look up via ``var_to_expr``
+          * ``vars`` is a Variable → look up in ``scope``, the pre-COLLECT
+            bindings (a GROUP BY variable's key alias is not visible inside
+            ``AGGREGATE``). A variable the pattern never binds returns
+            ``unbound`` when the caller gives one (COUNT: ``null``, which
+            counts nothing) and is refused otherwise.
           * ``vars`` is a richer expression node → fall through to the
             FILTER expression translator.
         """
@@ -1022,11 +1228,62 @@ class AlgebraVisitor:
         if v == "*":
             return "1"
         if isinstance(v, Variable):
-            mapped = self.state.var_to_expr.get(str(v))
+            mapped = scope.get(str(v))
             if mapped is None:
+                if unbound is not None:
+                    return unbound
                 raise UnsupportedSparqlError(f"aggregate references unbound variable ?{v}")
             return mapped
         return self._translate_expr(v)
+
+    def _counts_every_row(self, agg: Any, scope: dict[str, str]) -> bool:
+        """Whether ``COUNT(<agg's argument>)`` equals the number of rows.
+
+        True for ``COUNT(*)``, and for a variable bound to the identity of a
+        document this builder scans at the top level
+        (:meth:`AqlQueryBuilder.scanned_aliases`): that document exists in
+        every row, and ``subject_ref`` falls back to its ``_id``, so the value
+        is never null. Anything else — an attribute, an OPTIONAL variable, a
+        UNION arm's column, an expression — may be null in some rows.
+        """
+        if agg.vars == "*":
+            return True
+        if not isinstance(agg.vars, Variable):
+            return False
+        expr = scope.get(str(agg.vars))
+        return expr is not None and any(
+            expr == subject_ref(alias) for alias in self.builder.scanned_aliases()
+        )
+
+    def _argument_may_be_unbound(self, agg: Any) -> bool:
+        """Whether the aggregate's argument can be unbound in some solution
+        (it is, or mentions, a variable in ``state.maybe_unbound``)."""
+        v = agg.vars
+        if v == "*":
+            return False
+        names = {str(v)} if isinstance(v, Variable) else _expression_variable_names(v)
+        return bool(names & self.state.maybe_unbound)
+
+    def _unbound_is_error(
+        self, read: str, arg_expr: str, aggregates: list[tuple[str, str]], null_counts: dict[str, str]
+    ) -> str:
+        """Wrap an aggregate's read so an unbound value in its group makes it unbound.
+
+        SPARQL evaluates SUM / AVG / MIN / MAX / GROUP_CONCAT over the
+        group's values, and an unbound one is an error that makes the whole
+        result an error, which projects as unbound (SPARQL 1.1 §18.5.1;
+        pyoxigraph agrees). AQL's SUM / AVG / MIN / MAX skip null and
+        CONCAT_SEPARATOR drops it, so the group's nulls are counted beside the
+        aggregate (one count per argument) and the read is null when there
+        are any (issue #59). Over no rows the count is null, ``null > 0`` is
+        false, and the read stands — SUM / AVG still give 0 (#49).
+        """
+        nulls = null_counts.get(arg_expr)
+        if nulls is None:
+            nulls = self.builder.fresh_alias(prefix="nulls")
+            aggregates.append((nulls, f"SUM({arg_expr} == null ? 1 : 0)"))
+            null_counts[arg_expr] = nulls
+        return f"({nulls} > 0 ? null : {read})"
 
     # ------------------------------------------------------------------
     # ORDER BY — list of OrderConditions, each with expr + direction
@@ -1897,15 +2154,8 @@ class AlgebraVisitor:
                     f"which collection to scan."
                 )
             alias = self._open_collection(self.resolver.default_collection)
-            # Enforce the implicit join the SPARQL spec demands: if the
-            # variable was already bound to an AQL expression by an
-            # earlier triple, the new FOR's ``_uri`` must equal that
-            # expression. Without this FILTER, the AQL plan would
-            # cross-product the two FORs and silently over-count.
-            prior_expr = self.state.var_to_expr.get(str(subject))
-            new_expr = subject_ref(alias)
-            if prior_expr is not None and prior_expr != new_expr:
-                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
+            # ``_bind_subject`` joins the new FOR to any prior binding of
+            # the variable (the implicit join the SPARQL spec demands).
             self._bind_subject(subject, alias)
             return alias
         if isinstance(subject, URIRef):
@@ -1933,6 +2183,17 @@ class AlgebraVisitor:
         silently dropping the second alias's relationship to the
         variable. Otherwise the second FOR would float free of the
         first and the engine would emit the Cartesian product.
+
+        The same holds when the variable already has a *value* but no
+        document: a VALUES row, a BIND, an earlier triple's object, a
+        sub-select column, or — inside a MINUS / EXISTS probe — the outer
+        row's identity, which ``minus_exists`` pre-seeds so that "shared
+        variables turn into equality FILTERs". The new FOR's identity must
+        equal that value. Without the FILTER the FOR ranges over every
+        document of the class: a cross product, or a probe that ignores the
+        outer row (issue #51). This was enforced only on the
+        default-collection path (``_ensure_subject_alias``); a type pattern
+        reaches here directly.
         """
         if not isinstance(subject, Variable):
             return
@@ -1940,7 +2201,12 @@ class AlgebraVisitor:
         existing_alias = self.state.var_to_doc_alias.get(name)
         if existing_alias is None:
             self.state.var_to_doc_alias[name] = alias
-            self.state.var_to_expr.setdefault(name, subject_ref(alias))
+            prior_expr = self.state.var_to_expr.get(name)
+            new_expr = subject_ref(alias)
+            if prior_expr is None:
+                self.state.var_to_expr[name] = new_expr
+            elif prior_expr != new_expr:
+                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
             return
         if existing_alias == alias:
             return
@@ -2211,6 +2477,26 @@ class AlgebraVisitor:
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
+def _expression_variable_names(node: Any) -> set[str]:
+    """Names of every SPARQL Variable inside an rdflib expression tree.
+
+    rdflib expressions are ``CompValue`` mappings whose operands sit under
+    varying keys (``expr``, ``other``, ``arg``, …) and in lists, so this
+    walks every value rather than a fixed set of attributes.
+    """
+    out: set[str] = set()
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Variable):
+            out.add(str(item))
+        elif isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, list | tuple):
+            stack.extend(item)
+    return out
+
+
 def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
     """Sort key for BGP triples — lower = visit earlier.
 

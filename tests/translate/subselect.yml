@@ -54,7 +54,9 @@ cases:
     # COLLECT / RETURN) and the outer query consumes the aggregate
     # via ``row.c``. Confirms child-builder finalization correctly
     # renders the aggregate as part of the inner block (no clauses
-    # leak into the outer).
+    # leak into the outer). ``?p`` binds an attribute name, not a
+    # document scanned at the top level, so COUNT counts the rows where
+    # it has a value instead of every row (issue #46).
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?c WHERE {
@@ -69,7 +71,7 @@ cases:
           FOR doc2 IN @@c2_Document
           FOR k3 IN ATTRIBUTES(doc2, true)
           FILTER k3 NOT IN @_p1_sys_attrs
-          COLLECT grp4 = NOT_NULL(doc2._uri, doc2._id) WITH COUNT INTO agg5
+          COLLECT grp4 = NOT_NULL(doc2._uri, doc2._id) AGGREGATE agg5 = SUM(k3 != null ? 1 : 0)
           RETURN { s: grp4, c: agg5 }
         )
         FOR result7 IN (LENGTH(results6) == 0 ? [{}] : results6)

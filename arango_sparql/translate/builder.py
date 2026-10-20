@@ -183,6 +183,9 @@ class AqlQueryBuilder:
     _bind_vars: dict[str, Any] = field(default_factory=dict)
     _body_clauses: list[_Clause] = field(default_factory=list)
     """FOR / FILTER / LET / RAW clauses, in the order the visitor adds them."""
+    _scanned_aliases: list[str] = field(default_factory=list)
+    """Aliases bound by a collection scan in *this* builder's body
+    (:meth:`for_` / :meth:`for_sharded`); see :meth:`scanned_aliases`."""
     _with_collections: list[str] = field(default_factory=list)
     """Sharded-family member collection names whose ``@@coll`` bind
     references must appear in the leading ``WITH`` clause that
@@ -281,7 +284,20 @@ class AqlQueryBuilder:
             raise ValueError(f"invalid FOR alias: {alias!r}")
         coll_ref = self.bind_collection(collection)
         self._body_clauses.append(_Clause(_ClauseKind.FOR, f"FOR {alias} IN {coll_ref}"))
+        self._scanned_aliases.append(alias)
         return self
+
+    def scanned_aliases(self) -> tuple[str, ...]:
+        """Aliases of the documents this builder's own body scans.
+
+        Each one is a document in every row the body produces, never null:
+        it is bound by a top-level ``FOR`` over a collection (or a shard
+        family), and every subquery — OPTIONAL, MINUS / EXISTS, sub-select,
+        UNION arm — is built in a child builder (:meth:`create_child`), so
+        its scans are not listed here. ``COUNT`` relies on this to know when
+        counting rows equals counting bound values (issue #46).
+        """
+        return tuple(self._scanned_aliases)
 
     def for_traversal(
         self,
@@ -385,6 +401,7 @@ class AqlQueryBuilder:
         body = ",\n  ".join(sub_scans)
         clause = f"FOR {alias} IN UNION_DISTINCT(\n  {body}\n)"
         self._body_clauses.append(_Clause(_ClauseKind.FOR, clause))
+        self._scanned_aliases.append(alias)
         return self
 
     def filter_eq(self, lhs: str, rhs_bind_placeholder: str) -> AqlQueryBuilder:
@@ -453,58 +470,6 @@ class AqlQueryBuilder:
         elif aggregates:
             parts.append("AGGREGATE " + ", ".join(f"{a} = {expr}" for a, expr in aggregates))
         self._body_clauses.append(_Clause(_ClauseKind.COLLECT, " ".join(parts)))
-        return self
-
-    def let_outbound_first_uri(
-        self,
-        let_alias: str,
-        *,
-        start_alias: str,
-        edge_collection: str,
-        type_field: str | None = None,
-        type_value: Any = None,
-    ) -> AqlQueryBuilder:
-        """Emit a ``LET <alias> = (FOR v, e IN OUTBOUND <start> @@<coll>
-        [FILTER e.<type_field> == @bind] LIMIT 1 RETURN v._uri)[0]`` clause.
-
-        The OPTIONAL emitter for object-property triples — picks the
-        target vertex's ``_uri`` of the first matching edge, or ``null``
-        when no edge matches (which is exactly SPARQL's OPTIONAL
-        "unbound" semantics).
-
-        ``LIMIT 1`` is correct for SPARQL OPTIONAL: the SPARQL semantics
-        of ``OPTIONAL { ?s :p ?o }`` only need to know whether ``?o``
-        binds, and SPARQL does not specify which match to pick when
-        multiple exist (set semantics). Picking the first is what the
-        legacy Foxx ``aql-translator.js#processOptionalPatterns`` does
-        too, and matches the W3C "any-of" projection.
-
-        Vertex / edge aliases are minted internally so the caller does
-        not have to care about uniqueness — the let alias is the only
-        identifier the caller needs.
-        """
-        if not _AQL_IDENT_RE.match(let_alias):
-            raise ValueError(f"invalid LET alias: {let_alias!r}")
-        if not _AQL_IDENT_RE.match(start_alias):
-            raise ValueError(f"invalid traversal start alias: {start_alias!r}")
-        if (type_field is None) != (type_value is None):
-            raise ValueError(
-                "type_field and type_value must be provided together "
-                "(GENERIC_WITH_TYPE) or both omitted (DEDICATED_COLLECTION)"
-            )
-        v_alias = self.fresh_alias(prefix="v")
-        e_alias = self.fresh_alias(prefix="e")
-        coll_ref = self.bind_collection(edge_collection)
-        parts = [f"FOR {v_alias}, {e_alias} IN OUTBOUND {start_alias} {coll_ref}"]
-        if type_field is not None:
-            if not _AQL_IDENT_RE.match(type_field):
-                raise ValueError(f"invalid traversal type_field: {type_field!r}")
-            bind = self.bind(type_value, hint=type_field)
-            parts.append(f"FILTER {e_alias}.{type_field} == {bind}")
-        parts.append("LIMIT 1")
-        parts.append(f"RETURN {subject_ref(v_alias)}")
-        subquery = " ".join(parts)
-        self._body_clauses.append(_Clause(_ClauseKind.LET, f"LET {let_alias} = ({subquery})[0]"))
         return self
 
     def let(self, alias: str, expression: str) -> AqlQueryBuilder:

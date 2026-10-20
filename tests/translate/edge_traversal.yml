@@ -164,9 +164,11 @@ cases:
 
   # ----------------------------------------------------------- OPTIONAL
   - name: optional_dedicated_edge
-    # OPTIONAL { ?s :knows ?b } collapses to a LIMIT 1 traversal
-    # subquery that returns null when no edge matches — exactly
-    # SPARQL's OPTIONAL "unbound" semantics.
+    # OPTIONAL { ?s :knows ?b } is a padded left join: the matching
+    # edges become rows of a subquery, and the outer FOR iterates them —
+    # one solution per edge, or one with ?b unbound when there is none
+    # (SPARQL 1.1 §18.5). It used to take the first edge only
+    # (``LIMIT 1 … [0]``), losing a row per extra edge (issue #48).
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?b WHERE {
@@ -175,16 +177,19 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN NOT_NULL(v3._uri, v3._id))[0]
-      RETURN { s: NOT_NULL(doc1._uri, doc1._id), b: opt2 }
+      LET optsub4 = (
+        FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+        RETURN {f0: NOT_NULL(v2._uri, v2._id)}
+      )
+      FOR optrow5 IN (LENGTH(optsub4) > 0 ? optsub4 : [null])
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), b: optrow5.f0 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
 
   - name: optional_typed_edge
     # GENERIC_WITH_TYPE in an OPTIONAL: the discriminator FILTER lands
-    # *inside* the LET subquery so the LIMIT 1 reads the typed edge
-    # only.
+    # *inside* the subquery, so only typed edges become rows.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?c WHERE {
@@ -193,17 +198,23 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_rel FILTER e4.type == @_p1_type LIMIT 1 RETURN NOT_NULL(v3._uri, v3._id))[0]
-      RETURN { s: NOT_NULL(doc1._uri, doc1._id), c: opt2 }
+      LET optsub4 = (
+        FOR v2, e3 IN OUTBOUND doc1 @@c2_rel
+        FILTER e3.type == @_p1_type
+        RETURN {f0: NOT_NULL(v2._uri, v2._id)}
+      )
+      FOR optrow5 IN (LENGTH(optsub4) > 0 ? optsub4 : [null])
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), c: optrow5.f0 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_rel": "rel"
       "_p1_type": "worksAt"
 
   - name: optional_edge_alongside_attribute
-    # Mixed-binding OPTIONAL with one attribute lookup AND one edge:
-    # both go through the multi-binding null-check gate so the row is
-    # all-or-nothing per OPTIONAL semantics.
+    # Mixed-binding OPTIONAL with one attribute lookup AND one edge: the
+    # whole block is one subquery, so it matches as a unit — an edge
+    # counts only when the attribute is there too — and with no match
+    # both variables are unbound in the single padded row.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?email ?b WHERE {
@@ -212,10 +223,41 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      LET opt2 = (FOR v3, e4 IN OUTBOUND doc1 @@c2_knows LIMIT 1 RETURN NOT_NULL(v3._uri, v3._id))[0]
-      LET opt5 = ((doc1.email != null && opt2 != null) ? doc1.email : null)
-      LET opt6 = ((doc1.email != null && opt2 != null) ? opt2 : null)
-      RETURN { s: NOT_NULL(doc1._uri, doc1._id), email: opt5, b: opt6 }
+      LET optsub4 = (
+        FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+        FILTER doc1.email != null
+        RETURN {f0: NOT_NULL(v2._uri, v2._id), f1: doc1.email}
+      )
+      FOR optrow5 IN (LENGTH(optsub4) > 0 ? optsub4 : [null])
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), email: optrow5.f1, b: optrow5.f0 }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
+
+  - name: optional_edge_inner_filter_reads_inner_and_outer_vars
+    # An inner FILTER is part of the block: it runs inside the subquery,
+    # reading the block's ``?e`` (``doc1.email``) and the required side's
+    # ``?n``. Its bind variables are minted in the subquery's builder and
+    # merged when it is absorbed (issue #48).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?b WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :knows ?b ; :email ?e FILTER(CONTAINS(?e, "@ex.org") && ?n != "Bob") }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      LET optsub4 = (
+        FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+        FILTER doc1.email != null
+        FILTER (CONTAINS(doc1.email, @_p1) && (doc1.name != @_p2))
+        RETURN {f0: NOT_NULL(v2._uri, v2._id), f1: doc1.email}
+      )
+      FOR optrow5 IN (LENGTH(optsub4) > 0 ? optsub4 : [null])
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), b: optrow5.f0 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+      "_p1": "@ex.org"
+      "_p2": "Bob"

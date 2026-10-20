@@ -235,6 +235,119 @@ cases:
 
   # ---- CONSTRUCT WHERE (template-less) ------------------------------
 
+  # ---- Typed shared subject (issue #51) --------------------------
+  # The cases above use the empty ontology, so every probe subject took
+  # the default-collection path, which already joined to the outer row.
+  # A type pattern inside the probe opened its FOR without that join, so
+  # the probe ignored the outer row: any Person with an email removed
+  # *every* Person from a MINUS.
+
+  - name: minus_typed_shared_subject
+    ontology: &person_ontology |
+      @prefix : <http://ex.org/> .
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      @prefix phys: <https://arango.solutions/phys#> .
+      :Person a owl:Class ; phys:collectionName "Person" .
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person . MINUS { ?s a :Person ; :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET minus_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Person
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc2, "email")
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER minus_probe3 == 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
+
+  - name: not_exists_typed_shared_subject
+    ontology: *person_ontology
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person . FILTER NOT EXISTS { ?s a :Person ; :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET not_exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Person
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc2, "email")
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER not_exists_probe3 == 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
+
+  - name: exists_typed_shared_subject
+    ontology: *person_ontology
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { ?s a :Person . FILTER EXISTS { ?s a :Person ; :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      LET exists_probe3 = LENGTH((
+        FOR doc2 IN @@c2_Person
+        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc2, "email")
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER exists_probe3 > 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
+
+  # ---- OPTIONAL re-binding an edge variable inside MINUS (issue #52) -
+  # The re-bound ``?f`` must match *some* edge target (or there is no
+  # edge): one probe row per edge, padded with a null row, each tested as
+  # before. It compared the first edge only (``LIMIT 1 … [0]``).
+
+  - name: minus_optional_rebind_edge_every_match
+    ontology: |
+      @prefix : <http://ex.org/> .
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      @prefix phys: <https://arango.solutions/phys#> .
+      :Person a owl:Class ; phys:collectionName "Person" .
+      :knows a owl:ObjectProperty ; phys:edgeCollectionName "knows" .
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?f WHERE {
+        ?s a :Person ; :knows ?f .
+        MINUS { ?s a :Person ; :email ?e OPTIONAL { ?s :knows ?f } }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
+      LET minus_probe9 = LENGTH((
+        FOR doc4 IN @@c3_Person
+        FILTER NOT_NULL(doc4._uri, doc4._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER HAS(doc4, "email")
+        LET optsub7 = (
+          FOR v5, e6 IN OUTBOUND doc4 @@c4_knows
+          RETURN {f0: NOT_NULL(v5._uri, v5._id)}
+        )
+        FOR optrow8 IN (LENGTH(optsub7) > 0 ? optsub7 : [null])
+        FILTER (optrow8.f0 == null || NOT_NULL(v2._uri, v2._id) == null || optrow8.f0 == NOT_NULL(v2._uri, v2._id))
+        LIMIT 1
+        RETURN 1
+      ))
+      FILTER minus_probe9 == 0
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id), f: NOT_NULL(v2._uri, v2._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+      "@c3_Person": "Person"
+      "@c4_knows": "knows"
+
   - name: construct_where_single_triple
     # ``CONSTRUCT WHERE { ?s :name ?n }`` — SPARQL 1.1 §16.2.1
     # short-form where the WHERE BGP doubles as the output

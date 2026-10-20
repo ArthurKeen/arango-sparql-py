@@ -66,12 +66,19 @@ _SUBQUERY_PAREN_END_RE = re.compile(r"^\)\s*$")
 # ``_FOR_RE`` (collection bind) and ``_FOR_TRAVERSAL_RE`` (OUTBOUND) by
 # the parenthesised expression source; checked after both.
 _FOR_INLINE_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\(.+\))\s*$")
+# FOR over an array literal — the empty-BGP scope opener the visitor emits
+# before a BIND with no pattern of its own: ``FOR empty1 IN [1]``.
+_FOR_ARRAY_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\[.*\])\s*$")
 # FOR over a list-valued bind variable — the SPARQL VALUES shape the
 # visitor emits via ``builder.for_values`` (``FOR row1 IN @_p1_values``)
 # and the federation entry point's seed-binding pushdown reuses.
 # Checked after ``_FOR_RE`` (which requires the double-@ collection
 # form) and before ``_FOR_INLINE_RE``.
 _FOR_VALUES_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+@(_\w+)\s*$")
+# FOR over a builtin call — the list fan-out under ``fan_out_list_values``:
+# ``FOR lv2 IN FLATTEN([doc1.email])`` iterates a list attribute's elements
+# (required triples, and OPTIONAL since issue #53).
+_FOR_CALL_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+([A-Z_][A-Z0-9_]*\(.+\))\s*$")
 # FOR over a LET-bound row list — the shape ``finalize()`` emits for
 # ``SELECT DISTINCT … LIMIT`` (``LET deduped2 = (…)`` then
 # ``FOR row3 IN deduped2``). A bare identifier, so neither the ``@``
@@ -194,6 +201,10 @@ _AQL_BUILTINS: dict[str, Any] = {
     "LOWER": lambda v: None if v is None else str(v).lower(),
     "UPPER": lambda v: None if v is None else str(v).upper(),
     "LENGTH": lambda v: None if v is None else len(v),
+    # ``REMOVE_VALUE(array, value)`` drops every element equal to ``value``;
+    # the COUNT DISTINCT read (``LENGTH(REMOVE_VALUE(agg, null))``) uses it
+    # to drop the null that UNIQUE keeps (issue #46).
+    "REMOVE_VALUE": lambda arr, value: None if arr is None else [x for x in arr if x != value],
     "IS_STRING": lambda v: isinstance(v, str),
     "IS_NUMBER": lambda v: isinstance(v, int | float) and not isinstance(v, bool),
     "IS_BOOL": lambda v: isinstance(v, bool),
@@ -266,18 +277,26 @@ def _parse_collect_clause(
 def _aggregate_apply(func: str, values: list[Any]) -> Any:
     """Apply an AQL aggregate function name to a list of row values.
 
-    Mirrors AQL semantics for null handling: ``MIN`` / ``MAX`` /
-    ``AVG`` / ``SUM`` skip nulls; ``COUNT`` counts every row regardless
-    of value (matching the AQL spec, which is a known divergence from
-    SPARQL's ``COUNT(?x)`` "count bound rows" semantics — the visitor
-    accepts that for now and the cross test exercises the AQL side).
+    Mirrors ArangoDB, null handling included, and deliberately *not* SPARQL —
+    the cross tests compare these results with pyoxigraph, so an interpreter
+    that quietly applied SPARQL semantics would pass AQL that ArangoDB gets
+    wrong (issue #46; #39 was the same blind spot). Checked on ArangoDB 3.12:
+
+    * ``COUNT`` counts every value, null included; ``COUNT_DISTINCT`` counts
+      null as one more distinct value; ``UNIQUE`` keeps null as a value.
+    * ``MIN`` / ``MAX`` / ``AVG`` / ``SUM`` skip nulls; ``SUM`` over no rows
+      is null (over only nulls it is 0).
     """
     non_null = [v for v in values if v is not None]
     if func == "COUNT":
         return len(values)
     if func == "COUNT_DISTINCT":
-        return len({v for v in values if v is not None})
+        return len(_unique(values))
+    if func == "UNIQUE":
+        return _unique(values)
     if func == "SUM":
+        if not values:
+            return None
         return sum(non_null) if non_null else 0
     if func == "AVG":
         return sum(non_null) / len(non_null) if non_null else None
@@ -286,6 +305,36 @@ def _aggregate_apply(func: str, values: list[Any]) -> Any:
     if func == "MAX":
         return max(non_null) if non_null else None
     raise AssertionError(f"interpreter does not implement aggregate {func!r}")
+
+
+def _aql_identity(value: Any) -> Any:
+    """A hashable key that is equal exactly when AQL calls two values equal.
+
+    Python's ``==`` makes ``True == 1``; AQL does not (``UNIQUE([1, true])`` is
+    ``[1, true]`` on ArangoDB 3.12), while it does treat ``1`` and ``1.0`` as
+    one number. Applied recursively, so arrays and objects compare the same way.
+    """
+    if isinstance(value, bool):
+        return ("bool", value)
+    if isinstance(value, int | float):
+        return ("number", float(value))
+    if isinstance(value, list):
+        return ("array", tuple(_aql_identity(v) for v in value))
+    if isinstance(value, dict):
+        return ("object", tuple(sorted((k, _aql_identity(v)) for k, v in value.items())))
+    return (type(value).__name__, value)
+
+
+def _unique(values: list[Any]) -> list[Any]:
+    """Distinct values in first-seen order, by AQL equality (null is a value)."""
+    seen: set[Any] = set()
+    out: list[Any] = []
+    for v in values:
+        key = _aql_identity(v)
+        if key not in seen:
+            seen.add(key)
+            out.append(v)
+    return out
 
 
 def _matching_delimiter(text: str, start: int, opening: str, closing: str) -> int:
@@ -325,6 +374,52 @@ def _strip_outer_parentheses(expr: str) -> str:
             break
         stripped = stripped[1:-1].strip()
     return stripped
+
+
+def _split_top_level_order_comparison(expr: str) -> tuple[str, str, str] | None:
+    """Split ``left OP right`` for an ordering OP (``<`` ``>`` ``<=`` ``>=``)
+    at nesting depth 0, or return ``None``."""
+    stripped = _strip_outer_parentheses(expr)
+    depth = 0
+    quote: str | None = None
+    for index, char in enumerate(stripped):
+        if quote is not None:
+            if char == quote and stripped[index - 1] != "\\":
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif depth == 0 and char in "<>" and stripped[index - 1 : index] not in {"=", "!"}:
+            op = stripped[index : index + 2] if stripped[index + 1 : index + 2] == "=" else char
+            return stripped[:index].strip(), op, stripped[index + len(op) :].strip()
+    return None
+
+
+def _aql_order(left: Any, op: str, right: Any) -> bool:
+    """AQL's ordering comparison: values of different types compare by type
+    (null < bool < number < string < array < object), so ``null > 0`` is
+    false and ``null < 0`` true, where Python raises TypeError."""
+
+    def rank(value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return 1
+        if isinstance(value, int | float):
+            return 2
+        if isinstance(value, str):
+            return 3
+        return 4 if isinstance(value, list) else 5
+
+    if rank(left) != rank(right):
+        cmp = (rank(left) > rank(right)) - (rank(left) < rank(right))
+    else:
+        cmp = (left > right) - (left < right)
+    return {">": cmp > 0, "<": cmp < 0, ">=": cmp >= 0, "<=": cmp <= 0}[op]
 
 
 def _split_top_level_ternary(expr: str) -> tuple[str, str, str] | None:
@@ -503,7 +598,19 @@ def _eval_expr(
     # and the variable-predicate system-attribute skip (``k NOT IN @s``).
     py = re.sub(r"\bNOT IN\b", " not in ", py)
     py = re.sub(r"\bIN\b", " in ", py)
-    return eval(py, {"__builtins__": {}}, namespace)  # noqa: S307 - test-only
+    try:
+        return eval(py, {"__builtins__": {}}, namespace)  # noqa: S307 - test-only
+    except TypeError:
+        # Python cannot order None against a number; AQL can (null sorts
+        # first). Emitted by the aggregate error read ``(nulls > 0 ? …)``,
+        # whose count is null over no rows (issue #59).
+        parts = _split_top_level_order_comparison(expr)
+        if parts is None:
+            raise
+        left, op, right = parts
+        return _aql_order(
+            _eval_expr(left, env, bind_vars, scoped_let), op, _eval_expr(right, env, bind_vars, scoped_let)
+        )
 
 
 def _eval_filter(
@@ -532,6 +639,30 @@ def _split_sort_keys(clause: str) -> list[tuple[str, str]]:
             raise AssertionError(f"sort key missing ASC/DESC: {raw!r}")
         out.append((head.strip(), direction))
     return out
+
+
+def _read_block(
+    lines: list[str], i: int, into: list[str], opener: re.Pattern[str], closer: re.Pattern[str]
+) -> int:
+    """Copy the lines of one subquery block into ``into``; return the index of
+    its closing line (or ``len(lines)`` when unterminated).
+
+    Depth-aware: a block of the same kind nested inside it — the OPTIONAL
+    ``LET optsub = (…)`` inside a grouped query's ``LET results = (…)``
+    (issue #48) — keeps its own closer instead of ending the outer block.
+    """
+    depth = 0
+    while i < len(lines):
+        line = lines[i]
+        if opener.match(line):
+            depth += 1
+        elif closer.match(line):
+            if depth == 0:
+                return i
+            depth -= 1
+        into.append(line)
+        i += 1
+    return i
 
 
 def run_aql_subset(
@@ -606,9 +737,7 @@ def run_aql_subset(
             # row-count op evaluated per outer row at run time.
             alias = m.group(1)
             inner: list[str] = []
-            while i < len(lines) and not _SUBQUERY_END_RE.match(lines[i]):
-                inner.append(lines[i])
-                i += 1
+            i = _read_block(lines, i, inner, _LEN_SUBQUERY_START_RE, _SUBQUERY_END_RE)
             if i >= len(lines):  # pragma: no cover - malformed AQL
                 raise AssertionError("unterminated LENGTH(( subquery in AQL")
             i += 1  # skip the closing ``))``
@@ -623,9 +752,7 @@ def run_aql_subset(
             # alias binds to the resulting list of row dicts.
             alias = m.group(1)
             rows_inner: list[str] = []
-            while i < len(lines) and not _SUBQUERY_PAREN_END_RE.match(lines[i]):
-                rows_inner.append(lines[i])
-                i += 1
+            i = _read_block(lines, i, rows_inner, _ROWS_SUBQUERY_START_RE, _SUBQUERY_PAREN_END_RE)
             if i >= len(lines):  # pragma: no cover - malformed AQL
                 raise AssertionError("unterminated LET = ( subquery in AQL")
             i += 1  # skip the closing ``)``
@@ -651,11 +778,16 @@ def run_aql_subset(
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, values_var = m.groups()
             pre_collect_plan.append(("FOR_VALUES", alias, bind_vars[values_var]))
-        elif m := _FOR_INLINE_RE.match(line):
+        elif m := _FOR_INLINE_RE.match(line) or _FOR_ARRAY_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, inline_expr = m.groups()
             pre_collect_plan.append(("FOR_INLINE", alias, inline_expr))
+        elif m := _FOR_CALL_RE.match(line):
+            if seen_collect:  # pragma: no cover
+                raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
+            alias, call_expr = m.groups()
+            pre_collect_plan.append(("FOR_INLINE", alias, call_expr))
         elif m := _FOR_LET_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
@@ -782,6 +914,10 @@ def run_aql_subset(
         for env, let_env in envs:
             key_tuple = tuple(_eval_expr(expr, env, bind_vars, let_env) for _, expr in keys)
             groups.setdefault(key_tuple, []).append((env, let_env))
+        if not keys and not groups:
+            # A COLLECT with no group keys returns one row even over no input
+            # (WITH COUNT INTO → 0, SUM → null), as ArangoDB does.
+            groups[()] = []
         new_envs: list[tuple[dict, dict]] = []
         try:
             sorted_keys = sorted(groups.keys())

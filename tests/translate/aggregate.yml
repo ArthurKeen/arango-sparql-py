@@ -1,16 +1,22 @@
 # Golden corpus for SPARQL aggregates (rdflib's ``AggregateJoin`` over
-# a ``Group``). Covers COUNT (with the ``WITH COUNT INTO`` shorthand),
-# COUNT DISTINCT (via AQL's ``COUNT_DISTINCT``), SUM/AVG/MIN/MAX
-# (mapped to AQL aggregate functions), GROUP_CONCAT (mapped to AQL
+# a ``Group``). Covers COUNT, COUNT DISTINCT, SUM/AVG/MIN/MAX (mapped to
+# AQL aggregate functions), GROUP_CONCAT (mapped to AQL
 # ``CONCAT_SEPARATOR``), GROUP BY, and HAVING (which is a plain FILTER
 # above the AggregateJoin in the algebra).
 #
-# Per legacy ``aql-query-builder.js#collect``: the idiomatic AQL form
-# is ``COLLECT k = e WITH COUNT INTO c`` for single-COUNT queries and
-# ``COLLECT k = e AGGREGATE a = f(e), …`` for everything else. The
-# visitor picks the shorthand when there's exactly one COUNT and no
-# DISTINCT modifier, and falls back to the AGGREGATE form otherwise
-# (mixed aggregates, COUNT DISTINCT, GROUP_CONCAT, etc.).
+# SPARQL's COUNT(expr) counts the solutions where ``expr`` has a value;
+# an unbound variable is null on the AQL side, and AQL's COUNT and
+# COUNT_DISTINCT both count null (issue #46). So:
+#   * ``COLLECT … WITH COUNT INTO c`` (legacy
+#     ``aql-query-builder.js#collect``'s idiom) only for a lone COUNT
+#     whose argument is bound in every row: ``*``, or the identity of a
+#     document scanned at the top level;
+#   * any other COUNT → ``AGGREGATE a = SUM(expr != null ? 1 : 0)``,
+#     read as ``NOT_NULL(a, 0)`` when ungrouped (SUM over no rows is null);
+#   * COUNT DISTINCT → ``AGGREGATE a = UNIQUE(expr)``, read as
+#     ``LENGTH(REMOVE_VALUE(a, null))``.
+# Aggregate arguments read the pre-COLLECT bindings: a GROUP BY key's
+# COLLECT alias is not visible inside AGGREGATE.
 # Grouped forms are wrapped once so an empty input yields SPARQL's
 # single empty solution instead of AQL COLLECT's zero rows.
 
@@ -48,11 +54,15 @@ cases:
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT (COUNT(DISTINCT ?d) AS ?c) WHERE { ?s a :Person ; :dept ?d }
+    # AQL's COUNT_DISTINCT counts null as one more value, and an unbound
+    # (or stored-null) ``dept`` is null here, so the distinct values are
+    # collected with UNIQUE and null is dropped where the count is read
+    # (issue #46).
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "dept")
-      COLLECT AGGREGATE agg2 = COUNT_DISTINCT(doc1.dept)
-      RETURN { c: agg2 }
+      COLLECT AGGREGATE agg2 = UNIQUE(doc1.dept)
+      RETURN { c: LENGTH(REMOVE_VALUE(agg2, null)) }
     expected_bind_vars:
       "@c1_Person": "Person"
 
@@ -176,5 +186,259 @@ cases:
       )
       FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
       RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  # ---- COUNT counts bound values only (issue #46) --------------------
+
+  - name: count_optional_var_ungrouped
+    # Only some people have an email: COUNT(?e) counts those, not every
+    # row the OPTIONAL keeps.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(?e) AS ?c) WHERE { ?s a :Person OPTIONAL { ?s :email ?e } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT AGGREGATE agg2 = SUM(doc1.email != null ? 1 : 0)
+      RETURN { c: NOT_NULL(agg2, 0) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: count_never_bound_var
+    # ``?o`` is bound nowhere in the pattern, so it is unbound in every
+    # solution and the count is 0 (it used to count every row).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(?o) AS ?c) WHERE { ?s a :Person }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT AGGREGATE agg2 = SUM(null != null ? 1 : 0)
+      RETURN { c: NOT_NULL(agg2, 0) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_count_optional_var
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (COUNT(?e) AS ?c) WHERE {
+        ?s a :Person ; :dept ?d OPTIONAL { ?s :email ?e }
+      } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = SUM(doc1.email != null ? 1 : 0)
+        RETURN { d: grp2, c: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_count_of_the_group_key
+    # The argument reads ``doc1.dept``, not the key alias ``grp2``: a
+    # COLLECT key is not visible inside AGGREGATE (ArangoDB ERR 1512).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (COUNT(?d) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = SUM(doc1.dept != null ? 1 : 0)
+        RETURN { d: grp2, c: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: count_optional_var_with_max
+    # The generic AGGREGATE path (COUNT mixed with another aggregate).
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (COUNT(?e) AS ?c) (MAX(?a) AS ?m) WHERE {
+        ?s a :Person ; :age ?a OPTIONAL { ?s :email ?e }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      COLLECT AGGREGATE agg2 = SUM(doc1.email != null ? 1 : 0), agg3 = MAX(doc1.age)
+      RETURN { c: NOT_NULL(agg2, 0), m: agg3 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: count_distinct_optional_var_having
+    # The DISTINCT count is read where HAVING tests it, with null dropped.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d WHERE {
+        ?s a :Person ; :dept ?d OPTIONAL { ?s :email ?e }
+      } GROUP BY ?d HAVING (COUNT(DISTINCT ?e) > 0)
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
+      COLLECT grp2 = doc1.dept AGGREGATE agg3 = UNIQUE(doc1.email)
+      FILTER (LENGTH(REMOVE_VALUE(agg3, null)) > @_p1)
+      RETURN { d: grp2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": 0
+
+  # ---- Any aggregate over a GROUP BY variable (found reviewing #47) -
+  # Before, the argument read the COLLECT key alias (``MAX(grp2)``), which
+  # ArangoDB rejects: ERR 1512 "use of unknown variable 'grp2' in AGGREGATE
+  # expression". The pre-COLLECT expression is what each group aggregates.
+
+  - name: group_by_max_of_the_group_key
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (MAX(?d) AS ?m) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = MAX(doc1.dept)
+        RETURN { d: grp2, m: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_by_group_concat_of_the_group_key
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (GROUP_CONCAT(?d) AS ?g) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.dept)
+        RETURN { d: grp2, g: CONCAT_SEPARATOR(@_p1_sep, agg3) }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_sep": " "
+
+  # ---- Ungrouped SUM / AVG over no rows (issue #49) -----------------
+  # SPARQL's Sum and Avg of an empty group are 0 (§18.5.1.3-4); AQL's SUM
+  # and AVG over no rows are null, so the ungrouped read is NOT_NULL(a, 0),
+  # as for COUNT. MIN / MAX of an empty group are unbound in both, so MAX
+  # is read as is.
+
+  - name: sum_avg_ungrouped_read_zero_over_no_rows
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) (MAX(?a) AS ?m) WHERE { ?p a :Person ; :age ?a }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      COLLECT AGGREGATE agg2 = SUM(doc1.age), agg3 = AVG(doc1.age), agg4 = MAX(doc1.age)
+      RETURN { s: NOT_NULL(agg2, 0), v: NOT_NULL(agg3, 0), m: agg4 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  # ---- An explicit SAMPLE (issue #58) -------------------------------
+  # Only a Sample of a GROUP BY variable is a COLLECT key (rdflib
+  # synthesises one per projected key). Any other SAMPLE picks a value
+  # from the group: AQL's MAX, which skips null as SPARQL's Sample skips an
+  # unbound value. Every Sample used to become a key, grouping on it.
+
+  - name: sample_ungrouped_is_an_aggregate
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
+      COLLECT AGGREGATE agg2 = MAX(doc1.dept)
+      RETURN { x: agg2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: sample_of_a_non_key_variable_per_group
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (SAMPLE(?a) AS ?x) WHERE { ?s a :Person ; :dept ?d ; :age ?a } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "age")
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = MAX(doc1.age)
+        RETURN { d: grp2, x: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: sample_of_the_group_key_reuses_the_key
+    # Two Samples of ?d (the projected key and SAMPLE(?d)) share one COLLECT
+    # key. The second used to read the first's alias (``grp3 = grp2``),
+    # which a COLLECT key cannot see.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results3 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept
+        RETURN { d: grp2, x: grp2 }
+      )
+      FOR result4 IN (LENGTH(results3) == 0 ? [{}] : results3)
+      RETURN result4
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  # ---- An unbound value inside an aggregate's group (issue #59) -----
+  # SPARQL: an unbound value is an error inside SUM / AVG / MIN / MAX /
+  # GROUP_CONCAT, and the whole result is unbound. AQL skips null, so for
+  # an argument that can be unbound (here an OPTIONAL variable) the group's
+  # nulls are counted beside the aggregate, once per argument, and the read
+  # is null when there are any. A required-triple value is unchanged (a
+  # stored null there is no triple, which skipping already matches).
+
+  - name: sum_and_max_of_an_optional_variable_are_unbound_with_an_unbound_value
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUM(?a) AS ?s) (MAX(?a) AS ?m) WHERE { ?p a :Person OPTIONAL { ?p :age ?a } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT AGGREGATE agg2 = SUM(doc1.age), nulls3 = SUM(doc1.age == null ? 1 : 0), agg4 = MAX(doc1.age)
+      RETURN { s: (nulls3 > 0 ? null : NOT_NULL(agg2, 0)), m: (nulls3 > 0 ? null : agg4) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_concat_of_an_optional_variable_per_group
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (GROUP_CONCAT(?a) AS ?g) WHERE { ?p a :Person ; :dept ?d OPTIONAL { ?p :age ?a } } GROUP BY ?d
+    expected_aql: |-
+      LET results5 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.age), nulls4 = SUM(doc1.age == null ? 1 : 0)
+        RETURN { d: grp2, g: (nulls4 > 0 ? null : CONCAT_SEPARATOR(@_p1_sep, agg3)) }
+      )
+      FOR result6 IN (LENGTH(results5) == 0 ? [{}] : results5)
+      RETURN result6
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_sep": " "
+
+  - name: sum_of_a_required_attribute_skips_null_unchanged
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUM(?a) AS ?s) WHERE { ?p a :Person ; :age ?a }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      COLLECT AGGREGATE agg2 = SUM(doc1.age)
+      RETURN { s: NOT_NULL(agg2, 0) }
     expected_bind_vars:
       "@c1_Person": "Person"

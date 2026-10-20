@@ -87,3 +87,36 @@ def test_multiple_matches_fan_out() -> None:
         (EX + "email", "b@x"),
         (EX + "knows", EX + "carol"),
     ]
+
+
+def test_a_row_subquery_nested_in_another_keeps_its_own_closer() -> None:
+    # A grouped query wraps its body in ``LET results = (…)``; an object-
+    # property OPTIONAL inside it adds ``LET optsub = (…)`` (issue #48). The
+    # inner ``)`` must close the inner block, not the outer one.
+    aql = (
+        "LET results1 = (\n"
+        "  FOR doc1 IN @@c1\n"
+        "  LET optsub2 = (\n"
+        "    FOR doc2 IN @@c2\n"
+        "    FILTER doc2.subject_uri == doc1.ref\n"
+        "    RETURN {f0: doc2.object_value}\n"
+        "  )\n"
+        "  FOR optrow3 IN (LENGTH(optsub2) > 0 ? optsub2 : [null])\n"
+        "  RETURN { s: doc1._uri, o: optrow3.f0 }\n"
+        ")\n"
+        "FOR row4 IN results1\n"
+        "RETURN row4"
+    )
+    docs: dict[str, list[dict[str, Any]]] = {
+        "subjects": [{"_uri": EX + "alice", "ref": EX + "bob"}, {"_uri": EX + "dave", "ref": EX + "erin"}],
+        "_triples": [
+            {"subject_uri": EX + "bob", "object_value": "one"},
+            {"subject_uri": EX + "bob", "object_value": "two"},
+        ],
+    }
+    rows = run_aql_subset(aql, _BINDS, docs)
+    assert sorted((r["s"], r["o"] or "") for r in rows) == [
+        (EX + "alice", "one"),
+        (EX + "alice", "two"),
+        (EX + "dave", ""),
+    ]
