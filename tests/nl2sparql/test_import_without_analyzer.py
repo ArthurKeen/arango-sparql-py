@@ -87,6 +87,40 @@ def test_nl_library_imports_without_the_analyzer_and_leaves_the_service_unloaded
     assert "service modules: []" in proc.stdout
 
 
+def test_star_imports_without_the_analyzer_leave_the_service_unloaded() -> None:
+    """A star import evaluates every ``__all__`` name, so the lazy service
+    models must stay out of ``__all__`` or it boots the service again."""
+    proc = _run_without_analyzer(
+        """
+        import sys
+        ns = {}
+        exec("from arango_sparql.nl2sparql import *", ns)
+        exec("from arango_sparql.nl2sparql.models import *", ns)
+        assert "NlPipeline" in ns and "PipelineOutcome" in ns
+        assert "NlTranslateRequest" not in ns
+        loaded = sorted(m for m in sys.modules if m == "arango_sparql.service" or m.startswith("arango_sparql.service."))
+        print("service modules:", loaded)
+        """
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "service modules: []" in proc.stdout
+
+
+def test_library_import_leaves_logging_to_the_caller() -> None:
+    """The service's ``configure_observability`` (handler + INFO on the
+    ``arango_sparql`` logger) runs only when the service is imported."""
+    proc = _run_without_analyzer(
+        """
+        import logging
+        import arango_sparql.nl2sparql
+        lg = logging.getLogger("arango_sparql")
+        print("handlers:", len(lg.handlers), "level:", lg.level)
+        """
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert "handlers: 0 level: 0" in proc.stdout
+
+
 def test_the_service_still_refuses_to_boot_without_the_analyzer() -> None:
     """The fix moves the NL import off the guard; it must not weaken the guard."""
     proc = _run_without_analyzer("import arango_sparql.service\n")
@@ -99,8 +133,9 @@ def test_lazy_names_resolve_to_the_service_classes(name: str) -> None:
     service_cls = getattr(service_models, name)
     assert getattr(nl_models, name) is service_cls
     assert getattr(nl2sparql, name) is service_cls
-    assert name in nl_models.__all__
-    assert name in nl2sparql.__all__
+    # Out of __all__ on purpose: a star import would otherwise boot the service.
+    assert name not in nl_models.__all__
+    assert name not in nl2sparql.__all__
 
 
 def test_from_import_of_a_lazy_name_works() -> None:

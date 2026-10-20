@@ -859,8 +859,13 @@ The guard gates the **service** only. Importing the library
 never imports `arango_sparql.service`, so it never runs the guard, and an
 `[nl]` install without `[analyzer]` can use `NlPipeline` and `nl_to_sparql`.
 `arango_sparql.nl2sparql` re-exports the service's Pydantic contract models
-(`NlTranslateRequest` and the rest) lazily, resolving them on first use
-(`tests/nl2sparql/test_import_without_analyzer.py`, issue #66).
+(`NlTranslateRequest` and the rest) lazily, resolving them on first use, and
+leaves them out of `__all__` so a star import is safe as well
+(`tests/nl2sparql/test_import_without_analyzer.py`, issue #66). Importing the
+library likewise skips the service's logging setup (`configure_observability`):
+a library caller's own logging configuration decides where `arango_sparql` log
+records go. Before #66 any `nl2sparql` import installed the service's handler
+and set the `arango_sparql` logger to INFO.
 
 #### 6.3.5 Request path never blocks on analysis (catalog model)
 
