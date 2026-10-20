@@ -17,6 +17,7 @@ import math
 import random
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -616,7 +617,83 @@ class _ShapeAwareFewShotIndex(FewShotIndex):
         return base
 
 
+@dataclass
+class Arm:
+    """One config's loaded corpus and seams, built once, for any number of runs.
+
+    ``run()`` drives each case once; ``sample_vote.py`` drives each case N
+    times through the same arm. Both build pipelines with :meth:`pipeline`.
+    """
+
+    name: str
+    config: dict[str, Any]
+    cases: list[dict[str, Any]]
+    shared_ontology: str
+    judge_name: str
+    data_ttl: str | None
+    max_repairs: int
+    few_shot_k: int
+    few_shot_index: FewShotIndex | None
+    grounding_k: int
+    grounding_index: Any
+    predicate_k: int
+    predicate_index: Any
+    path_k: int
+    path_index: Any
+
+    def pipeline(
+        self,
+        case: dict[str, Any],
+        client: LLMClient | None = None,
+        *,
+        postconditions: Sequence[Any] = (),
+    ) -> NlPipeline:
+        """One case's pipeline. ``postconditions`` reach the engine's
+        semantic-check seam (W1b's execution feedback); none by default."""
+        ontology_ttl = case.get("ontology", self.shared_ontology)
+        return NlPipeline(
+            client=client if client is not None else _client_for(self.config, case),
+            resolver=SchemaResolver.from_turtle(ontology_ttl),
+            ontology_ttl=ontology_ttl,
+            max_repairs=self.max_repairs,
+            postconditions=postconditions,
+            few_shot_k=self.few_shot_k,
+            few_shot_index=self.few_shot_index,
+            grounding_k=self.grounding_k,
+            grounding_index=self.grounding_index,
+            predicate_k=self.predicate_k,
+            predicate_index=self.predicate_index,
+            path_k=self.path_k,
+            path_index=self.path_index,
+        )
+
+
 def run(config_name: str) -> Report:
+    arm = build_arm(config_name)
+    cases: list[CaseResult] = []
+    for case in arm.cases:
+        pipeline = arm.pipeline(case)
+
+        t0 = time.perf_counter()
+        outcome = pipeline.run(case["nl"], params=case.get("params"))
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+
+        passed, judge_note = _judge(arm.judge_name, case, outcome, arm.data_ttl)
+        cases.append(
+            CaseResult(
+                name=case["name"],
+                expected=case["expected"],
+                actual=outcome.sparql,
+                passed=passed,
+                elapsed_ms=elapsed_ms,
+                judge_note=judge_note,
+            )
+        )
+
+    return Report(config=config_name, cases=cases)
+
+
+def build_arm(config_name: str) -> Arm:
     configs = _load_configs()["configs"]
     config = configs[config_name]
     # Additive `corpus:` config-key read (07.1-01 / RESEARCH Pattern 1):
@@ -749,43 +826,23 @@ def run(config_name: str) -> Report:
 
         path_index = build_path_index(shared_ontology)
 
-    cases: list[CaseResult] = []
-    for case in corpus["cases"]:
-        ontology_ttl = case.get("ontology", shared_ontology)
-        resolver = SchemaResolver.from_turtle(ontology_ttl)
-        client = _client_for(config, case)
-        pipeline = NlPipeline(
-            client=client,
-            resolver=resolver,
-            ontology_ttl=ontology_ttl,
-            max_repairs=max_repairs,
-            few_shot_k=few_shot_k,
-            few_shot_index=few_shot_index,
-            grounding_k=grounding_k,
-            grounding_index=grounding_index,
-            predicate_k=predicate_k,
-            predicate_index=predicate_index,
-            path_k=path_k,
-            path_index=path_index,
-        )
-
-        t0 = time.perf_counter()
-        outcome = pipeline.run(case["nl"], params=case.get("params"))
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-
-        passed, judge_note = _judge(judge_name, case, outcome, data_ttl)
-        cases.append(
-            CaseResult(
-                name=case["name"],
-                expected=case["expected"],
-                actual=outcome.sparql,
-                passed=passed,
-                elapsed_ms=elapsed_ms,
-                judge_note=judge_note,
-            )
-        )
-
-    return Report(config=config_name, cases=cases)
+    return Arm(
+        name=config_name,
+        config=config,
+        cases=corpus["cases"],
+        shared_ontology=shared_ontology,
+        judge_name=judge_name,
+        data_ttl=data_ttl,
+        max_repairs=max_repairs,
+        few_shot_k=few_shot_k,
+        few_shot_index=few_shot_index,
+        grounding_k=grounding_k,
+        grounding_index=grounding_index,
+        predicate_k=predicate_k,
+        predicate_index=predicate_index,
+        path_k=path_k,
+        path_index=path_index,
+    )
 
 
 # ---------------------------------------------------------------------------
