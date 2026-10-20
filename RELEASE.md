@@ -1,7 +1,8 @@
 # Releasing `arango-sparql-py` to PyPI
 
 **Published on PyPI**: 0.2.0 (2026-09-21, a `workflow_dispatch` run with
-`target: pypi`) and 0.3.0 (2026-10-16, tag `v0.3.0`). Later releases follow
+`target: pypi`), 0.3.0 (2026-10-16, tag `v0.3.0`) and 0.3.1 (2026-10-20, tag
+`v0.3.1`). Later releases follow
 "Cut a release" below, minus the one-time setup. The workflow that does the upload —
 [`.github/workflows/publish.yml`](.github/workflows/publish.yml) — is **inert
 until a `v*` tag is pushed**, and mirrors `arango-query-core`'s proven setup
@@ -72,8 +73,8 @@ mirror to arango-solutions is a clean no-op there.
 ## Cut a release
 
 1. Dependency repoint — ✅ already landed (#9); no direct-URL deps remain.
-2. Version already bumped to `0.2.0` in `pyproject.toml`. (Build it locally to
-   sanity-check: `python -m build && twine check --strict dist/*` — both must PASS.)
+2. Build it locally to sanity-check: `python -m build && twine check --strict
+   dist/*` — both must PASS.
 3. Register the publishers + create the environments (above).
 4. **Prove OIDC on TestPyPI FIRST — do not skip.** ArthurKeen repo → *Actions* →
    *Publish to PyPI* → *Run workflow* → `target: testpypi`. A green run that
@@ -81,11 +82,13 @@ mirror to arango-solutions is a clean no-op there.
    publisher is registered and working. A red `invalid-publisher` here is the
    analyzer's trap — fix the PyPI entry and re-run; **no tag has been burned.**
 5. Bump `[project].version` in `pyproject.toml` **and** `arango_sparql.__version__`
-   (`tests/test_version_parity.py` keeps them equal), merge, then tag the merge
-   commit and push the tag (dual-push sends it to both remotes; the workflow fires
-   only on ArthurKeen, is skipped on the mirror):
+   (`tests/test_version_parity.py` keeps them equal), run `uv lock` so the
+   package's own entry in `uv.lock` follows (0.3.0 missed it, fixed after in
+   `fe7e9ae`), merge, then tag the merge commit and push the tag (dual-push sends
+   it to both remotes; the workflow fires only on ArthurKeen, is skipped on the
+   mirror):
    ```bash
-   git tag -a v0.3.0 -m "Release 0.3.0" && git push origin v0.3.0
+   git tag -a v<version> -m "Release <version>" && git push origin v<version>
    ```
 6. Verify: `pip install arango-sparql-py==<version>` in a clean venv.
 7. CDF pins this package **exactly** (`deploy/pins/arango-sparql-py.txt`, its
