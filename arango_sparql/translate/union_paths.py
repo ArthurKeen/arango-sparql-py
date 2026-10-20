@@ -213,9 +213,15 @@ def _emit_union_of_arms(
 
     # ---- Phase 2: emit each arm with full-schema projection ---------
     arm_aqls: list[str] = []
+    # Variables some arm does not bind (it projects ``null``) or binds to a
+    # value that can itself be unbound: unbound in some rows of the union.
+    unbound_in_some_arm: set[str] = set()
     for driver in arm_drivers:
         cv = _spawn_child(visitor)
         driver(cv)
+        unbound_in_some_arm.update(
+            name for name in all_vars if name not in cv.state.var_to_expr or name in cv.state.maybe_unbound
+        )
         # Build the per-arm RETURN: vars bound in this arm use
         # their expression; vars NOT bound in this arm fall back
         # to ``null`` so every row of UNION carries the same
@@ -245,6 +251,8 @@ def _emit_union_of_arms(
         existing = visitor.state.var_to_expr.get(var_name)
         if existing is None:
             visitor.state.var_to_expr[var_name] = new_expr
+            if var_name in unbound_in_some_arm:
+                visitor.state.maybe_unbound.add(var_name)
             continue
         if existing != new_expr:
             visitor.builder.filter_raw(f"{new_expr} == {existing}")
@@ -320,6 +328,8 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         base_iri=visitor.base_iri,
     )
     cv.state.var_to_expr = dict(visitor.state.var_to_expr)
+    # An outer variable an arm re-projects keeps "can be unbound" (#59).
+    cv.state.maybe_unbound = set(visitor.state.maybe_unbound)
     cv.state.graph_scope = list(visitor.state.graph_scope)
     cv.state.var_to_rpt_class = dict(visitor.state.var_to_rpt_class)
     cv.state.tenant_entity = visitor.state.tenant_entity

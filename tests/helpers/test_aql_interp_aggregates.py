@@ -69,3 +69,15 @@ def test_the_count_distinct_read_drops_the_null() -> None:
         "FOR doc1 IN @@c1\nCOLLECT AGGREGATE u = UNIQUE(doc1.v)\nRETURN { r: LENGTH(REMOVE_VALUE(u, null)) }"
     )
     assert _one(aql, _VALUES) == 1
+
+
+def test_null_orders_below_a_number_as_in_aql() -> None:
+    # ArangoDB: ``null > 0`` is false and ``null < 0`` true (null sorts first).
+    # Over no rows the aggregate error read compares a null count (#59).
+    aql = (
+        "FOR doc1 IN @@c1\n"
+        "COLLECT AGGREGATE n = SUM(doc1.v == null ? 1 : 0)\n"
+        'RETURN { r: (n > 0 ? "some" : "none"), low: (n < 0 ? "yes" : "no") }'
+    )
+    rows = run_aql_subset(aql, {"@c1": "C"}, {"C": []})
+    assert rows == [{"r": "none", "low": "yes"}]

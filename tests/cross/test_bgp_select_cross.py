@@ -419,6 +419,24 @@ AGGREGATE_CASES = [
         "PREFIX : <http://ex.org/> SELECT ?d (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d",
         id="sample_of_the_group_key",
     ),
+    # An unbound value inside SUM / AVG / MIN / MAX / GROUP_CONCAT's group
+    # makes the result unbound (issue #59); the OPTIONAL here binds ?a only
+    # for Bob (42), so the whole result is unbound, per dept too.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) (MIN(?a) AS ?m) (MAX(?a) AS ?x) "
+        "WHERE { ?s a :Person OPTIONAL { ?s :age ?a FILTER(?a > 35) } }",
+        id="aggregates_of_an_optional_variable_with_an_unbound_value",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (SUM(?a) AS ?s) WHERE { ?s a :Person ; :dept ?d "
+        "OPTIONAL { ?s :age ?a FILTER(?a > 35) } } GROUP BY ?d",
+        id="grouped_sum_of_an_optional_variable",
+    ),
+    pytest.param(
+        'PREFIX : <http://ex.org/> SELECT (SUM(?a) AS ?s) WHERE { ?s a :Person ; :name "Nobody" '
+        "OPTIONAL { ?s :age ?a } }",
+        id="sum_of_an_optional_variable_over_no_rows",
+    ),
     # Ungrouped SUM / AVG over no rows are 0, MIN / MAX unbound (issue #49).
     pytest.param(
         "PREFIX : <http://ex.org/> SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) (MIN(?a) AS ?m) WHERE { "

@@ -376,6 +376,52 @@ def _strip_outer_parentheses(expr: str) -> str:
     return stripped
 
 
+def _split_top_level_order_comparison(expr: str) -> tuple[str, str, str] | None:
+    """Split ``left OP right`` for an ordering OP (``<`` ``>`` ``<=`` ``>=``)
+    at nesting depth 0, or return ``None``."""
+    stripped = _strip_outer_parentheses(expr)
+    depth = 0
+    quote: str | None = None
+    for index, char in enumerate(stripped):
+        if quote is not None:
+            if char == quote and stripped[index - 1] != "\\":
+                quote = None
+            continue
+        if char in {'"', "'"}:
+            quote = char
+        elif char in "([{":
+            depth += 1
+        elif char in ")]}":
+            depth -= 1
+        elif depth == 0 and char in "<>" and stripped[index - 1 : index] not in {"=", "!"}:
+            op = stripped[index : index + 2] if stripped[index + 1 : index + 2] == "=" else char
+            return stripped[:index].strip(), op, stripped[index + len(op) :].strip()
+    return None
+
+
+def _aql_order(left: Any, op: str, right: Any) -> bool:
+    """AQL's ordering comparison: values of different types compare by type
+    (null < bool < number < string < array < object), so ``null > 0`` is
+    false and ``null < 0`` true, where Python raises TypeError."""
+
+    def rank(value: Any) -> int:
+        if value is None:
+            return 0
+        if isinstance(value, bool):
+            return 1
+        if isinstance(value, int | float):
+            return 2
+        if isinstance(value, str):
+            return 3
+        return 4 if isinstance(value, list) else 5
+
+    if rank(left) != rank(right):
+        cmp = (rank(left) > rank(right)) - (rank(left) < rank(right))
+    else:
+        cmp = (left > right) - (left < right)
+    return {">": cmp > 0, "<": cmp < 0, ">=": cmp >= 0, "<=": cmp <= 0}[op]
+
+
 def _split_top_level_ternary(expr: str) -> tuple[str, str, str] | None:
     """Split one AQL ``condition ? yes : no`` without touching nesting."""
 
@@ -552,7 +598,19 @@ def _eval_expr(
     # and the variable-predicate system-attribute skip (``k NOT IN @s``).
     py = re.sub(r"\bNOT IN\b", " not in ", py)
     py = re.sub(r"\bIN\b", " in ", py)
-    return eval(py, {"__builtins__": {}}, namespace)  # noqa: S307 - test-only
+    try:
+        return eval(py, {"__builtins__": {}}, namespace)  # noqa: S307 - test-only
+    except TypeError:
+        # Python cannot order None against a number; AQL can (null sorts
+        # first). Emitted by the aggregate error read ``(nulls > 0 ? …)``,
+        # whose count is null over no rows (issue #59).
+        parts = _split_top_level_order_comparison(expr)
+        if parts is None:
+            raise
+        left, op, right = parts
+        return _aql_order(
+            _eval_expr(left, env, bind_vars, scoped_let), op, _eval_expr(right, env, bind_vars, scoped_let)
+        )
 
 
 def _eval_filter(
