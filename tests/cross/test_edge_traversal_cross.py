@@ -263,3 +263,29 @@ def test_optional_edge_matches_oxigraph(
     actual = _run_model(ontology_ttl, docs_factory, sparql)
     expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
     assert_bindings_equal(expected, actual)
+
+
+# MINUS whose OPTIONAL re-binds the edge variable (issue #52): every project
+# has a title, so each (project, owner) pair with that edge is removed —
+# both of p2's owners, not only the first edge's.
+MINUS_REBIND_CASES = [
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?prj ?p WHERE { ?prj a :Project ; :owner ?p . "
+        "MINUS { ?prj a :Project ; :title ?t OPTIONAL { ?prj :owner ?p } } }",
+        id="minus_rebind_removes_every_edge_pair",
+    ),
+]
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("ontology_ttl,docs_factory", MODELS)
+@pytest.mark.parametrize("sparql", MINUS_REBIND_CASES)
+def test_minus_optional_rebind_matches_oxigraph(
+    oxi_store: Any,
+    ontology_ttl: str,
+    docs_factory: Any,
+    sparql: str,
+) -> None:
+    actual = _run_model(ontology_ttl, docs_factory, sparql)
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert_bindings_equal(expected, actual)

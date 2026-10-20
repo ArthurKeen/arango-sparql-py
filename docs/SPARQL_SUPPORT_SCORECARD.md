@@ -54,7 +54,7 @@ does not emit — both counted out-of-scope alongside the Protocol / Service-Des
 | Basic Graph Pattern (BGP) | ✅ | `visitor.py:1139`, incl. empty-BGP identity semantics |
 | Join | ✅ | `visitor.py:1057` |
 | `UNION` | ✅ | `visitor.py:1091` → `union_paths.py` |
-| `MINUS` | ✅ | `visitor.py:1238` → `minus_exists.py`. A subject shared with the outer row is joined to it even when the probe types it again (`?s a :C`; `visitor.py:2066`; until 2026-10-20 that probe ignored the outer row, issue #51) |
+| `MINUS` | ✅ | `visitor.py:1238` → `minus_exists.py`. A subject shared with the outer row is joined to it even when the probe types it again (`?s a :C`; `visitor.py:2066`; until 2026-10-20 that probe ignored the outer row, issue #51). An `OPTIONAL` inside it that re-binds an edge variable is compatible when *some* edge matches (or none exists); it compared the first edge only (issue #52) |
 | `FILTER` | ✅ | `visitor.py:610` |
 | `FILTER EXISTS` / `NOT EXISTS` | ✅ | `filter_builtins.py:121,129` (probe recipe) |
 | `GRAPH` (named graphs, IRI + var) | ✅ | `visitor.py:1104` (storage model per ADR-0001) |
