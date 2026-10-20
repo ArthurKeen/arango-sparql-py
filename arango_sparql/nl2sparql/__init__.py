@@ -33,7 +33,14 @@ selectable until a follow-up removes it
 (arango-solutions-org/contextual-data-fabric#176). What the fabric relies on
 here is listed in :mod:`.engine_adapter`. The adapter is imported
 lazily (``arango_sparql.nl2sparql.adapter``) so this package stays
-import-safe without the ``nl`` extra installed.
+import-safe without the ``nl`` extra installed. The service's Pydantic
+contract models (``NlTranslateRequest`` and friends) are re-exported lazily
+for the same reason: importing this package never imports
+:mod:`arango_sparql.service`, whose analyzer startup guard (PRD §6.3.4) would
+otherwise refuse a ``[nl]`` install without ``[analyzer]`` (issue #66). They
+are left out of ``__all__`` so a star import stays safe too. Nor does it run
+the service's logging setup: a library caller's own logging configuration
+decides where ``arango_sparql`` log records go.
 
 Caller-supplied **postconditions** — semantic invariants enforced through the
 shared engine's retry loop (see :mod:`arango_query_core.nl.postconditions`) —
@@ -50,6 +57,8 @@ See ``.cursor/rules/300-nl2sparql.mdc``.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Any
+
 from ._core import NL2SparqlResult, nl_to_sparql
 from .client import (
     AnthropicClient,
@@ -59,35 +68,54 @@ from .client import (
     get_default_client,
 )
 from .cost import estimate_llm_cost_usd, known_pricing
-from .models import (
-    LLMCallRecord,
-    LLMResponse,
-    NlExecuteRequest,
-    NlExecuteResponse,
-    NlExplainRequest,
-    NlExplainResponse,
-    NlTranslateRequest,
-    NlTranslateResponse,
-    PipelineOutcome,
-)
+from .models import _SERVICE_MODEL_NAMES, LLMCallRecord, LLMResponse, PipelineOutcome
 from .pipeline import NlPipeline
 from .prompt import PromptBuilder, build_explain_messages, extract_sparql_from_response
 from .repair import RepairLoop, RepairOutcome, format_repair_context
 from .samples import suggest_nl_queries
 
+if TYPE_CHECKING:
+    # `X as X` marks an explicit re-export for type checkers (PEP 484)
+    # without listing the name in __all__.
+    from .models import (
+        NlExecuteRequest as NlExecuteRequest,
+    )
+    from .models import (
+        NlExecuteResponse as NlExecuteResponse,
+    )
+    from .models import (
+        NlExplainRequest as NlExplainRequest,
+    )
+    from .models import (
+        NlExplainResponse as NlExplainResponse,
+    )
+    from .models import (
+        NlTranslateRequest as NlTranslateRequest,
+    )
+    from .models import (
+        NlTranslateResponse as NlTranslateResponse,
+    )
+
+
+def __getattr__(name: str) -> Any:
+    """Resolve a service contract model on first use (see :mod:`.models`)."""
+    if name in _SERVICE_MODEL_NAMES:
+        from . import models
+
+        value = getattr(models, name)
+        globals()[name] = value  # later lookups skip this hook
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# The lazy service models are deliberately absent (see :mod:`.models`).
 __all__ = [
     "AnthropicClient",
     "LLMCallRecord",
     "LLMClient",
     "LLMResponse",
     "NL2SparqlResult",
-    "NlExecuteRequest",
-    "NlExecuteResponse",
-    "NlExplainRequest",
-    "NlExplainResponse",
     "NlPipeline",
-    "NlTranslateRequest",
-    "NlTranslateResponse",
     "OpenAICompatibleClient",
     "PipelineOutcome",
     "PromptBuilder",

@@ -20,31 +20,74 @@ The Pydantic models are *defined* on the service module (where the
 file re-exports them so the rule-300 expectation that
 ``arango_sparql.nl2sparql.models.NlTranslateRequest`` resolves keeps
 holding.
+
+The re-export is **lazy** (PEP 562 ``__getattr__``). Importing
+:mod:`arango_sparql.service.models` runs ``service/__init__`` and with it
+the service's analyzer startup guard (PRD §6.3.4), which answers "may the
+*service* boot?" — a library import of the NL pipeline is not a boot, and
+must work on ``[nl]`` without the ``[analyzer]`` extra (issue #66).
+:mod:`arango_cypher.nl2cypher` never imports its service package at all;
+this keeps the rule-300 names without that coupling. They resolve by attribute
+access and by explicit ``from … import``, but are **not** in ``__all__``: a
+star import evaluates every ``__all__`` name, so listing them would boot the
+service again.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from ..service.models import (
-    NlExecuteRequest,
-    NlExecuteResponse,
-    NlExplainRequest,
-    NlExplainResponse,
-    NlTranslateRequest,
-    NlTranslateResponse,
+if TYPE_CHECKING:
+    # `X as X` marks an explicit re-export for type checkers (PEP 484)
+    # without listing the name in __all__.
+    from ..service.models import (
+        NlExecuteRequest as NlExecuteRequest,
+    )
+    from ..service.models import (
+        NlExecuteResponse as NlExecuteResponse,
+    )
+    from ..service.models import (
+        NlExplainRequest as NlExplainRequest,
+    )
+    from ..service.models import (
+        NlExplainResponse as NlExplainResponse,
+    )
+    from ..service.models import (
+        NlTranslateRequest as NlTranslateRequest,
+    )
+    from ..service.models import (
+        NlTranslateResponse as NlTranslateResponse,
+    )
+
+#: The Pydantic contract models re-exported from :mod:`arango_sparql.service.models`.
+_SERVICE_MODEL_NAMES = frozenset(
+    {
+        "NlExecuteRequest",
+        "NlExecuteResponse",
+        "NlExplainRequest",
+        "NlExplainResponse",
+        "NlTranslateRequest",
+        "NlTranslateResponse",
+    }
 )
 
+
+def __getattr__(name: str) -> Any:
+    """Resolve a service contract model on first use (see the module docstring)."""
+    if name in _SERVICE_MODEL_NAMES:
+        from ..service import models as service_models
+
+        value = getattr(service_models, name)
+        globals()[name] = value  # later lookups skip this hook
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+# The lazy service models are deliberately absent (see the module docstring).
 __all__ = [
     "LLMCallRecord",
     "LLMResponse",
-    "NlExecuteRequest",
-    "NlExecuteResponse",
-    "NlExplainRequest",
-    "NlExplainResponse",
-    "NlTranslateRequest",
-    "NlTranslateResponse",
     "PipelineOutcome",
 ]
 
