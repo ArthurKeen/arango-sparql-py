@@ -75,6 +75,10 @@ _FOR_ARRAY_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(\[.*\])\s*$")
 # Checked after ``_FOR_RE`` (which requires the double-@ collection
 # form) and before ``_FOR_INLINE_RE``.
 _FOR_VALUES_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+@(_\w+)\s*$")
+# FOR over a builtin call — the list fan-out under ``fan_out_list_values``:
+# ``FOR lv2 IN FLATTEN([doc1.email])`` iterates a list attribute's elements
+# (required triples, and OPTIONAL since issue #53).
+_FOR_CALL_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+([A-Z_][A-Z0-9_]*\(.+\))\s*$")
 # FOR over a LET-bound row list — the shape ``finalize()`` emits for
 # ``SELECT DISTINCT … LIMIT`` (``LET deduped2 = (…)`` then
 # ``FOR row3 IN deduped2``). A bare identifier, so neither the ``@``
@@ -721,6 +725,11 @@ def run_aql_subset(
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             alias, inline_expr = m.groups()
             pre_collect_plan.append(("FOR_INLINE", alias, inline_expr))
+        elif m := _FOR_CALL_RE.match(line):
+            if seen_collect:  # pragma: no cover
+                raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
+            alias, call_expr = m.groups()
+            pre_collect_plan.append(("FOR_INLINE", alias, call_expr))
         elif m := _FOR_LET_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
