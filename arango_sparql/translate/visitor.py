@@ -726,26 +726,14 @@ class AlgebraVisitor:
                     edge_bindings.append((o_name, prop, prop.edge_collection, subject_alias))
                     seen_vars.add(o_name)
                     continue
-                # The MINUS-probe compatibility test below (a re-bound
-                # variable) still compares against the first matching edge's
-                # target; it is unchanged by issue #48, which is about the
-                # rows an OPTIONAL produces.
-                let_alias = self.builder.fresh_alias(prefix="opt")
-                if prop.mapping_style == "GENERIC_WITH_TYPE":
-                    self.builder.let_outbound_first_uri(
-                        let_alias,
-                        start_alias=subject_alias,
-                        edge_collection=prop.edge_collection,
-                        type_field=prop.type_field,
-                        type_value=prop.type_value,
-                    )
-                else:
-                    self.builder.let_outbound_first_uri(
-                        let_alias,
-                        start_alias=subject_alias,
-                        edge_collection=prop.edge_collection,
-                    )
-                value_expr = let_alias
+                # Re-bound inside a MINUS / EXISTS probe: the compatibility test
+                # below must hold for *some* matching edge (or there is none),
+                # so the probe gets one row per edge target, padded with one
+                # null row, and the per-row test is unchanged (issue #52; it
+                # compared the first edge only).
+                [(_, value_expr)] = self._emit_padded_rows(
+                    [(o_name, prop, prop.edge_collection, subject_alias)], [], None
+                )
             else:
                 value_expr = attribute_ref(subject_alias, prop.attribute)
 
@@ -833,7 +821,23 @@ class AlgebraVisitor:
         attr_bindings: list[tuple[str, str]],
         filter_expr: Any,
     ) -> None:
+        """An OPTIONAL block with object-property triples: emit its padded rows
+        (:meth:`_emit_padded_rows`) and bind the block's variables to them."""
+        for var, row_expr in self._emit_padded_rows(edge_bindings, attr_bindings, filter_expr):
+            self.state.var_to_expr[var] = row_expr
+
+    def _emit_padded_rows(
+        self,
+        edge_bindings: list[tuple[str, ResolvedProperty, str, str]],
+        attr_bindings: list[tuple[str, str]],
+        filter_expr: Any,
+    ) -> list[tuple[str, str]]:
         """An OPTIONAL block with object-property triples, as a padded left join.
+
+        Returns ``(sparql_var, row expression)`` per variable of the block and
+        installs nothing: :meth:`_emit_optional_rows` binds the variables to
+        them, and the MINUS / EXISTS re-bind test in :meth:`visit_LeftJoin`
+        compares each row against the outer value instead (issue #52).
 
         SPARQL's LeftJoin keeps every compatible solution of the OPTIONAL
         block (SPARQL 1.1 §18.5), so a subject with two matching edges gives
@@ -909,8 +913,7 @@ class AlgebraVisitor:
         self.builder.let(sub_alias, f"(\n{indented}\n)")
         row_alias = self.builder.fresh_alias(prefix="optrow")
         self.builder.for_inline(row_alias, f"(LENGTH({sub_alias}) > 0 ? {sub_alias} : [null])")
-        for name, (var, _source) in zip(names, fields, strict=True):
-            self.state.var_to_expr[var] = f"{row_alias}.{name}"
+        return [(var, f"{row_alias}.{name}") for name, (var, _source) in zip(names, fields, strict=True)]
 
     # ------------------------------------------------------------------
     # BIND / agg-result rename — Extend(p=inner, var=?v, expr=<sparql expr>)
@@ -2059,15 +2062,8 @@ class AlgebraVisitor:
                     f"which collection to scan."
                 )
             alias = self._open_collection(self.resolver.default_collection)
-            # Enforce the implicit join the SPARQL spec demands: if the
-            # variable was already bound to an AQL expression by an
-            # earlier triple, the new FOR's ``_uri`` must equal that
-            # expression. Without this FILTER, the AQL plan would
-            # cross-product the two FORs and silently over-count.
-            prior_expr = self.state.var_to_expr.get(str(subject))
-            new_expr = subject_ref(alias)
-            if prior_expr is not None and prior_expr != new_expr:
-                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
+            # ``_bind_subject`` joins the new FOR to any prior binding of
+            # the variable (the implicit join the SPARQL spec demands).
             self._bind_subject(subject, alias)
             return alias
         if isinstance(subject, URIRef):
@@ -2095,6 +2091,17 @@ class AlgebraVisitor:
         silently dropping the second alias's relationship to the
         variable. Otherwise the second FOR would float free of the
         first and the engine would emit the Cartesian product.
+
+        The same holds when the variable already has a *value* but no
+        document: a VALUES row, a BIND, an earlier triple's object, a
+        sub-select column, or — inside a MINUS / EXISTS probe — the outer
+        row's identity, which ``minus_exists`` pre-seeds so that "shared
+        variables turn into equality FILTERs". The new FOR's identity must
+        equal that value. Without the FILTER the FOR ranges over every
+        document of the class: a cross product, or a probe that ignores the
+        outer row (issue #51). This was enforced only on the
+        default-collection path (``_ensure_subject_alias``); a type pattern
+        reaches here directly.
         """
         if not isinstance(subject, Variable):
             return
@@ -2102,7 +2109,12 @@ class AlgebraVisitor:
         existing_alias = self.state.var_to_doc_alias.get(name)
         if existing_alias is None:
             self.state.var_to_doc_alias[name] = alias
-            self.state.var_to_expr.setdefault(name, subject_ref(alias))
+            prior_expr = self.state.var_to_expr.get(name)
+            new_expr = subject_ref(alias)
+            if prior_expr is None:
+                self.state.var_to_expr[name] = new_expr
+            elif prior_expr != new_expr:
+                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
             return
         if existing_alias == alias:
             return

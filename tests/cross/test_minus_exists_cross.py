@@ -101,3 +101,61 @@ def test_minus_exists_matches_oxigraph(oxi_store: Any, sparql: str) -> None:
     actual = _run(sparql)
     expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
     assert_bindings_equal(expected, actual)
+
+
+# ---- Typed shared subject (issue #51) ----------------------------------
+# The same people, mapped as ``:Person``. With the subject typed *inside*
+# the probe (or after VALUES / BIND), the type pattern opened a FOR with no
+# join to the value already bound, so the probe ignored the outer row (any
+# hidden Person removed every Person) and VALUES / BIND crossed every Person.
+TYPED_ONTOLOGY_TTL = """
+@prefix : <http://ex.org/> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix phys: <https://arango.solutions/phys#> .
+:Person a owl:Class ; phys:collectionName "Document" .
+"""
+TYPED_DATA_TTL = (
+    DATA_TTL
+    + """
+:alice a :Person . :bob a :Person . :carol a :Person . :dave a :Person .
+"""
+)
+
+TYPED_CASES = [
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s a :Person . MINUS { ?s a :Person ; :hidden true } }",
+        id="minus_typed_shared_subject",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s a :Person . FILTER NOT EXISTS { ?s a :Person ; :hidden true } }",
+        id="not_exists_typed_shared_subject",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s a :Person . FILTER EXISTS { ?s a :Person ; :admin true } }",
+        id="exists_typed_shared_subject",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { VALUES ?s { :alice :carol } ?s a :Person }",
+        id="values_then_type_pattern",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s WHERE { BIND(:bob AS ?s) ?s a :Person }",
+        id="bind_then_type_pattern",
+    ),
+]
+
+
+@pytest.fixture(scope="module")
+def typed_oxi_store() -> Any:
+    store = oxi.Store()
+    store.load(TYPED_DATA_TTL.encode("utf-8"), oxi.RdfFormat.TURTLE)
+    return store
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("sparql", TYPED_CASES)
+def test_typed_subject_joins_its_prior_binding(typed_oxi_store: Any, sparql: str) -> None:
+    result = translate(sparql, resolver=SchemaResolver.from_turtle(TYPED_ONTOLOGY_TTL))
+    actual = [drop_null_bindings(r) for r in run_aql_subset(result.aql, result.bind_vars, _docs())]
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(typed_oxi_store, sparql)]
+    assert_bindings_equal(expected, actual)

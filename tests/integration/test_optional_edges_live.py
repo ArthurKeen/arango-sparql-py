@@ -178,3 +178,30 @@ def test_optional_edge_matches_oxigraph(
     rows = _arango(db, body)
     assert _multiset(rows) == _multiset(expected)
     assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # Issue #52: MINUS removes a pair when *some* edge of an emailed owner
+        # matches. o1's pairs both go (the first-edge test kept one).
+        (
+            "SELECT ?o ?p WHERE { ?o a :Owner ; :owns ?p . MINUS { ?o a :Owner ; :email ?e OPTIONAL { ?o :owns ?p } } }",
+            [_o("o2", p="c")],
+        ),
+        # Every owner x person: o1 keeps only c (no edge to it), o2 has no
+        # email so keeps all, and o3 has an email but no edges, so its
+        # unbound ?p is compatible with every person and all three go.
+        (
+            "SELECT ?o ?p WHERE { ?o a :Owner . ?p a :Person . "
+            "MINUS { ?o a :Owner ; :email ?e OPTIONAL { ?o :owns ?p } } }",
+            [_o("o1", p="c"), _o("o2", p="a"), _o("o2", p="b"), _o("o2", p="c")],
+        ),
+    ],
+)
+def test_minus_optional_rebind_matches_oxigraph(
+    db: Any, oxi_store: Any, body: str, expected: list[dict[str, Any]]
+) -> None:
+    rows = _arango(db, body)
+    assert _multiset(rows) == _multiset(expected)
+    assert _multiset(rows) == _multiset(_oxigraph(oxi_store, body))

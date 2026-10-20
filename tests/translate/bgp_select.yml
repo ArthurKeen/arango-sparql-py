@@ -82,6 +82,37 @@ cases:
     expected_bind_vars:
       "@c1_Person": "Person"
 
+  # A type pattern on a variable that already has a value joins to it
+  # (issue #51). It opened ``FOR doc IN @@Person`` with no join, so the row
+  # crossed every Person: one VALUES row came back once per Person.
+  - name: values_then_type_pattern
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { VALUES ?s { <http://ex.org/alice> } ?s a :Person }
+    expected_aql: |
+      FOR row1 IN @_p1_values
+      FOR doc2 IN @@c1_Person
+      FILTER NOT_NULL(doc2._uri, doc2._id) == row1.s
+      RETURN { s: row1.s }
+    expected_bind_vars:
+      "_p1_values":
+        - s: "http://ex.org/alice"
+      "@c1_Person": "Person"
+
+  - name: bind_then_type_pattern
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE { BIND(<http://ex.org/alice> AS ?s) ?s a :Person }
+    expected_aql: |
+      FOR empty1 IN [1]
+      LET bv2 = @_p1_uri
+      FOR doc3 IN @@c1_Person
+      FILTER NOT_NULL(doc3._uri, doc3._id) == bv2
+      RETURN { s: bv2 }
+    expected_bind_vars:
+      "_p1_uri": "http://ex.org/alice"
+      "@c1_Person": "Person"
+
   - name: select_star
     sparql: |
       PREFIX : <http://ex.org/>
