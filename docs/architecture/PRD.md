@@ -1314,7 +1314,10 @@ implementation. Semantics:
   postconditions share it, they do not add to it.
 
 Callers pass invariants via `nl_to_sparql(..., postconditions=[...],
-postcondition_mapping=...)`. Two illustrative SPARQL invariants ship in
+postcondition_mapping=...)` or, for the service pipeline,
+`NlPipeline(..., postconditions=[...])`. The pipeline takes no mapping
+(neither shipped invariant reads one), and with no postconditions — the
+default — its loop is unchanged. Two illustrative SPARQL invariants ship in
 `arango_sparql/nl2sparql/postconditions.py` — `RequireResultLimit` (every
 `SELECT` must bound its result set with `LIMIT`; optional `max_rows`
 ceiling) and `ForbidUnboundProjection` (every explicitly projected variable
