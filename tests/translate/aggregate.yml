@@ -340,3 +340,57 @@ cases:
       RETURN { s: NOT_NULL(agg2, 0), v: NOT_NULL(agg3, 0), m: agg4 }
     expected_bind_vars:
       "@c1_Person": "Person"
+
+  # ---- An explicit SAMPLE (issue #58) -------------------------------
+  # Only a Sample of a GROUP BY variable is a COLLECT key (rdflib
+  # synthesises one per projected key). Any other SAMPLE picks a value
+  # from the group: AQL's MAX, which skips null as SPARQL's Sample skips an
+  # unbound value. Every Sample used to become a key, grouping on it.
+
+  - name: sample_ungrouped_is_an_aggregate
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "dept")
+      COLLECT AGGREGATE agg2 = MAX(doc1.dept)
+      RETURN { x: agg2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: sample_of_a_non_key_variable_per_group
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (SAMPLE(?a) AS ?x) WHERE { ?s a :Person ; :dept ?d ; :age ?a } GROUP BY ?d
+    expected_aql: |-
+      LET results4 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "age")
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = MAX(doc1.age)
+        RETURN { d: grp2, x: agg3 }
+      )
+      FOR result5 IN (LENGTH(results4) == 0 ? [{}] : results4)
+      RETURN result5
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: sample_of_the_group_key_reuses_the_key
+    # Two Samples of ?d (the projected key and SAMPLE(?d)) share one COLLECT
+    # key. The second used to read the first's alias (``grp3 = grp2``),
+    # which a COLLECT key cannot see.
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d
+    expected_aql: |-
+      LET results3 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept
+        RETURN { d: grp2, x: grp2 }
+      )
+      FOR result4 IN (LENGTH(results3) == 0 ? [{}] : results3)
+      RETURN result4
+    expected_bind_vars:
+      "@c1_Person": "Person"

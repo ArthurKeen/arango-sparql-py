@@ -405,6 +405,20 @@ AGGREGATE_CASES = [
         "GROUP BY ?d HAVING (COUNT(DISTINCT ?e) > 0)",
         id="having_count_distinct_optional_var",
     ),
+    # An explicit SAMPLE picks a value per group instead of grouping on it
+    # (issue #58). These groups each hold one value, so the sample is fixed.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :name ?n ; :dept ?d } GROUP BY ?n",
+        id="sample_of_a_non_key_variable_per_group",
+    ),
+    pytest.param(
+        'PREFIX : <http://ex.org/> SELECT (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :name "Alice" ; :dept ?d }',
+        id="sample_ungrouped",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d",
+        id="sample_of_the_group_key",
+    ),
     # Ungrouped SUM / AVG over no rows are 0, MIN / MAX unbound (issue #49).
     pytest.param(
         "PREFIX : <http://ex.org/> SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) (MIN(?a) AS ?m) WHERE { "
@@ -484,3 +498,14 @@ def test_join_matches_oxigraph(oxi_store: Any, sparql: str) -> None:
     actual = [_normalize_arango_row(r) for r in run_aql_subset(result.aql, result.bind_vars, ARANGO_DOCS)]
     expected = [_normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
     assert_bindings_equal(expected, actual)
+
+
+@pytest.mark.cross
+def test_an_ungrouped_sample_is_one_row_holding_one_of_the_values() -> None:
+    """Issue #58: ``SAMPLE`` over several values may return any of them, so
+    compare membership, not the value. It used to return one row per value."""
+    sparql = "PREFIX : <http://ex.org/> SELECT (SAMPLE(?d) AS ?x) WHERE { ?s a :Person ; :dept ?d }"
+    result = translate(sparql, resolver=SchemaResolver.from_turtle(ONTOLOGY_TTL))
+    rows = run_aql_subset(result.aql, result.bind_vars, ARANGO_DOCS)
+    assert len(rows) == 1
+    assert rows[0]["x"] in {"eng", "ops"}

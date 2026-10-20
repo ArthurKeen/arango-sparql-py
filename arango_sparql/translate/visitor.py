@@ -968,12 +968,13 @@ class AlgebraVisitor:
     # ------------------------------------------------------------------
     # GROUP BY + aggregates — AggregateJoin(A=[…aggs…], p=Group(p=BGP, expr=keys|None))
     # ------------------------------------------------------------------
-    # Map rdflib ``Aggregate_<Name>_`` → AQL aggregate function. SAMPLE
-    # is handled separately because rdflib synthesises a Sample for
-    # every GROUP BY key (it's the SPARQL spec's convenience for
-    # "any value within the group, since they're all equal anyway"),
-    # and we route those into COLLECT key aliases instead of AQL
-    # aggregate functions.
+    # Map rdflib ``Aggregate_<Name>_`` → AQL aggregate function. rdflib
+    # synthesises a Sample for every GROUP BY variable the query projects
+    # (the SPARQL spec's "any value within the group, since they're all
+    # equal anyway"); those become COLLECT key aliases instead
+    # (``_is_group_key_sample``). A SAMPLE the query writes over anything
+    # else is a real aggregate: AQL's MAX returns one of the group's values
+    # and skips null, as SPARQL's Sample skips an unbound value (#58).
     # The class names rdflib uses (e.g. ``Aggregate_Count``) — note no
     # trailing underscore, despite ``pprintAlgebra`` rendering them as
     # ``Aggregate_Count_{...}`` (the ``_{`` is a separator before the
@@ -985,7 +986,23 @@ class AlgebraVisitor:
         "Aggregate_Min": "MIN",
         "Aggregate_Max": "MAX",
         "Aggregate_GroupConcat": "CONCAT_SEPARATOR",
+        "Aggregate_Sample": "MAX",
     }
+
+    @staticmethod
+    def _is_group_key_sample(agg: Any, group_vars: set[str]) -> bool:
+        """Whether *agg* is a Sample of a GROUP BY variable — a COLLECT key.
+
+        rdflib synthesises one for each GROUP BY variable the query projects,
+        and a ``SAMPLE(?d)`` the query writes over a grouping variable is the
+        same value. Any other Sample — ``SAMPLE(?a)`` over a non-key variable,
+        or any SAMPLE in an ungrouped query — picks a value from the group and
+        must not group on it: treating it as a key returned one row per
+        distinct value (issue #58).
+        """
+        return (
+            agg.name == "Aggregate_Sample" and isinstance(agg.vars, Variable) and str(agg.vars) in group_vars
+        )
 
     def visit_AggregateJoin(self, node: Any) -> Any:
         group = node.p
@@ -1004,6 +1021,7 @@ class AlgebraVisitor:
         # AGGREGATE expression") — but the samples pass below rebinds each
         # GROUP BY variable to its key alias for the projection.
         pattern_scope = dict(self.state.var_to_expr)
+        group_vars = {str(v) for v in (getattr(group, "expr", None) or []) if isinstance(v, Variable)}
 
         # Pre-allocate the COLLECT-key aliases for every Aggregate_Sample_
         # (one per GROUP BY variable), and rebind each GROUP BY variable to
@@ -1013,15 +1031,23 @@ class AlgebraVisitor:
         # since the key alias is not visible inside AGGREGATE.
         keys: list[tuple[str, str]] = []  # (alias, expression) for COLLECT
         sample_remap: dict[str, str] = {}  # __agg_N__ for samples → key alias
+        key_alias_by_var: dict[str, str] = {}
         for agg in node.A:
-            if agg.name != "Aggregate_Sample":
+            if not self._is_group_key_sample(agg, group_vars):
                 continue
             sparql_var = str(agg.vars)
-            attr_expr = self.state.var_to_expr.get(sparql_var)
-            if attr_expr is None:
-                raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{sparql_var}")
-            key_alias = self.builder.fresh_alias(prefix="grp")
-            keys.append((key_alias, attr_expr))
+            # One COLLECT key per GROUP BY variable. A second Sample of it (a
+            # ``SAMPLE(?d)`` the query writes beside the projected ``?d``)
+            # reuses the key; it used to read the first key's alias as its
+            # expression (``grp3 = grp2``), which a COLLECT key cannot see.
+            key_alias = key_alias_by_var.get(sparql_var)
+            if key_alias is None:
+                attr_expr = pattern_scope.get(sparql_var)
+                if attr_expr is None:
+                    raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{sparql_var}")
+                key_alias = self.builder.fresh_alias(prefix="grp")
+                keys.append((key_alias, attr_expr))
+                key_alias_by_var[sparql_var] = key_alias
             sample_remap[str(agg.res)] = key_alias
             # Also rebind the user-facing var: post-COLLECT it must
             # reference the COLLECT key alias, not the (now out-of-scope)
@@ -1029,10 +1055,10 @@ class AlgebraVisitor:
             self.state.var_to_expr[sparql_var] = key_alias
             self.state.var_to_expr[str(agg.res)] = key_alias
 
-        # Real aggregates (everything except Aggregate_Sample_).
+        # Real aggregates: everything but the group-key Samples.
         aggregates: list[tuple[str, str]] = []  # (alias, "AGG(expr)")
         count_into: str | None = None
-        non_sample_aggs = [a for a in node.A if a.name != "Aggregate_Sample"]
+        non_sample_aggs = [a for a in node.A if not self._is_group_key_sample(a, group_vars)]
 
         # Fast-path: a single non-DISTINCT COUNT collapses to the AQL idiom
         # ``WITH COUNT INTO <c>``. That counts rows, while SPARQL's COUNT
@@ -1122,7 +1148,8 @@ class AlgebraVisitor:
                 self.state.var_to_expr[agg_var] = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
                 continue
             else:
-                if distinct:
+                if distinct and agg.name != "Aggregate_Sample":
+                    # (SAMPLE(DISTINCT x) is SAMPLE(x): any value either way.)
                     # SUM / AVG / MIN / MAX with DISTINCT: AQL doesn't
                     # have native DISTINCT-aggregates, so we'd need to
                     # rewrite into a COLLECT … INTO subquery. Refuse
