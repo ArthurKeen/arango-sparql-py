@@ -97,8 +97,8 @@ All five rdflib path classes are handled (`paths.py`).
 | Aggregate | Status | Notes / evidence |
 | --- | --- | --- |
 | `COUNT` (incl. `DISTINCT`, `COUNT(*)`) | ✅ | `visitor.py:958`. Counts only the solutions where the argument has a value: an unbound variable is null on the AQL side and AQL's counts include null, so `COUNT(expr)` is `SUM(expr != null ? 1 : 0)` and `COUNT(DISTINCT expr)` is `UNIQUE` with the null removed. `WITH COUNT INTO` is kept for `COUNT(*)` and for a scanned document's identity, which every row binds (`visitor.py:1073`; until 2026-10-19 every lone `COUNT` counted rows, issue #46) |
-| `SUM` / `MIN` / `MAX` / `AVG` | ✅ | `visitor.py:879-882`. Over a GROUP BY variable too: aggregate arguments read the pre-COLLECT value (`visitor.py:902`), because the COLLECT key alias is not visible inside `AGGREGATE` (it was ArangoDB ERR 1512 until 2026-10-20). Ungrouped over no rows, `SUM`/`AVG` are null where SPARQL gives 0 (not yet fixed) |
-| `SAMPLE` | ✅ | `visitor.py:913` |
+| `SUM` / `MIN` / `MAX` / `AVG` | ✅ | `visitor.py:879-882`. Over a GROUP BY variable too: aggregate arguments read the pre-COLLECT value (`visitor.py:902`), because the COLLECT key alias is not visible inside `AGGREGATE` (it was ArangoDB ERR 1512 until 2026-10-20). Ungrouped over no rows, `SUM`/`AVG` read as 0, as SPARQL's Sum and Avg of an empty group are (issue #49). An unbound value inside the group still yields a value where SPARQL gives unbound (issue #59) |
+| `SAMPLE` | 🟡 | `visitor.py:1017`. The `Sample` rdflib synthesises for a GROUP BY key works; an explicit `SAMPLE(?x)` is grouped on `?x` instead of sampled, one row per distinct value (issue #58) |
 | `GROUP_CONCAT` (+ `SEPARATOR`) | ✅ | `visitor.py:991` |
 
 **Caveat:** `DISTINCT` is supported on `COUNT` only; `DISTINCT SUM/AVG/MIN/MAX`

@@ -322,3 +322,21 @@ cases:
     expected_bind_vars:
       "@c1_Person": "Person"
       "_p1_sep": " "
+
+  # ---- Ungrouped SUM / AVG over no rows (issue #49) -----------------
+  # SPARQL's Sum and Avg of an empty group are 0 (§18.5.1.3-4); AQL's SUM
+  # and AVG over no rows are null, so the ungrouped read is NOT_NULL(a, 0),
+  # as for COUNT. MIN / MAX of an empty group are unbound in both, so MAX
+  # is read as is.
+
+  - name: sum_avg_ungrouped_read_zero_over_no_rows
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUM(?a) AS ?s) (AVG(?a) AS ?v) (MAX(?a) AS ?m) WHERE { ?p a :Person ; :age ?a }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      COLLECT AGGREGATE agg2 = SUM(doc1.age), agg3 = AVG(doc1.age), agg4 = MAX(doc1.age)
+      RETURN { s: NOT_NULL(agg2, 0), v: NOT_NULL(agg3, 0), m: agg4 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
