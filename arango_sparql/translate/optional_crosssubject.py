@@ -153,3 +153,4 @@ def emit_rpt_cross_subject_optional(visitor: AlgebraVisitor, triple: tuple[Any, 
     visitor.builder.for_inline(row_alias, f"(LENGTH({opt_alias}) > 0 ? {opt_alias} : [null])")
     for field, (var_name, _source) in zip(field_names, new_bindings, strict=False):
         visitor.state.var_to_expr[var_name] = f"{row_alias}.{field}"
+        visitor.state.maybe_unbound.add(var_name)

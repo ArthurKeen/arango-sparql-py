@@ -160,6 +160,11 @@ def _emit_subselect(
     visitor.builder.for_subquery(row_alias, inner_aql)
 
     _bind_outer_scope(visitor, row_alias, [str(v) for v in inner_pv])
+    # A column the sub-select can leave unbound (an OPTIONAL inside it, or a
+    # MIN / MAX / SUM … that can be unbound) stays so outside (#59).
+    visitor.state.maybe_unbound.update(
+        str(v) for v in inner_pv if str(v) in child_visitor.state.maybe_unbound
+    )
 
 
 def _emit_values(visitor: AlgebraVisitor, values_node: Any) -> None:
@@ -237,6 +242,10 @@ def _emit_values(visitor: AlgebraVisitor, values_node: Any) -> None:
     visitor.builder.for_values(row_alias, values_bind)
 
     _bind_outer_scope(visitor, row_alias, var_names)
+    # A variable with UNDEF in some row is unbound in that solution.
+    visitor.state.maybe_unbound.update(
+        name for name in var_names if any(row[name] is None for row in rows_python)
+    )
 
 
 def _bind_outer_scope(

@@ -394,3 +394,51 @@ cases:
       RETURN result4
     expected_bind_vars:
       "@c1_Person": "Person"
+
+  # ---- An unbound value inside an aggregate's group (issue #59) -----
+  # SPARQL: an unbound value is an error inside SUM / AVG / MIN / MAX /
+  # GROUP_CONCAT, and the whole result is unbound. AQL skips null, so for
+  # an argument that can be unbound (here an OPTIONAL variable) the group's
+  # nulls are counted beside the aggregate, once per argument, and the read
+  # is null when there are any. A required-triple value is unchanged (a
+  # stored null there is no triple, which skipping already matches).
+
+  - name: sum_and_max_of_an_optional_variable_are_unbound_with_an_unbound_value
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUM(?a) AS ?s) (MAX(?a) AS ?m) WHERE { ?p a :Person OPTIONAL { ?p :age ?a } }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      COLLECT AGGREGATE agg2 = SUM(doc1.age), nulls3 = SUM(doc1.age == null ? 1 : 0), agg4 = MAX(doc1.age)
+      RETURN { s: (nulls3 > 0 ? null : NOT_NULL(agg2, 0)), m: (nulls3 > 0 ? null : agg4) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: group_concat_of_an_optional_variable_per_group
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?d (GROUP_CONCAT(?a) AS ?g) WHERE { ?p a :Person ; :dept ?d OPTIONAL { ?p :age ?a } } GROUP BY ?d
+    expected_aql: |-
+      LET results5 = (
+        FOR doc1 IN @@c1_Person
+        FILTER HAS(doc1, "dept")
+        COLLECT grp2 = doc1.dept AGGREGATE agg3 = PUSH(doc1.age), nulls4 = SUM(doc1.age == null ? 1 : 0)
+        RETURN { d: grp2, g: (nulls4 > 0 ? null : CONCAT_SEPARATOR(@_p1_sep, agg3)) }
+      )
+      FOR result6 IN (LENGTH(results5) == 0 ? [{}] : results5)
+      RETURN result6
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_sep": " "
+
+  - name: sum_of_a_required_attribute_skips_null_unchanged
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT (SUM(?a) AS ?s) WHERE { ?p a :Person ; :age ?a }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "age")
+      COLLECT AGGREGATE agg2 = SUM(doc1.age)
+      RETURN { s: NOT_NULL(agg2, 0) }
+    expected_bind_vars:
+      "@c1_Person": "Person"

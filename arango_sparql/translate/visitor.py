@@ -91,6 +91,14 @@ class _BindingState:
     Without the cache each FOR would mint its own bind, multiplying
     the bind-vars dict and obscuring the AQL."""
 
+    maybe_unbound: set[str] = field(default_factory=set)
+    """SPARQL variables that can be unbound in a solution: bound by an
+    OPTIONAL, a UNION arm that not every arm binds, a VALUES ``UNDEF``, a
+    sub-select column that can be unbound, or an expression over one of
+    these. A null in such a variable is SPARQL's *unbound*, which is an
+    error inside SUM / AVG / MIN / MAX / GROUP_CONCAT (issue #59). A null
+    anywhere else is a stored null on a required triple — no triple, which
+    those aggregates already skip — and is left alone."""
     var_to_rpt_class: dict[str, ResolvedClass] = field(default_factory=dict)
     """SPARQL subject variable → :class:`ResolvedClass` for the RPT
     triples table that backs this subject's class.
@@ -783,6 +791,7 @@ class AlgebraVisitor:
         if not has_filter and len(new_bindings) == 1:
             var, source_expr = new_bindings[0]
             self.state.var_to_expr[var] = source_expr
+            self.state.maybe_unbound.add(var)
             return
 
         # Multi-binding or filtered OPTIONAL needs the all-or-nothing
@@ -814,6 +823,7 @@ class AlgebraVisitor:
             alias = self.builder.fresh_alias(prefix="opt")
             self.builder.let(alias, f"({match_expr} ? {source_expr} : null)")
             self.state.var_to_expr[var] = alias
+            self.state.maybe_unbound.add(var)
 
     def _emit_optional_rows(
         self,
@@ -825,6 +835,7 @@ class AlgebraVisitor:
         (:meth:`_emit_padded_rows`) and bind the block's variables to them."""
         for var, row_expr in self._emit_padded_rows(edge_bindings, attr_bindings, filter_expr):
             self.state.var_to_expr[var] = row_expr
+            self.state.maybe_unbound.add(var)
 
     def _emit_padded_rows(
         self,
@@ -946,6 +957,8 @@ class AlgebraVisitor:
         # after COLLECT, so the overwrite matches AQL scoping.
         if isinstance(expr, Variable) and str(expr) in self.state.var_to_expr:
             self.state.var_to_expr[var_name] = self.state.var_to_expr[str(expr)]
+            if str(expr) in self.state.maybe_unbound:
+                self.state.maybe_unbound.add(var_name)
             return
 
         if var_name in self.state.var_to_expr:
@@ -964,6 +977,8 @@ class AlgebraVisitor:
         alias = self.builder.fresh_alias(prefix="bv")
         self.builder.let(alias, aql_expr)
         self.state.var_to_expr[var_name] = alias
+        if _expression_variable_names(expr) & self.state.maybe_unbound:
+            self.state.maybe_unbound.add(var_name)
 
     # ------------------------------------------------------------------
     # GROUP BY + aggregates — AggregateJoin(A=[…aggs…], p=Group(p=BGP, expr=keys|None))
@@ -1057,6 +1072,7 @@ class AlgebraVisitor:
 
         # Real aggregates: everything but the group-key Samples.
         aggregates: list[tuple[str, str]] = []  # (alias, "AGG(expr)")
+        null_counts: dict[str, str] = {}  # argument expression → alias counting its nulls
         count_into: str | None = None
         non_sample_aggs = [a for a in node.A if not self._is_group_key_sample(a, group_vars)]
 
@@ -1145,7 +1161,11 @@ class AlgebraVisitor:
                 sep_bind = self.builder.bind(separator, hint="sep")
                 collect_func = "UNIQUE" if distinct else "PUSH"
                 aggregates.append((agg_alias, f"{collect_func}({arg_expr})"))
-                self.state.var_to_expr[agg_var] = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
+                read = f"CONCAT_SEPARATOR({sep_bind}, {agg_alias})"
+                if self._argument_may_be_unbound(agg):
+                    read = self._unbound_is_error(read, arg_expr, aggregates, null_counts)
+                    self.state.maybe_unbound.add(agg_var)
+                self.state.var_to_expr[agg_var] = read
                 continue
             else:
                 if distinct and agg.name != "Aggregate_Sample":
@@ -1159,13 +1179,21 @@ class AlgebraVisitor:
                     )
                 arg_expr = self._aggregate_arg_expr(agg, pattern_scope)
                 aggregates.append((agg_alias, f"{aql_func}({arg_expr})"))
+                read = agg_alias
                 if not keys and agg.name in ("Aggregate_Sum", "Aggregate_Avg"):
                     # Ungrouped over no rows, AQL's SUM / AVG are null; SPARQL's
                     # Sum and Avg of an empty group are 0 (SPARQL 1.1
                     # §18.5.1.3-4) — the read COUNT already uses (issue #49).
                     # MIN / MAX of an empty group are unbound in both.
-                    self.state.var_to_expr[agg_var] = f"NOT_NULL({agg_alias}, 0)"
-                    continue
+                    read = f"NOT_NULL({agg_alias}, 0)"
+                if agg.name in ("Aggregate_Min", "Aggregate_Max", "Aggregate_Sample"):
+                    self.state.maybe_unbound.add(agg_var)
+                # SAMPLE skips an unbound value, as COUNT does; the others fail.
+                if agg.name != "Aggregate_Sample" and self._argument_may_be_unbound(agg):
+                    read = self._unbound_is_error(read, arg_expr, aggregates, null_counts)
+                    self.state.maybe_unbound.add(agg_var)
+                self.state.var_to_expr[agg_var] = read
+                continue
 
             self.state.var_to_expr[agg_var] = agg_alias
 
@@ -1226,6 +1254,36 @@ class AlgebraVisitor:
         return expr is not None and any(
             expr == subject_ref(alias) for alias in self.builder.scanned_aliases()
         )
+
+    def _argument_may_be_unbound(self, agg: Any) -> bool:
+        """Whether the aggregate's argument can be unbound in some solution
+        (it is, or mentions, a variable in ``state.maybe_unbound``)."""
+        v = agg.vars
+        if v == "*":
+            return False
+        names = {str(v)} if isinstance(v, Variable) else _expression_variable_names(v)
+        return bool(names & self.state.maybe_unbound)
+
+    def _unbound_is_error(
+        self, read: str, arg_expr: str, aggregates: list[tuple[str, str]], null_counts: dict[str, str]
+    ) -> str:
+        """Wrap an aggregate's read so an unbound value in its group makes it unbound.
+
+        SPARQL evaluates SUM / AVG / MIN / MAX / GROUP_CONCAT over the
+        group's values, and an unbound one is an error that makes the whole
+        result an error, which projects as unbound (SPARQL 1.1 §18.5.1;
+        pyoxigraph agrees). AQL's SUM / AVG / MIN / MAX skip null and
+        CONCAT_SEPARATOR drops it, so the group's nulls are counted beside the
+        aggregate (one count per argument) and the read is null when there
+        are any (issue #59). Over no rows the count is null, ``null > 0`` is
+        false, and the read stands — SUM / AVG still give 0 (#49).
+        """
+        nulls = null_counts.get(arg_expr)
+        if nulls is None:
+            nulls = self.builder.fresh_alias(prefix="nulls")
+            aggregates.append((nulls, f"SUM({arg_expr} == null ? 1 : 0)"))
+            null_counts[arg_expr] = nulls
+        return f"({nulls} > 0 ? null : {read})"
 
     # ------------------------------------------------------------------
     # ORDER BY — list of OrderConditions, each with expr + direction
@@ -2419,6 +2477,26 @@ class AlgebraVisitor:
 # ----------------------------------------------------------------------
 # Helpers
 # ----------------------------------------------------------------------
+def _expression_variable_names(node: Any) -> set[str]:
+    """Names of every SPARQL Variable inside an rdflib expression tree.
+
+    rdflib expressions are ``CompValue`` mappings whose operands sit under
+    varying keys (``expr``, ``other``, ``arg``, …) and in lists, so this
+    walks every value rather than a fixed set of attributes.
+    """
+    out: set[str] = set()
+    stack = [node]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Variable):
+            out.add(str(item))
+        elif isinstance(item, dict):
+            stack.extend(item.values())
+        elif isinstance(item, list | tuple):
+            stack.extend(item)
+    return out
+
+
 def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
     """Sort key for BGP triples — lower = visit earlier.
 
