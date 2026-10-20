@@ -472,57 +472,6 @@ class AqlQueryBuilder:
         self._body_clauses.append(_Clause(_ClauseKind.COLLECT, " ".join(parts)))
         return self
 
-    def let_outbound_first_uri(
-        self,
-        let_alias: str,
-        *,
-        start_alias: str,
-        edge_collection: str,
-        type_field: str | None = None,
-        type_value: Any = None,
-    ) -> AqlQueryBuilder:
-        """Emit a ``LET <alias> = (FOR v, e IN OUTBOUND <start> @@<coll>
-        [FILTER e.<type_field> == @bind] LIMIT 1 RETURN v._uri)[0]`` clause.
-
-        The target identity of the *first* matching edge, or ``null`` when
-        no edge matches. Used only for the compatibility test of a variable
-        an OPTIONAL re-binds inside a MINUS probe (``visit_LeftJoin``).
-
-        It is not how an OPTIONAL binds a new variable: SPARQL's LeftJoin
-        keeps every matching edge as its own solution (SPARQL 1.1 §18.5),
-        so ``visit_LeftJoin._emit_optional_rows`` emits a padded row
-        subquery for that. This helper's ``LIMIT 1`` was once the OPTIONAL
-        emission — as in the legacy ``aql-translator.js#processOptionalPatterns``
-        — and dropped a solution per extra edge (issue #48).
-
-        Vertex / edge aliases are minted internally so the caller does
-        not have to care about uniqueness — the let alias is the only
-        identifier the caller needs.
-        """
-        if not _AQL_IDENT_RE.match(let_alias):
-            raise ValueError(f"invalid LET alias: {let_alias!r}")
-        if not _AQL_IDENT_RE.match(start_alias):
-            raise ValueError(f"invalid traversal start alias: {start_alias!r}")
-        if (type_field is None) != (type_value is None):
-            raise ValueError(
-                "type_field and type_value must be provided together "
-                "(GENERIC_WITH_TYPE) or both omitted (DEDICATED_COLLECTION)"
-            )
-        v_alias = self.fresh_alias(prefix="v")
-        e_alias = self.fresh_alias(prefix="e")
-        coll_ref = self.bind_collection(edge_collection)
-        parts = [f"FOR {v_alias}, {e_alias} IN OUTBOUND {start_alias} {coll_ref}"]
-        if type_field is not None:
-            if not _AQL_IDENT_RE.match(type_field):
-                raise ValueError(f"invalid traversal type_field: {type_field!r}")
-            bind = self.bind(type_value, hint=type_field)
-            parts.append(f"FILTER {e_alias}.{type_field} == {bind}")
-        parts.append("LIMIT 1")
-        parts.append(f"RETURN {subject_ref(v_alias)}")
-        subquery = " ".join(parts)
-        self._body_clauses.append(_Clause(_ClauseKind.LET, f"LET {let_alias} = ({subquery})[0]"))
-        return self
-
     def let(self, alias: str, expression: str) -> AqlQueryBuilder:
         """Emit ``LET <alias> = <expression>``.
 

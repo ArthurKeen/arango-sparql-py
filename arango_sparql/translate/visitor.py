@@ -726,26 +726,14 @@ class AlgebraVisitor:
                     edge_bindings.append((o_name, prop, prop.edge_collection, subject_alias))
                     seen_vars.add(o_name)
                     continue
-                # The MINUS-probe compatibility test below (a re-bound
-                # variable) still compares against the first matching edge's
-                # target; it is unchanged by issue #48, which is about the
-                # rows an OPTIONAL produces.
-                let_alias = self.builder.fresh_alias(prefix="opt")
-                if prop.mapping_style == "GENERIC_WITH_TYPE":
-                    self.builder.let_outbound_first_uri(
-                        let_alias,
-                        start_alias=subject_alias,
-                        edge_collection=prop.edge_collection,
-                        type_field=prop.type_field,
-                        type_value=prop.type_value,
-                    )
-                else:
-                    self.builder.let_outbound_first_uri(
-                        let_alias,
-                        start_alias=subject_alias,
-                        edge_collection=prop.edge_collection,
-                    )
-                value_expr = let_alias
+                # Re-bound inside a MINUS / EXISTS probe: the compatibility test
+                # below must hold for *some* matching edge (or there is none),
+                # so the probe gets one row per edge target, padded with one
+                # null row, and the per-row test is unchanged (issue #52; it
+                # compared the first edge only).
+                [(_, value_expr)] = self._emit_padded_rows(
+                    [(o_name, prop, prop.edge_collection, subject_alias)], [], None
+                )
             else:
                 value_expr = attribute_ref(subject_alias, prop.attribute)
 
@@ -829,7 +817,23 @@ class AlgebraVisitor:
         attr_bindings: list[tuple[str, str]],
         filter_expr: Any,
     ) -> None:
+        """An OPTIONAL block with object-property triples: emit its padded rows
+        (:meth:`_emit_padded_rows`) and bind the block's variables to them."""
+        for var, row_expr in self._emit_padded_rows(edge_bindings, attr_bindings, filter_expr):
+            self.state.var_to_expr[var] = row_expr
+
+    def _emit_padded_rows(
+        self,
+        edge_bindings: list[tuple[str, ResolvedProperty, str, str]],
+        attr_bindings: list[tuple[str, str]],
+        filter_expr: Any,
+    ) -> list[tuple[str, str]]:
         """An OPTIONAL block with object-property triples, as a padded left join.
+
+        Returns ``(sparql_var, row expression)`` per variable of the block and
+        installs nothing: :meth:`_emit_optional_rows` binds the variables to
+        them, and the MINUS / EXISTS re-bind test in :meth:`visit_LeftJoin`
+        compares each row against the outer value instead (issue #52).
 
         SPARQL's LeftJoin keeps every compatible solution of the OPTIONAL
         block (SPARQL 1.1 §18.5), so a subject with two matching edges gives
@@ -894,8 +898,7 @@ class AlgebraVisitor:
         self.builder.let(sub_alias, f"(\n{indented}\n)")
         row_alias = self.builder.fresh_alias(prefix="optrow")
         self.builder.for_inline(row_alias, f"(LENGTH({sub_alias}) > 0 ? {sub_alias} : [null])")
-        for name, (var, _source) in zip(names, fields, strict=True):
-            self.state.var_to_expr[var] = f"{row_alias}.{name}"
+        return [(var, f"{row_alias}.{name}") for name, (var, _source) in zip(names, fields, strict=True)]
 
     # ------------------------------------------------------------------
     # BIND / agg-result rename — Extend(p=inner, var=?v, expr=<sparql expr>)
