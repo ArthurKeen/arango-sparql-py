@@ -484,17 +484,16 @@ class AqlQueryBuilder:
         """Emit a ``LET <alias> = (FOR v, e IN OUTBOUND <start> @@<coll>
         [FILTER e.<type_field> == @bind] LIMIT 1 RETURN v._uri)[0]`` clause.
 
-        The OPTIONAL emitter for object-property triples — picks the
-        target vertex's ``_uri`` of the first matching edge, or ``null``
-        when no edge matches (which is exactly SPARQL's OPTIONAL
-        "unbound" semantics).
+        The target identity of the *first* matching edge, or ``null`` when
+        no edge matches. Used only for the compatibility test of a variable
+        an OPTIONAL re-binds inside a MINUS probe (``visit_LeftJoin``).
 
-        ``LIMIT 1`` is correct for SPARQL OPTIONAL: the SPARQL semantics
-        of ``OPTIONAL { ?s :p ?o }`` only need to know whether ``?o``
-        binds, and SPARQL does not specify which match to pick when
-        multiple exist (set semantics). Picking the first is what the
-        legacy Foxx ``aql-translator.js#processOptionalPatterns`` does
-        too, and matches the W3C "any-of" projection.
+        It is not how an OPTIONAL binds a new variable: SPARQL's LeftJoin
+        keeps every matching edge as its own solution (SPARQL 1.1 §18.5),
+        so ``visit_LeftJoin._emit_optional_rows`` emits a padded row
+        subquery for that. This helper's ``LIMIT 1`` was once the OPTIONAL
+        emission — as in the legacy ``aql-translator.js#processOptionalPatterns``
+        — and dropped a solution per extra edge (issue #48).
 
         Vertex / edge aliases are minted internally so the caller does
         not have to care about uniqueness — the let alias is the only

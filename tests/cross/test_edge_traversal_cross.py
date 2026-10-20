@@ -46,19 +46,21 @@ EX = "http://ex.org/"
 
 # Single source of truth. Each person carries a datatype property
 # (``name``); each project carries a datatype property (``title``) and
-# an ``owner`` *object* property pointing at a person IRI. ``p4`` is an
+# ``owner`` *object* properties pointing at person IRIs. ``p4`` is an
 # orphan (no owner) so the traversal must drop it — exactly as
-# pyoxigraph drops the solution with an unbound object.
+# pyoxigraph drops the solution with an unbound object — and ``p2`` has
+# two owners, so an OPTIONAL over ``:owner`` must yield two solutions for
+# it (issue #48: it used to keep the first edge only).
 PEOPLE = [
     {"local": "alice", "name": "Alice", "age": 30},
     {"local": "bob", "name": "Bob", "age": 42},
     {"local": "carol", "name": "Carol", "age": 30},
 ]
 PROJECTS = [
-    {"local": "p1", "title": "Apollo", "owner": "alice"},
-    {"local": "p2", "title": "Beacon", "owner": "bob"},
-    {"local": "p3", "title": "Catalyst", "owner": "alice"},
-    {"local": "p4", "title": "Orphan", "owner": None},
+    {"local": "p1", "title": "Apollo", "owners": ["alice"]},
+    {"local": "p2", "title": "Beacon", "owners": ["bob", "carol"]},
+    {"local": "p3", "title": "Catalyst", "owners": ["alice"]},
+    {"local": "p4", "title": "Orphan", "owners": []},
 ]
 
 
@@ -68,8 +70,8 @@ def _data_ttl() -> str:
         lines.append(f':{p["local"]} a :Person ; :name "{p["name"]}" ; :age {p["age"]} .')
     for pr in PROJECTS:
         triple = f':{pr["local"]} a :Project ; :title "{pr["title"]}"'
-        if pr["owner"]:
-            triple += f" ; :owner :{pr['owner']}"
+        for owner in pr["owners"]:
+            triple += f" ; :owner :{owner}"
         lines.append(triple + " .")
     return "\n".join(lines)
 
@@ -91,7 +93,9 @@ def _pg_dedicated_docs() -> dict[str, list[dict[str, Any]]]:
         {"_id": f"Project/{pr['local']}", "_uri": EX + pr["local"], "title": pr["title"]} for pr in PROJECTS
     ]
     owner_edges = [
-        {"_from": f"Project/{pr['local']}", "_to": f"Person/{pr['owner']}"} for pr in PROJECTS if pr["owner"]
+        {"_from": f"Project/{pr['local']}", "_to": f"Person/{owner}"}
+        for pr in PROJECTS
+        for owner in pr["owners"]
     ]
     return {"Person": persons, "Project": projects, "owner": owner_edges}
 
@@ -119,9 +123,9 @@ def _lpg_generic_docs() -> dict[str, list[dict[str, Any]]]:
         for pr in PROJECTS
     ]
     edges = [
-        {"_from": f"vertices/{pr['local']}", "_to": f"vertices/{pr['owner']}", "type": "owner"}
+        {"_from": f"vertices/{pr['local']}", "_to": f"vertices/{owner}", "type": "owner"}
         for pr in PROJECTS
-        if pr["owner"]
+        for owner in pr["owners"]
     ]
     return {"vertices": vertices, "edges": edges}
 
@@ -209,6 +213,48 @@ def _run_model(ontology_ttl: str, docs_factory: Any, sparql: str) -> list[dict[s
 @pytest.mark.parametrize("ontology_ttl,docs_factory", MODELS)
 @pytest.mark.parametrize("sparql", JOIN_CASES)
 def test_edge_traversal_join_matches_oxigraph(
+    oxi_store: Any,
+    ontology_ttl: str,
+    docs_factory: Any,
+    sparql: str,
+) -> None:
+    actual = _run_model(ontology_ttl, docs_factory, sparql)
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert_bindings_equal(expected, actual)
+
+
+# OPTIONAL over the ``:owner`` edge (issue #48). p2's two owners must give
+# two solutions, the orphan p4 one with ?p unbound, and the block must still
+# match as a unit when it has an attribute triple or an inner FILTER.
+OPTIONAL_CASES = [
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?prj ?p WHERE { ?prj a :Project OPTIONAL { ?prj :owner ?p } }",
+        id="optional_edge_every_match",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?p WHERE { ?prj a :Project ; :title ?t OPTIONAL { ?prj :owner ?p } }",
+        id="optional_edge_with_required_attribute",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?prj ?p WHERE { ?prj a :Project OPTIONAL { ?prj :owner ?p FILTER(?p != :bob) } }",
+        id="optional_edge_inner_filter",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (COUNT(?p) AS ?c) WHERE { ?prj a :Project OPTIONAL { ?prj :owner ?p } }",
+        id="count_over_optional_edge",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?prj (COUNT(?p) AS ?c) WHERE { "
+        "?prj a :Project OPTIONAL { ?prj :owner ?p } } GROUP BY ?prj",
+        id="grouped_count_over_optional_edge",
+    ),
+]
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("ontology_ttl,docs_factory", MODELS)
+@pytest.mark.parametrize("sparql", OPTIONAL_CASES)
+def test_optional_edge_matches_oxigraph(
     oxi_store: Any,
     ontology_ttl: str,
     docs_factory: Any,
