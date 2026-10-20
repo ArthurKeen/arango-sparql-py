@@ -47,6 +47,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev,nl,service]"
+      # The DAWG corpus is not vendored (licence + size). Without it both
+      # legs skip and the live leg exits 5 ("no tests ran"): the nightly
+      # failed that way every day from at least 2026-10-13 while running
+      # nothing. ci.yml's w3c-coverage and integration jobs fetch the same way.
+      - run: bash scripts/fetch_w3c.sh
       # Translation-only sweep over the full corpus (no DB needed, but
       # sharing the job keeps the workflow single-runner).
       - run: pytest -m w3c -q --tb=short
