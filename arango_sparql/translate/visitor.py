@@ -778,7 +778,11 @@ class AlgebraVisitor:
         expr = getattr(node, "expr", None)
         has_filter = expr is not None and getattr(expr, "name", "") != "TrueFilter"
 
-        if edge_bindings:
+        # Rows, not scalars, whenever a binding can match more than once: an
+        # edge (issue #48), or — under ``fan_out_list_values``, where a
+        # list-valued attribute is one triple per element as in a required
+        # triple — any attribute (issue #53).
+        if edge_bindings or (new_bindings and self.resolver.fan_out_list_values):
             self._emit_optional_rows(edge_bindings, new_bindings, expr if has_filter else None)
             return
 
@@ -843,6 +847,8 @@ class AlgebraVisitor:
               FOR <v>, <e> IN OUTBOUND <subject> @@<edges>   -- per edge triple
               [FILTER <e>.<type_field> == @<type>]          -- GENERIC_WITH_TYPE
               FILTER <subject>.<attr> != null               -- per attribute triple
+            -- (under fan_out_list_values: FOR <lv> IN FLATTEN([<subject>.<attr>])
+            --  FILTER <lv> != null, one row per list element; issue #53)
               [FILTER <inner filter>]
               RETURN {f0: <target identity>, f1: <subject>.<attr>, …}
             )
@@ -868,8 +874,17 @@ class AlgebraVisitor:
                 child.filter_eq(f"{e_alias}.{prop.type_field}", bind)
             fields.append((var, subject_ref(v_alias)))
         for var, source_expr in attr_bindings:
-            child.filter_raw(f"{source_expr} != null")
-            fields.append((var, source_expr))
+            if self.resolver.fan_out_list_values:
+                # One row per element, the fan-out a required triple gets
+                # (``visit_BGP``): FLATTEN([attr]) is the list's elements, or
+                # ``[scalar]``; a missing attribute is ``[null]``, no match.
+                value_alias = child.fresh_alias(prefix="lv")
+                child.for_inline(value_alias, self._fan_out_source(source_expr))
+                child.filter_raw(f"{value_alias} != null")
+                fields.append((var, value_alias))
+            else:
+                child.filter_raw(f"{source_expr} != null")
+                fields.append((var, source_expr))
         if filter_expr is not None:
             # The inner FILTER reads the block's variables by SPARQL name, so
             # they resolve to their subquery expressions while it translates;
