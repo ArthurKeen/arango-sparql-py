@@ -1938,8 +1938,9 @@ or the workbench off CodeMirror.
   a reviewed pin bump.
 * **Editor vocabulary v1** — `{"base": <concept namespace IRI>, "classes":
   {<Class>: {"props": [...], "source": <owning source>, "kind": <source
-  kind>}}}`, defined by `arango_sparql.editor.EditorVocabV1` (extra keys
-  rejected). This library's producer, `editor_vocab()`, lists every data
+  kind>}}}`, defined by `arango_sparql.editor.EditorVocabV1` (extra keys,
+  names the core cannot write as `prefix:name`, and a base that would break
+  out of `<…>` are rejected). This library's producer, `editor_vocab()`, lists every data
   property (uncapped) and every object property on its domain class (all
   classes for an `Any` domain), from `arango_sparql.schema.vocabulary` — the
   derivation `build_schema_summary` (§7.2) also uses, so the prompt's classes
