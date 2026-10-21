@@ -29,6 +29,7 @@ from typing import Any
 
 from fastapi import Depends, HTTPException
 
+from ...editor import ARANGODB_KIND, EditorVocabV1, editor_vocab
 from ...schema.acquire import (
     ANALYZER_INSTALL_HINT,
     AnalyzerNotInstalledError,
@@ -42,6 +43,7 @@ from ...schema.acquire import (
 from ...schema.cache import SchemaCache
 from ...schema.fingerprint import FingerprintDrift, classify_live_drift
 from ...schema.graph_scope import scope_bundle_to_graph
+from ...schema.vocabulary import default_namespace
 from ...translate.mapping import (
     MappingBundle,
     MappingError,
@@ -658,7 +660,26 @@ def schema_introspect(
         elapsed_ms=elapsed_ms,
         status="ready",
         warming=warming,
+        editor_vocab=_editor_vocab_for(bundle, db_name=getattr(session.db, "name", "") or ""),
     )
+
+
+def _editor_vocab_for(bundle: MappingBundle, *, db_name: str) -> EditorVocabV1 | None:
+    """The workbench editor's vocabulary for *bundle* (issue #68).
+
+    ``None`` when the bundle's ontology names no default (``:``) namespace:
+    the NL prompt renders no schema summary then either, so the editor and
+    the model stay in agreement. An enrichment, like that summary: a failure
+    is logged and the schema is still served.
+    """
+    namespace = default_namespace(bundle.owl_turtle)
+    if not namespace:
+        return None
+    try:
+        return editor_vocab(bundle, namespace=namespace, source=f"{ARANGODB_KIND}:{db_name}")
+    except Exception as exc:  # noqa: BLE001 — enrichment only; the schema still serves
+        logger.warning("editor vocabulary skipped for database %r: %s", db_name, exc)
+        return None
 
 
 # ---------------------------------------------------------------------------
