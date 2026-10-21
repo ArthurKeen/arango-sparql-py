@@ -511,3 +511,56 @@ def test_a_constraint_before_the_statement_does_not_hide_its_subject() -> None:
     ]
     # inside the constraint itself there is no subject: every class's properties
     assert len(props_at("SELECT * WHERE { ?p a :Person . FILTER(?p :")) == 7  # all of HY_VOCAB
+
+
+# ---------------------------------------------------------------------------
+# PR #69 recheck: `<` is less-than only after an operand inside an expression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        f"SELECT * WHERE {{ ?r a ?t . FILTER(?t = <{HYBRID}Report>) }}",
+        f"SELECT * WHERE {{ BIND(<{HYBRID}X> AS ?c) ?s a ?c . }}",
+        f"SELECT * WHERE {{ ?s a ?t . FILTER(?t IN (<{HYBRID}a>, <{HYBRID}b>)) }}",
+        f"SELECT * WHERE {{ VALUES (?a ?b) {{ (<{HYBRID}a> <{HYBRID}b>) }} ?s ?p ?a . }}",
+        f"SELECT * WHERE {{ ?s ?p ?o . FILTER(?o < <{HYBRID}z>) }}",
+    ],
+    ids=["filter-equals", "bind", "in-list", "values-row", "less-than-then-iri"],
+)
+def test_an_iri_with_a_hash_inside_parentheses_still_formats(query: str) -> None:
+    out = fmt(query)
+    assert out != query and collapse(out) == collapse(query)
+
+
+def test_a_less_than_before_a_prefixed_name_is_not_an_iri() -> None:
+    query = f"PREFIX ex: <http://e/>\nSELECT * WHERE {{ ?s :v ?x . FILTER(?x<ex:limit) ?s a <{HYBRID}Document> . }}"
+    assert fmt(query) != query  # formats: no stray IRI swallowed the `)`
+    assert call("missingPrefixes", "SELECT * WHERE { ?s :v ?x . FILTER(?x<zz:limit) }") == ["zz"]
+    types = [t["type"] for t in call("tokenize", "FILTER(?x<ex:limit)", HY_VOCAB, WB)]
+    assert "iri" not in types
+
+
+def test_every_class_declared_for_the_subject_scopes_its_properties() -> None:
+    assert props_at("SELECT * WHERE { ?s a :Document . ?s a :Chunk .\n ?s :") == [
+        ":file_name",
+        ":size",
+        ":text",
+    ]
+    # a sibling UNION branch's declaration still does not count
+    union = "SELECT * WHERE { { ?x a :Org } UNION { ?x a :Person ; :"
+    assert props_at(union) == [":name"]
+    # an enclosing group's declaration does
+    assert props_at("SELECT * WHERE { ?d a :Document . OPTIONAL { ?d :") == [":file_name", ":size"]
+
+
+def test_a_very_long_line_stays_fast() -> None:
+    out = run_node(
+        "const c = require(process.argv[1]);"
+        "const doc = 'SELECT * WHERE { ?s ?p ?o . FILTER(' + '?a<'.repeat(20000) + '1) ?s :';"
+        "const t = process.hrtime.bigint(); c.suggest(doc, doc.length, null, {conceptPrefixes: ['']});"
+        "process.stdout.write(String(Number(process.hrtime.bigint() - t) / 1e6));",
+        str(CORE),
+    )
+    assert float(out) < 500, f"suggest took {out} ms on an 80 KB line"

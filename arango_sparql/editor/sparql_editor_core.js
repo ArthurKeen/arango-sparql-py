@@ -82,57 +82,71 @@
 
   // IRIREF's characters (SPARQL 1.1 grammar [139]): no whitespace, controls,
   // or any of <>"{}|^`\
-  const IRIREF = /<[^<>"{}|^`\\\u0000-\u0020]*>/y;
-  // An IRI still being typed: no closing `>` yet, but a scheme colon, which a
-  // less-than (`?a < 3`, `?a<?b`) does not have. Its `#` is not a comment.
-  const OPEN_IRI = /<[^<>"{}|^`\\\u0000-\u0020]*/y;
+  const IRIREF = /<[^<>"{}|^`\\\u0000- ]*>/y;
+  // An IRI still being typed: no closing `>` yet, but a scheme colon. It stops
+  // at `)`, `,` and `;` as well, which end the term it is typed into.
+  const OPEN_IRI = /<[^<>"{}|^`\\\u0000- ),;]*/y;
+  const WORD = /[A-Za-z0-9_]/;
 
   let lexCache = { doc: null, spans: [] };
 
   /**
    * The spans of `doc` that are not SPARQL syntax, in order:
-   * [{type: 'comment' | 'iri' | 'open-iri' | 'string' | 'open-string', from, to,
-   *   inParens}].
+   * [{type: 'comment' | 'iri' | 'open-iri' | 'string' | 'open-string', from, to}].
    * Strings are short or long (triple-quoted), single- or double-quoted,
    * and escape-aware; an unterminated short string runs to the end of its
    * line, a long one to the end of the text. A backslash outside a literal
    * escapes the next character (PN_LOCAL_ESC, e.g. `:O\'Brien`), so it never
-   * opens a string. `inParens` marks a span inside an expression's
-   * parentheses, where `<` can also be less-than. One pass; the last result
-   * is cached, because every helper below asks for the same text.
+   * opens a string.
+   *
+   * A `<` is read the way the grammar does: as less-than inside an
+   * expression's parentheses right after an operand (a variable, number,
+   * literal, IRI, name or `)`), as in `FILTER(?a<1)` or `FILTER(?x<ex:max)`;
+   * otherwise as the start of an IRI. VALUES rows are term lists, not
+   * expressions. One pass; the last result is cached, because every helper
+   * below asks for the same text.
    */
   function lex(doc) {
     if (lexCache.doc === doc) return lexCache.spans;
     const spans = [];
     const n = doc.length;
-    let i = 0, depth = 0;
+    // Open brackets: '(' an expression, 'row' a VALUES tuple, '{' a group,
+    // 'values' a VALUES block.
+    const stack = [];
+    let valuesPending = false;
+    let operand = false; // the last significant token ended an operand
+    let i = 0;
     while (i < n) {
       const ch = doc[i];
-      if (ch === '\\') { i += 2; continue; }
-      if (ch === '(') { depth += 1; i += 1; continue; }
-      if (ch === ')') { depth = Math.max(0, depth - 1); i += 1; continue; }
+      if (ch === '\\') { i += 2; operand = true; continue; }
+      if (ch === ' ' || ch === '\t' || ch === '\r' || ch === '\n') { i += 1; continue; }
       if (ch === '#') {
         const nl = doc.indexOf('\n', i);
         const to = nl < 0 ? n : nl;
-        spans.push({ type: 'comment', from: i, to, inParens: depth > 0 });
+        spans.push({ type: 'comment', from: i, to });
         i = to;
         continue;
       }
       if (ch === '<') {
+        const expression = stack.length > 0 && stack[stack.length - 1] === '(';
+        if (expression && operand) { i += 1; operand = false; continue; } // less-than
         IRIREF.lastIndex = i;
         const m = IRIREF.exec(doc);
         if (m) {
-          spans.push({ type: 'iri', from: i, to: i + m[0].length, inParens: depth > 0 });
+          spans.push({ type: 'iri', from: i, to: i + m[0].length });
           i += m[0].length;
+          operand = true;
+          continue;
+        }
+        OPEN_IRI.lastIndex = i;
+        const open = OPEN_IRI.exec(doc)[0];
+        if (open.includes(':')) {
+          spans.push({ type: 'open-iri', from: i, to: i + open.length });
+          i += open.length;
+          operand = true;
         } else {
-          OPEN_IRI.lastIndex = i;
-          const open = OPEN_IRI.exec(doc)[0];
-          if (open.includes(':')) {
-            spans.push({ type: 'open-iri', from: i, to: i + open.length, inParens: depth > 0 });
-            i += open.length;
-          } else {
-            i += 1; // less-than
-          }
+          i += 1; // less-than
+          operand = false;
         }
         continue;
       }
@@ -147,11 +161,42 @@
           j += 1;
         }
         const to = Math.min(j, n);
-        spans.push({ type: closed ? 'string' : 'open-string', from: i, to, inParens: depth > 0 });
+        spans.push({ type: closed ? 'string' : 'open-string', from: i, to });
         i = to;
+        operand = true;
         continue;
       }
-      i += 1;
+      if (ch === '(') {
+        const top = stack[stack.length - 1];
+        stack.push(valuesPending || top === 'values' ? 'row' : '(');
+        i += 1;
+        operand = false;
+        continue;
+      }
+      if (ch === '{') {
+        stack.push(valuesPending ? 'values' : '{');
+        valuesPending = false;
+        i += 1;
+        operand = false;
+        continue;
+      }
+      if (ch === ')' || ch === '}') {
+        stack.pop();
+        i += 1;
+        operand = ch === ')';
+        continue;
+      }
+      if (WORD.test(ch) || ch === '?' || ch === '$' || ch === ':') {
+        let j = i + 1;
+        while (j < n && (WORD.test(doc[j]) || doc[j] === ':' || doc[j] === '-' || doc[j] === '.'
+          && j + 1 < n && WORD.test(doc[j + 1]))) j += 1;
+        if (doc.slice(i, j).toUpperCase() === 'VALUES') valuesPending = true;
+        i = j;
+        operand = true;
+        continue;
+      }
+      i += 1; // any other punctuation is an operator or a separator
+      operand = false;
     }
     lexCache = { doc, spans };
     return spans;
@@ -374,9 +419,12 @@
   // caret's line is scanned.
   const TOKEN_AT_CARET = /(<[^>\s]*|(?:[A-Za-z][\w.-]*)?:[A-Za-z0-9_-]*|[?$][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*)$/;
 
+  // No token is longer than this, so a huge line costs no more than a short one.
+  const TOKEN_SCAN = 1024;
+
   function tokenBeforeCaret(doc, caret) {
     const upto = doc.slice(0, caret);
-    const line = upto.slice(upto.lastIndexOf('\n') + 1);
+    const line = upto.slice(Math.max(upto.lastIndexOf('\n') + 1, upto.length - TOKEN_SCAN));
     const m = line.match(TOKEN_AT_CARET);
     if (!m) return null;
     const start = upto.length - m[0].length;
@@ -417,26 +465,32 @@
     return v ? v[1] : null;
   }
 
-  // The class the query declares for the subject (`?s a c:Class`, or the full
-  // IRI spelling), when the vocabulary knows it: the last declaration before
-  // the caret, so a sibling UNION branch or a later statement does not
-  // decide. `text` is the text before the caret with comments and strings
-  // blanked (IRIs kept); `?s` and `$s` are the same variable.
-  function subjectClass(text, subj, vocab, prefixes) {
-    if (!subj) return null;
+  // The classes the query declares for the subject (`?s a c:Class`, or the
+  // full IRI spelling) that the vocabulary knows, in the order declared
+  // before the caret. A later class in a sibling UNION branch replaces the
+  // earlier ones (a `{` restarts the list), so it alone decides. `text` is the
+  // text before the caret with comments and strings blanked (IRIs kept);
+  // `?s` and `$s` are the same variable.
+  function subjectClasses(text, subj, vocab, prefixes) {
+    if (!subj) return [];
     const alts = [];
     if (prefixes.length) alts.push('(?:' + prefixes.map(escRe).join('|') + '):(' + LOCAL + ')');
     if (vocab.base) alts.push('<' + escRe(vocab.base) + '(' + LOCAL + ')>');
-    if (!alts.length) return null;
+    if (!alts.length) return [];
     const re = new RegExp('[?$]' + escRe(subj) + '\\s+a\\s+(?:' + alts.join('|') + ')', 'g');
     const classes = classesOf(vocab);
-    let found = null;
+    const groupStart = text.lastIndexOf('{');
+    let found = [];
     let m;
     while ((m = re.exec(text)) !== null) {
       const name = m[1] || m[2];
-      if (Object.prototype.hasOwnProperty.call(classes, name)) found = name;
+      if (!Object.prototype.hasOwnProperty.call(classes, name)) continue;
+      // A declaration in an earlier group (a sibling UNION branch) is dropped
+      // once one in the caret's own group appears.
+      if (m.index > groupStart && found.length && found.every((f) => f.at <= groupStart)) found = [];
+      if (!found.some((f) => f.name === name)) found.push({ name, at: m.index });
     }
-    return found;
+    return found.map((f) => f.name);
   }
 
   function startsWithCI(word, typed) {
@@ -511,16 +565,16 @@
       }
       if (!afterA) {
         const owners = propOwners(v);
-        const subj = subjectClass(textBefore, currentSubject(blank(doc, NOISE).slice(0, tok.start)),
-          v, prefixes);
-        const scoped = subj ? [subj] : Object.keys(classes);
+        const declared = subjectClasses(textBefore,
+          currentSubject(blank(doc, NOISE).slice(0, tok.start)), v, prefixes);
+        const scoped = declared.length ? declared : Object.keys(classes);
         const seen = new Set();
         for (const cls of scoped) {
           for (const p of classes[cls].props) {
             if (seen.has(p) || !p.startsWith(local)) continue;
             seen.add(p);
             out.push({ label: short(p), insert: spell(p), tag: classes[cls].kind,
-              hint: subj ? subj : owners[p].join(', '), type: 'property' });
+              hint: declared.length ? cls : owners[p].join(', '), type: 'property' });
           }
         }
       }
@@ -568,15 +622,14 @@
    *   - it has a `#` comment (the lines joined after it would be commented out)
    *   - it has an unterminated literal (there is no end to protect), or an
    *     unterminated IRI holding a `#` (rdflib reads that `#` as a comment)
-   *   - an "IRI" inside an expression's parentheses holds a `#`: rdflib reads
-   *     `FILTER(?a<1)#c>` as less-than followed by a comment, not as an IRI
+   * (`FILTER(?a<1)#c>` is a less-than then a comment, as rdflib reads it — the
+   * lexer's rule for `<` — so it counts as a query with a comment.)
    */
   function formatSparql(src) {
     const text = String(src);
     const spans = lex(text);
-    const hash = (sp) => text.slice(sp.from, sp.to).includes('#');
     const risky = spans.some((sp) => sp.type === 'comment' || sp.type === 'open-string'
-      || (sp.type === 'open-iri' && hash(sp)) || (sp.type === 'iri' && sp.inParens && hash(sp)));
+      || (sp.type === 'open-iri' && text.slice(sp.from, sp.to).includes('#')));
     if (risky) return text;
     const store = [];
     let s = '';
