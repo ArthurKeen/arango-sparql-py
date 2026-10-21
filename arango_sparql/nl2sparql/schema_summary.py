@@ -22,19 +22,18 @@ document attribute ``file_name`` (PRD §6.7).
 
 from __future__ import annotations
 
-import re
 from typing import Any
+
+# The per-class derivation is shared with the editors' vocabulary
+# (arango_sparql.editor.editor_vocab), so the prompt and the editor's
+# completion read one list. ``default_namespace`` is re-exported here, where
+# callers have always imported it from.
+from ..schema.vocabulary import concept_classes, concept_relationships, default_namespace
+
+__all__ = ["MAX_PROPS", "build_schema_summary", "default_namespace"]
 
 #: Properties listed per class, as in the sister project.
 MAX_PROPS = 8
-
-# A safe subset of SPARQL's PN_LOCAL: a name outside it cannot be written as a
-# plain prefixed name, so it is left out rather than shown in a form the model
-# would copy into an invalid query.
-_PN_LOCAL_SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-]*$")
-
-_DEFAULT_PREFIX = re.compile(r"@prefix\s+:\s*<([^>]+)>", re.IGNORECASE)
-_SPARQL_DEFAULT_PREFIX = re.compile(r"PREFIX\s+:\s*<([^>]+)>", re.IGNORECASE)
 
 _HEADER = (
     "Classes and their data properties. Write every term with the ontology's "
@@ -42,31 +41,6 @@ _HEADER = (
     "`?x a :SomeClass ; :some_property ?value`. A property listed here can be "
     "used even if the Turtle above does not declare it."
 )
-
-
-def default_namespace(*turtles: str | None) -> str | None:
-    """The ontology's default (``:``) namespace, from the first Turtle that
-    declares one; ``None`` when none does (no summary is rendered then)."""
-    for ttl in turtles:
-        if not ttl:
-            continue
-        match = _DEFAULT_PREFIX.search(ttl) or _SPARQL_DEFAULT_PREFIX.search(ttl)
-        if match:
-            return match.group(1)
-    return None
-
-
-def _term(name: str) -> str | None:
-    return f":{name}" if name and _PN_LOCAL_SAFE.match(name) else None
-
-
-def _entity_props(entity: dict[str, Any], physical: dict[str, Any]) -> list[str]:
-    props = [p.get("name", "") for p in entity.get("properties") or [] if isinstance(p, dict)]
-    if not props:
-        pme = (physical.get("entities") or {}).get(entity.get("name", ""))
-        if isinstance(pme, dict) and isinstance(pme.get("properties"), dict):
-            props = list(pme["properties"].keys())
-    return props
 
 
 def build_schema_summary(bundle: Any, *, namespace: str) -> str:
@@ -79,36 +53,21 @@ def build_schema_summary(bundle: Any, *, namespace: str) -> str:
     classes and relationships are sorted — so the system prompt stays
     cache-stable across requests.
     """
-    cs = getattr(bundle, "conceptual_schema", None) or {}
-    pm = getattr(bundle, "physical_mapping", None) or {}
-
     class_lines: list[str] = []
-    for entity in sorted(
-        (e for e in cs.get("entities") or [] if isinstance(e, dict)),
-        key=lambda e: str(e.get("name", "")),
-    ):
-        cls = _term(str(entity.get("name", "")))
-        if cls is None:
-            continue
-        terms = [t for t in (_term(p) for p in _entity_props(entity, pm)) if t][:MAX_PROPS]
+    for cls, props in concept_classes(bundle).items():
+        terms = [f":{p}" for p in props][:MAX_PROPS]
         listed = ", ".join(terms) if terms else "no properties"
-        class_lines.append(f"  {cls} — {listed}")
+        class_lines.append(f"  :{cls} — {listed}")
     if not class_lines:
         return ""
 
     rel_lines: list[str] = []
-    for rel in sorted(
-        (r for r in cs.get("relationships") or [] if isinstance(r, dict)),
-        key=lambda r: (str(r.get("type", "")), str(r.get("fromEntity", "")), str(r.get("toEntity", ""))),
-    ):
-        prop = _term(str(rel.get("type", "")))
-        if prop is None:
-            continue
-        domain = _term(str(rel.get("fromEntity", ""))) if rel.get("fromEntity") != "Any" else None
-        range_ = _term(str(rel.get("toEntity", ""))) if rel.get("toEntity") != "Any" else None
-        line = f"  ?a {prop} ?b"
-        if domain or range_:
-            line += f"   (?a a {domain or 'any class'} ; ?b a {range_ or 'any class'})"
+    for rel in concept_relationships(bundle):
+        line = f"  ?a :{rel.name} ?b"
+        if rel.domain or rel.range:
+            domain = f":{rel.domain}" if rel.domain else "any class"
+            range_ = f":{rel.range}" if rel.range else "any class"
+            line += f"   (?a a {domain} ; ?b a {range_})"
         rel_lines.append(line)
 
     lines = [_HEADER.format(prefix=":", namespace=namespace), *class_lines]
