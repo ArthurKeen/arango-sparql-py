@@ -1952,7 +1952,8 @@ or the workbench off CodeMirror.
 * **Tests.** `tests/editor/` runs the core under node in CI (a missing node
   fails there rather than skipping), including CDF's former formatter tests;
   `ui/src/lang/sparqlEditorCore.test.ts` pins the typed wrapper to the
-  runtime object.
+  runtime object. CI's `ui` job runs the workbench's lint, vitest suite and
+  production build (which type-checks), so the CodeMirror glue is gated too.
 
 ### 10.3 AQL editor (`ui/src/components/AqlEditor.tsx`)
 
