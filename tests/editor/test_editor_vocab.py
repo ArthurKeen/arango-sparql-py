@@ -170,3 +170,21 @@ def test_the_core_offers_what_the_producer_emits() -> None:
     doc = "SELECT * WHERE { ?c a :Chunk ; :PA"
     result = call("suggest", doc, len(doc), vocab, {"conceptPrefixes": [""]})
     assert [i["insert"] for i in result["items"]] == [":PART_OF"]
+
+
+def test_any_domain_relationships_reach_an_orphan_domain_whatever_their_names() -> None:
+    for any_name in ("AAA_any", "ZZZ_any"):
+        bundle = _bundle()
+        bundle.conceptual_schema["relationships"] += [
+            {"type": "M_orphan", "fromEntity": "Ghost", "toEntity": "Document"},
+            {"type": any_name, "fromEntity": "Any", "toEntity": "Any"},
+        ]
+        vocab = editor_vocab(bundle, namespace=NS, source="arangodb:IAM")
+        assert any_name in vocab.classes["Ghost"].props, any_name
+
+
+def test_a_name_ending_in_a_newline_is_left_out_not_fatal() -> None:
+    bundle = _bundle()
+    bundle.conceptual_schema["entities"][0]["properties"].append({"name": "q\n", "type": "string"})
+    vocab = editor_vocab(bundle, namespace=NS, source="arangodb:IAM")
+    assert "q\n" not in vocab.classes["Document"].props and "q" not in vocab.classes["Document"].props

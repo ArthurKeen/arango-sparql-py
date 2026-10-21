@@ -47,7 +47,8 @@ class ConceptRelationship:
 
 def is_prefixed_name_local(name: str) -> bool:
     """True when *name* can be written as ``:name``."""
-    return bool(name) and bool(_PN_LOCAL_SAFE.match(name))
+    # fullmatch: ``$`` alone also matches before a trailing newline.
+    return bool(name) and _PN_LOCAL_SAFE.fullmatch(name) is not None
 
 
 def default_namespace(*turtles: str | None) -> str | None:

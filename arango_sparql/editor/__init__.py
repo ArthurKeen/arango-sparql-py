@@ -91,9 +91,11 @@ def editor_vocab(bundle: Any, *, namespace: str, source: str) -> EditorVocabV1:
     if not namespace:
         raise ValueError("editor_vocab needs the ontology's default namespace; got an empty one")
     classes = concept_classes(bundle)
-    for rel in concept_relationships(bundle):
+    relationships = concept_relationships(bundle)
+    for rel in relationships:  # every class first, so "any class" reaches them all
         if rel.domain and rel.domain not in classes:
             classes[rel.domain] = []
+    for rel in relationships:
         for cls in [rel.domain] if rel.domain else list(classes):
             props = classes[cls]
             if rel.name not in props:
