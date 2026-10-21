@@ -24,11 +24,11 @@ from __future__ import annotations
 
 from functools import cache
 from importlib.resources import files
-from typing import Any
+from typing import Annotated, Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from ..schema.vocabulary import concept_classes, concept_relationships
+from ..schema.vocabulary import PREFIXED_NAME_LOCAL, concept_classes, concept_relationships
 
 __all__ = [
     "ARANGODB_KIND",
@@ -50,12 +50,21 @@ ARANGODB_KIND = "arangodb"
 CORE_JS_RESOURCE = "sparql_editor_core.js"
 
 
+#: A class or property local name, writable as ``prefix:name``; the editor
+#: core recognises exactly these characters.
+LocalName = Annotated[str, StringConstraints(pattern=PREFIXED_NAME_LOCAL)]
+
+#: An IRI's characters (SPARQL 1.1 IRIREF): the base is spliced into
+#: ``<base…Name>`` completions, so it must not break out of the angle brackets.
+_IRI_CHARS = r'^[^\s<>"{}|^`\\]+$'
+
+
 class EditorClassV1(BaseModel):
     """One class: its properties and the source that owns it."""
 
     model_config = ConfigDict(extra="forbid")
 
-    props: list[str] = Field(description="Property local names, data and object properties alike.")
+    props: list[LocalName] = Field(description="Property local names, data and object properties alike.")
     source: str = Field(description="The owning source, e.g. 'postgresql:crm' or 'arangodb:IAM'.")
     kind: str = Field(description="The owning source's kind, e.g. 'postgresql' or 'arangodb'.")
 
@@ -65,30 +74,35 @@ class EditorVocabV1(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    base: str = Field(min_length=1, description="The concept namespace IRI that local names extend.")
-    classes: dict[str, EditorClassV1]
+    base: str = Field(pattern=_IRI_CHARS, description="The concept namespace IRI that local names extend.")
+    classes: dict[LocalName, EditorClassV1]
 
 
 def editor_vocab(bundle: Any, *, namespace: str, source: str) -> EditorVocabV1:
     """The editor vocabulary for *bundle*, in the ontology's *namespace*.
 
     Each class lists every data property (uncapped, unlike the prompt), then
-    every object property whose domain is that class or any class. *source*
-    names the database the bundle describes, e.g. ``"arangodb:IAM"``.
+    every object property whose domain is that class, or every class when the
+    prompt shows it as "any class". A domain class the bundle lists no entity
+    for still gets its object properties, so everything the prompt names is
+    offered somewhere. *source* names the database the bundle describes, e.g.
+    ``"arangodb:IAM"``.
     """
     if not namespace:
         raise ValueError("editor_vocab needs the ontology's default namespace; got an empty one")
     classes = concept_classes(bundle)
     for rel in concept_relationships(bundle):
+        if rel.domain and rel.domain not in classes:
+            classes[rel.domain] = []
         for cls in [rel.domain] if rel.domain else list(classes):
-            props = classes.get(cls)
-            if props is not None and rel.name not in props:
+            props = classes[cls]
+            if rel.name not in props:
                 props.append(rel.name)
     return EditorVocabV1(
         base=namespace,
         classes={
             name: EditorClassV1(props=props, source=source, kind=ARANGODB_KIND)
-            for name, props in classes.items()
+            for name, props in sorted(classes.items())
         },
     )
 

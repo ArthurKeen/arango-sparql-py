@@ -667,10 +667,13 @@ def schema_introspect(
 def _editor_vocab_for(bundle: MappingBundle, *, db_name: str) -> EditorVocabV1 | None:
     """The workbench editor's vocabulary for *bundle* (issue #68).
 
-    ``None`` when the bundle's ontology names no default (``:``) namespace:
-    the NL prompt renders no schema summary then either, so the editor and
-    the model stay in agreement. An enrichment, like that summary: a failure
-    is logged and the schema is still served.
+    Its base is the bundle's own default (``:``) namespace; the workbench
+    rebases it onto the ontology it sends with NL requests, which the NL
+    route reads first (``routes/nl.py``). ``None`` when the bundle's ontology
+    names no default namespace (a heuristic bundle, which carries no OWL):
+    the editor then completes keywords, variables and prefixes only. An
+    enrichment, like the NL schema summary: a failure is logged and the
+    schema is still served.
     """
     namespace = default_namespace(bundle.owl_turtle)
     if not namespace:

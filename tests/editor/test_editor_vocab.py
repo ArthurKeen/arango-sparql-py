@@ -88,6 +88,36 @@ def test_everything_the_prompt_lists_the_editor_offers_on_the_same_class() -> No
         assert set(props) <= set(vocab.classes[cls].props), cls
 
 
+def test_every_relationship_the_prompt_lists_the_editor_offers_on_its_domain() -> None:
+    bundle = _bundle()
+    bundle.conceptual_schema["relationships"].append(
+        {"type": "CITES", "fromEntity": "Ghost", "toEntity": "Document"}
+    )
+    vocab = editor_vocab(bundle, namespace=NS, source="arangodb:IAM")
+    rels = [
+        (m.group(1), m.group(2))
+        for line in build_schema_summary(bundle, namespace=NS).splitlines()
+        if (m := re.match(r"^  \?a :(\S+) \?b(?:   \(\?a a (:\w+|any class))?", line))
+    ]
+    assert ("CITES", ":Ghost") in rels and ("LINKS", None) in rels
+    for name, domain in rels:
+        owners = [c for c, info in vocab.classes.items() if name in info.props]
+        if domain and domain != "any class":
+            assert domain.lstrip(":") in owners, name  # a domain with no entity still gets it
+        else:
+            assert set(owners) == set(vocab.classes), name
+
+
+def test_classes_stay_sorted_when_a_domain_has_no_entity() -> None:
+    bundle = _bundle()
+    bundle.conceptual_schema["relationships"].append(
+        {"type": "CITES", "fromEntity": "Alpha", "toEntity": "Document"}
+    )
+    vocab = editor_vocab(bundle, namespace=NS, source="arangodb:IAM")
+    assert list(vocab.classes) == ["Alpha", "Chunk", "Document", "Empty"]
+    assert vocab.classes["Alpha"].props == ["CITES", "LINKS"]  # LINKS has an Any domain
+
+
 def test_an_empty_namespace_is_refused() -> None:
     with pytest.raises(ValueError, match="default namespace"):
         editor_vocab(_bundle(), namespace="", source="arangodb:IAM")
@@ -115,8 +145,19 @@ def test_the_model_accepts_the_fabrics_payload() -> None:
         {"base": NS, "classes": {"A": {"props": [], "source": "s"}}},
         {"base": NS, "classes": {"A": {"props": [], "source": "s", "kind": "k", "extra": 1}}},
         {"base": NS, "classes": {}, "version": 2},
+        {"base": "http://x/> ;", "classes": {}},
+        {"base": NS, "classes": {"two words": {"props": [], "source": "s", "kind": "k"}}},
+        {"base": NS, "classes": {"A": {"props": ["dotted.name"], "source": "s", "kind": "k"}}},
     ],
-    ids=["empty-base", "missing-kind", "extra-class-field", "extra-top-field"],
+    ids=[
+        "empty-base",
+        "missing-kind",
+        "extra-class-field",
+        "extra-top-field",
+        "base-breaks-out-of-angle-brackets",
+        "class-name-not-writable",
+        "property-name-not-writable",
+    ],
 )
 def test_the_model_rejects_other_shapes(payload: dict) -> None:
     with pytest.raises(ValidationError):

@@ -23,8 +23,11 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-# A safe subset of SPARQL's PN_LOCAL.
-_PN_LOCAL_SAFE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-]*$")
+#: A safe subset of SPARQL's PN_LOCAL: the names this module lets out. The
+#: editor core (``LOCAL`` in ``arango_sparql/editor/sparql_editor_core.js``)
+#: and ``EditorVocabV1`` use the same character set.
+PREFIXED_NAME_LOCAL = r"^[A-Za-z_][A-Za-z0-9_\-]*$"
+_PN_LOCAL_SAFE = re.compile(PREFIXED_NAME_LOCAL)
 
 _DEFAULT_PREFIX = re.compile(r"@prefix\s+:\s*<([^>]+)>", re.IGNORECASE)
 _SPARQL_DEFAULT_PREFIX = re.compile(r"PREFIX\s+:\s*<([^>]+)>", re.IGNORECASE)

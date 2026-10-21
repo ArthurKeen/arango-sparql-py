@@ -447,7 +447,7 @@ class SchemaIntrospectResponse(BaseModel):
     #: Editor vocabulary v1 for the workbench's SPARQL completion, built from
     #: the same per-class derivation as the NL prompt (issue #68). ``None``
     #: while pending, or when the bundle's ontology names no default (``:``)
-    #: namespace — the NL prompt carries no schema summary then either.
+    #: namespace.
     editor_vocab: EditorVocabV1 | None = None
 
 
