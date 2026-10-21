@@ -40,10 +40,18 @@ globs:
   is the local name (after `#` or last `/`), or `rdfs:label` when present.
 
 ## Lang module
-- `ui/src/lang/sparql.ts` — wires the legacy SPARQL mode + a
-  hover/completion provider that pulls term definitions from the
-  ontology endpoint. Mirror `cypher.ts` / `cypher-completion.ts` /
-  `cypher-hover.ts`.
+- `ui/src/lang/sparql.ts` — wires the legacy SPARQL mode. Mirror `cypher.ts`.
+- Completion, hover and formatting rules are **not** a port of
+  `cypher-completion.ts` / `cypher-hover.ts` (a deliberate deviation, PRD
+  §10.2.1, issue #68): they live in the shared editor core
+  `arango_sparql/editor/sparql_editor_core.js`, which the
+  contextual-data-fabric demo's editor runs too. `ui/src/lang/sparqlComplete.ts`
+  is CodeMirror glue over it and `sparqlEditorCore.ts` its typed wrapper.
+  Change a rule in the core, never in the glue.
+- Completion reads the editor vocabulary `/schema/introspect` serves
+  (`editor_vocab`), built server-side from the same per-class list as the NL
+  prompt — not a client-side extraction from the physical mapping, as
+  `cypher-completion.ts`'s `extractSchema` does.
 
 ## API client
 - `ui/src/api/` mirrors the Cypher project's API folder: typed wrappers

@@ -450,6 +450,73 @@ def test_introspect_warnings_are_surfaced(
     assert any(w["code"] == "W_SCHEMA_LOW_CONFIDENCE" for w in warnings)
 
 
+def _bundle_pg_with_owl(owl_turtle: str | None) -> MappingBundle:
+    bundle = _bundle_pg()
+    return MappingBundle(
+        conceptual_schema=bundle.conceptual_schema,
+        physical_mapping=bundle.physical_mapping,
+        metadata=bundle.metadata,
+        owl_turtle=owl_turtle,
+        source=bundle.source,
+    )
+
+
+def test_introspect_serves_the_editor_vocabulary(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    """Issue #68: the workbench's completion reads the same per-class list
+    the NL prompt does, in editor vocabulary v1, from the ontology's `:`."""
+    stub_acquire["bundle"] = _bundle_pg_with_owl("@prefix : <http://example.org/onto#> .\n")
+    resp = client.get(
+        "/schema/introspect?include_owl=true",
+        headers={"X-Arango-Session": session_token},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["editor_vocab"] == {
+        "base": "http://example.org/onto#",
+        "classes": {"Person": {"props": ["name", "age"], "source": "arangodb:test_db", "kind": "arangodb"}},
+    }
+
+
+def test_introspect_has_no_editor_vocabulary_without_a_default_namespace(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+) -> None:
+    stub_acquire["bundle"] = _bundle_pg_with_owl(None)
+    resp = client.get(
+        "/schema/introspect",
+        headers={"X-Arango-Session": session_token},
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["editor_vocab"] is None
+
+
+def test_introspect_still_serves_the_schema_when_the_editor_vocabulary_fails(
+    client: TestClient,
+    session_token: str,
+    stub_acquire: dict[str, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    def broken(bundle: MappingBundle, *, namespace: str, source: str) -> Any:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(schema_route_mod, "editor_vocab", broken)
+    stub_acquire["bundle"] = _bundle_pg_with_owl("@prefix : <http://example.org/onto#> .\n")
+    with caplog.at_level("WARNING", logger="arango_sparql.service.routes.schema"):
+        resp = client.get(
+            "/schema/introspect?include_owl=true",
+            headers={"X-Arango-Session": session_token},
+        )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["editor_vocab"] is None
+    assert resp.json()["summary"]["entity_count"] == 1
+    assert "editor vocabulary skipped for database 'test_db': boom" in caplog.text
+
+
 # ---------------------------------------------------------------------------
 # /schema/properties
 # ---------------------------------------------------------------------------

@@ -372,10 +372,15 @@ describe("reducer: schema slice", () => {
           physicalMapping: { entities: {} },
         },
         summary: { entityCount: 0 },
+        editorVocab: {
+          base: "http://x/",
+          classes: { A: { props: ["p"], source: "arangodb:db", kind: "arangodb" } },
+        },
         warnings,
         cacheHit: false,
       },
     );
+    expect(next.schema.editorVocab?.classes.A.props).toEqual(["p"]);
     expect(next.schema.refreshing).toBe(false);
     expect(next.schema.cacheHit).toBe(false);
     expect(next.schema.cacheStatus).toBe("unchanged");

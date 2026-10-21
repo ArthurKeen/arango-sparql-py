@@ -20,8 +20,7 @@ import ResultAffordances from "./components/ResultAffordances";
 import CommandPalette from "./components/CommandPalette";
 import PrefixManager from "./components/PrefixManager";
 import type { Command } from "./utils/commandPalette";
-import { setSparqlSchemaContext } from "./lang/sparqlComplete";
-import { physicalMappingOf } from "./utils/mappingWire";
+import { formatSparql, setSparqlSchemaContext, vocabForOntology } from "./lang/sparqlComplete";
 import ThemeToggle from "./components/ThemeToggle";
 import { t } from "./i18n";
 import { useAppState } from "./api/store";
@@ -325,6 +324,7 @@ export default function App() {
         type: "SCHEMA_LOADED",
         mapping: resp.mapping ?? null,
         summary: resp.summary ?? null,
+        editorVocab: resp.editor_vocab ?? null,
         warnings: (resp.warnings ?? []).map((w) => ({
           code: w.code,
           message: w.message,
@@ -453,30 +453,22 @@ export default function App() {
     [],
   );
 
-  // WP-UI-EDITOR: feed the SPARQL editor's completion source the live
-  // schema — class local names from the mapping's entities, predicate
-  // local names from relationships + all property names. Mirrors the way
-  // AqlEditor consumes `physicalMapping` for `var.property` completion.
+  // WP-UI-EDITOR / issue #68: the SPARQL completion runs on the editor
+  // vocabulary /schema/introspect serves — built server-side from the same
+  // per-class list the NL prompt is grounded on, so completion never offers a
+  // property on a class the model would not be told owns it.
+  // Rebased onto the ontology NL requests carry, as the NL route reads it.
   useEffect(() => {
-    const pm = physicalMappingOf(state.schema.mapping);
-    if (!pm) {
-      setSparqlSchemaContext(null);
-      return;
-    }
-    const classes = Object.keys(pm.entities);
-    const properties = new Set<string>(Object.keys(pm.relationships));
-    const collectProps = (holder: unknown) => {
-      const props = (holder as { properties?: unknown } | null)?.properties;
-      if (props && typeof props === "object") {
-        for (const k of Object.keys(props as Record<string, unknown>)) {
-          properties.add(k);
-        }
-      }
-    };
-    Object.values(pm.entities).forEach(collectProps);
-    Object.values(pm.relationships).forEach(collectProps);
-    setSparqlSchemaContext({ classes, properties: [...properties] });
-  }, [state.schema.mapping]);
+    setSparqlSchemaContext(vocabForOntology(state.schema.editorVocab, state.ontologyTtl));
+  }, [state.schema.editorVocab, state.ontologyTtl]);
+
+  // Pretty-print with the shared formatter (the fabric demo's Format button
+  // runs the same one). It returns a query with # comments unchanged.
+  const formattedSparql = useMemo(() => formatSparql(state.sparql), [state.sparql]);
+  const canFormatSparql = formattedSparql !== state.sparql;
+  const handleFormatSparql = useCallback(() => {
+    if (canFormatSparql) dispatch({ type: "SET_SPARQL", sparql: formattedSparql });
+  }, [canFormatSparql, formattedSparql, dispatch]);
 
   // POST /explain — transpile + fetch the AQL execution plan (no rows).
   // Surfaces as the "Explain" result tab.
@@ -878,6 +870,15 @@ export default function App() {
           SPARQL
         </span>
         <div className="flex-1" />
+        <button
+          type="button"
+          onClick={handleFormatSparql}
+          disabled={!canFormatSparql}
+          className="text-[10px] px-2 py-0.5 rounded border border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600 disabled:opacity-40 disabled:hover:text-gray-400 disabled:hover:border-gray-700"
+          title={canFormatSparql ? t("editor.formatTitle") : t("editor.formatNothing")}
+        >
+          {t("action.format")}
+        </button>
         <PrefixManager
           value={state.sparql}
           onChange={(v) => dispatch({ type: "SET_SPARQL", sparql: v })}
@@ -892,6 +893,7 @@ export default function App() {
             onExecute={handleExecute}
             onExplain={handleExplain}
             onProfile={handleProfile}
+            onFormat={handleFormatSparql}
             viewRef={sparqlViewRef}
           />
         </div>

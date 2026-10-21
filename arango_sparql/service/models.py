@@ -17,6 +17,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..editor import EditorVocabV1
+
 # Stricter-than-type field bounds for the user-controlled string fields on
 # every request model below. Real interactive payloads are well below these
 # limits; the constants exist to bound an attack rather than restrict
@@ -442,6 +444,11 @@ class SchemaIntrospectResponse(BaseModel):
     elapsed_ms: float = 0.0
     status: Literal["ready", "pending"] = "ready"
     warming: bool = False
+    #: Editor vocabulary v1 for the workbench's SPARQL completion, built from
+    #: the same per-class derivation as the NL prompt (issue #68). ``None``
+    #: while pending, or when the bundle's ontology names no default (``:``)
+    #: namespace.
+    editor_vocab: EditorVocabV1 | None = None
 
 
 class SchemaPropertiesResponse(BaseModel):

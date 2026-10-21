@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
+import { EditorState } from "@codemirror/state";
+import { CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
 import {
+  formatSparql,
+  sparqlCompletionSource,
+  vocabForOntology,
+  defaultNamespace,
+  type EditorVocab,
   parsePrefixes,
   usedPrefixes,
   missingPrefixes,
@@ -130,5 +137,123 @@ describe("sparqlHoverInfo", () => {
     const doc = "SELECT * WHERE { ?s ?p <http://x/y> }";
     const idx = doc.indexOf("http") + 1;
     expect(sparqlHoverInfo(doc, idx)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Completion: CodeMirror glue over the shared core (issue #68)
+// ---------------------------------------------------------------------------
+
+const VOCAB: EditorVocab = {
+  base: "http://example.org/onto#",
+  classes: {
+    Person: { props: ["name", "knows"], source: "arangodb:db", kind: "arangodb" },
+    Company: { props: ["name", "founded"], source: "arangodb:db", kind: "arangodb" },
+  },
+};
+
+function complete(doc: string, explicit = false): CompletionResult | null {
+  const state = EditorState.create({ doc });
+  return sparqlCompletionSource(new CompletionContext(state, doc.length, explicit));
+}
+
+function labels(doc: string): string[] {
+  return (complete(doc)?.options ?? []).map((o) => o.label);
+}
+
+describe("sparqlCompletionSource", () => {
+  it("offers only classes after `a`, spelled with the default prefix", () => {
+    setSparqlSchemaContext(VOCAB);
+    expect(labels("SELECT * WHERE { ?p a :")).toEqual([":Person", ":Company"]);
+  });
+
+  it("scopes predicates to the subject's declared class, then lists classes", () => {
+    setSparqlSchemaContext(VOCAB);
+    expect(labels("SELECT * WHERE { ?c a :Company ; :")).toEqual([
+      ":name",
+      ":founded",
+      ":Person",
+      ":Company",
+    ]);
+  });
+
+  it("keeps the core's order and replaces the typed token", () => {
+    setSparqlSchemaContext(VOCAB);
+    const doc = "SELECT * WHERE { ?c a :Company ; :fo";
+    const result = complete(doc);
+    expect(result?.filter).toBe(false);
+    expect(result?.from).toBe(doc.length - ":fo".length);
+    expect(result?.to).toBe(doc.length);
+    expect(result?.options[0]).toEqual({
+      label: ":founded",
+      displayLabel: ":founded",
+      detail: "Company",
+      type: "property",
+    });
+  });
+
+  it("completes the full-IRI spelling, matching on the IRI and showing it short", () => {
+    setSparqlSchemaContext(VOCAB);
+    const result = complete("SELECT * WHERE { ?c a <http://example.org/onto#Comp");
+    expect(result?.options).toEqual([
+      {
+        label: "<http://example.org/onto#Company>",
+        displayLabel: "…#Company",
+        detail: "class · arangodb:db",
+        type: "class",
+      },
+    ]);
+  });
+
+  it("offers no concepts without a vocabulary, and nothing for a foreign prefix", () => {
+    setSparqlSchemaContext(null);
+    expect(complete("SELECT * WHERE { ?p a :")).toBeNull();
+    setSparqlSchemaContext(VOCAB);
+    expect(complete("SELECT * WHERE { ?p xsd:")).toBeNull();
+  });
+
+  it("still completes keywords, variables and prefix names", () => {
+    setSparqlSchemaContext(null);
+    expect(labels("SEL")).toEqual(["SELECT"]);
+    expect(labels("SELECT ?person WHERE { ?per")).toEqual(["?person"]);
+    expect(labels("SELECT * WHERE { ?s fo")).toContain("foaf:");
+  });
+});
+
+describe("formatSparql (shared core)", () => {
+  it("pretty-prints, moving only whitespace", () => {
+    const q = "SELECT ?s WHERE { ?s a :Person ; :name ?n . }";
+    expect(formatSparql(q)).toBe("SELECT ?s WHERE {\n  ?s a :Person ;\n    :name ?n .\n}");
+  });
+
+  it("leaves a query with # comments unchanged", () => {
+    const q = "SELECT ?s WHERE { # people\n ?s a :Person }";
+    expect(formatSparql(q)).toBe(q);
+  });
+});
+
+describe("vocabForOntology", () => {
+  it("rebases onto the default namespace of the ontology NL requests carry", () => {
+    const ttl = "@prefix : <http://mine.example/#> .\n:Person a owl:Class .";
+    expect(vocabForOntology(VOCAB, ttl)?.base).toBe("http://mine.example/#");
+    expect(vocabForOntology(VOCAB, ttl)?.classes).toBe(VOCAB.classes);
+  });
+
+  it("keeps the vocabulary when the ontology names no default namespace, or the same one", () => {
+    expect(vocabForOntology(VOCAB, "@prefix ex: <http://e/> .")).toBe(VOCAB);
+    expect(vocabForOntology(VOCAB, `@prefix : <${VOCAB.base}> .`)).toBe(VOCAB);
+    expect(vocabForOntology(VOCAB, "")).toBe(VOCAB);
+    expect(vocabForOntology(null, "@prefix : <http://mine.example/#> .")).toBeNull();
+  });
+});
+
+describe("defaultNamespace", () => {
+  // Mirrors the server's default_namespace (arango_sparql/schema/vocabulary.py)
+  // so the editor and the NL prompt pick the same `:`.
+  it("takes the first Turtle @prefix, else the first SPARQL PREFIX", () => {
+    expect(defaultNamespace("@prefix : <http://a/> .\n@prefix : <http://b/> .")).toBe("http://a/");
+    expect(defaultNamespace("PREFIX : <http://s/>\n@prefix : <http://t/> .")).toBe("http://t/");
+    expect(defaultNamespace("PREFIX : <http://s/>")).toBe("http://s/");
+    expect(defaultNamespace("@prefix ex: <http://e/> .")).toBeNull();
   });
 });

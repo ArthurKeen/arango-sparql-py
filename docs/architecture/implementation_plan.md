@@ -46,6 +46,7 @@ of that project's chat-first "Query Workbench Shell"
 | WP-UI-GRAPH | UI | Schema-graph scalability (bundling/search/weight/expand) | §10.18 | ✅ Done |
 | WP-UI-EDITOR | UI | SPARQL completion + hover + PrefixManager + explain/profile keymap | §10.2 | ✅ Done |
 | WP-UI-AQL | UI | AQL edit-and-rerun wiring + `mapping` prop for completion | §10.3 | ✅ Done |
+| WP-EDITOR-CORE | UI + Backend | Shared SPARQL editor core (workbench + CDF) + editor vocabulary v1 + workbench §10.2 class-aware completion + Format (#68) | §10.2, §10.2.1 | 🟡 Built and tested here; CDF adoption waits on a release |
 | WP-UI-EXPLAIN | UI | Explain/Profile result tabs + client wiring | §10.5 | ✅ Done |
 | WP-UI-PALETTE | UI | Command palette (`Mod-K`) | §10.7 | ✅ Done |
 | WP-UI-TENANT | UI | Mount `TenantSelector` when multitenancy detected | §10.6 | ⛔ Blocked (no tenant-catalogue / `/session/tenant` route) |
@@ -236,6 +237,65 @@ indefinite spinner. **Verify:** reducer tests for the pending lifecycle.
 - **Verify:** `sparqlComplete.test.ts` (18 tests) pins prefix parsing,
   used/missing detection (incl. IRI/string false-positives), CURIE
   expansion, var extraction, and hover. 90 UI tests green; build clean.
+
+### WP-EDITOR-CORE — shared SPARQL editor core (§10.2.1, issue #68) 🟡 Built here; CDF adoption pending a release
+
+- **Why:** the workbench and the contextual-data-fabric (CDF) demo each had
+  their own SPARQL suggestion rules, and they disagreed. The workbench offered
+  every class and property after any `prefix:`, which fell short of §10.2
+  (WP-UI-EDITOR was marked done without it), and it built its list from the
+  physical mapping while the NL prompt reads the conceptual schema. CDF's
+  editor had the class-aware rules, but locked inside its textarea shell.
+- **What landed:** `arango_sparql/editor/sparql_editor_core.js` (the rules, in
+  one plain-script file shipped in the wheel); `arango_sparql.editor`
+  (`EditorVocabV1`, `editor_vocab()`, `editor_core_js()`);
+  `arango_sparql.schema.vocabulary` (the per-class derivation now shared by
+  `build_schema_summary` and `editor_vocab`); `editor_vocab` on
+  `/schema/introspect`; the workbench's completion re-pointed at the core
+  (`sparqlComplete.ts` is CodeMirror glue now) and a Format action.
+- **Moved, with these deliberate changes** (everything else is CDF's 2026-08-10
+  code or the workbench's WP-UI-EDITOR helpers as they were):
+  - concept prefixes are configurable: every prefix the query binds to the
+    vocabulary's base, plus the editor's default (`c` for CDF, `:` for the
+    workbench) unless the query binds it to another namespace;
+  - a bare word after `a` filters the classes by what is typed (CDF listed
+    all of them);
+  - variable completion leaves out the variable being typed, and accepts `$`;
+  - a bare word also offers built-in functions and prefix names, so CDF gains
+    them;
+  - the tokenizer only starts a prefixed concept at a name boundary (CDF
+    highlighted the `c:Name` inside `abc:Name`);
+  - bug fixes found while moving: `classifyConcept("constructor")` crashed on
+    `Object.prototype`; the formatter collapsed spaces inside `'single'` and
+    `"""long"""` strings, and joined a `#` comment to the lines after it,
+    commenting them out. It now protects those strings and leaves a query with
+    a comment unchanged.
+  - from the #69 review: one escape-aware lexer (comments, IRIs, every string
+    form, PN_LOCAL escapes such as `:O\'Brien`) now backs the formatter, the
+    tokenizer, prefix/variable detection and subject lookup. So the formatter
+    never touches a literal, and never joins `FILTER(?a<1)#c>` (rdflib reads
+    that as less-than then a comment). A `.` in an IRI, a decimal or a string
+    no longer ends the statement, and a FILTER/BIND before a triple no longer
+    hides its subject. The subject's class is the last declared before the
+    caret (`?s` and `$s` alike). Hyphenated names work end to end, nothing is
+    offered inside a comment or a string, and `PREFIX : <` offers only the
+    namespace;
+  - `EditorVocabV1` rejects names the core cannot write (`prefix:name`) and a
+    base that breaks out of `<…>`; a relationship whose domain has no entity
+    is still offered on that class; the workbench rebases the vocabulary onto
+    the ontology NL requests carry (the NL route reads it first);
+  - `build_schema_summary` differs from before only on malformed bundles: a
+    property listed twice is listed once, two entities with one name merge,
+    and an explicit `fromEntity: null` reads "any class" instead of `:None`.
+- **Verify:** `tests/editor/` (the core under node, including CDF's
+  formatter tests and a regression test per review finding, plus the
+  vocabulary contract and the prompt ⊆ editor invariant for classes and
+  relationships); three `/schema/introspect` route tests; UI
+  `sparqlEditorCore.test.ts` and new `sparqlComplete.test.ts` cases; `ruff`, `mypy` (now also over `arango_sparql/editor` and
+  `schema/vocabulary.py`), `tsc -b`, `eslint` (no new warnings), `vite build`.
+- **Remaining:** CDF drops its copy of the rules and embeds the core from its
+  pinned install. That is a CDF pull request held as a draft until a release
+  that includes this work. The design still needs PJ's review.
 
 ### WP-UI-AQL — AQL edit-and-rerun (§10.3) ✅ Done
 
