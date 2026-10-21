@@ -20,6 +20,10 @@ export const messages = {
   "action.close": "Close",
   "action.clearAll": "Clear All",
   "action.reset": "Reset",
+  "action.format": "Format",
+  "editor.formatTitle": "Pretty-print the query; only whitespace moves (Shift-Alt-F)",
+  "editor.formatNothing":
+    "Nothing to format: the query is already formatted, or it has # comments, which formatting would run together",
 
   "aria.close": "Close",
   "aria.settings": "Settings",

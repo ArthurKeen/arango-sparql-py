@@ -267,6 +267,7 @@ export default function ConnectionDialog({
         type: "SCHEMA_LOADED",
         mapping: resp.mapping ?? null,
         summary: resp.summary ?? null,
+        editorVocab: resp.editor_vocab ?? null,
         warnings: _normaliseWarnings(resp),
         cacheHit: !!resp.cache_hit,
       });

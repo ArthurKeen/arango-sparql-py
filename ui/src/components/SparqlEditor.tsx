@@ -25,8 +25,10 @@ import { sparqlCompletionSource, sparqlHoverInfo } from "../lang/sparqlComplete"
 // Mirror of `references/arango-cypher-py/ui/src/components/CypherEditor.tsx`,
 // re-pointed at the legacy SPARQL CodeMirror mode (see `lang/sparql.ts`).
 // WP-UI-EDITOR: schema/prefix-aware completion, CURIE hover tooltips, and
-// explain/profile keymaps ride on top of the syntax highlighting + the
-// SPARQL ↔ AQL line-correspondence highlighter.
+// explain/profile/format keymaps ride on top of the syntax highlighting + the
+// SPARQL ↔ AQL line-correspondence highlighter. Completion and formatting are
+// the shared editor core's rules (issue #68, `lang/sparqlEditorCore.ts`);
+// CodeMirror keeps the shell: highlighting, bracket handling, the menu.
 
 // Hover tooltip that expands the CURIE under the cursor to its full IRI.
 const sparqlCurieHover = hoverTooltip((view, pos) => {
@@ -80,6 +82,8 @@ interface Props {
   onExecute: () => void;
   onExplain?: () => void;
   onProfile?: () => void;
+  /** Pretty-print the query (`Shift-Alt-f`); see `formatSparql`. */
+  onFormat?: () => void;
   viewRef?: React.MutableRefObject<EditorView | null>;
   highlightLines?: number[];
   onHoverLine?: (line: number | null) => void;
@@ -92,14 +96,15 @@ export default function SparqlEditor({
   onExecute,
   onExplain,
   onProfile,
+  onFormat,
   viewRef: externalViewRef,
   highlightLines,
   onHoverLine,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const callbacksRef = useRef({ onChange, onTranslate, onExecute, onExplain, onProfile });
-  callbacksRef.current = { onChange, onTranslate, onExecute, onExplain, onProfile };
+  const callbacksRef = useRef({ onChange, onTranslate, onExecute, onExplain, onProfile, onFormat });
+  callbacksRef.current = { onChange, onTranslate, onExecute, onExplain, onProfile, onFormat };
 
   const onHoverLineRef = useRef(onHoverLine);
   onHoverLineRef.current = onHoverLine;
@@ -137,6 +142,14 @@ export default function SparqlEditor({
       {
         key: "Mod-Shift-p",
         run: () => { callbacksRef.current.onProfile?.(); return true; },
+      },
+      {
+        key: "Shift-Alt-f",
+        run: () => {
+          if (!callbacksRef.current.onFormat) return false;
+          callbacksRef.current.onFormat();
+          return true;
+        },
       },
     ]);
 

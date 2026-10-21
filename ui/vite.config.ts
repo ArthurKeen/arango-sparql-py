@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+import { fileURLToPath } from "node:url";
+import { defineConfig, searchForWorkspaceRoot } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 
@@ -44,6 +45,16 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: {
     port: 5173,
+    // The SPARQL editor core ships in the Python package
+    // (`arango_sparql/editor/sparql_editor_core.js`, issue #68) and is
+    // imported from there; the dev server only serves files inside its root
+    // unless they are allowed here. Builds and tests are unaffected.
+    fs: {
+      allow: [
+        searchForWorkspaceRoot(process.cwd()),
+        fileURLToPath(new URL("../arango_sparql/editor", import.meta.url)),
+      ],
+    },
     proxy: Object.fromEntries(proxiedPaths.map((path) => [path, apiTarget])),
   },
   build: {

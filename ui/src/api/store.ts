@@ -1,5 +1,6 @@
 import { useCallback, useReducer } from "react";
 import { appendTurn, type TranscriptTurn } from "../utils/transcript";
+import type { EditorVocab } from "../lang/sparqlEditorCore";
 
 // `arango-sparql-py` UI store. Mirrors
 // `references/arango-cypher-py/ui/src/api/store.ts` but trimmed to the
@@ -75,6 +76,9 @@ export interface SchemaState {
   mapping: Record<string, unknown> | null;
   /** Server-side summary block (entity count, RPT collections, …). */
   summary: Record<string, unknown> | null;
+  /** Editor vocabulary v1 the SPARQL completion runs on — the same
+   * per-class list the NL prompt is grounded on (issue #68). */
+  editorVocab: EditorVocab | null;
   /** Schema warnings (e.g. ANALYZER_NOT_INSTALLED, W_SCHEMA_*). */
   warnings: SchemaWarning[];
   /** Drift status from the most recent /schema/status call. */
@@ -98,6 +102,7 @@ export interface SchemaState {
 export const initialSchemaState: SchemaState = {
   mapping: null,
   summary: null,
+  editorVocab: null,
   warnings: [],
   cacheStatus: "idle",
   cacheHit: false,
@@ -320,6 +325,7 @@ export type Action =
       type: "SCHEMA_LOADED";
       mapping: Record<string, unknown> | null;
       summary: Record<string, unknown> | null;
+      editorVocab: EditorVocab | null;
       warnings: SchemaWarning[];
       cacheHit: boolean;
     }
@@ -522,6 +528,7 @@ function reducer(state: AppState, action: Action): AppState {
           ...state.schema,
           mapping: action.mapping,
           summary: action.summary,
+          editorVocab: action.editorVocab,
           warnings: action.warnings,
           cacheHit: action.cacheHit,
           // Drift status moves to "unchanged" on a fresh load — the

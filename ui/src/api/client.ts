@@ -14,6 +14,7 @@
 // samples, so the missing route is a swallowed 404 rather than a failure.
 
 import type { MinedExample } from "../utils/minedExamples";
+import type { EditorVocab } from "../lang/sparqlEditorCore";
 
 export interface ConnectRequest {
   url: string;
@@ -455,6 +456,9 @@ export interface SchemaIntrospectResponse {
   elapsed_ms: number;
   status?: SchemaReadStatus;
   warming?: boolean;
+  /** Editor vocabulary v1 for SPARQL completion (issue #68); null while
+   * pending or when the ontology names no default `:` namespace. */
+  editor_vocab?: EditorVocab | null;
 }
 
 function qs(params: Record<string, string | number | boolean | undefined>): string {
