@@ -391,3 +391,123 @@ def test_the_file_stays_a_plain_script() -> None:
     assert not re.search(r"^\s*(import|export)\b", source, re.MULTILINE)
     # CDF inlines it into a <script> element; this sequence would end it early.
     assert "</script" not in source.lower()
+
+
+# ---------------------------------------------------------------------------
+# PR #69 review: each case below failed before the shared lexer
+# ---------------------------------------------------------------------------
+
+HYBRID = "http://arangodb.com/schema/hybrid#"  # the analyzer's default base: it has a dot
+HY_VOCAB = {
+    "base": HYBRID,
+    "classes": {
+        "Document": {"props": ["file_name", "size"], "source": "arangodb:IAM", "kind": "arangodb"},
+        "Chunk": {"props": ["text"], "source": "arangodb:IAM", "kind": "arangodb"},
+        "Org": {"props": ["orgName"], "source": "arangodb:IAM", "kind": "arangodb"},
+        "Person": {"props": ["name"], "source": "arangodb:IAM", "kind": "arangodb"},
+        "Order": {"props": ["total"], "source": "arangodb:IAM", "kind": "arangodb"},
+        "Order-Item": {"props": ["unit-price"], "source": "arangodb:IAM", "kind": "arangodb"},
+    },
+}
+
+
+def props_at(doc: str) -> list[str]:
+    result = suggest(doc, HY_VOCAB, WB)
+    return [i["insert"] for i in result["items"] if i["type"] == "property"] if result else []
+
+
+@pytest.mark.parametrize(
+    "query, literal",
+    [
+        ('SELECT * WHERE { ?s :p """He said \\"hi\\"""" . ?s :q "x    y" . }', '"x    y"'),
+        ("SELECT * WHERE { ?s :p :O\\'Brien . ?s :r 'c  d' }", "'c  d'"),
+        ("SELECT * WHERE { ?s :p '''a ' b''' ; :q \"m  n\" }", '"m  n"'),
+    ],
+    ids=["escaped-quote-in-long-string", "pn-local-escape", "quote-inside-long-single"],
+)
+def test_formatting_never_touches_a_literal(query: str, literal: str) -> None:
+    """`collapse()` squashes literal whitespace too, so check the literal itself."""
+    assert literal in fmt(query)
+
+
+def test_a_less_than_before_a_hash_is_not_formatted_into_a_comment() -> None:
+    # rdflib reads `<1)#c>` here as less-than then a comment; joining the lines
+    # would comment out `?s ?p ?o`.
+    query = "SELECT * WHERE { ?s ?p ?a FILTER(?a<1)#c>\n ?s ?p ?o }"
+    assert fmt(query) == query
+
+
+def test_an_unterminated_literal_is_left_alone() -> None:
+    query = 'SELECT * WHERE { ?s :p "open  ended }'
+    assert fmt(query) == query
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        f"SELECT * WHERE {{\n  ?d a <{HYBRID}Document> ;\n     :",
+        "SELECT * WHERE { ?d a :Document ; :size 1.5 ;\n  :",
+        'SELECT * WHERE { ?d a :Document ; :file_name "J. Smith" ;\n :',
+    ],
+    ids=["dotted-base-iri", "decimal", "string-with-dot"],
+)
+def test_a_dot_inside_an_iri_decimal_or_string_does_not_end_the_statement(doc: str) -> None:
+    assert props_at(doc) == [":file_name", ":size"]
+
+
+def test_the_subject_class_is_the_last_declared_before_the_caret() -> None:
+    union = "SELECT * WHERE { { ?x a :Org . ?x :orgName ?n }\n UNION\n { ?x a :Person ;\n   :"
+    assert props_at(union) == [":name"]
+    commented = "SELECT * WHERE {\n  # ?p a :Org\n  ?p a :Person .\n  ?p :"
+    assert props_at(commented) == [":name"]
+    assert props_at("SELECT * WHERE { $p a :Person . ?p :") == [":name"]
+
+
+def test_hyphenated_names_complete_scope_and_tokenize_whole() -> None:
+    assert props_at("SELECT * WHERE { ?o a :Order-Item .\n ?o :") == [":unit-price"]
+    result = suggest("SELECT * WHERE { ?o a :Order-Item ; :unit-p", HY_VOCAB, WB)
+    assert [i["insert"] for i in result["items"]] == [":unit-price"]
+    toks = call("tokenize", "?o :unit-price ?p", HY_VOCAB, WB)
+    assert [(t["name"], t["role"]) for t in toks if t["type"] == "concept"] == [("unit-price", "property")]
+
+
+def test_the_default_prefix_declaration_offers_only_the_namespace() -> None:
+    assert inserts(f"PREFIX : <{HYBRID[:-8]}", HY_VOCAB, WB) == [f"<{HYBRID}>"]
+
+
+def test_single_quoted_and_long_strings_tokenize_as_strings() -> None:
+    toks = call("tokenize", "FILTER(?x = 'a#b') . ?y :p ?z", HY_VOCAB, WB)
+    assert [t["type"] for t in toks] == ["keyword", "variable", "string", "variable", "concept", "variable"]
+    long = call("tokenize", '?s :p """one\n  two""" .', HY_VOCAB, WB)
+    assert [t["type"] for t in long] == ["variable", "concept", "string"]
+
+
+def test_nothing_is_suggested_inside_a_comment_or_a_string() -> None:
+    assert suggest('SELECT * WHERE { ?s :p "ratio :', HY_VOCAB, WB) is None
+    assert suggest("SELECT * WHERE { # see :", HY_VOCAB, WB) is None
+    # a comment ending in the word "a" is not the rdf:type shorthand
+    assert inserts("# this is a\nSEL", HY_VOCAB, WB) == ["SELECT"]
+
+
+def test_a_less_than_does_not_hide_the_variables_after_it() -> None:
+    doc = "SELECT * WHERE { FILTER(?a < 3) ?x :name ?nm . ?x :p <http://a> . ?n"
+    assert "?nm" in inserts(doc, HY_VOCAB, WB)
+
+
+def test_an_a_inside_a_prefixed_name_is_not_the_type_shorthand() -> None:
+    toks = call("tokenize", "?s ex:a ?o", HY_VOCAB, WB)
+    assert "a" not in [t["type"] for t in toks]
+
+
+def test_prefix_declarations_inside_comments_do_not_count() -> None:
+    assert call("parsePrefixes", "# PREFIX ex: <http://x/>\nPREFIX y: <http://y/>") == {"y": "http://y/"}
+
+
+def test_a_constraint_before_the_statement_does_not_hide_its_subject() -> None:
+    # FILTER and BIND need no `.` after them, so the next triple can follow directly.
+    assert props_at("SELECT * WHERE { ?d a :Document . FILTER(?x < 3)\n  ?c a :Chunk ; :") == [":text"]
+    assert props_at('SELECT * WHERE { BIND(str("a.b") AS ?k) FILTER regex(?k, "x")\n ?p a :Person ; :') == [
+        ":name"
+    ]
+    # inside the constraint itself there is no subject: every class's properties
+    assert len(props_at("SELECT * WHERE { ?p a :Person . FILTER(?p :")) == 7  # all of HY_VOCAB

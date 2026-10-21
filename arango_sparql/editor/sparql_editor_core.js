@@ -74,30 +74,120 @@
 
   const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-  // ---- prefixes, variables, CURIEs -----------------------------------------
+  // A local name as the library's producer writes one
+  // (arango_sparql/schema/vocabulary.py): a safe subset of SPARQL's PN_LOCAL.
+  const LOCAL = '[A-Za-z_][A-Za-z0-9_-]*';
 
-  // Blank out IRIs, string literals, and comments so prefix detection
-  // doesn't trip over `http://…` inside `<>` or `foo:` inside a string.
-  function stripNoise(doc) {
-    return doc
-      .replace(/<[^>]*>/g, ' ')
-      .replace(/"(?:[^"\\]|\\.)*"/g, '""')
-      .replace(/'(?:[^'\\]|\\.)*'/g, "''")
-      .replace(/#[^\n]*/g, ' ');
+  // ---- lexing ----------------------------------------------------------------
+
+  // IRIREF's characters (SPARQL 1.1 grammar [139]): no whitespace, controls,
+  // or any of <>"{}|^`\
+  const IRIREF = /<[^<>"{}|^`\\\u0000-\u0020]*>/y;
+  // An IRI still being typed: no closing `>` yet, but a scheme colon, which a
+  // less-than (`?a < 3`, `?a<?b`) does not have. Its `#` is not a comment.
+  const OPEN_IRI = /<[^<>"{}|^`\\\u0000-\u0020]*/y;
+
+  let lexCache = { doc: null, spans: [] };
+
+  /**
+   * The spans of `doc` that are not SPARQL syntax, in order:
+   * [{type: 'comment' | 'iri' | 'open-iri' | 'string' | 'open-string', from, to,
+   *   inParens}].
+   * Strings are short or long (triple-quoted), single- or double-quoted,
+   * and escape-aware; an unterminated short string runs to the end of its
+   * line, a long one to the end of the text. A backslash outside a literal
+   * escapes the next character (PN_LOCAL_ESC, e.g. `:O\'Brien`), so it never
+   * opens a string. `inParens` marks a span inside an expression's
+   * parentheses, where `<` can also be less-than. One pass; the last result
+   * is cached, because every helper below asks for the same text.
+   */
+  function lex(doc) {
+    if (lexCache.doc === doc) return lexCache.spans;
+    const spans = [];
+    const n = doc.length;
+    let i = 0, depth = 0;
+    while (i < n) {
+      const ch = doc[i];
+      if (ch === '\\') { i += 2; continue; }
+      if (ch === '(') { depth += 1; i += 1; continue; }
+      if (ch === ')') { depth = Math.max(0, depth - 1); i += 1; continue; }
+      if (ch === '#') {
+        const nl = doc.indexOf('\n', i);
+        const to = nl < 0 ? n : nl;
+        spans.push({ type: 'comment', from: i, to, inParens: depth > 0 });
+        i = to;
+        continue;
+      }
+      if (ch === '<') {
+        IRIREF.lastIndex = i;
+        const m = IRIREF.exec(doc);
+        if (m) {
+          spans.push({ type: 'iri', from: i, to: i + m[0].length, inParens: depth > 0 });
+          i += m[0].length;
+        } else {
+          OPEN_IRI.lastIndex = i;
+          const open = OPEN_IRI.exec(doc)[0];
+          if (open.includes(':')) {
+            spans.push({ type: 'open-iri', from: i, to: i + open.length, inParens: depth > 0 });
+            i += open.length;
+          } else {
+            i += 1; // less-than
+          }
+        }
+        continue;
+      }
+      if (ch === '"' || ch === "'") {
+        const q = doc.startsWith(ch + ch + ch, i) ? ch + ch + ch : ch;
+        let j = i + q.length;
+        let closed = false;
+        while (j < n) {
+          if (doc[j] === '\\') { j += 2; continue; }
+          if (q.length === 1 && doc[j] === '\n') break;
+          if (doc.startsWith(q, j)) { j += q.length; closed = true; break; }
+          j += 1;
+        }
+        const to = Math.min(j, n);
+        spans.push({ type: closed ? 'string' : 'open-string', from: i, to, inParens: depth > 0 });
+        i = to;
+        continue;
+      }
+      i += 1;
+    }
+    lexCache = { doc, spans };
+    return spans;
   }
+
+  const NOISE = ['comment', 'iri', 'open-iri', 'string', 'open-string'];
+  const TEXT = ['comment', 'string', 'open-string']; // keeps IRIs
+
+  // `doc` with the spans of the given types blanked to spaces (newlines kept),
+  // so every offset still lines up with the original.
+  function blank(doc, types) {
+    let out = '';
+    let last = 0;
+    for (const s of lex(doc)) {
+      if (!types.includes(s.type)) continue;
+      out += doc.slice(last, s.from) + doc.slice(s.from, s.to).replace(/[^\n]/g, ' ');
+      last = s.to;
+    }
+    return out + doc.slice(last);
+  }
+
+  // ---- prefixes, variables, CURIEs -----------------------------------------
 
   /** Parse `PREFIX x: <iri>` and `@prefix x: <iri> .` into { x: iri }. */
   function parsePrefixes(doc) {
     const re = /(?:PREFIX|@prefix)\s+([A-Za-z][\w.-]*)?\s*:\s*<([^>]*)>/gi;
+    const text = blank(doc, TEXT); // not inside comments or strings
     const out = {};
     let m;
-    while ((m = re.exec(doc)) !== null) out[m[1] ?? ''] = m[2];
+    while ((m = re.exec(text)) !== null) out[m[1] ?? ''] = m[2];
     return out;
   }
 
   /** Prefixes referenced as `x:local` in the body (excluding declarations). */
   function usedPrefixes(doc) {
-    const body = stripNoise(doc).replace(/(?:PREFIX|@prefix)\s+[\w.-]*\s*:\s*/gi, ' ');
+    const body = blank(doc, NOISE).replace(/(?:PREFIX|@prefix)\s+[\w.-]*\s*:\s*/gi, ' ');
     const set = new Set();
     const re = /(?:^|[\s(;,.[<])([A-Za-z][\w.-]*):[A-Za-z0-9_%-]/g;
     let m;
@@ -144,7 +234,7 @@
   function extractVars(doc) {
     const set = new Set();
     const re = /[?$]([A-Za-z_]\w*)/g;
-    const body = stripNoise(doc);
+    const body = blank(doc, NOISE);
     let m;
     while ((m = re.exec(body)) !== null) set.add(m[1]);
     return [...set];
@@ -241,39 +331,40 @@
   function tokenize(doc, vocab, options) {
     const base = vocab && vocab.base;
     const prefixes = conceptPrefixes(doc, vocab, options && options.conceptPrefixes);
+    const conceptIri = base ? new RegExp('^<' + escRe(base) + '(' + LOCAL + ')>$') : null;
     const re = new RegExp([
-      '(#[^\\n]*)',                                                 // 1 comment (IRIs win below)
-      base ? '(<' + escRe(base) + '[A-Za-z_][A-Za-z0-9_]*>)' : '(' + NEVER + ')', // 2 concept, full IRI
-      '(<[^>\\n]*>)',                                               // 3 other IRI
-      '("(?:[^"\\\\\\n]|\\\\.)*")',                                 // 4 string
-      '("(?:[^"\\\\\\n]|\\\\.)*)',                                  // 5 UNTERMINATED string
-      prefixes.length
-        ? '((?<![\\w.-])(?:' + prefixes.map(escRe).join('|') + '):[A-Za-z_][A-Za-z0-9_]*)'
-        : '(' + NEVER + ')',                                        // 6 concept, prefixed
-      '([?$][A-Za-z_][A-Za-z0-9_]*)',                               // 7 variable
-      '(\\b(?:' + KEYWORD_WORDS.join('|') + ')\\b)',                // 8 keyword
-      '(\\ba\\b)',                                                  // 9 rdf:type shorthand
+      prefixes.length                                                   // 1 concept, prefixed
+        ? '((?<![\\w.-])(?:' + prefixes.map(escRe).join('|') + '):' + LOCAL + ')'
+        : '(' + NEVER + ')',
+      '([?$][A-Za-z_][A-Za-z0-9_]*)',                                   // 2 variable
+      '(\\b(?:' + KEYWORD_WORDS.join('|') + ')\\b)',                    // 3 keyword
+      '((?<![\\w:.-])a(?![\\w:-]))',                                    // 4 rdf:type shorthand
     ].join('|'), 'g');
     const out = [];
-    let m;
-    while ((m = re.exec(doc)) !== null) {
-      const t = m[0];
-      const tok = { from: m.index, to: m.index + t.length, type: '' };
-      if (m[1]) tok.type = 'comment';
-      else if (m[2] || m[6]) {
-        tok.type = 'concept';
-        tok.name = m[2] ? t.slice(1 + base.length, -1) : t.slice(t.indexOf(':') + 1);
-        const c = classifyConcept(tok.name, vocab);
-        tok.role = c.role;
-        tok.kind = c.kind;
-      } else if (m[3]) tok.type = 'iri';
-      else if (m[4]) tok.type = 'string';
-      else if (m[5]) tok.type = 'open-string';
-      else if (m[7]) tok.type = 'variable';
-      else if (m[8]) tok.type = 'keyword';
-      else tok.type = 'a';
-      out.push(tok);
+    const concept = (from, to, name) => {
+      const c = classifyConcept(name, vocab);
+      return { from, to, type: 'concept', name, role: c.role, kind: c.kind };
+    };
+    const scan = (from, to) => {
+      const text = doc.slice(from, to);
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const a = from + m.index;
+        const b = a + m[0].length;
+        if (m[1]) out.push(concept(a, b, m[0].slice(m[0].indexOf(':') + 1)));
+        else out.push({ from: a, to: b, type: m[2] ? 'variable' : m[3] ? 'keyword' : 'a' });
+      }
+    };
+    let last = 0;
+    for (const s of lex(doc)) {
+      scan(last, s.from);
+      const iri = s.type === 'iri' && conceptIri && doc.slice(s.from, s.to).match(conceptIri);
+      const type = s.type === 'open-iri' ? 'iri' : s.type;
+      out.push(iri ? concept(s.from, s.to, iri[1]) : { from: s.from, to: s.to, type });
+      last = s.to;
     }
+    scan(last, doc.length);
     return out;
   }
 
@@ -281,7 +372,7 @@
 
   // The token being typed at the caret. Tokens never span lines, so only the
   // caret's line is scanned.
-  const TOKEN_AT_CARET = /(<[^>\s]*|(?:[A-Za-z][\w.-]*)?:[A-Za-z0-9_]*|[?$][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*)$/;
+  const TOKEN_AT_CARET = /(<[^>\s]*|(?:[A-Za-z][\w.-]*)?:[A-Za-z0-9_-]*|[?$][A-Za-z0-9_]*|[A-Za-z][A-Za-z0-9_]*)$/;
 
   function tokenBeforeCaret(doc, caret) {
     const upto = doc.slice(0, caret);
@@ -292,25 +383,60 @@
     return { text: m[0], start, before: upto.slice(0, start) };
   }
 
-  // The subject variable of the triple block the caret is in: last `?var`
-  // that opens a statement (after `{`, `.`, or the block start).
-  function currentSubject(before) {
-    const seg = before.split(/[{.]/).pop() || '';
-    const m = seg.match(/^\s*([?$][A-Za-z0-9_]+)/);
-    return m ? m[1] : null;
+  // Is `caret` inside a comment or a string literal (where nothing applies)?
+  function inText(doc, caret) {
+    for (const s of lex(doc)) {
+      if (s.from >= caret) break;
+      if (s.type === 'iri' || s.type === 'open-iri') continue;
+      if (s.type === 'string' ? caret < s.to : caret <= s.to) return true;
+    }
+    return false;
   }
 
-  // The class the query declares for `subjVar` (`?s a c:Class` or the full
-  // IRI spelling), when the vocabulary knows it.
-  function subjectClass(doc, subjVar, vocab, prefixes) {
-    if (!subjVar) return null;
+  // The subject variable's name (no sigil) of the statement the caret is in:
+  // the `?var` that opens the text after the last `{`, `}` or statement-ending
+  // `.`, once any FILTER / BIND constraints before it are skipped (they need
+  // no `.` after them). `before` has comments, strings and IRIs blanked, so a
+  // `.` or `(` inside them never counts, and neither does the `.` of a
+  // decimal (`1.5`) or a dotted name.
+  function currentSubject(before) {
+    let seg = before.split(/[{}]|\.(?=\s|$|[?${}])/).pop() || '';
+    for (;;) {
+      const m = seg.match(/^\s*(?:FILTER|BIND)\s*(?:[A-Za-z_]\w*\s*)?\(/i);
+      if (!m) break;
+      let depth = 0;
+      let i = m[0].length - 1;
+      for (; i < seg.length; i += 1) {
+        if (seg[i] === '(') depth += 1;
+        else if (seg[i] === ')' && --depth === 0) break;
+      }
+      if (i >= seg.length) return null; // the caret is inside the constraint
+      seg = seg.slice(i + 1);
+    }
+    const v = seg.match(/^\s*[?$]([A-Za-z0-9_]+)/);
+    return v ? v[1] : null;
+  }
+
+  // The class the query declares for the subject (`?s a c:Class`, or the full
+  // IRI spelling), when the vocabulary knows it: the last declaration before
+  // the caret, so a sibling UNION branch or a later statement does not
+  // decide. `text` is the text before the caret with comments and strings
+  // blanked (IRIs kept); `?s` and `$s` are the same variable.
+  function subjectClass(text, subj, vocab, prefixes) {
+    if (!subj) return null;
     const alts = [];
-    if (prefixes.length) alts.push('(?:' + prefixes.map(escRe).join('|') + '):([A-Za-z0-9_]+)');
-    if (vocab.base) alts.push('<' + escRe(vocab.base) + '([A-Za-z0-9_]+)>');
+    if (prefixes.length) alts.push('(?:' + prefixes.map(escRe).join('|') + '):(' + LOCAL + ')');
+    if (vocab.base) alts.push('<' + escRe(vocab.base) + '(' + LOCAL + ')>');
     if (!alts.length) return null;
-    const m = doc.match(new RegExp(escRe(subjVar) + '\\s+a\\s+(?:' + alts.join('|') + ')'));
-    const name = m && (m[1] || m[2]);
-    return name && Object.prototype.hasOwnProperty.call(classesOf(vocab), name) ? name : null;
+    const re = new RegExp('[?$]' + escRe(subj) + '\\s+a\\s+(?:' + alts.join('|') + ')', 'g');
+    const classes = classesOf(vocab);
+    let found = null;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const name = m[1] || m[2];
+      if (Object.prototype.hasOwnProperty.call(classes, name)) found = name;
+    }
+    return found;
   }
 
   function startsWithCI(word, typed) {
@@ -319,8 +445,8 @@
 
   /**
    * What to offer at `caret`: {from, to, items} (items in display order), or
-   * null when nothing applies. Each item is
-   * {label, insert, hint, tag, type}: `insert` replaces doc[from, to);
+   * null when nothing applies (including inside a comment or a string). Each
+   * item is {label, insert, hint, tag, type}: `insert` replaces doc[from, to);
    * `type` is class | property | variable | keyword | function | namespace;
    * `tag` is the owning source kind for concepts, else 'kw' / 'var'.
    *
@@ -337,7 +463,7 @@
    */
   function suggest(doc, caret, vocab, options) {
     const tok = tokenBeforeCaret(doc, caret);
-    if (!tok) return null;
+    if (!tok || inText(doc, caret)) return null;
     const v = vocab || { classes: {} };
     const classes = classesOf(v);
     const base = v.base || '';
@@ -351,7 +477,8 @@
         .map((n) => ({ label: n, insert: n, hint: 'variable', tag: 'var', type: 'variable' })));
     }
 
-    const afterA = /(^|[\s;,({])a\s+$/.test(tok.before);
+    const textBefore = blank(doc, TEXT).slice(0, tok.start);
+    const afterA = /(^|[\s;,({])a\s+$/.test(textBefore);
     // Full-IRI spelling engages from the first `<`: any prefix of the concept
     // base means a concept IRI is being typed, no need to finish the base.
     const iriForm = !!base && tok.text.startsWith('<')
@@ -377,14 +504,15 @@
         // declaration needs, and what you want back after deleting the '#'.
         const ns = { label: '<' + base + '>', insert: '<' + base + '>',
           hint: 'namespace · PREFIX base', tag: 'kw', type: 'namespace' };
-        if (/PREFIX\s+[A-Za-z_][\w-]*:\s*<?[^\s>]*$/.test(tok.before + tok.text)) {
+        if (/PREFIX\s+(?:[A-Za-z][\w.-]*)?:\s*<?[^\s>]*$/i.test(tok.before + tok.text)) {
           return result([ns]);
         }
         out.push(ns);
       }
       if (!afterA) {
         const owners = propOwners(v);
-        const subj = subjectClass(doc, currentSubject(tok.before), v, prefixes);
+        const subj = subjectClass(textBefore, currentSubject(blank(doc, NOISE).slice(0, tok.start)),
+          v, prefixes);
         const scoped = subj ? [subj] : Object.keys(classes);
         const seen = new Set();
         for (const cls of scoped) {
@@ -431,24 +559,34 @@
 
   // ---- formatting ------------------------------------------------------------
 
-  // Literal and IRI spellings the formatter must never touch: long strings
-  // first, so `"""a "b" c"""` is one span, not three.
-  const PROTECTED = /("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|<[^>\s]*>)/g;
-
   /**
    * Pretty-print a SPARQL query: PREFIX lines, one triple statement per
    * line, `;` continuations hanging-indented, braces on structural lines.
-   * Strings and IRIs are protected first, so no query content is ever
-   * altered — only whitespace moves. A query with a `#` comment is returned
-   * unchanged: collapsing its newline would comment out the rest of the line.
+   * IRIs and literals (every quoting form, escape-aware) are protected first,
+   * so no query content is ever altered — only whitespace moves. Returned
+   * unchanged instead when joining lines could change the query:
+   *   - it has a `#` comment (the lines joined after it would be commented out)
+   *   - it has an unterminated literal (there is no end to protect), or an
+   *     unterminated IRI holding a `#` (rdflib reads that `#` as a comment)
+   *   - an "IRI" inside an expression's parentheses holds a `#`: rdflib reads
+   *     `FILTER(?a<1)#c>` as less-than followed by a comment, not as an IRI
    */
   function formatSparql(src) {
+    const text = String(src);
+    const spans = lex(text);
+    const hash = (sp) => text.slice(sp.from, sp.to).includes('#');
+    const risky = spans.some((sp) => sp.type === 'comment' || sp.type === 'open-string'
+      || (sp.type === 'open-iri' && hash(sp)) || (sp.type === 'iri' && sp.inParens && hash(sp)));
+    if (risky) return text;
     const store = [];
-    let s = String(src).replace(PROTECTED, (m) => {
-      store.push(m);
-      return '\u0000' + (store.length - 1) + '\u0000';
-    });
-    if (s.includes('#')) return String(src);
+    let s = '';
+    let last = 0;
+    for (const sp of spans) {
+      store.push(text.slice(sp.from, sp.to));
+      s += text.slice(last, sp.from) + '\u0000' + (store.length - 1) + '\u0000';
+      last = sp.to;
+    }
+    s += text.slice(last);
     s = s.replace(/\s+/g, ' ')
       .replace(/([{}])/g, ' $1 ')
       .replace(/(^|\s)\.(?=\s|$)/g, ' . ')
