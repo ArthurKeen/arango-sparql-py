@@ -913,7 +913,7 @@ Mirrors the sister project's `arango_cypher.service.routes.schema` and
 
 | Method | Path | Request | Response | Notes |
 | --- | --- | --- | --- | --- |
-| `GET` | `/schema/introspect` | query: `?force=<bool>`, `?strategy=<auto|analyzer|heuristic>` | `MappingBundle` JSON + summary block + `editor_vocab` (editor vocabulary v1, §10.2.1) | Live acquisition; respects cache unless `force=true`. `editor_vocab` is `null` while pending or when the bundle's ontology names no default `:` namespace (the NL prompt then carries no schema summary either, §7.2) |
+| `GET` | `/schema/introspect` | query: `?force=<bool>`, `?strategy=<auto|analyzer|heuristic>` | `MappingBundle` JSON + summary block + `editor_vocab` (editor vocabulary v1, §10.2.1) | Live acquisition; respects cache unless `force=true`. `editor_vocab` is `null` while pending or when the bundle's ontology names no default `:` namespace (a heuristic bundle carries no OWL); the workbench rebases its `base` onto the ontology it sends with NL requests, which the NL route reads first (§7.2) |
 | `GET` | `/schema/properties` | — | `{<collection>: {<attr>: {type, sample}}}` | Per-collection inferred property catalog (samples 20 docs) |
 | `GET` | `/schema/summary` | body: `{mapping}` (no DB access) | conceptual summary | Used by the UI when it already has a mapping in hand |
 | `GET` | `/schema/statistics` | — | `metadata.statistics` block | Cardinality, in/out degree, selectivity per relationship |

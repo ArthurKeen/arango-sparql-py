@@ -270,11 +270,28 @@ indefinite spinner. **Verify:** reducer tests for the pending lifecycle.
     `"""long"""` strings, and joined a `#` comment to the lines after it,
     commenting them out. It now protects those strings and leaves a query with
     a comment unchanged.
-- **Verify:** `tests/editor/` (48 tests: the core under node, including CDF's
-  formatter tests, plus the vocabulary contract and the prompt ⊆ editor
-  invariant); three `/schema/introspect` route tests; UI
-  `sparqlEditorCore.test.ts` and new `sparqlComplete.test.ts` cases (187 UI
-  tests); `ruff`, `mypy` (now also over `arango_sparql/editor` and
+  - from the #69 review: one escape-aware lexer (comments, IRIs, every string
+    form, PN_LOCAL escapes such as `:O\'Brien`) now backs the formatter, the
+    tokenizer, prefix/variable detection and subject lookup. So the formatter
+    never touches a literal, and never joins `FILTER(?a<1)#c>` (rdflib reads
+    that as less-than then a comment). A `.` in an IRI, a decimal or a string
+    no longer ends the statement, and a FILTER/BIND before a triple no longer
+    hides its subject. The subject's class is the last declared before the
+    caret (`?s` and `$s` alike). Hyphenated names work end to end, nothing is
+    offered inside a comment or a string, and `PREFIX : <` offers only the
+    namespace;
+  - `EditorVocabV1` rejects names the core cannot write (`prefix:name`) and a
+    base that breaks out of `<…>`; a relationship whose domain has no entity
+    is still offered on that class; the workbench rebases the vocabulary onto
+    the ontology NL requests carry (the NL route reads it first);
+  - `build_schema_summary` differs from before only on malformed bundles: a
+    property listed twice is listed once, two entities with one name merge,
+    and an explicit `fromEntity: null` reads "any class" instead of `:None`.
+- **Verify:** `tests/editor/` (the core under node, including CDF's
+  formatter tests and a regression test per review finding, plus the
+  vocabulary contract and the prompt ⊆ editor invariant for classes and
+  relationships); three `/schema/introspect` route tests; UI
+  `sparqlEditorCore.test.ts` and new `sparqlComplete.test.ts` cases; `ruff`, `mypy` (now also over `arango_sparql/editor` and
   `schema/vocabulary.py`), `tsc -b`, `eslint` (no new warnings), `vite build`.
 - **Remaining:** CDF drops its copy of the rules and embeds the core from its
   pinned install. That is a CDF pull request held as a draft until a release
