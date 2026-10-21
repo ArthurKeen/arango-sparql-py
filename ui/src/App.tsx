@@ -20,7 +20,7 @@ import ResultAffordances from "./components/ResultAffordances";
 import CommandPalette from "./components/CommandPalette";
 import PrefixManager from "./components/PrefixManager";
 import type { Command } from "./utils/commandPalette";
-import { formatSparql, setSparqlSchemaContext } from "./lang/sparqlComplete";
+import { formatSparql, setSparqlSchemaContext, vocabForOntology } from "./lang/sparqlComplete";
 import ThemeToggle from "./components/ThemeToggle";
 import { t } from "./i18n";
 import { useAppState } from "./api/store";
@@ -457,9 +457,10 @@ export default function App() {
   // vocabulary /schema/introspect serves — built server-side from the same
   // per-class list the NL prompt is grounded on, so completion never offers a
   // property on a class the model would not be told owns it.
+  // Rebased onto the ontology NL requests carry, as the NL route reads it.
   useEffect(() => {
-    setSparqlSchemaContext(state.schema.editorVocab);
-  }, [state.schema.editorVocab]);
+    setSparqlSchemaContext(vocabForOntology(state.schema.editorVocab, state.ontologyTtl));
+  }, [state.schema.editorVocab, state.ontologyTtl]);
 
   // Pretty-print with the shared formatter (the fabric demo's Format button
   // runs the same one). It returns a query with # comments unchanged.

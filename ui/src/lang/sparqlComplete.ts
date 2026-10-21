@@ -47,6 +47,22 @@ export function setSparqlSchemaContext(vocab: EditorVocab | null): void {
   _vocab = vocab;
 }
 
+/**
+ * The vocabulary rebased onto the ontology the workbench sends with NL
+ * requests: the NL route reads that ontology's default `:` namespace before
+ * the bundle's (`service/routes/nl.py`), so completion spells concepts in
+ * the namespace the model is told to use. Unchanged when that ontology
+ * declares no `:` or the same one.
+ */
+export function vocabForOntology(
+  vocab: EditorVocab | null,
+  ontologyTtl: string | null | undefined,
+): EditorVocab | null {
+  if (!vocab) return null;
+  const ns = ontologyTtl ? parsePrefixes(ontologyTtl)[""] : undefined;
+  return ns && ns !== vocab.base ? { ...vocab, base: ns } : vocab;
+}
+
 // ---------------------------------------------------------------------------
 // Completion source (thin CM glue over the core's `suggest`)
 // ---------------------------------------------------------------------------

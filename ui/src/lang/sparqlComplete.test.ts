@@ -4,6 +4,7 @@ import { CompletionContext, type CompletionResult } from "@codemirror/autocomple
 import {
   formatSparql,
   sparqlCompletionSource,
+  vocabForOntology,
   type EditorVocab,
   parsePrefixes,
   usedPrefixes,
@@ -190,6 +191,19 @@ describe("sparqlCompletionSource", () => {
     });
   });
 
+  it("completes the full-IRI spelling, matching on the IRI and showing it short", () => {
+    setSparqlSchemaContext(VOCAB);
+    const result = complete("SELECT * WHERE { ?c a <http://example.org/onto#Comp");
+    expect(result?.options).toEqual([
+      {
+        label: "<http://example.org/onto#Company>",
+        displayLabel: "…#Company",
+        detail: "class · arangodb:db",
+        type: "class",
+      },
+    ]);
+  });
+
   it("offers no concepts without a vocabulary, and nothing for a foreign prefix", () => {
     setSparqlSchemaContext(null);
     expect(complete("SELECT * WHERE { ?p a :")).toBeNull();
@@ -214,5 +228,20 @@ describe("formatSparql (shared core)", () => {
   it("leaves a query with # comments unchanged", () => {
     const q = "SELECT ?s WHERE { # people\n ?s a :Person }";
     expect(formatSparql(q)).toBe(q);
+  });
+});
+
+describe("vocabForOntology", () => {
+  it("rebases onto the default namespace of the ontology NL requests carry", () => {
+    const ttl = "@prefix : <http://mine.example/#> .\n:Person a owl:Class .";
+    expect(vocabForOntology(VOCAB, ttl)?.base).toBe("http://mine.example/#");
+    expect(vocabForOntology(VOCAB, ttl)?.classes).toBe(VOCAB.classes);
+  });
+
+  it("keeps the vocabulary when the ontology names no default namespace, or the same one", () => {
+    expect(vocabForOntology(VOCAB, "@prefix ex: <http://e/> .")).toBe(VOCAB);
+    expect(vocabForOntology(VOCAB, `@prefix : <${VOCAB.base}> .`)).toBe(VOCAB);
+    expect(vocabForOntology(VOCAB, "")).toBe(VOCAB);
+    expect(vocabForOntology(null, "@prefix : <http://mine.example/#> .")).toBeNull();
   });
 });
