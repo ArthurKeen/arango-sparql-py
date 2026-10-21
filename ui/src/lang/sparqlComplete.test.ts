@@ -5,6 +5,7 @@ import {
   formatSparql,
   sparqlCompletionSource,
   vocabForOntology,
+  defaultNamespace,
   type EditorVocab,
   parsePrefixes,
   usedPrefixes,
@@ -243,5 +244,16 @@ describe("vocabForOntology", () => {
     expect(vocabForOntology(VOCAB, `@prefix : <${VOCAB.base}> .`)).toBe(VOCAB);
     expect(vocabForOntology(VOCAB, "")).toBe(VOCAB);
     expect(vocabForOntology(null, "@prefix : <http://mine.example/#> .")).toBeNull();
+  });
+});
+
+describe("defaultNamespace", () => {
+  // Mirrors the server's default_namespace (arango_sparql/schema/vocabulary.py)
+  // so the editor and the NL prompt pick the same `:`.
+  it("takes the first Turtle @prefix, else the first SPARQL PREFIX", () => {
+    expect(defaultNamespace("@prefix : <http://a/> .\n@prefix : <http://b/> .")).toBe("http://a/");
+    expect(defaultNamespace("PREFIX : <http://s/>\n@prefix : <http://t/> .")).toBe("http://t/");
+    expect(defaultNamespace("PREFIX : <http://s/>")).toBe("http://s/");
+    expect(defaultNamespace("@prefix ex: <http://e/> .")).toBeNull();
   });
 });

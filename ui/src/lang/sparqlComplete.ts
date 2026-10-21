@@ -59,8 +59,16 @@ export function vocabForOntology(
   ontologyTtl: string | null | undefined,
 ): EditorVocab | null {
   if (!vocab) return null;
-  const ns = ontologyTtl ? parsePrefixes(ontologyTtl)[""] : undefined;
+  const ns = ontologyTtl ? defaultNamespace(ontologyTtl) : null;
   return ns && ns !== vocab.base ? { ...vocab, base: ns } : vocab;
+}
+
+/** The ontology's default `:` namespace, chosen exactly as the server's
+ * `default_namespace` (`arango_sparql/schema/vocabulary.py`) chooses it: the
+ * first Turtle `@prefix :`, else the first SPARQL `PREFIX :`. */
+export function defaultNamespace(ttl: string): string | null {
+  const m = /@prefix\s+:\s*<([^>]+)>/i.exec(ttl) ?? /PREFIX\s+:\s*<([^>]+)>/i.exec(ttl);
+  return m ? m[1] : null;
 }
 
 // ---------------------------------------------------------------------------
