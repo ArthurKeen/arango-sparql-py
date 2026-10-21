@@ -87,6 +87,12 @@
   // at `)`, `,` and `;` as well, which end the term it is typed into.
   const OPEN_IRI = /<[^<>"{}|^`\\\u0000- ),;]*/y;
   const WORD = /[A-Za-z0-9_]/;
+  // Bare words after which a value is still to come (DISTINCT, AS, IN, NOT, a
+  // function name…): not operands. true / false are.
+  const NOT_OPERAND = new Set(
+    [...KEYWORD_WORDS, ...SPARQL_FUNCTIONS].map((w) => w.toUpperCase())
+      .filter((w) => w !== 'TRUE' && w !== 'FALSE'),
+  );
 
   let lexCache = { doc: null, spans: [] };
 
@@ -102,19 +108,25 @@
    * A `<` is read the way the grammar does: as less-than inside an
    * expression's parentheses right after an operand (a variable, number,
    * literal, IRI, name or `)`), as in `FILTER(?a<1)` or `FILTER(?x<ex:max)`;
-   * otherwise as the start of an IRI. VALUES rows are term lists, not
-   * expressions. One pass; the last result is cached, because every helper
-   * below asks for the same text.
+   * otherwise as the start of an IRI. A `(` opens an expression after a
+   * keyword or function name (FILTER, BIND, BY, HAVING, COUNT…), as a
+   * function call (`ex:fn(`, no space), in the SELECT clause, or inside
+   * another expression. Any other `(` (an RDF collection, a property-path
+   * group) and a VALUES row hold terms, where `<` always starts an IRI. One
+   * pass; the last result is cached, because every helper below asks for the
+   * same text.
    */
   function lex(doc) {
     if (lexCache.doc === doc) return lexCache.spans;
     const spans = [];
     const n = doc.length;
-    // Open brackets: '(' an expression, 'row' a VALUES tuple, '{' a group,
-    // 'values' a VALUES block.
+    // Open brackets: '(' an expression, 'row' a VALUES tuple or other term
+    // list, '{' a group, 'values' a VALUES block.
     const stack = [];
     let valuesPending = false;
     let operand = false; // the last significant token ended an operand
+    let last = '';       // that token's kind: 'keyword', 'name', or '' for any other
+    let lastEnd = -1;    // where it ended, to tell `ex:fn(` from `:list (`
     let i = 0;
     while (i < n) {
       const ch = doc[i];
@@ -136,6 +148,8 @@
           spans.push({ type: 'iri', from: i, to: i + m[0].length });
           i += m[0].length;
           operand = true;
+          last = 'name'; // `<fn>(` is a function call too
+          lastEnd = i;
           continue;
         }
         OPEN_IRI.lastIndex = i;
@@ -164,13 +178,20 @@
         spans.push({ type: closed ? 'string' : 'open-string', from: i, to });
         i = to;
         operand = true;
+        last = '';
         continue;
       }
       if (ch === '(') {
         const top = stack[stack.length - 1];
-        stack.push(valuesPending || top === 'values' ? 'row' : '(');
+        let kind;
+        if (valuesPending || top === 'values' || top === 'row') kind = 'row';
+        else if (top === '(' || last === 'keyword' || stack.length === 0) kind = '(';
+        else if (last === 'name' && lastEnd === i) kind = '('; // a function call
+        else kind = 'row'; // an RDF collection or a property-path group
+        stack.push(kind);
         i += 1;
         operand = false;
+        last = '';
         continue;
       }
       if (ch === '{') {
@@ -184,19 +205,26 @@
         stack.pop();
         i += 1;
         operand = ch === ')';
+        last = '';
         continue;
       }
       if (WORD.test(ch) || ch === '?' || ch === '$' || ch === ':') {
         let j = i + 1;
         while (j < n && (WORD.test(doc[j]) || doc[j] === ':' || doc[j] === '-' || doc[j] === '.'
           && j + 1 < n && WORD.test(doc[j + 1]))) j += 1;
-        if (doc.slice(i, j).toUpperCase() === 'VALUES') valuesPending = true;
+        const word = doc.slice(i, j);
+        const bare = /^[A-Za-z_]+$/.test(word);
+        if (bare && word.toUpperCase() === 'VALUES') valuesPending = true;
+        const keyword = bare && NOT_OPERAND.has(word.toUpperCase());
+        operand = !keyword;
+        last = keyword ? 'keyword' : ch !== '?' && ch !== '$' && /[A-Za-z_:]/.test(ch) ? 'name' : '';
+        lastEnd = j;
         i = j;
-        operand = true;
         continue;
       }
       i += 1; // any other punctuation is an operator or a separator
       operand = false;
+      last = '';
     }
     lexCache = { doc, spans };
     return spans;
@@ -467,10 +495,11 @@
 
   // The classes the query declares for the subject (`?s a c:Class`, or the
   // full IRI spelling) that the vocabulary knows, in the order declared
-  // before the caret. A later class in a sibling UNION branch replaces the
-  // earlier ones (a `{` restarts the list), so it alone decides. `text` is the
-  // text before the caret with comments and strings blanked (IRIs kept);
-  // `?s` and `$s` are the same variable.
+  // before the caret. A declaration inside a group that has closed before the
+  // caret (a sibling UNION branch, an OPTIONAL) does not count; one in the
+  // caret's group or an enclosing group does. `text` is the text before the
+  // caret with comments and strings blanked (IRIs kept, and they hold no
+  // braces); `?s` and `$s` are the same variable.
   function subjectClasses(text, subj, vocab, prefixes) {
     if (!subj) return [];
     const alts = [];
@@ -479,18 +508,21 @@
     if (!alts.length) return [];
     const re = new RegExp('[?$]' + escRe(subj) + '\\s+a\\s+(?:' + alts.join('|') + ')', 'g');
     const classes = classesOf(vocab);
-    const groupStart = text.lastIndexOf('{');
-    let found = [];
+    const closed = []; // [open, close] of every group closed before the caret
+    const open = [];
+    for (let i = 0; i < text.length; i += 1) {
+      if (text[i] === '{') open.push(i);
+      else if (text[i] === '}' && open.length) closed.push([open.pop(), i]);
+    }
+    const inClosed = (at) => closed.some(([a, b]) => a < at && at < b);
+    const found = [];
     let m;
     while ((m = re.exec(text)) !== null) {
       const name = m[1] || m[2];
-      if (!Object.prototype.hasOwnProperty.call(classes, name)) continue;
-      // A declaration in an earlier group (a sibling UNION branch) is dropped
-      // once one in the caret's own group appears.
-      if (m.index > groupStart && found.length && found.every((f) => f.at <= groupStart)) found = [];
-      if (!found.some((f) => f.name === name)) found.push({ name, at: m.index });
+      if (!Object.prototype.hasOwnProperty.call(classes, name) || inClosed(m.index)) continue;
+      if (!found.includes(name)) found.push(name);
     }
-    return found.map((f) => f.name);
+    return found;
   }
 
   function startsWithCI(word, typed) {

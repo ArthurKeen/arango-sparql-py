@@ -564,3 +564,62 @@ def test_a_very_long_line_stays_fast() -> None:
         str(CORE),
     )
     assert float(out) < 500, f"suggest took {out} ms on an 80 KB line"
+
+
+# ---------------------------------------------------------------------------
+# PR #69 second recheck: which parentheses are expressions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        "SELECT * WHERE { ?s :list (<x#a> <x#b>) }",
+        "SELECT * WHERE { ?s :list (?a <x#b>) }",
+        'SELECT * WHERE { ?s :list ("a" <x#b>) }',
+        "SELECT * WHERE { FILTER(NOT EXISTS { ?s :list (?a <x#b>) }) }",
+        "SELECT (COUNT(DISTINCT <x#a>) AS ?n) WHERE { ?s ?p ?o }",
+        "SELECT * WHERE { ?s (<p#a>|<p#b>)+ ?o . ?s ^(<p#a>) ?o }",
+    ],
+    ids=[
+        "collection",
+        "collection-after-var",
+        "collection-after-literal",
+        "collection-in-exists",
+        "count-distinct",
+        "path-groups",
+    ],
+)
+def test_a_term_list_never_reads_its_iris_as_less_than(doc: str) -> None:
+    toks = call("tokenize", doc, HY_VOCAB, WB)
+    assert "comment" not in [t["type"] for t in toks]
+    assert fmt(doc) != doc  # formats: no phantom comment
+
+
+@pytest.mark.parametrize(
+    "doc",
+    [
+        'SELECT * WHERE { ?s ?p ?x FILTER(STR(?x) < "b") }',
+        "SELECT * WHERE { ?s ?p ?a GROUP BY (?x) HAVING(COUNT(?y) < 3)#c>\n }",
+        "SELECT (?a < 3 AS ?b) WHERE { ?s ?p ?a FILTER(?a<1)#c>\n }",
+        "SELECT * WHERE { ?s ?p ?a FILTER(ex:fn(?a) < 3)#c>\n }",
+    ],
+    ids=["function-call", "having", "select-expression", "prefixed-function-call"],
+)
+def test_an_expression_still_reads_less_than(doc: str) -> None:
+    if "#c>" in doc:
+        assert fmt(doc) == doc  # less-than then a comment, as rdflib reads it
+    else:
+        assert fmt(doc) != doc
+
+
+def test_a_collection_does_not_hide_later_variables_or_suggestions() -> None:
+    assert "?zz" in inserts("SELECT * WHERE { ?s :list (?a <x#b>) . ?s :p ?zz . ?z", HY_VOCAB, WB)
+    assert suggest("SELECT * WHERE { ?s :list (?a <x#b>) . ?s :", HY_VOCAB, WB) is not None
+
+
+def test_an_enclosing_declaration_survives_a_closed_inner_group() -> None:
+    doc = "SELECT * WHERE { ?s a :Person . OPTIONAL { ?s :q ?q } ?s a :Org ; :"
+    assert props_at(doc) == [":name", ":orgName"]
+    doc = "SELECT * WHERE { ?s a :Person . VALUES ?v { 1 } ?s a :Org ; :"
+    assert props_at(doc) == [":name", ":orgName"]
