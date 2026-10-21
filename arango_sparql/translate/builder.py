@@ -22,6 +22,12 @@ from ..errors import AqlEmitError, UnsupportedSparqlError
 
 _AQL_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
+# What ArangoDB's lexer accepts as an unquoted name after a dot: a leading
+# underscore must be followed by a letter (``_key``, ``__x``), so ``_2``, ``_``
+# and ``_2a`` are syntax errors bare (ERR 1501) and have to be backtick-quoted.
+# RDF container membership properties (``rdf:_1``, ``rdf:_2``) hit this.
+_AQL_BARE_ATTRIBUTE_RE = re.compile(r"^([A-Za-z][A-Za-z0-9_]*|_+[A-Za-z][A-Za-z0-9_]*)$")
+
 # A collection name only ever reaches AQL as a ``@@`` bind parameter, so it
 # needs to be a valid ArangoDB name, not an AQL identifier. ArangoDB's
 # traditional names allow letters, digits, ``_`` and ``-`` (max 256 bytes);
@@ -110,7 +116,7 @@ def parse_flag(value: str | None) -> bool | None:
 
 def is_aql_identifier(name: str) -> bool:
     """Whether *name* can be written bare after a dot (``doc.name``)."""
-    return bool(_AQL_IDENT_RE.match(name or ""))
+    return bool(_AQL_BARE_ATTRIBUTE_RE.match(name or ""))
 
 
 def attribute_ref(alias: str, name: str) -> str:
