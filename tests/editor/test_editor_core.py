@@ -389,3 +389,5 @@ def test_the_file_stays_a_plain_script() -> None:
     source = editor_core_js()
     assert source == CORE.read_text(encoding="utf-8")
     assert not re.search(r"^\s*(import|export)\b", source, re.MULTILINE)
+    # CDF inlines it into a <script> element; this sequence would end it early.
+    assert "</script" not in source.lower()
