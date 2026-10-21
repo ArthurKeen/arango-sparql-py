@@ -199,6 +199,7 @@
         valuesPending = false;
         i += 1;
         operand = false;
+        last = ''; // `WHERE {` / `UNION {` are not a call: `{ (` is a collection
         continue;
       }
       if (ch === ')' || ch === '}') {

@@ -580,6 +580,8 @@ def test_a_very_long_line_stays_fast() -> None:
         "SELECT * WHERE { FILTER(NOT EXISTS { ?s :list (?a <x#b>) }) }",
         "SELECT (COUNT(DISTINCT <x#a>) AS ?n) WHERE { ?s ?p ?o }",
         "SELECT * WHERE { ?s (<p#a>|<p#b>)+ ?o . ?s ^(<p#a>) ?o }",
+        "SELECT * WHERE { (?a <x#b>) :q ?z }",
+        "SELECT * WHERE { { ?s :p ?o } UNION { (?a <x#b>) :q ?z } }",
     ],
     ids=[
         "collection",
@@ -588,6 +590,8 @@ def test_a_very_long_line_stays_fast() -> None:
         "collection-in-exists",
         "count-distinct",
         "path-groups",
+        "collection-opens-group",
+        "collection-opens-union-branch",
     ],
 )
 def test_a_term_list_never_reads_its_iris_as_less_than(doc: str) -> None:
