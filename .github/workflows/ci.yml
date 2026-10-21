@@ -1,13 +1,17 @@
 name: CI
 
 # Mirrors the structure of arango-cypher-py's CI so a contributor fluent
-# in one repo gets the same signals in the other. One diff vs. that
-# template is intentional:
+# in one repo gets the same signals in the other. Two diffs vs. that
+# template are intentional:
 #
 # * the packaging job is omitted because we don't ship a sdist build
 #   smoke test yet (will land alongside the first PyPI release). When
 #   that gate becomes a hard release requirement, copy the job verbatim
 #   from references/arango-cypher-py/.github/workflows/ci.yml.
+# * a `ui` job builds and tests the workbench (ui/), which cypher-py's CI
+#   does not. Here the workbench imports the shared SPARQL editor core from
+#   the Python package (arango_sparql/editor/sparql_editor_core.js, PRD
+#   §10.2.1), so a change on either side can break the other.
 #
 # The integration job is the WP-C1 evaluation-correctness gate: it runs
 # the live-ArangoDB harnesses (tests/integration, tests/cross, and the
@@ -22,6 +26,26 @@ on:
     branches: [main]
 
 jobs:
+  ui:
+    # The workbench: lint, unit tests (vitest), then the production build,
+    # which type-checks first (`tsc -b && vite build`). Node 22: Vite 8 needs
+    # ^20.19 or >=22.12.
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ui
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
   lint:
     runs-on: ubuntu-latest
     steps:
