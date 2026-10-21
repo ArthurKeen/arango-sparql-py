@@ -913,7 +913,7 @@ Mirrors the sister project's `arango_cypher.service.routes.schema` and
 
 | Method | Path | Request | Response | Notes |
 | --- | --- | --- | --- | --- |
-| `GET` | `/schema/introspect` | query: `?force=<bool>`, `?strategy=<auto|analyzer|heuristic>` | `MappingBundle` JSON + summary block | Live acquisition; respects cache unless `force=true` |
+| `GET` | `/schema/introspect` | query: `?force=<bool>`, `?strategy=<auto|analyzer|heuristic>` | `MappingBundle` JSON + summary block + `editor_vocab` (editor vocabulary v1, §10.2.1) | Live acquisition; respects cache unless `force=true`. `editor_vocab` is `null` while pending or when the bundle's ontology names no default `:` namespace (the NL prompt then carries no schema summary either, §7.2) |
 | `GET` | `/schema/properties` | — | `{<collection>: {<attr>: {type, sample}}}` | Per-collection inferred property catalog (samples 20 docs) |
 | `GET` | `/schema/summary` | body: `{mapping}` (no DB access) | conceptual summary | Used by the UI when it already has a mapping in hand |
 | `GET` | `/schema/statistics` | — | `metadata.statistics` block | Cardinality, in/out degree, selectivity per relationship |
@@ -1900,19 +1900,58 @@ adds the three SPARQL-specific affordances.
 | --- | --- |
 | Custom `StreamLanguage` for SPARQL 1.1 (keywords, IRIs, prefixed names, `?var` and `$var` variables, blank-node labels `_:`, language tags `@en`, datatype suffixes `^^xsd:int`, `<...>` IRI literals, comments) | `ui/src/lang/sparql.ts` (custom; mirrors `lang/cypher.ts`'s structure) |
 | Syntax highlighting via the theme-aware `editorTheme` (`HighlightStyle` mapping `keyword`, `string`, `number`, `function`, `variableName`, `special(variableName)`, `typeName`, `lineComment`, `blockComment`, `operator`, `bracket`, `punctuation`) | `ui/src/components/theme.ts` (shared with AQL editor) |
-| **Schema-aware completion** (the central differentiator vs hand-typing): | `ui/src/lang/sparql-completion.ts` |
-| — after `?` / `$` → variable names already in scope | |
-| — after `:` (PrefixedName separator) → local names from the active prefix's namespace as known to the OWL ontology | |
-| — after `<http…/` → IRI suggestions from the ontology's class/property catalog | |
-| — after `a ` (the SPARQL `rdf:type` shorthand) → class IRIs | |
-| — inside the predicate position of a triple → property IRIs filtered by the bound subject's class (when known from a preceding `?s a :Class` triple) | |
-| **Hover docs** for SPARQL keywords/built-in functions (analogous to `cypher-hover.ts`) | `ui/src/lang/sparql-hover.ts` |
+| **Schema-aware completion** (the central differentiator vs hand-typing), driven by the editor vocabulary `/schema/introspect` serves (§6.4) — the same per-class list the NL prompt is grounded on (§7.2), so completion never offers a property on a class the model is not told owns it. The rules are the shared editor core's (§10.2.1); CodeMirror shows the core's ranked items as given (`filter: false`): | `ui/src/lang/sparqlComplete.ts` over `arango_sparql/editor/sparql_editor_core.js` |
+| — after `?` / `$` → variable names already in the query | |
+| — after a concept prefix (`:` by default, or any prefix the query binds to the vocabulary's base) → the subject's class properties when the query declares the subject's class (`?s a :Class`), otherwise every class's properties, then the classes | |
+| — after `<` plus any prefix of the vocabulary's base → the same, in full-IRI spelling (`<base…Name>`), and the bare namespace (alone inside a `PREFIX` line) | |
+| — after `a ` (the SPARQL `rdf:type` shorthand) → classes only | |
+| — a bare word → keywords, built-in functions and prefix names (declared + well-known) | |
+| — a prefix bound to another namespace (e.g. `xsd:`) → nothing | |
+| **Hover** — the CURIE under the cursor expands to its full IRI (document prefixes override well-known ones) | `ui/src/lang/sparqlComplete.ts` (`sparqlHoverInfo`) |
+| **Format** — header button and `Shift-Alt-F`: the shared formatter (§10.2.1) pretty-prints the query, moving only whitespace; disabled when nothing would change, including any query with a `#` comment | `App.tsx`, `SparqlEditor.tsx` |
 | Bracket matching, close brackets, fold gutter, indent on input, draw selection, drop cursor, highlight special chars, `indentWithTab`, search | Standard CodeMirror extensions |
 | **PREFIX manager** — pure-SPARQL affordance not present in Cypher editor: panel that lists all `PREFIX` declarations parsed from the editor body, lets the user add/remove a prefix, and (via the connection mapping) suggests the analyzer's discovered namespace prefixes | `ui/src/components/PrefixManager.tsx` (new) |
 | **`?var` parameter panel** — same role as `arango-cypher-py`'s `ParameterPanel` for `$param` substitutions; adapted to populate SPARQL `VALUES` clauses or pre-bind selected variables | `ui/src/components/ParameterPanel.tsx` |
 | **Clause outline** — regex-based outline of `SELECT` / `WHERE` / `OPTIONAL` / `FILTER` / `BIND` / `ORDER BY` / `LIMIT` etc.; click-to-jump | `ui/src/components/ClauseOutline.tsx` (already present, adapted to SPARQL clauses) |
 | Workbench keymap — `Mod-Enter` translate, `Shift-Enter` run, `Mod-Shift-E` explain, `Mod-Shift-P` profile, `Mod-K` command palette | `SparqlEditor.tsx` |
 | **Cross-pane line correspondence** — hovering a line in the SPARQL editor highlights the corresponding line(s) in the AQL editor (and vice versa); reuses the `arango-cypher-py` correspondence-map machinery, fed by translator-emitted source-map metadata in `TranslateResponse` | `App.tsx` |
+
+### 10.2.1 Shared editor core and editor vocabulary v1
+
+Two syntax-directed SPARQL editors run **one** set of rules: this
+workbench's CodeMirror editor and the contextual-data-fabric (CDF) demo's
+dependency-free textarea editor (issue #68). The rules live in
+`arango_sparql/editor/sparql_editor_core.js`, shipped in the wheel: pure
+functions of (query text, caret offset, vocabulary) for suggestions
+(`suggest`), highlighting tokens and concept classification (`tokenize`,
+`classifyConcept`), prefix / variable / CURIE helpers, and `formatSparql`.
+Each editor keeps its own shell — painting, menu, bracket pairing, keys —
+because merging the shells would force CDF onto a build step and CodeMirror,
+or the workbench off CodeMirror.
+
+* **Loading.** The file is a plain script (no `import`/`export`) that
+  registers `globalThis.SparqlEditorCore` (and `module.exports` under
+  CommonJS). The workbench imports it for its side effect through the typed
+  wrapper `ui/src/lang/sparqlEditorCore.ts`; CDF inlines
+  `arango_sparql.editor.editor_core_js()` into its page, from its pinned
+  install (CC-9). A rule fix therefore reaches CDF only through a release and
+  a reviewed pin bump.
+* **Editor vocabulary v1** — `{"base": <concept namespace IRI>, "classes":
+  {<Class>: {"props": [...], "source": <owning source>, "kind": <source
+  kind>}}}`, defined by `arango_sparql.editor.EditorVocabV1` (extra keys
+  rejected). This library's producer, `editor_vocab()`, lists every data
+  property (uncapped) and every object property on its domain class (all
+  classes for an `Any` domain), from `arango_sparql.schema.vocabulary` — the
+  derivation `build_schema_summary` (§7.2) also uses, so the prompt's classes
+  and properties are always a subset of the editor's. CDF keeps its own
+  multi-source producer (it federates sources this library cannot see) and
+  validates it against the model. A shape change is a new contract name
+  (`editor-vocabulary/v2`) in the model, the core's `VOCAB_CONTRACT`, and
+  CDF's M9 spec §3.1.
+* **Tests.** `tests/editor/` runs the core under node in CI (a missing node
+  fails there rather than skipping), including CDF's former formatter tests;
+  `ui/src/lang/sparqlEditorCore.test.ts` pins the typed wrapper to the
+  runtime object.
 
 ### 10.3 AQL editor (`ui/src/components/AqlEditor.tsx`)
 
