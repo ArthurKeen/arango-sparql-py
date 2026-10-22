@@ -4,7 +4,17 @@ Status: **Accepted & implemented** (2026-07-15) — shipped as
 `arango_sparql.partition.translate_partition` (re-exported from
 `arango_sparql.api`). The four open questions were resolved per the
 recommendations below; the M5 planner can still renegotiate any of
-them before pinning (CC-9), since the contract has one consumer today.
+them before pinning (CC-9).
+
+**Consumers (checked 2026-10-22): none.** The fabric this was designed for
+does not call it. CDF's Arango executor (`src/cdf/adapters/arango.py`
+there) sends each partition through `arango_sparql.api.translate` and
+stamps `as_of` itself. Its bind-join `VALUES` carrier is CDF's own,
+engine-neutral writer (`executor._with_values` via `cdf.query.sparql_terms`),
+because its Ontop legs need the same carrier and this function covers
+ArangoDB only. The function stays supported and tested; whether to keep it,
+or move a shared SPARQL term writer into `arango-query-core` for both
+repositories, is an open decision (contextual-data-fabric#212).
 
 Decisions as implemented:
 
