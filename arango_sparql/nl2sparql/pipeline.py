@@ -88,6 +88,7 @@ from .client import LLMClient
 from .cost import estimate_llm_cost_usd
 from .engine_adapter import EngineProviderBridge, SparqlAdapter
 from .models import LLMCallRecord, LLMResponse, PipelineOutcome
+from .postconditions import soft_postcondition_note
 from .prompt import PromptBuilder, build_explain_messages, extract_sparql_from_response
 from .repair import RepairLoop
 
@@ -312,6 +313,16 @@ class NlPipeline:
                     "message": (
                         f"NL → SPARQL translation succeeded after {result.retries} repair attempt(s)."
                     ),
+                }
+            )
+        if result.postcondition is not None:
+            # The engine returned a candidate whose only objection was a soft
+            # postcondition (arango-query-core >= 0.2.3): the retry budget ran
+            # out on it. Report the objection rather than drop it (§7.3.1).
+            warnings.append(
+                {
+                    "code": "W_NL_SOFT_POSTCONDITION",
+                    "message": soft_postcondition_note(result.postcondition),
                 }
             )
         return self._success_outcome(

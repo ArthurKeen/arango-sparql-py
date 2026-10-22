@@ -189,3 +189,10 @@ def _collect_body_vars(node: object, out: set[Variable], depth: int = 0) -> None
         child = getattr(node, attr, None)
         if child is not None:
             _collect_body_vars(child, out, depth + 1)
+
+
+def soft_postcondition_note(violation: PostconditionViolation) -> str:
+    """The one sentence both NL entry points report when the engine returned
+    a candidate after a *soft* postcondition used up the retry budget
+    (``PostconditionViolation.soft``, arango-query-core >= 0.2.3, PRD §7.3.1)."""
+    return f"Returned after the retry budget ran out on a soft check: {violation.reason} ({violation.code})."
