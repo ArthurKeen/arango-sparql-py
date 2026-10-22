@@ -4,7 +4,10 @@ The contextual-data-fabric federated query engine (module 05) splits a
 conceptual SPARQL query into per-source partitions and hands each
 source's leg a self-contained sub-query. This module is the Arango
 leg's contract, per ``docs/architecture/proposals/federation-entry-point.md``
-with the co-design questions resolved as:
+with the co-design questions resolved as below. (CDF does not call it today:
+its executor sends each leg through :func:`arango_sparql.api.translate` and
+writes the bind-join ``VALUES`` itself, for every engine; see the proposal's
+status.)
 
 1. **Wire shape** — a partition arrives as a *sub-SELECT string*
    (serializable, replayable, provider-agnostic). An algebra fast path
