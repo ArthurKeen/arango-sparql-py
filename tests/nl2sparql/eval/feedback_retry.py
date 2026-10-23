@@ -257,7 +257,7 @@ def _sample(args: argparse.Namespace) -> int:
         outcome = pipeline.run(case["nl"], params=case.get("params"))
         elapsed_ms = (time.perf_counter() - t0) * 1000
         chosen = select(check.executed)
-        # upstream: arango-solutions-org/arango-query-core#4 — remove when the engine returns the first candidate that ran instead of failing closed
+        # upstream: arango-solutions-org/arango-query-core#4 — remove when the engine can stop after N executed candidates and return the first that answered (#4's separate execution budget; 0.2.3's soft fallback covers budget exhaustion only)
         if chosen is None:
             passed, note, chosen_sparql = False, "no candidate executed", ""
         else:

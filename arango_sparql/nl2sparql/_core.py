@@ -110,6 +110,7 @@ def nl_to_sparql(
 
     from ..translate.resolver import SchemaResolver
     from .adapter import SparqlLanguageAdapter
+    from .postconditions import soft_postcondition_note
 
     ttl = ontology_ttl or ""
     if resolver is None:
@@ -137,10 +138,17 @@ def nl_to_sparql(
         postcondition_mapping=postcondition_mapping,
     )
     outcome = engine.generate(question, schema_context=ttl)
+    if not outcome.ok:
+        explanation = outcome.error
+    elif outcome.postcondition is not None:
+        # A soft postcondition objected until the budget ran out (§7.3.1).
+        explanation = soft_postcondition_note(outcome.postcondition)
+    else:
+        explanation = ""
 
     return NL2SparqlResult(
         sparql=outcome.query,
-        explanation="" if outcome.ok else outcome.error,
+        explanation=explanation,
         # Crude but honest: clean first-shot validations score higher
         # than repaired ones; failures score zero.
         confidence=0.0 if not outcome.ok else max(0.3, 0.9 - 0.2 * outcome.retries),

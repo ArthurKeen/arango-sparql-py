@@ -1325,6 +1325,14 @@ implementation. Semantics:
   (`method="llm_failed"`, reason + stable `code`), never a valid-but-wrong
   query. The `NL_REPAIR_MAX_ATTEMPTS + 1` LLM-call ceiling is unchanged;
   postconditions share it, they do not add to it.
+* **Soft postconditions** (`PostconditionViolation.soft`, arango-query-core
+  ≥ 0.2.3) are the one exception. A soft violation is retried like any other,
+  but on exhaustion the engine returns the **first candidate whose only
+  objection was soft**, instead of failing. Use it for a check like "returned
+  no rows", where empty is sometimes the true answer. The objection is never
+  dropped: `NlPipeline` adds a `W_NL_SOFT_POSTCONDITION` warning, and
+  `nl_to_sparql` puts it in `explanation`. A hard violation, and both shipped
+  invariants below (which are hard), still fail closed.
 
 Callers pass invariants via `nl_to_sparql(..., postconditions=[...],
 postcondition_mapping=...)` or, for the service pipeline,
