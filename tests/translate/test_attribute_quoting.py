@@ -43,6 +43,27 @@ def test_identifier_names_stay_bare() -> None:
     assert attribute_ref("doc1", "_key") == "doc1._key"
 
 
+@pytest.mark.parametrize("name", ["_a2", "__x", "a_2", "_from"])
+def test_underscore_then_letter_stays_bare(name: str) -> None:
+    assert is_aql_identifier(name)
+    assert attribute_ref("doc1", name) == f"doc1.{name}"
+
+
+@pytest.mark.parametrize("name", ["_2", "_", "__", "_2a"])
+def test_underscore_not_followed_by_a_letter_is_quoted(name: str) -> None:
+    # ArangoDB's lexer rejects these bare (ERR 1501): a leading underscore must
+    # be followed by a letter. Found by differential testing against
+    # pyoxigraph on W3C entailment/rdfs12, whose rdf:_2 became ``doc1._2``.
+    assert not is_aql_identifier(name)
+    assert attribute_ref("doc1", name) == f"doc1.`{name}`"
+
+
+def test_rdf_container_membership_property_emits_valid_aql() -> None:
+    res = _translate("SELECT ?f WHERE { ?d a :Doc . ?d :_2 ?f . }")
+    assert "doc1.`_2`" in res.aql
+    assert "doc1._2" not in res.aql
+
+
 @pytest.mark.parametrize("name", ["phys:typeValue", "first name", "é", "a-b", "1st"])
 def test_non_identifier_names_are_backtick_quoted(name: str) -> None:
     assert not is_aql_identifier(name)
