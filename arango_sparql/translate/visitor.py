@@ -1467,14 +1467,17 @@ class AlgebraVisitor:
                 self.builder.for_inline(empty_alias, "[1]")
             return
 
-        # Order matters here: a type pattern (``?s a :Person``) carries
-        # the strongest hint about which physical collection ``?s`` lives
-        # in, so we want to visit those first and bind ``?s`` to the
-        # right alias before any sibling property triple opens a fallback
-        # FOR over the default collection. ``rdflib.algebra.translateQuery``
-        # may reorder triples for join optimization, undoing the user's
-        # declaration order; this re-sort is the visitor's defense.
-        for triple in sorted(triples, key=_triple_priority):
+        # Order matters twice over. Routing: a type pattern (``?s a
+        # :Person``) carries the strongest hint about which physical
+        # collection ``?s`` lives in, so it must come before the property
+        # triples of an otherwise-unbound ``?s``. Cost: each triple becomes
+        # a nested FOR, so a triple whose subject is already known (a
+        # constant, an outer binding, an earlier triple's object) should
+        # come before one that scans a whole predicate — LDBC IS1 went from
+        # a 327 k-row scan to an index lookup per step. ``_order_bgp`` does
+        # both; a BGP is a conjunction, so the order never changes answers.
+        bound = set(self.state.var_to_expr) | set(self.state.var_to_doc_alias)
+        for triple in _order_bgp(triples, bound):
             self._emit_triple(triple)
 
     # ------------------------------------------------------------------
@@ -2594,31 +2597,58 @@ def _expression_variable_names(node: Any) -> set[str]:
     return out
 
 
-def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
-    """Sort key for BGP triples — lower = visit earlier.
+def _term_known(term: Any, bound: set[str]) -> bool:
+    """A constant, or a variable some earlier pattern already bound."""
+    if isinstance(term, Variable):
+        return str(term) in bound
+    return isinstance(term, (URIRef, Literal))
 
-    Order:
-      0. Type patterns (``?s a :Class``) — bind subjects to physical
-         collections first.
-      1. Triples whose subject is a Variable — these can reuse a prior
-         alias when sorted after a type pattern bound the same subject.
-         Property-path predicates (``Path`` instances) also land here:
-         a ``?s :p/:q ?o`` against an already-bound ``?s`` is the
-         common shape (e.g. type pattern + path-on-the-subject), and
-         we want the path desugaring to see the same binding state a
-         plain ``?s :name ?n`` would.
-      2. Triples whose subject is a URI — they always open a fresh FOR.
-    """
+
+def _join_rank(triple: tuple[Any, Any, Any], bound: set[str]) -> int:
+    """Lower = emit earlier. See :func:`_order_bgp`."""
     s, p, o = triple
-    if isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef):
-        primary = 0
-    elif isinstance(s, Variable):
-        primary = 1
-    else:
-        primary = 2
-    # Stable secondary so two triples with the same primary preserve
-    # rdflib's order — keeps golden output deterministic.
-    return (primary, 0)
+    is_type = isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef)
+    subject_known = _term_known(s, bound)
+    if is_type:
+        return 0 if subject_known else 2
+    if subject_known:
+        return 1
+    if _term_known(o, bound):
+        return 3
+    return 4
+
+
+def _order_bgp(triples: list[tuple[Any, Any, Any]], bound: set[str]) -> list[tuple[Any, Any, Any]]:
+    """Greedy, binding-aware order for a BGP's triples.
+
+    Each step takes the lowest-ranked remaining triple, then counts its
+    variables as bound:
+
+      0. a type check on a subject already known (a filter, nothing more);
+      1. a triple whose subject is known — a constant, a variable bound by an
+         outer pattern, or the object of a triple already emitted — so the
+         nested FOR is an index lookup, and chains (person → city → id)
+         follow themselves;
+      2. a type pattern on an unknown subject — it anchors the subject to its
+         class's collection (which PG / LPG routing needs before that
+         subject's property triples) at the cost of a class scan;
+      3. a triple whose object is known (a reverse lookup);
+      4. anything else.
+
+    Ties keep rdflib's order, so output stays deterministic. Property-path
+    triples rank like plain ones; their desugaring sees the same bindings.
+    """
+    bound = set(bound)
+    remaining = list(enumerate(triples))
+    ordered: list[tuple[Any, Any, Any]] = []
+    while remaining:
+        best = min(remaining, key=lambda item: (_join_rank(item[1], bound), item[0]))
+        remaining.remove(best)
+        ordered.append(best[1])
+        for term in best[1]:
+            if isinstance(term, Variable):
+                bound.add(str(term))
+    return ordered
 
 def _is_empty_bgp(node: Any) -> bool:
     """``True`` iff *node* is a ``BGP`` algebra node with zero

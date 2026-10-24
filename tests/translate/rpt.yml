@@ -278,3 +278,26 @@ cases:
       "@c1__triples": "_triples"
       "_p2_pred": "http://ex.org/knows"
       "_p3_uri": "http://ex.org/alice"
+
+  # Join order (visitor._order_bgp): a triple whose subject is known comes
+  # first, and its object then makes the next triple's subject known, so the
+  # chain is followed by index lookups. rdflib hands these two triples over in
+  # the opposite order; emitted that way, the first FOR scanned every ``:id``
+  # row (LDBC IS1: 327 k rows) before the constant subject applied.
+  - name: triple_store_constant_subject_chain_is_followed
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?id WHERE { <http://ex.org/alice> :city ?c . ?c :id ?id }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_pred
+      FILTER doc1.subject_uri == @_p2_uri
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == NOT_NULL(doc1.object_uri, doc1.object_value)
+      RETURN { id: NOT_NULL(doc2.object_uri, doc2.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_pred": "http://ex.org/city"
+      "_p2_uri": "http://ex.org/alice"
+      "_p3_pred": "http://ex.org/id"

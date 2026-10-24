@@ -36,10 +36,10 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
       FOR doc2 IN @@c2_Project
       FILTER HAS(doc2, "owner")
       FILTER doc2.owner == NOT_NULL(doc1._uri, doc1._id)
-      FILTER HAS(doc1, "name")
       RETURN { p: NOT_NULL(doc1._uri, doc1._id), o: NOT_NULL(doc2._uri, doc2._id) }
     expected_bind_vars:
       "@c1_Person": "Person"
