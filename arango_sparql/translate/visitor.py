@@ -2483,8 +2483,17 @@ class AlgebraVisitor:
         of subsequent operands). E.g. ``?a + 1 - 2`` becomes
         ``head=?a, ops=['+', '-'], tail=[1, 2]``.
         """
-        result = self._translate_expr(head)
-        for op, operand in zip(ops, tail, strict=True):
+        pairs = list(zip(ops, tail, strict=True))
+        if pairs and pairs[0][0] == "+" and _is_duration_literal(head):
+            # ``duration + date`` is ``date + duration`` (addition commutes).
+            result = self._date_shift("+", self._translate_expr(pairs[0][1]), head)
+            pairs = pairs[1:]
+        else:
+            result = self._translate_expr(head)
+        for op, operand in pairs:
+            if op in ("+", "-") and _is_duration_literal(operand):
+                result = self._date_shift(op, result, operand)
+                continue
             right = self._translate_expr(operand)
             left_alias = self.builder.fresh_alias(prefix="num")
             right_alias = self.builder.fresh_alias(prefix="num")
@@ -2495,6 +2504,28 @@ class AlgebraVisitor:
                 f"? ({left_alias} {op} {right_alias}) : null)[0]"
             )
         return result
+
+    def _date_shift(self, op: str, date_expr: str, duration: Literal) -> str:
+        """``date ± duration`` as AQL ``DATE_ADD`` / ``DATE_SUBTRACT``.
+
+        XPath's ``op:add-yearMonthDuration-to-dateTime`` family (SPARQL 1.1
+        §17.3 via XPath operators). AQL takes the ISO 8601 duration string
+        itself (``P30D``), so the duration is bound as its lexical form — never
+        as the ``timedelta`` rdflib parses it into, which is not JSON and
+        failed at the driver (LDBC IC3 / IC4).
+
+        Only a string is shifted: AQL reads a number as epoch milliseconds
+        (``DATE_ADD(7, "P1D")`` is a date), where SPARQL's number + duration is
+        a type error. Anything else — and a string that is not a date, for
+        which AQL returns null — yields null, SPARQL's "error → unbound".
+        """
+        duration_bind = self.builder.bind(str(duration), hint="duration")
+        function = "DATE_ADD" if op == "+" else "DATE_SUBTRACT"
+        operand = self.builder.fresh_alias(prefix="dt")
+        return (
+            f"(FOR {operand} IN [{date_expr}] "
+            f"RETURN IS_STRING({operand}) ? {function}({operand}, {duration_bind}) : null)[0]"
+        )
 
     # ------------------------------------------------------------------
     # Internal: projection / RETURN
@@ -2643,13 +2674,38 @@ def _walk_for_bgp_triples(node: Any, out: list[tuple[Any, Any, Any]]) -> None:
             _walk_for_bgp_triples(child, out)
 
 
+#: XSD duration datatypes (XSD 1.1 §3.3.6, §3.4.26, §3.4.27).
+_DURATION_TYPES = frozenset(
+    {
+        "http://www.w3.org/2001/XMLSchema#duration",
+        "http://www.w3.org/2001/XMLSchema#dayTimeDuration",
+        "http://www.w3.org/2001/XMLSchema#yearMonthDuration",
+    }
+)
+
+
+def _is_duration_literal(term: Any) -> bool:
+    return isinstance(term, Literal) and term.datatype is not None and str(term.datatype) in _DURATION_TYPES
+
+
 def _term_to_python(term: Any) -> Any:
     """Convert an rdflib Literal/URIRef into a JSON-safe Python value.
 
     Literals use ``Literal.toPython()`` so xsd:integer/xsd:decimal/
     xsd:dateTime round-trip through ArangoDB as the right primitive
     type rather than as their lexical form.
+
+    A duration has no JSON form AQL can compare or return with SPARQL's
+    semantics (``P1D`` equals ``PT24H``); it is supported only as the
+    operand of ``date ± duration`` (:meth:`AlgebraVisitor._date_shift`),
+    and refused anywhere else rather than bound as a ``timedelta`` the
+    driver cannot serialise.
     """
+    if _is_duration_literal(term):
+        raise UnsupportedSparqlError(
+            f"an xsd:duration value ({term}) is supported only when added to or "
+            "subtracted from a date or dateTime"
+        )
     if isinstance(term, Literal):
         value = term.toPython()
         # ``xsd:decimal`` round-trips through rdflib as
