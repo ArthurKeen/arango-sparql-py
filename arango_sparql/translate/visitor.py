@@ -72,6 +72,14 @@ class _BindingState:
     to a physical document)."""
 
     doc_to_collection: dict[str, str] = field(default_factory=dict)
+    const_subject_alias: dict[str, str] = field(default_factory=dict)
+    """Constant subject IRI → the alias of the document a type pattern
+    opened for it (``<iri> a :C``), so the subject's property triples read
+    that document instead of being refused or re-scanned."""
+    const_subject_rpt_class: dict[str, ResolvedClass] = field(default_factory=dict)
+    """Constant subject IRI → the RPT class a type pattern found it in, so
+    its property triples read that triples table (the constant-subject
+    counterpart of :attr:`var_to_rpt_class`)."""
     """AQL alias → physical collection name. Used to detect duplicate
     FOR clauses and to drive future joins."""
 
@@ -1578,6 +1586,18 @@ class AlgebraVisitor:
                     type_predicate(alias, resolved.type_field, bind, is_array=resolved.type_field_is_array)
                 )
             self._enforce_tenant_scope(alias, resolved)
+            if isinstance(s, URIRef):
+                # A constant subject is one document, not the whole class:
+                # without this FILTER ``<x> a :C`` matched every member of
+                # :C (one row each) instead of x alone.
+                previous = self.state.const_subject_alias.get(str(s))
+                if previous is not None:
+                    self.builder.filter_raw(f"{subject_ref(alias)} == {subject_ref(previous)}")
+                else:
+                    uri_bind = self.builder.bind(str(s), hint="uri")
+                    self.builder.filter_raw(subject_matches(alias, uri_bind))
+                    self.state.const_subject_alias[str(s)] = alias
+                return
             self._bind_subject(s, alias)
             return
 
@@ -1931,6 +1951,7 @@ class AlgebraVisitor:
         if isinstance(subject, URIRef):
             uri_bind = self.builder.bind(str(subject), hint="uri")
             self.builder.filter_eq(f"{triples_alias}.{resolved.subject_column}", uri_bind)
+            self.state.const_subject_rpt_class.setdefault(str(subject), resolved)
             return
         raise UnsupportedSparqlError(
             f"RPT type pattern subject term type {type(subject).__name__!r} is not supported"
@@ -1949,6 +1970,8 @@ class AlgebraVisitor:
         guess. Records the routing in ``var_to_rpt_class``.
         """
         if isinstance(subject, Variable) and str(subject) in self.state.var_to_rpt_class:
+            return True
+        if isinstance(subject, URIRef) and str(subject) in self.state.const_subject_rpt_class:
             return True
         store = self.resolver.triple_store_class()
         if store is None:
@@ -1986,10 +2009,10 @@ class AlgebraVisitor:
           since RDF literals never live in the URI column.
         """
         if isinstance(subject, URIRef):
-            store = self.resolver.triple_store_class()
-            if store is None:
+            known = self.state.const_subject_rpt_class.get(str(subject)) or self.resolver.triple_store_class()
+            if known is None:
                 raise AqlEmitError(f"RPT property triple on constant subject {subject} outside a triple store")
-            rpt_class = store
+            rpt_class = known
         else:
             rpt_class = self.state.var_to_rpt_class[str(subject)]
         triples_alias = self._open_collection(rpt_class.collection, resolved=rpt_class)
@@ -2199,6 +2222,9 @@ class AlgebraVisitor:
             self._bind_subject(subject, alias)
             return alias
         if isinstance(subject, URIRef):
+            known = self.state.const_subject_alias.get(str(subject))
+            if known is not None:
+                return known
             if self.resolver.strict_subject_resolution:
                 raise SchemaResolutionError(
                     f"cannot route subject IRI {str(subject)!r} to a collection: "

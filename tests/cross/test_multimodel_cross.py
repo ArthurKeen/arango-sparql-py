@@ -361,6 +361,20 @@ BAG_CASES = [
         '?s a :Person ; :name ?n ; :dept ?d . FILTER(?d = "eng") }',
         id="three_property_bgp_with_filter",
     ),
+    # A constant subject is one document, not its whole class: before the
+    # fix, PG and LPG matched ``<x> a :C`` against every member of :C.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { <http://ex.org/alice> a :Person ; :name ?n }",
+        id="constant_subject_type_and_property",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { <http://ex.org/p1> a :Person ; :name ?n }",
+        id="constant_subject_not_in_the_class",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { <http://ex.org/nobody> a :Person . ?s a :Person ; :name ?n }",
+        id="absent_constant_subject_empties_the_join",
+    ),
 ]
 
 
