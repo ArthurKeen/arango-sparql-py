@@ -1620,7 +1620,7 @@ class AlgebraVisitor:
             if prop.is_object_property:
                 self._emit_edge_triple(s, prop, o, triple)
                 return
-            alias = self._ensure_subject_alias(s)
+            alias = self._ensure_subject_alias(s, prop)
             attr_path = attribute_ref(alias, prop.attribute)
             if isinstance(o, Variable):
                 # Predicate-existence filter (SPARQL 1.1 §18.5): a
@@ -2014,7 +2014,9 @@ class AlgebraVisitor:
         if isinstance(subject, URIRef):
             known = self.state.const_subject_rpt_class.get(str(subject)) or self.resolver.triple_store_class()
             if known is None:
-                raise AqlEmitError(f"RPT property triple on constant subject {subject} outside a triple store")
+                raise AqlEmitError(
+                    f"RPT property triple on constant subject {subject} outside a triple store"
+                )
             rpt_class = known
         else:
             rpt_class = self.state.var_to_rpt_class[str(subject)]
@@ -2131,17 +2133,37 @@ class AlgebraVisitor:
                 f"edge collection backs this relationship (PRD §6.2)"
             )
 
-        subject_alias = self._ensure_subject_alias(subject)
+        reverse_source = self._reverse_traversal_source(subject, prop, obj)
+        if reverse_source is not None:
+            # The subject is unknown but the object is a document: walk the
+            # edge backwards from it. The edge collection reaches every
+            # subject class by itself (LDBC ``?m :hasCreator ?p`` finds posts
+            # and comments alike), so no subject collection is needed.
+            v_alias = self.builder.fresh_alias(prefix="v")
+            e_alias = self.builder.fresh_alias(prefix="e")
+            self.builder.for_traversal(
+                v_alias,
+                e_alias,
+                reverse_source,
+                prop.edge_collection,
+                direction="ANY" if prop.symmetric else "INBOUND",
+            )
+            self._filter_edge_type(prop, e_alias)
+            self.state.doc_to_collection[v_alias] = prop.edge_collection
+            self._bind_subject(subject, v_alias)
+            return
+
+        subject_alias = self._ensure_subject_alias(subject, prop)
         v_alias = self.builder.fresh_alias(prefix="v")
         e_alias = self.builder.fresh_alias(prefix="e")
-        self.builder.for_traversal(v_alias, e_alias, subject_alias, prop.edge_collection)
-        # ``GENERIC_WITH_TYPE`` shares one edge collection across many
-        # relationship types; the discriminator FILTER is what keeps an
-        # ``?a :knows ?b`` traversal from also returning ``:worksAt``
-        # / ``:livesIn`` rows that happen to ride the same collection.
-        if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
-            bind = self.builder.bind(prop.type_value, hint=prop.type_field)
-            self.builder.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+        self.builder.for_traversal(
+            v_alias,
+            e_alias,
+            subject_alias,
+            prop.edge_collection,
+            direction="ANY" if prop.symmetric else "OUTBOUND",
+        )
+        self._filter_edge_type(prop, e_alias)
         # We track the edge alias on the builder for the rare query that
         # references the edge document itself; ``v_alias`` is the
         # traversal vertex and is what binds to the SPARQL object.
@@ -2183,7 +2205,115 @@ class AlgebraVisitor:
             f"object property {prop.iri!r} with non-IRI object is not supported (triple {triple!r})"
         )
 
-    def _ensure_subject_alias(self, subject: Any) -> str:
+    def _filter_edge_type(self, prop: Any, e_alias: str) -> None:
+        """``GENERIC_WITH_TYPE`` shares one edge collection across many
+        relationship types; the discriminator FILTER is what keeps an
+        ``?a :knows ?b`` traversal from also returning ``:worksAt`` /
+        ``:livesIn`` rows that happen to ride the same collection."""
+        if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
+            bind = self.builder.bind(prop.type_value, hint=prop.type_field)
+            self.builder.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+
+    def _reverse_traversal_source(self, subject: Any, prop: Any, obj: Any) -> str | None:
+        """The alias to traverse ``prop`` backwards from, or ``None``.
+
+        Only when the subject is a variable nothing has bound yet: a bound
+        subject is walked forwards as before. The object must be a document:
+        a variable bound to one, or a constant IRI whose ``rdfs:range`` is a
+        single document class, which is opened and filtered on the IRI (an
+        indexed ``_uri`` match).
+        """
+        if not isinstance(subject, Variable):
+            return None
+        name = str(subject)
+        if name in self.state.var_to_doc_alias or name in self.state.var_to_expr:
+            return None
+        if isinstance(obj, Variable):
+            return self.state.var_to_doc_alias.get(str(obj))
+        if not isinstance(obj, URIRef):
+            return None
+        known = self.state.const_subject_alias.get(str(obj))
+        if known is not None:
+            return known
+        if prop.range_iri is None:
+            return None
+        try:
+            resolved = self.resolver.resolve_class(prop.range_iri)
+        except SchemaResolutionError:
+            return None
+        if resolved.style == "RPT":
+            return None
+        alias = self._open_collection(resolved.collection, resolved=resolved)
+        if resolved.type_field and resolved.type_value:
+            type_bind = self.builder.bind(
+                resolved.type_value,
+                hint=resolved.type_field if is_aql_identifier(resolved.type_field) else None,
+            )
+            self.builder.filter_raw(
+                type_predicate(alias, resolved.type_field, type_bind, is_array=resolved.type_field_is_array)
+            )
+        self._enforce_tenant_scope(alias, resolved)
+        uri_bind = self.builder.bind(str(obj), hint="uri")
+        self.builder.filter_raw(subject_matches(alias, uri_bind))
+        self.state.const_subject_alias[str(obj)] = alias
+        return alias
+
+    def _route_by_domain(self, subject: Any, prop: Any) -> str | None:
+        """Open the collection ``prop``'s ``rdfs:domain`` puts *subject* in.
+
+        For a subject no type pattern named — a constant IRI, a variable
+        bound only to a value, a fresh variable — the property's domain says
+        what it is (RDF: every subject of the property belongs to the
+        domain). One class opens that class's collection, with its label
+        test in LPG; a union of LABEL classes in one collection becomes an
+        any-of label test. A union spanning several collections (PG's
+        Post ∪ Comment) is refused: routing one subject across collections
+        is plan decision D9, not decided yet. Returns ``None`` when the
+        domain cannot help (none declared, or an RPT class).
+        """
+        class_iris = self.resolver.domain_classes(prop.iri)
+        if not class_iris:
+            return None
+        classes = [self.resolver.resolve_class(iri) for iri in class_iris]
+        if any(c.style == "RPT" for c in classes):
+            return None
+        collections = sorted({c.collection for c in classes})
+        if len(collections) > 1:
+            raise UnsupportedSparqlError(
+                f"the subject {subject} of {prop.iri!r} can be in any of the collections "
+                f"{collections} (its rdfs:domain spans them); reading one subject across "
+                f"several collections is not supported yet (plan decision D9)"
+            )
+        anchor = classes[0]
+        alias = self._open_collection(anchor.collection, resolved=anchor)
+        labelled = [c for c in classes if c.type_field and c.type_value]
+        if labelled:
+            if (
+                len(labelled) != len(classes)
+                or len({(c.type_field, c.type_field_is_array) for c in labelled}) != 1
+            ):
+                raise UnsupportedSparqlError(
+                    f"the rdfs:domain of {prop.iri!r} mixes classes with different type fields in "
+                    f"collection {anchor.collection!r}; cannot test the subject's class"
+                )
+            tests = []
+            for c in labelled:
+                assert c.type_field is not None and c.type_value is not None
+                bind = self.builder.bind(
+                    c.type_value, hint=c.type_field if is_aql_identifier(c.type_field) else None
+                )
+                tests.append(type_predicate(alias, c.type_field, bind, is_array=c.type_field_is_array))
+            self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        self._enforce_tenant_scope(alias, anchor)
+        if isinstance(subject, URIRef):
+            uri_bind = self.builder.bind(str(subject), hint="uri")
+            self.builder.filter_raw(subject_matches(alias, uri_bind))
+            self.state.const_subject_alias[str(subject)] = alias
+        else:
+            self._bind_subject(subject, alias)
+        return alias
+
+    def _ensure_subject_alias(self, subject: Any, prop: Any | None = None) -> str:
         """Return the AQL alias whose document is *subject*, opening a
         fresh FOR over the default collection if we haven't seen this
         subject before.
@@ -2210,6 +2340,9 @@ class AlgebraVisitor:
             existing = self.state.var_to_doc_alias.get(str(subject))
             if existing is not None:
                 return existing
+            routed = self._route_by_domain(subject, prop) if prop is not None else None
+            if routed is not None:
+                return routed
             if self.resolver.strict_subject_resolution:
                 raise SchemaResolutionError(
                     f"cannot route subject variable {str(subject)!r} to a "
@@ -2228,6 +2361,9 @@ class AlgebraVisitor:
             known = self.state.const_subject_alias.get(str(subject))
             if known is not None:
                 return known
+            routed = self._route_by_domain(subject, prop) if prop is not None else None
+            if routed is not None:
+                return routed
             if self.resolver.strict_subject_resolution:
                 raise SchemaResolutionError(
                     f"cannot route subject IRI {str(subject)!r} to a collection: "
@@ -2649,6 +2785,7 @@ def _order_bgp(triples: list[tuple[Any, Any, Any]], bound: set[str]) -> list[tup
             if isinstance(term, Variable):
                 bound.add(str(term))
     return ordered
+
 
 def _is_empty_bgp(node: Any) -> bool:
     """``True`` iff *node* is a ``BGP`` algebra node with zero

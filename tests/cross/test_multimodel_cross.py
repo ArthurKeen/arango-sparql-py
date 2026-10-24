@@ -519,6 +519,8 @@ def test_triple_store_untyped_subjects_match_oxigraph(oxi_store: Any, sparql: st
     "ontology_ttl,docs_factory",
     [m for m in MODELS if m.id != "rpt"],
 )
-def test_untyped_subjects_stay_unroutable_outside_a_triple_store(ontology_ttl: str, docs_factory: Any) -> None:
+def test_untyped_subjects_stay_unroutable_outside_a_triple_store(
+    ontology_ttl: str, docs_factory: Any
+) -> None:
     resolver = SchemaResolver.from_turtle(ontology_ttl)
     assert resolver.triple_store_class() is None

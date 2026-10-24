@@ -34,6 +34,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from rdflib import OWL, RDF, RDFS, Graph, Literal, Namespace, URIRef
+from rdflib.collection import Collection
 
 from ..errors import SchemaResolutionError
 from .builder import parse_flag
@@ -175,6 +176,14 @@ class ResolvedProperty:
     type_value: str | None = None
     domain_iri: str | None = None
     range_iri: str | None = None
+    symmetric: bool = False
+    """``owl:SymmetricProperty``: ``a p b`` holds exactly when ``b p a`` does.
+
+    For an edge-backed property this means each pair is stored once, in
+    either direction, and the visitor traverses ``ANY`` (LDBC's ``knows``
+    stored once, read as the symmetric ``directKnows``; plan decision D10).
+    An edge collection that stores both directions must not be declared
+    symmetric: ``ANY`` would return each pair twice."""
 
 
 #: The ``iri`` of the class :meth:`SchemaResolver.triple_store_class` returns:
@@ -629,6 +638,7 @@ class SchemaResolver:
             type_value=type_value,
             domain_iri=domain_iri,
             range_iri=range_iri,
+            symmetric=is_object and (ref, RDF.type, OWL.SymmetricProperty) in self.ontology,
         )
         self._property_cache[key] = resolved
         return resolved
@@ -684,6 +694,24 @@ class SchemaResolver:
             mapping[attribute] = str(subject)
         self._attribute_uri_map = mapping
         return mapping
+
+    def domain_classes(self, property_iri: str) -> tuple[str, ...]:
+        """The class IRIs ``rdfs:domain`` gives *property_iri*: one class, or
+        the members of an ``owl:unionOf``. Empty when no domain is declared
+        (or it is something else, such as an intersection).
+
+        The visitor routes a subject that no type pattern names by it: in
+        RDF a domain means every subject of the property *is* of that class.
+        """
+        domain = self.ontology.value(URIRef(property_iri), RDFS.domain)
+        if isinstance(domain, URIRef):
+            return (str(domain),)
+        if domain is None:
+            return ()
+        members = self.ontology.value(domain, OWL.unionOf)
+        if members is None:
+            return ()
+        return tuple(str(m) for m in Collection(self.ontology, members) if isinstance(m, URIRef))
 
     def triple_store_class(self) -> ResolvedClass | None:
         """The triples table, when the whole mapping is one triple store.
