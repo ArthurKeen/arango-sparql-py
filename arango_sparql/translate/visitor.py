@@ -1590,7 +1590,7 @@ class AlgebraVisitor:
             # we don't want to materialise an UNMAPPED-IRI warning
             # for predicates that exist only as triple-store
             # ``predicate`` column values.
-            if isinstance(s, Variable) and str(s) in self.state.var_to_rpt_class:
+            if self._routes_to_triples(s):
                 self._emit_rpt_property_triple(s, p, o, triple)
                 return
             prop = self.resolver.resolve_property(p)
@@ -1936,9 +1936,33 @@ class AlgebraVisitor:
             f"RPT type pattern subject term type {type(subject).__name__!r} is not supported"
         )
 
+    def _routes_to_triples(self, subject: Any) -> bool:
+        """Whether ``subject :p ?o`` reads the RPT triples table.
+
+        True for a subject an RPT type pattern already bound, and — when
+        the whole mapping is one triple store
+        (:meth:`SchemaResolver.triple_store_class`) — for any subject no
+        document FOR has bound: a constant IRI, a variable bound only to a
+        value (an earlier triple's object, a ``VALUES`` row), or a variable
+        seen for the first time. In a triple store those triples can only
+        be in the table, so routing there is the one correct reading, not a
+        guess. Records the routing in ``var_to_rpt_class``.
+        """
+        if isinstance(subject, Variable) and str(subject) in self.state.var_to_rpt_class:
+            return True
+        store = self.resolver.triple_store_class()
+        if store is None:
+            return False
+        if isinstance(subject, URIRef):
+            return True
+        if isinstance(subject, Variable) and str(subject) not in self.state.var_to_doc_alias:
+            self.state.var_to_rpt_class[str(subject)] = store
+            return True
+        return False
+
     def _emit_rpt_property_triple(
         self,
-        subject: Variable,
+        subject: Variable | URIRef,
         predicate: URIRef,
         obj: Any,
         triple: tuple[Any, Any, Any],
@@ -1961,21 +1985,37 @@ class AlgebraVisitor:
         * Literal object → equality FILTER on ``object_value`` only,
           since RDF literals never live in the URI column.
         """
-        rpt_class = self.state.var_to_rpt_class[str(subject)]
+        if isinstance(subject, URIRef):
+            store = self.resolver.triple_store_class()
+            if store is None:
+                raise AqlEmitError(f"RPT property triple on constant subject {subject} outside a triple store")
+            rpt_class = store
+        else:
+            rpt_class = self.state.var_to_rpt_class[str(subject)]
         triples_alias = self._open_collection(rpt_class.collection, resolved=rpt_class)
         # Record the per-class metadata so the OBJECT variable, if
         # bound here, joins through the same column overrides the
         # subject's class declared.
         pred_bind = self.builder.bind(str(predicate), hint="pred")
         self.builder.filter_eq(f"{triples_alias}.{rpt_class.predicate_column}", pred_bind)
-        # Join on subject URI: the subject's value lives in
-        # ``var_to_expr`` already (set by the type pattern emitter).
-        subj_expr = self.state.var_to_expr.get(str(subject))
-        if subj_expr is None:
-            raise AqlEmitError(f"RPT property triple references unbound subject ?{subject}")
         new_subj_expr = f"{triples_alias}.{rpt_class.subject_column}"
-        if subj_expr != new_subj_expr:
-            self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
+        if isinstance(subject, URIRef):
+            uri_bind = self.builder.bind(str(subject), hint="uri")
+            self.builder.filter_eq(new_subj_expr, uri_bind)
+        else:
+            # Join on subject URI: the subject's value lives in
+            # ``var_to_expr`` (set by the type pattern emitter, or by an
+            # earlier triple that bound it as an object). A subject seen
+            # for the first time in a triple store binds here, the same
+            # way the type pattern emitter binds it.
+            subj_expr = self.state.var_to_expr.get(str(subject))
+            if subj_expr is None:
+                if self.resolver.triple_store_class() is None:
+                    raise AqlEmitError(f"RPT property triple references unbound subject ?{subject}")
+                self.state.var_to_doc_alias[str(subject)] = triples_alias
+                self.state.var_to_expr[str(subject)] = new_subj_expr
+            elif subj_expr != new_subj_expr:
+                self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
         # OBJECT — variable / IRI / literal each take a different shape.
         coalesce_expr = (
             f"NOT_NULL({triples_alias}.{rpt_class.object_uri_column}, "
@@ -2522,7 +2562,6 @@ def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
     # Stable secondary so two triples with the same primary preserve
     # rdflib's order — keeps golden output deterministic.
     return (primary, 0)
-
 
 def _is_empty_bgp(node: Any) -> bool:
     """``True`` iff *node* is a ``BGP`` algebra node with zero

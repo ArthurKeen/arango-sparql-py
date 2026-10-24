@@ -29,7 +29,7 @@ graph directly so the lookup surface stays narrow and cacheable.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
@@ -177,6 +177,11 @@ class ResolvedProperty:
     range_iri: str | None = None
 
 
+#: The ``iri`` of the class :meth:`SchemaResolver.triple_store_class` returns:
+#: it stands for "any subject of the triple store", not an OWL class.
+TRIPLE_STORE_IRI = "urn:arango-sparql:triple-store"
+
+
 @dataclass
 class SchemaResolver:
     """Resolve SPARQL IRIs against the loaded OWL ontology.
@@ -315,6 +320,9 @@ class SchemaResolver:
     :meth:`attribute_uri_map`; ``None`` until first use."""
     _edge_properties: tuple[ResolvedProperty, ...] | None = field(default=None)
     """Lazily-built object-property mappings backed by edge collections."""
+    _triple_store_class: ResolvedClass | None = field(default=None)
+    """Cached result of :meth:`triple_store_class`."""
+    _triple_store_checked: bool = field(default=False)
     _shard_family_by_collection: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Reverse index: physical collection name → the shard family
     tuple it belongs to. Built once in :meth:`__post_init__` so
@@ -676,6 +684,47 @@ class SchemaResolver:
             mapping[attribute] = str(subject)
         self._attribute_uri_map = mapping
         return mapping
+
+    def triple_store_class(self) -> ResolvedClass | None:
+        """The triples table, when the whole mapping is one triple store.
+
+        When every ``owl:Class`` in the ontology is ``RPT``-style on the
+        same triples collection with the same columns, the database is a
+        pure triple store: any subject's triples can only be in that table.
+        The visitor then reads a subject that no type pattern routed (a
+        constant IRI, or a variable bound only to a value) from the triples
+        table instead of refusing it, which is how SPARQL over a triple
+        store normally reads (``?m :hasCreator ?p`` with no ``?m a :C``).
+
+        Returns ``None`` for any other mapping, including a hybrid one that
+        mixes RPT with PG or LPG classes: there an untyped subject could
+        live in several places, so it stays unroutable (and, under
+        ``strict_subject_resolution``, raises).
+        """
+        if self._triple_store_checked:
+            return self._triple_store_class
+        self._triple_store_checked = True
+        classes = sorted(
+            (c for c in self.ontology.subjects(RDF.type, OWL.Class) if isinstance(c, URIRef)), key=str
+        )
+        resolved = [self.resolve_class(c) for c in classes]
+        if not resolved or any(r.style != "RPT" for r in resolved):
+            return None
+
+        def layout(r: ResolvedClass) -> tuple[str, ...]:
+            return (
+                r.collection,
+                r.subject_column,
+                r.predicate_column,
+                r.object_uri_column,
+                r.object_value_column,
+                str(r.tenant_field),
+            )
+
+        if len({layout(r) for r in resolved}) != 1:
+            return None
+        self._triple_store_class = replace(resolved[0], iri=TRIPLE_STORE_IRI)
+        return self._triple_store_class
 
     def edge_properties(self) -> tuple[ResolvedProperty, ...]:
         """Return edge-backed object properties in deterministic IRI order.
