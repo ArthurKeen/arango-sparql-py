@@ -42,6 +42,8 @@ from .optional_crosssubject import (
     emit_rpt_cross_subject_optional,
     is_rpt_cross_subject_optional,
 )
+from .optional_subquery import emit_optional_subquery
+from .optional_subquery import needs_subquery as needs_optional_subquery
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, ResolvedProperty, SchemaResolver
 from .subselect import emit_to_multiset
@@ -655,24 +657,26 @@ class AlgebraVisitor:
         self.visit(node.p1)
 
         p2 = node.p2
-        if getattr(p2, "name", None) != "BGP":
-            # OPTIONAL { OPTIONAL { … } } and OPTIONAL { ?s :p ?o
-            # FILTER(?o) UNION ?s :q ?o } both land here; defer until
-            # we have a corpus example so we don't ship an
-            # ad-hoc semantics for them.
-            raise UnsupportedSparqlError(
-                f"OPTIONAL whose body is {p2.name!r} (not a plain BGP) is not yet supported"
-            )
 
         # RPT-native cross-subject OPTIONAL (ADR-0002 Problem 1, Option
         # A): the OPTIONAL subject is bound only as a *value* by the
         # required side, and we're in RPT mode, so the OPTIONAL is a
-        # plain left-join scan of the triples table. Everything else
-        # (PG/LPG/default cross-subject) still falls through to the
-        # structured rejection below.
-        if is_rpt_cross_subject_optional(self, p2, node):
+        # plain left-join scan of the triples table.
+        if getattr(p2, "name", None) == "BGP" and is_rpt_cross_subject_optional(self, p2, node):
             emit_rpt_cross_subject_optional(self, p2.triples[0], node)
             return
+
+        # Any other shape the inline emitter below cannot lower — a body
+        # that is not a plain BGP, or a triple whose subject the required
+        # side did not open as a document — is the optional pattern run as
+        # a correlated subquery (ADR-0002 Option A, generalised).
+        if needs_optional_subquery(self, p2):
+            emit_optional_subquery(self, node)
+            return
+        if getattr(p2, "name", None) != "BGP":
+            raise UnsupportedSparqlError(
+                f"OPTIONAL whose body is {p2.name!r} (not a plain BGP) is not supported inside a MINUS probe"
+            )
 
         # Walk the optional triples once to collect (var, source_expr)
         # pairs, *without* mutating ``var_to_expr`` yet — the inner

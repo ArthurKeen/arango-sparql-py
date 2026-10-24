@@ -383,23 +383,23 @@ cases:
       PREFIX : <http://ex.org/>
       SELECT ?s WHERE { ?s a :Person } OFFSET 5
 
-  - name: neg-optional-nonvariable-object
-    # Confirmed trigger: `OPTIONAL { ?o :name "Alice" }` binds a constant
-    # (non-variable) object inside an OPTIONAL block — an existence test, not
-    # a binding. Verified message: "OPTIONAL with a non-variable object is
-    # not yet supported".
-    nl: "For each person, list who they know, and note separately whether that acquaintance is specifically named Alice."
+  - name: neg-federated-service
+    # Replaced `neg-optional-nonvariable-object` (2026-10-24): the transpiler
+    # now lowers OPTIONAL bodies it used to refuse as a correlated subquery
+    # (arango_sparql/translate/optional_subquery.py), so that case's premise —
+    # "the transpiler refuses this" — no longer held. Federation is a
+    # permanent non-goal (PRD §2), so this refusal cannot go stale.
+    nl: "For each person, look up their birthplace on the public DBpedia SPARQL endpoint."
     expect_refusal: true
     expected: |
-      Unsupported: an OPTIONAL block whose object is a constant literal
-      ("OPTIONAL with a non-variable object is not yet supported") is an
-      existence test the transpiler explicitly refuses rather than
-      reinterpret as a FILTER.
+      Unsupported: federated SERVICE queries that call a remote SPARQL
+      endpoint are out of scope for this service (PRD §2); the honest
+      response is a refusal rather than silently dropping the remote part.
     scripted: |
       PREFIX : <http://ex.org/>
-      SELECT ?s ?o WHERE {
-        ?s a :Person ; :knows ?o .
-        OPTIONAL { ?o :name "Alice" }
+      SELECT ?s ?b WHERE {
+        ?s a :Person .
+        SERVICE <https://dbpedia.org/sparql> { ?s <http://dbpedia.org/ontology/birthPlace> ?b }
       }
 
   - name: neg-optional-variable-predicate
@@ -436,23 +436,20 @@ cases:
       PREFIX : <http://ex.org/>
       SELECT (AVG(DISTINCT ?a) AS ?avg) WHERE { ?s a :Person ; :age ?a }
 
-  - name: neg-optional-union-body
-    # Confirmed trigger: an OPTIONAL block whose body is a UNION (not a plain
-    # BGP) is deferred pending a corpus need. Verified message: "OPTIONAL
-    # whose body is 'Union' (not a plain BGP) is not yet supported".
-    nl: "List each person's name, or their email as a fallback if the name is not known."
+  - name: neg-update-delete
+    # Replaced `neg-optional-union-body` (2026-10-24): an OPTIONAL whose body is
+    # a UNION now translates (arango_sparql/translate/optional_subquery.py), so
+    # that case's premise no longer held. The service is read-only and rejects
+    # SPARQL Update by design (PRD §5.2), so this refusal cannot go stale.
+    nl: "Delete every person named Bob."
     expect_refusal: true
     expected: |
-      Unsupported: an OPTIONAL block whose body is a UNION rather than a
-      plain BGP ("OPTIONAL whose body is 'Union' (not a plain BGP) is not
-      yet supported") is deferred; the honest response is a refusal rather
-      than guessing at nested-OPTIONAL/UNION semantics.
+      Unsupported: SPARQL Update (DELETE, INSERT, …) is rejected — this is a
+      read-only service (PRD §5.2); the honest response is a refusal rather
+      than a query that pretends to delete.
     scripted: |
       PREFIX : <http://ex.org/>
-      SELECT ?s ?n WHERE {
-        ?s a :Person .
-        OPTIONAL { { ?s :name ?n } UNION { ?s :email ?n } }
-      }
+      DELETE WHERE { ?s :name "Bob" }
 
   # =====================================================================
   # Absent-schema-term refusals (Task 2): domain-flavored questions genuinely

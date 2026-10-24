@@ -524,3 +524,44 @@ def test_untyped_subjects_stay_unroutable_outside_a_triple_store(
 ) -> None:
     resolver = SchemaResolver.from_turtle(ontology_ttl)
     assert resolver.triple_store_class() is None
+
+
+# ----------------------------------------------------------------------
+# OPTIONAL as a correlated subquery (optional_subquery.py): bodies the
+# inline emitter cannot lower — a subject the required side bound only as a
+# value, several triples, a BIND, an inner FILTER — on every model.
+# ----------------------------------------------------------------------
+OPTIONAL_SUBQUERY_CASES = [
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n ?d WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        "OPTIONAL { ?p a :Person ; :name ?n ; :dept ?d } }",
+        id="cross_subject_multi_triple",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?a2 WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        "OPTIONAL { ?p a :Person ; :age ?a . BIND(?a * 2 AS ?a2) } }",
+        id="cross_subject_with_bind",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        'OPTIONAL { ?p a :Person ; :name ?n ; :dept "nowhere" } }',
+        id="cross_subject_never_matches",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        "OPTIONAL { ?p a :Person ; :name ?n ; :age ?a FILTER(?a > 35) } }",
+        id="cross_subject_inner_filter",
+    ),
+]
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("ontology_ttl,docs_factory", MODELS)
+@pytest.mark.parametrize("sparql", OPTIONAL_SUBQUERY_CASES)
+def test_optional_subquery_matches_oxigraph(
+    oxi_store: Any, ontology_ttl: str, docs_factory: Any, sparql: str
+) -> None:
+    actual = _run_model(ontology_ttl, docs_factory, sparql)
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert expected
+    assert_bindings_equal(expected, actual)
