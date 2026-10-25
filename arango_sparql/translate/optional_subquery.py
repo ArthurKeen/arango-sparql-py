@@ -94,7 +94,7 @@ def needs_subquery(visitor: AlgebraVisitor, p2: Any) -> bool:
     if getattr(p2, "name", None) != "BGP":
         return True
     triples = getattr(p2, "triples", []) or []
-    if any(not isinstance(p, URIRef) for _s, p, _o in triples):
+    if any(isinstance(p, Variable) for _s, p, _o in triples):
         # A variable predicate in an OPTIONAL is ADR-0002 Option B, which was
         # deferred: without declared properties ``?p`` binds attribute names,
         # not IRIs. Keep refusing it rather than change that decision here.
@@ -102,6 +102,8 @@ def needs_subquery(visitor: AlgebraVisitor, p2: Any) -> bool:
     for s, p, o in triples:
         if not (isinstance(s, Variable) and str(s) in visitor.state.var_to_doc_alias):
             return True
+        # A property path (``:replyOf*``) is not a URIRef either: the inline
+        # emitter reads one attribute or one edge, so paths go to the subquery.
         if not isinstance(p, URIRef) or not isinstance(o, Variable):
             return True
     return False

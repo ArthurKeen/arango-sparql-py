@@ -189,6 +189,12 @@ CASES = [
     pytest.param("SELECT ?p ?n WHERE { ?p :firstName ?n }", id="single_domain_fresh_subject"),
     pytest.param("SELECT ?n WHERE { :dan :firstName ?n }", id="single_domain_constant_subject"),
     pytest.param("SELECT ?p WHERE { :comm2 :replyOf ?p }", id="edge_from_a_constant_routed_by_domain"),
+    # A property path inside an OPTIONAL goes to the correlated subquery
+    # (optional_subquery.py); the inline emitter reads one attribute or edge.
+    pytest.param(
+        "SELECT ?n ?fn WHERE { ?p :firstName ?n . OPTIONAL { ?p :directKnows/:firstName ?fn } }",
+        id="path_inside_optional",
+    ),
 ]
 
 
