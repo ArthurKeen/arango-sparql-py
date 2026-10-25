@@ -152,6 +152,8 @@ def _emit_subselect(
         base_iri=visitor.base_iri,
         explicit_projection=list(inner_pv),
     )
+    # Shared sigil counters (see _BindingState.counters).
+    child_visitor.state.counters = visitor.state.counters
     child_visitor.visit(inner)
 
     inner_aql = visitor.builder.absorb_child(child_builder)

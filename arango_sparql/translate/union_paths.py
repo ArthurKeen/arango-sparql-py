@@ -304,12 +304,12 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
       a single AQL parameter no matter how many UNION arms touch
       tenant-scoped collections.
 
-    The two counters on ``BindingState`` (``path_var_counter`` and
-    ``bgp_counter``) are deliberately NOT propagated — they mint
-    internal sigil names (``_path_<n>`` / ``_bn_<bgp>_<label>``)
-    whose scope is intra-arm, and resetting them per child gives
-    deterministic per-arm AQL even when arms re-enter the same
-    visitor code path.
+    The sigil counters (``state.counters``: ``_path_<n>`` /
+    ``_bn_<bgp>_<label>``) are SHARED with the parent, not reset: the
+    child is seeded with the outer bindings, so a child restarting at
+    ``_path_1`` would re-use an outer ``_path_1`` and join unrelated
+    intermediates (LDBC IC6). Sharing keeps every minted name unique in
+    the query and the AQL deterministic.
 
     Counter sharing follows the standard
     :meth:`AqlQueryBuilder.create_child` /
@@ -328,6 +328,7 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         base_iri=visitor.base_iri,
     )
     cv.state.var_to_expr = dict(visitor.state.var_to_expr)
+    cv.state.counters = visitor.state.counters
     # An outer variable an arm re-projects keeps "can be unbound" (#59).
     cv.state.maybe_unbound = set(visitor.state.maybe_unbound)
     cv.state.graph_scope = list(visitor.state.graph_scope)

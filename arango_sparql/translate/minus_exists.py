@@ -244,6 +244,9 @@ def _translate_probe(
     # against the outer's expressions (the SPARQL compatibility
     # check, expressed in AQL).
     child_visitor.state.var_to_expr = dict(visitor.state.var_to_expr)
+    # Shared, so names minted inside the probe never collide with the
+    # outer scope's ``_path_<n>`` / ``_bn_…`` (see _BindingState.counters).
+    child_visitor.state.counters = visitor.state.counters
     if allow_optional_rebind:
         # Switch the child out of "reject re-bind" mode (ADR-0002
         # Problem 2) into conditional-add mode; visit_LeftJoin appends

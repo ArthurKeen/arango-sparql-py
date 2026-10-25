@@ -54,6 +54,14 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class _SigilCounters:
+    """Monotone counters behind :attr:`_BindingState.counters`."""
+
+    path: int = 0
+    bgp: int = 0
+
+
+@dataclass
 class _BindingState:
     """Per-query SPARQL→AQL binding tables.
 
@@ -132,16 +140,15 @@ class _BindingState:
 
     distinct: bool = False
 
-    path_var_counter: int = 0
-    bgp_counter: int = 0
-    """Monotone counter for intermediate variables minted during
-    property-path expansion (see :mod:`arango_sparql.translate.paths`).
-    Lives on the binding state — not on the builder — because the
-    expanded variable names (``?_path_<n>``) participate in the
-    SPARQL variable namespace (they can be referenced from sibling
-    triples in the same BGP after they're bound), even though the
-    user can never refer to one explicitly. Reset implicitly on
-    every new visitor instance, so per-query state is isolated."""
+    counters: _SigilCounters = field(default_factory=lambda: _SigilCounters())
+    """Counters for the internal variables the visitor mints
+    (``?_path_<n>`` property-path intermediates, ``?_bn_<bgp>_<label>``
+    blank-node existentials). One instance per query, shared by every
+    child visitor (UNION / OPTIONAL / MINUS / EXISTS / sub-SELECT):
+    a child is seeded with the outer scope's bindings, so a child that
+    restarted at ``_path_1`` re-used an outer ``_path_1`` and joined
+    two unrelated intermediates (LDBC IC6: friend-of-a-friend joined to
+    the tag of the outer ``hasTag/foaf:name`` path)."""
 
     graph_scope: list[Any] = field(default_factory=list)
     """Stack of active SPARQL named-graph scopes. Each entry is the
@@ -1514,8 +1521,8 @@ class AlgebraVisitor:
         downstream "predicate type unsupported" error than
         silently rewrite to a variable predicate.
         """
-        self.state.bgp_counter += 1
-        bgp_id = self.state.bgp_counter
+        self.state.counters.bgp += 1
+        bgp_id = self.state.counters.bgp
         label_to_var: dict[str, Variable] = {}
 
         def _convert(term: Any) -> Any:
@@ -1550,8 +1557,8 @@ class AlgebraVisitor:
         never collide with what we generate here).
         """
 
-        self.state.path_var_counter += 1
-        return Variable(f"_path_{self.state.path_var_counter}")
+        self.state.counters.path += 1
+        return Variable(f"_path_{self.state.counters.path}")
 
     # ------------------------------------------------------------------
     # Internal: triple-pattern emission
