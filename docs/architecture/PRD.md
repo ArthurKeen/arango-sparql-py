@@ -38,7 +38,7 @@ behavioural rules (the rest is architecture description).
 | 10 | [UI / Workbench](#10-ui--workbench)                    | ✅ (10.10, 10.11) |
 | 11 | [Third-party tool compatibility](#11-third-party-tool-compatibility-the-sparql-protocol-audience) |            |
 | 12 | [Cross-project integration](#12-cross-project-integration) |        |
-| 13 | [Conformance & testing](#13-conformance--testing)      | ✅ (13.1) |
+| 13 | [Conformance & testing](#13-conformance--testing)      | ✅ (13.1, 13.6) |
 | 14 | [Release roadmap](#14-release-roadmap)                 |            |
 | 15 | [Deployment & operations](#15-deployment--operations)  | ✅ |
 | 16 | [Versioning & upgrades](#16-versioning--upgrades)      | ✅ |
@@ -1709,6 +1709,10 @@ Out-of-scope budgets (deferred to v1.1+): query-cache hit rate, sub-100ms
 NL pipeline latency (LLM-bound), federated `SERVICE` (out of scope per
 §2).
 
+Realistic-workload performance (translation and AQL execution of the LDBC
+SNB reads on the RPT, LPG and PG layouts) is measured by the §13.6 harness.
+It is **report-only** and sets no budget here.
+
 ### 9.5 Metrics & tracing format
 
 The service emits **Prometheus-format metrics** on a separate port (default
@@ -2568,6 +2572,8 @@ developmentally a sister:
 | Security testing (each row corresponds to a §8.6 STRIDE row) | `security` | ~ 30 s | per-PR (CI-blocking) |
 | Dependency CVE scan (`pip-audit`, `npm audit --omit=dev`) | n/a (CI step) | < 60 s | per-PR (CI-blocking on HIGH+) |
 | NL eval | `eval` | minutes | gated on `RUN_EVAL=1`; baseline-comparison CI-blocking once it lands |
+| LDBC SNB ledger ratchet (translation tier, no data; §13.6) | `ldbc` | < 5 s | per-PR (CI-blocking once WP-LDBC-CORPUS lands) |
+| LDBC SNB execution vs oracles (SF0.1, three layouts, Docker; §13.6) | `ldbc` + `integration` | minutes | nightly + on-demand (non-blocking; feeds the ledger) |
 
 **Security testing rows** (the `security` marker maps to one test file
 per row in `tests/security/`):
@@ -3145,6 +3151,97 @@ after the v0.9 slice. The next natural slice is `MulPath`
 (`:p+`, `:p*`, `:p?`), which now contains 11 algebra XFAILs
 (the original 9 plus the 2 that cleared the GRAPH hurdle in
 v0.9) for an approximate +4.4 pp bump.
+
+### 13.6 LDBC SNB benchmark (validation + performance)
+
+**Status: in progress (proposed 2026-10-23; harness implemented
+2026-10-24).** Research, baseline probe, decisions, findings and work
+packages are in [`ldbc_benchmark_plan.md`](./ldbc_benchmark_plan.md); work
+package status is in `implementation_plan.md` (`WP-LDBC-*`).
+The sister project specifies the same harness for Cypher
+(`arango-cypher-py` PRD §12.1).
+
+The LDBC Social Network Benchmark's reference SPARQL queries, run on its
+generated data, are a fourth evidence tier. They sit beside the goldens, the
+W3C DAWG suite (language coverage on tiny graphs) and the `pyoxigraph`
+cross-validation (hand-built corpora). They are realistic multi-hop SPARQL
+written by someone else, run against millions of triples in every physical
+layout.
+
+- **LDBC-1 Corpus.** The 21 SNB Interactive v1 reads (IS1–IS7, IC1–IC14) are
+  vendored **verbatim** from the GraphDB reference implementation in
+  `ldbc/ldbc_snb_interactive_v1_impls`, pinned to an upstream commit, with
+  Apache-2.0 attribution. These are the only SNB queries with a SPARQL
+  reference.
+  - Verbatim files MUST NOT be edited.
+  - An adaptation is a separately labelled variant, with a stated reason. For
+    example, a standard-SPARQL rewrite of a GraphDB extension, or of a
+    construct that `pyoxigraph` rejects.
+  - Verbatim and variant outcomes are reported separately.
+  - The update operations are out of scope: this service rejects SPARQL Update
+    (§5.2).
+- **LDBC-2 Layouts.** Every read is measured on three layouts:
+  - **RDF** (`RPT`, collection `triples`: ArangoDB reserves leading-underscore
+    names for system collections, so the legacy Foxx `_triples` cannot be
+    created);
+  - **LPG** (`LABEL` + `GENERIC_WITH_TYPE`);
+  - **PG** (`COLLECTION` + `DEDICATED_COLLECTION`).
+
+  All three, and the oracle, load **one normalised dataset**: the published
+  Turtle with symmetric `snvoc:directKnows` materialised and blank nodes
+  skolemised. One deterministic, idempotent loader does the work.
+  - Each load MUST verify that per-class and per-relationship counts are equal
+    across the RDF source and the three layouts.
+  - Each layout has a committed mapping fixture.
+  - The mapping acquired live from each layout is diffed against its fixture.
+- **LDBC-3 Outcome ledger.** Each read × layout records one state per tier.
+  The passing path is `translates` → `executes` → `matches_oracle`; any other
+  state is terminal and carries a reason:
+  - **Translation:** `fails_closed`, `parse_error`, `out_of_subset` (a vendor
+    extension with no standard equivalent), `crash` (an exception that is not
+    a typed refusal: always a defect).
+  - **Execution:** `execution_error` (ArangoDB rejected the AQL), `timeout`
+    (the per-query time limit), `resource_limit` (the per-query memory limit).
+  - **Oracle:** `translates_wrong` (the answer differs from the oracle's),
+    `oracle_unavailable` (the oracle refused, timed out or failed, so the
+    answer is unchecked), `oracle_disagrees` (the two oracles disagree: a
+    query-text defect; needs the second oracle, LDBC-4).
+
+  A per-cell ratchet in the default suite (translation tier, no data) MUST fail
+  CI when a cell leaves a passing state or an improvement goes unrecorded.
+- **LDBC-4 Oracles.** There are two oracles, both automated:
+  - **`pyoxigraph`** runs the same SPARQL text on the same normalised data. It
+    is the translator's oracle (hard rule 5).
+  - **LDBC's published Interactive v1 validation parameters** check the SPARQL
+    text itself. They interleave updates with reads, so they apply only once
+    those updates are replayed on the oracle (plan §2.4); until then
+    pyoxigraph is the only oracle.
+  - The oracle MUST NOT make network calls: a query that uses `SERVICE` is
+    refused, not sent.
+
+  Ordered comparison applies only when the query's ordering is total.
+- **LDBC-5 Fail closed.** `translates_wrong` is a defect, and it takes priority
+  over unsupported features. A construct the translator cannot lower correctly
+  MUST raise `UnsupportedSparqlError`, not emit plausible AQL.
+- **LDBC-6 Performance.**
+  - **What is timed:** translation time is reported separately from execution
+    time. For each read × layout × scale factor, the harness reports p50/p95/p99
+    after warm-up, with server-side execution time and an `EXPLAIN` plan
+    digest.
+  - **What is recorded with each run:** the environment (versions, hardware,
+    scale factor, data digest, git SHA).
+  - **Where results go:** they are emitted as JSON. Published prose is
+    generated from them, never hand-copied.
+  - **Gate:** report-only (§9.4 tiering).
+- **LDBC-7 Fair use.** Every published number MUST carry "These are not LDBC
+  Benchmark Results" and attribution. The harness MUST NOT be described as an
+  implementation of an LDBC Benchmark.
+- **LDBC-8 Scale.**
+  - CI runs the translation ratchet only, which needs no data.
+  - SF0.1 (the smallest published Turtle: 27 MB compressed, 4.0 M triples) runs
+    nightly, downloaded on demand with a pinned SHA-256 and cached. It is never
+    vendored.
+  - SF1 and larger run manually.
 
 ---
 
@@ -3866,6 +3963,7 @@ Terms are alphabetised; reference the section where each first appears.
 | **Hybrid schema** | An ArangoDB schema that uses two or more of the physical models (`COLLECTION` / `LABEL` / `RPT` / `DOCUMENT`) at the same time. *Not* a fifth model — just the case where the bundle's `physicalMapping.entities[*].style` values are mixed. |
 | **JWT** | JSON Web Token (RFC 7519). The auth-bearer format AOE forwards into the SPARQL service when the deployment uses upstream-issued tokens (§12.2 row 4); we never validate signatures, only forward (§8.6 T2). |
 | **K8s probes** (liveness / readiness / startup) | Three orthogonal Kubernetes-style health checks (§9.6). Liveness restarts a stuck pod; readiness gates ingress traffic; startup gates the readiness check during long warm-up windows. |
+| **LDBC SNB** | The Linked Data Benchmark Council's Social Network Benchmark. Its Interactive v1 workload has a SPARQL reference implementation and a Turtle data set. We use it as a validation and performance corpus (§13.6), not as an audited benchmark. |
 | **Lighthouse CI** | [Google's automated web-performance testing tool](https://github.com/GoogleChrome/lighthouse-ci). Drives §10.11 UI performance budget enforcement. |
 | **LPG** | Labeled Property Graph — physical model where one shared collection holds multiple OWL classes, discriminated by a `typeField`. OWL annotation: `phys:mappingStyle "LABEL"`. |
 | **LRU** | Least-Recently-Used cache eviction policy. Used by the L1 in-process schema cache (§15.5) and by the session table when `MAX_SESSIONS` overflows (§8.1). |
