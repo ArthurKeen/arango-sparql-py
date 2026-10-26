@@ -219,6 +219,9 @@ def _emit_union_of_arms(
     for driver in arm_drivers:
         cv = _spawn_child(visitor)
         driver(cv)
+        # An arm that only reads an outer document opens no FOR of its own.
+        if not cv.builder.has_for_clause():
+            cv.builder.open_one_row_scope_first(cv.builder.fresh_alias(prefix="empty"))
         unbound_in_some_arm.update(
             name for name in all_vars if name not in cv.state.var_to_expr or name in cv.state.maybe_unbound
         )
@@ -333,6 +336,18 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
     cv.state.maybe_unbound = set(visitor.state.maybe_unbound)
     cv.state.graph_scope = list(visitor.state.graph_scope)
     cv.state.var_to_rpt_class = dict(visitor.state.var_to_rpt_class)
+    # An outer PG/LPG document stays a document in the arm: AQL subqueries
+    # see outer FOR variables, so a triple from an outer-bound subject
+    # traverses from that document instead of re-reading the subject (a scan
+    # routed by the property's domain, joined back on its IRI). In IS6 the
+    # re-read ran once per path-length arm and tripped an ArangoDB 3.12.9
+    # planner error (ERR 4, "missing variable … for node … TraversalNode").
+    # RPT aliases are triples rows, not documents, and stay out.
+    cv.state.var_to_doc_alias = {
+        name: alias
+        for name, alias in visitor.state.var_to_doc_alias.items()
+        if name not in visitor.state.var_to_rpt_class
+    }
     cv.state.tenant_entity = visitor.state.tenant_entity
     cv.state.tenant_bind_placeholder = visitor.state.tenant_bind_placeholder
     return cv

@@ -81,13 +81,12 @@ cases:
       "@c2_Document": "Document"
 
   - name: union_inside_outer_bgp
-    # The outer BGP binds ``?s``; the UNION then references the
-    # same ``?s`` in both arms. The outer's ``var_to_expr`` is
-    # pre-seeded into each child, so each arm's BGP emitter sees
-    # ``?s`` is already bound and emits ``FILTER doc.<n>._uri ==
-    # doc1._uri`` instead of opening a free FOR. AQL's lexical
-    # scoping makes the outer ``doc1`` alias visible inside each
-    # arm's ``(...)`` block, so the FILTER is valid.
+    # The outer BGP binds ``?s`` to the document ``doc1``; the UNION
+    # then references the same ``?s`` in both arms. The outer's
+    # bindings, documents included, are pre-seeded into each child, so
+    # each arm reads ``doc1`` directly (AQL subqueries see outer FOR
+    # variables) instead of re-reading ?s and joining it back on its
+    # IRI. An arm that opens no FOR of its own gets a one-row scope.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?s ?n ?o WHERE {
@@ -99,23 +98,19 @@ cases:
       FILTER HAS(doc1, "name")
       FOR row4 IN UNION(
       (
-        FOR doc2 IN @@c2_Document
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
-        FILTER HAS(doc2, "p")
-        RETURN { o: doc2.p }
+        FOR empty2 IN [1]
+        FILTER HAS(doc1, "p")
+        RETURN { o: doc1.p }
       ),
       (
-        FOR doc3 IN @@c3_Document
-        FILTER NOT_NULL(doc3._uri, doc3._id) == NOT_NULL(doc1._uri, doc1._id)
-        FILTER HAS(doc3, "q")
-        RETURN { o: doc3.q }
+        FOR empty3 IN [1]
+        FILTER HAS(doc1, "q")
+        RETURN { o: doc1.q }
       )
       )
       RETURN { s: NOT_NULL(doc1._uri, doc1._id), n: doc1.name, o: row4.o }
     expected_bind_vars:
       "@c1_Document": "Document"
-      "@c2_Document": "Document"
-      "@c3_Document": "Document"
 
   # ---- AlternativePath ----------------------------------------------
 
