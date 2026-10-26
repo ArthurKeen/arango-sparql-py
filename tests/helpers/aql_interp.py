@@ -198,6 +198,12 @@ _AQL_BUILTINS: dict[str, Any] = {
     # matches when the predicate is actually present on the subject,
     # so missing-attribute documents must be excluded from the result.
     "HAS": lambda doc, attr: isinstance(doc, dict) and attr in doc,
+    # ``IS_SAME_COLLECTION(name, doc)``: whether the document (or ``_id``
+    # string) lives in collection *name*, as ArangoDB reads its ``_id``.
+    # A reverse traversal keeps its vertices in the subject's collections.
+    "IS_SAME_COLLECTION": lambda name, doc: (
+        (doc.get("_id") if isinstance(doc, dict) else doc or "").split("/", 1)[0] == name
+    ),
     "LOWER": lambda v: None if v is None else str(v).lower(),
     "UPPER": lambda v: None if v is None else str(v).upper(),
     "LENGTH": lambda v: None if v is None else len(v),

@@ -2172,9 +2172,13 @@ class AlgebraVisitor:
         reverse_source = self._reverse_traversal_source(subject, prop, obj)
         if reverse_source is not None:
             # The subject is unknown but the object is a document: walk the
-            # edge backwards from it. The edge collection reaches every
-            # subject class by itself (LDBC ``?m :hasCreator ?p`` finds posts
-            # and comments alike), so no subject collection is needed.
+            # edge backwards from it. One edge collection can reach several
+            # subject classes (LDBC ``?m :hasCreator ?p`` finds posts and
+            # comments alike), but it can also reach a copy of the same IRI
+            # in another collection (the W3C loader stores a typed resource
+            # in ``Document`` and in its class collection, each with its own
+            # edges), which duplicated rows (W3C ``sparqldl-07``). So keep
+            # the vertices in the collections the forward plan reads.
             v_alias = self.builder.fresh_alias(prefix="v")
             e_alias = self.builder.fresh_alias(prefix="e")
             self.builder.for_traversal(
@@ -2185,6 +2189,7 @@ class AlgebraVisitor:
                 direction="ANY" if prop.symmetric else "INBOUND",
             )
             self._filter_edge_type(prop, e_alias)
+            self._keep_subject_collections(v_alias, prop)
             self.state.doc_to_collection[v_alias] = prop.edge_collection
             self._bind_subject(subject, v_alias)
             return
@@ -2293,6 +2298,36 @@ class AlgebraVisitor:
         self.builder.filter_raw(subject_matches(alias, uri_bind))
         self.state.const_subject_alias[str(obj)] = alias
         return alias
+
+    def _keep_subject_collections(self, v_alias: str, prop: Any) -> None:
+        """Restrict a reverse traversal's vertex to the subject's collections.
+
+        The forward plan reads an untyped subject from its property's
+        ``rdfs:domain`` collections (:meth:`_route_by_domain`), else from the
+        default collection; the reverse walk keeps only vertices there, and
+        applies the tenant FILTER the forward plan's class would have. A
+        strict mapping with no domain has no forward plan to match (it
+        refuses the subject), so its vertices stay as the edge finds them.
+        """
+        classes = [self.resolver.resolve_class(iri) for iri in self.resolver.domain_classes(prop.iri)]
+        if any(c.style == "RPT" for c in classes):
+            classes = []  # as _route_by_domain: an RPT domain does not route
+        if classes:
+            collections = sorted({c.collection for c in classes})
+        elif not self.resolver.strict_subject_resolution:
+            collections = [self.resolver.default_collection]
+        else:
+            return
+        tests = [f"IS_SAME_COLLECTION({self.builder.bind(c, hint='coll')}, {v_alias})" for c in collections]
+        self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        tenant_fields = {(c.tenant_field, c.tenant_entity) for c in classes}
+        if len(tenant_fields) > 1:
+            raise UnsupportedSparqlError(
+                f"the subject of {prop.iri!r} can be in classes with different tenant "
+                f"scoping; a reverse traversal cannot apply one tenant filter to them"
+            )
+        if classes:
+            self._enforce_tenant_scope(v_alias, classes[0])
 
     def _route_by_domain(self, subject: Any, prop: Any) -> str | None:
         """Open the collection ``prop``'s ``rdfs:domain`` puts *subject* in.

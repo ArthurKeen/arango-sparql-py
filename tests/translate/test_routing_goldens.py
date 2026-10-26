@@ -35,8 +35,20 @@ def test_a_constant_object_is_looked_up_in_its_range_and_walked_inbound() -> Non
         "FOR doc1 IN @@c1_Person\n"
         "FILTER (doc1._uri == @_p1_uri || (doc1._uri == null && doc1._id == @_p1_uri))\n"
         "FOR v2, e3 IN INBOUND doc1 @@c2_has_creator\n"
+        # The forward plan reads ?m from hasCreator's domain (Post ∪ Comment).
+        "FILTER (IS_SAME_COLLECTION(@_p2_coll, v2) || IS_SAME_COLLECTION(@_p3_coll, v2))\n"
         "RETURN { m: NOT_NULL(v2._uri, v2._id) }"
     )
+
+
+def test_a_reverse_walk_keeps_only_the_subjects_collections() -> None:
+    """W3C ``sparqldl-07``: a resource stored in two collections, each copy with
+    its own edges, must not be reached twice by walking an edge backwards."""
+    resolver = SchemaResolver.from_turtle(PG_ONTOLOGY)
+    result = translate(
+        "PREFIX : <http://ex.org/>\nSELECT ?m WHERE { ?m :hasCreator :bob }", resolver=resolver
+    )
+    assert {result.bind_vars["_p2_coll"], result.bind_vars["_p3_coll"]} == {"Comment", "Post"}
 
 
 def test_an_lpg_union_domain_is_an_any_of_label_test() -> None:
