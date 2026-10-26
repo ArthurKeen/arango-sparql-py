@@ -1,0 +1,41 @@
+# A dedicated ArangoDB for the LDBC SNB harness (PRD §13.6, tests/ldbc/).
+#
+#   docker compose -f docker-compose.ldbc.yml up -d
+#
+# Separate from the integration-test ArangoDB (docker-compose.yml, port 8532)
+# for two reasons:
+#
+# * Memory. ArangoDB sizes its caches from the memory it detects. On a shared
+#   Docker VM it detects the whole VM, grows into memory other containers hold,
+#   and gets OOM-killed under the LDBC load (seen at SF0.1 on 2026-10-24). Here
+#   the container is capped and told the cap, so its caches fit inside it.
+# * Measurement. Benchmark timings should not compete with test traffic, and
+#   the ~6 M loaded documents should not live in the test database's volume.
+#
+# LDBC_ARANGO_MEMORY sets both the cap and what ArangoDB believes it has.
+# Telling ArangoDB its cap was not enough on its own: a runaway query (IS2
+# before the join-order fix) still got the 3 GB container OOM-killed. The
+# budgets below are explicit and sum well under the cap: queries 1.5 GB in
+# total (1 GiB each), RocksDB block cache and write buffers 256 MB each, the
+# in-memory index cache 128 MB.
+services:
+  arangodb-ldbc:
+    image: arangodb:3.12
+    container_name: arango-sparql-py-ldbc
+    environment:
+      ARANGO_ROOT_PASSWORD: ${ARANGO_ROOT_PASSWORD:-rootpw}
+      ARANGODB_OVERRIDE_DETECTED_TOTAL_MEMORY: ${LDBC_ARANGO_MEMORY:-3G}
+    mem_limit: ${LDBC_ARANGO_MEMORY:-3G}
+    command:
+      - --query.memory-limit=1073741824
+      - --query.global-memory-limit=1610612736
+      - --rocksdb.block-cache-size=268435456
+      - --rocksdb.total-write-buffer-size=268435456
+      - --cache.size=134217728
+    ports:
+      - "${LDBC_ARANGO_HOST_PORT:-8533}:8529"
+    volumes:
+      - ldbc_arango_data:/var/lib/arangodb3
+
+volumes:
+  ldbc_arango_data:

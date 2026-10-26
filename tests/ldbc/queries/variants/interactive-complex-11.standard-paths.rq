@@ -1,0 +1,52 @@
+# Variant of interactive-complex-11.rq (ldbc/ldbc_snb_interactive_v1_impls@11db98c,
+# graphdb/queries), Apache-2.0. Labelled variant per
+# docs/architecture/ldbc_benchmark_plan.md decision D3; the verbatim
+# file is never edited.
+#
+# Change: GraphDB's path search (SERVICE <http://www.ontotext.com/path#search>)
+# is replaced by standard SPARQL 1.1: a UNION of the 1- and 2-hop directKnows
+# paths, excluding the start person. The reference binds ?fr to every
+# node on a shortest path of at most 2 hops; each such node is itself within
+# 2 hops, and the outer pattern re-checks its job, so the answer is the same. Nothing else changes.
+
+PREFIX snvoc: <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+PREFIX sn: <http://www.ldbc.eu/ldbc_socialnet/1.0/data/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+PREFIX onto: <http://www.ontotext.com/path#>
+select ?fr ?first ?last ?orgname ?startdate
+where {
+    {
+        select distinct ?fr
+        where {
+            VALUES (?source) {
+                ( sn:pers%personId% )
+            }
+            ?w snvoc:hasOrganisation ?org .
+            ?org foaf:name ?orgname .
+            ?org snvoc:isLocatedIn ?country.
+            ?country foaf:name "%countryName%" .
+            ?destination snvoc:workAt ?w .
+            ?w snvoc:workFrom ?startdate .
+            filter (?startdate < "%workFromYear%"^^xsd:integer) .
+            {
+                ?source snvoc:directKnows ?destination .
+            } UNION {
+                ?source snvoc:directKnows/snvoc:directKnows ?destination .
+                FILTER (?destination != ?source)
+            }
+            BIND (?destination AS ?fr)
+        }
+    } .
+    ?w snvoc:hasOrganisation ?org .
+    ?org foaf:name ?orgname .
+    ?org snvoc:isLocatedIn ?country.
+    ?country foaf:name "%countryName%" .
+    ?fr snvoc:workAt ?w .
+    ?w snvoc:workFrom ?startdate .
+    filter (?startdate < "%workFromYear%"^^xsd:integer) .
+    ?fr snvoc:firstName ?first .
+    ?fr snvoc:lastName ?last .
+}
+order by ?startdate ?fr DESC(?orgname)
+limit 10
