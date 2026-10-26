@@ -98,6 +98,12 @@ def _check_property_mappings(entity: str, spec: dict[str, Any], version: str) ->
                 f"{list(_PROPERTY_LOCATION_KEYS + _PROPERTY_DESCRIPTIVE_KEYS)}, or an ignorable "
                 f"extra whose name starts with {_PROPERTY_EXTENSION_PREFIX!r}"
             )
+        # Absent means "the property name is the field"; an explicit null is
+        # refused, as the canonical CSI schema refuses it, rather than read
+        # as absent.
+        nulls = [key for key in _PROPERTY_LOCATION_KEYS if key in prop_spec and prop_spec[key] is None]
+        if nulls:
+            raise MappingError(f"CSI {prop_where} sets {nulls} to null; leave the key out instead")
         if "path" in prop_spec and version == "1":
             raise MappingError(
                 f"CSI {prop_where} uses 'path', which needs csiVersion '1.1' (the document says '1'); "

@@ -199,6 +199,15 @@ def test_unknown_property_mapping_key_is_refused(version):
         mapping_bundle_from_csi(csi)
 
 
+@pytest.mark.parametrize("version", ["1", "1.1"])
+@pytest.mark.parametrize("spec", [{"field": None}, {"path": None, "field": "city"}, {"path": None}])
+def test_explicit_null_location_is_refused(version, spec):
+    # The canonical CSI schema (arango-schema-analyzer) refuses an explicit
+    # null; the reader must not quietly read it as "absent" instead.
+    with pytest.raises(MappingError, match="to null"):
+        mapping_bundle_from_csi(_with_user_properties({"city": spec}, version=version))
+
+
 @pytest.mark.parametrize("bad", ["address.city", ["address", "city"], None])
 def test_property_mapping_that_is_not_an_object_is_refused(bad):
     with pytest.raises(MappingError, match="must be an object"):
