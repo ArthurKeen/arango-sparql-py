@@ -257,40 +257,41 @@ What it found, beyond §3.1, §3.2 and §3.4:
   live service's strict resolver, every one failing closed (no crash, no
   wrong AQL). The dominant cause was untyped subjects: the LDBC queries
   rarely write `?m a :Post`.
-- **Fixed — RDF layout reads untyped subjects** (commit `5e0701a`). In a pure
+- **Fixed — RDF layout reads untyped subjects** (commit `e65b072`). In a pure
   triple store (every class RPT on one table) a constant or untyped
   subject is read from the triples table, and property paths compose.
   RDF layout: 0 → 15 of 26 texts translate.
 - **Fixed — silent wrong answer: `<x> a :C` ignored x in PG and LPG**
-  (`15429f7`): it matched every member of :C. A production bug, not only an
+  (`9448c37`): it matched every member of :C. A production bug, not only an
   LDBC one.
-- **Fixed — silent wrong answer: `dateTime ± duration`** (`4d3bfc4`), the
+- **Fixed — silent wrong answer: `dateTime ± duration`** (`f4bf7a2`), the
   §3.2 defect, confirmed live: lowered to `DATE_ADD` / `DATE_SUBTRACT`.
-- **Fixed — join order was a performance defect** (`d127020`). The visitor
+- **Fixed — join order was a performance defect** (`4a0455b`). The visitor
   emitted a BGP's triples in a fixed order (type patterns, then variable
   subjects, then constant subjects *last*), so IS1 scanned all 327 k
   `snvoc:id` rows before applying the person (1.4 s), and IS2 scanned all
   135 k posts per message (72–110 s). Triples whose subject is known now
   come first; IS1 takes 16 ms. Before/after timings are in the report.
-- **Fixed — PG and LPG route subjects without type patterns** (`96a3f24`):
+- **Fixed — PG and LPG route subjects without type patterns** (`c068771`):
   `owl:SymmetricProperty` traverses `ANY` (decision D10), an unbound subject
   with a known object is reached by an `INBOUND` traversal, and a constant
   or value-bound subject opens its `rdfs:domain` class (an LPG union is an
   any-of label test). A PG union across collections still refuses (D9).
-- **Fixed — OPTIONAL as a correlated subquery** (`8d59a35`, `c46ff59`):
+- **Fixed — OPTIONAL as a correlated subquery** (`3327f74`, `6a070b9`):
   ADR-0002 Option A generalised from one triple to any pattern (several
   triples, paths, BIND, an inner FILTER). Two NL-eval fixtures asserted the
   old refusals and were moved to permanent ones (federation, Update).
 - **Fixed — silent wrong answer: path intermediates collided across child
-  scopes** (`94358ab`). Every UNION arm, OPTIONAL, MINUS / EXISTS probe
+  scopes** (`9c6af74`). Every UNION arm, OPTIONAL, MINUS / EXISTS probe
   and sub-SELECT restarted its `_path_<n>` counter while seeded with the
   outer bindings, so IC6 joined "friend of a friend" to the outer path's
   tag and returned 0 of 10 groups.
-- **Oracle defects, not translator defects.** pyoxigraph 0.5.9 returns
-  unbound for many valid `dateTime + duration` sums on 2012 dates
-  (`2012-01-01 + P1D` unbound, `+ P30D` not), so it was wrong for IC3 and IC4
+- **Oracle defects, not translator defects.** pyoxigraph (0.5.9 to 0.5.13)
+  returns unbound for some valid `dateTime + duration` sums
+  (`"2012-01-01T00:00:00Z" + "P1D"` unbound; the equal instant `…00.000Z`, and
+  `+ "P30D"`, not), and a FILTER on such a sum drops rows, so it was wrong for IC3 and IC4
   while ArangoDB was right (checked row by row); the oracle now folds
-  constant `dateTime + P<n>D` itself (`3460278`). It also returns canonical
+  constant `dateTime + P<n>D` itself (`a17b0a8`). It also returns canonical
   dateTime forms (`…38.9Z` for `…38.900Z`), now compared as instants, and
   zero rows for a GROUP BY over no input where the W3C suite
   (`aggregates/agg-empty-group`) and the translator return one empty row.
@@ -311,46 +312,52 @@ What it found, beyond §3.1, §3.2 and §3.4:
   wrong answer, but two raised AQL errors, and both were translator
   defects:
   - **Fixed — silent wrong answer: an unprojected GROUP BY variable was not
-    a key** (`b5f833a`). rdflib synthesises a Sample only for the GROUP BY
+    a key** (`d805071`). rdflib synthesises a Sample only for the GROUP BY
     variables a query projects, and the COLLECT keys came from those
     alone, so IC5's `GROUP BY ?title ?forum` (projecting `?title`) merged
     forums that share a title, and `GROUP BY STR(?d)` grouped nothing. IC5
     only surfaced it because its ORDER BY read `?forum` after the COLLECT
     (ArangoDB: "collection or view not found: row9"). A production bug.
   - **Fixed — UNION and OPTIONAL arms re-read outer documents**
-    (`d45842f`). A child scope received an outer PG/LPG subject as an IRI
+    (`b74d544`). A child scope received an outer PG/LPG subject as an IRI
     only, so each arm scanned the subject's domain and joined back on the
     IRI. Arms now traverse from the outer document; IC2 on PG translates
     and matches the oracle.
-  - **ArangoDB defect, not ours: IS6 on LPG.** ArangoDB 3.12.9 rejects
+  - **ArangoDB defect, fixed in 3.12.12: IS6 on LPG.** ArangoDB 3.12.9 rejects
     valid AQL with an internal error (`ERR 4`, "missing variable doc1 …
     for node … (TraversalNode) while planning registers … Please report
     this error"). It needs four optimizer rules together (disabling any
     one of `use-indexes`, `optimize-traversals`,
     `batch-materialize-documents`, `optimize-projections` avoids it); the
     reduced query is an outer document used both in a UNION subquery with
-    a traversal and in a later LET. Recorded as `execution_error`.
+    a traversal and in a later LET. A standalone script with synthetic data
+    reproduces it on 3.12.9 and not on 3.12.12, the current release; the
+    benchmark now runs on 3.12.12.
 - **Fixed — regression caught by the W3C live gate: a reverse traversal
-  returned duplicates** (`36d9fe2`). Walking an edge backwards (`96a3f24`)
+  returned duplicates** (`07af466`). Walking an edge backwards (`c068771`)
   reached a second copy of the same IRI in another collection (the W3C
   loader stores a typed resource in `Document` and in its class
   collection), so `sparqldl-07/08/09` returned their answer twice. The
   vertex is now kept to the collections the forward plan reads, with the
   tenant filter the forward plan's class would have.
 - **The benchmark runner crashed on the first EXPLAIN error** and looked
-  up pyoxigraph times under the wrong cache key; both fixed (`6db93ef`).
+  up pyoxigraph times under the wrong cache key; both fixed (`a17b0a8`).
 
-### 3.4 Upstream issues to file (not to fix here)
+### 3.4 Upstream issues (status 2026-10-26)
 
-- **rdflib:** unbounded recursion on nested `SERVICE`. We do not own rdflib.
-  We file the issue and, on our side, map the `RecursionError` to a stable
-  `E_SPARQL_UNSUPPORTED` that names `SERVICE` (WP-LDBC-CORPUS).
-- **LDBC:** IC3's alias reuse is not portable SPARQL 1.1. Report it upstream
-  with the `pyoxigraph` rejection as evidence.
-- **ArangoDB:** the 3.12.9 planner error on IS6 (§3.3), with the reduced
-  query. Until it is fixed, IS6 on LPG stays `execution_error`.
-- **pyoxigraph:** unbound results for valid `dateTime + duration` sums
-  (§3.3); the oracle folds constant sums until it is fixed.
+- **rdflib:** unbounded recursion on nested `SERVICE` (`parseQuery`, 7.6.0).
+  Already reported (RDFLib/rdflib#2136, #3082) and fixed on rdflib's main by
+  RDFLib/rdflib#3608 (merged 2026-10-22), not yet released. On our side, map
+  the `RecursionError` to a stable `E_SPARQL_UNSUPPORTED` that names
+  `SERVICE` (WP-LDBC-CORPUS) until a release carries the fix.
+- **LDBC:** IC3's alias reuse is not portable SPARQL 1.1. Not reported: LDBC
+  removed the SPARQL implementations from `ldbc_snb_interactive_v1_impls`
+  (issue #163), so the pinned commit `11db98c` is the last SPARQL reference.
+- **ArangoDB:** the IS6 planner error (§3.3) is fixed in 3.12.12; nothing to
+  report.
+- **pyoxigraph:** unbound `dateTime + duration` sums (§3.3), still present in
+  0.5.13 (the current release) and not reported yet (oxigraph/oxigraph); the
+  oracle folds constant sums until it is fixed.
 
 ---
 
