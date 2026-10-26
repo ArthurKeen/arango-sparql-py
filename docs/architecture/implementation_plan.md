@@ -33,6 +33,19 @@ of that project's chat-first "Query Workbench Shell"
 | WP-BE-400 | Backend | `AQLQueryExecuteError` → `400` (not `500`) | §5.1 | ✅ Done |
 | WP-BE-EVALGATE | Backend | Evaluation-correctness gate (CDF M5 WP-C1): variable-predicate `?p`→IRI mapping (`SchemaResolver.attribute_uri_map`), AQL-runtime fixes (`NOT_NULL` for `COALESCE`, `STRENDS` lowering — no `ENDS_WITH` in AQL, `GROUP_CONCAT` via `PUSH` + projection-time `CONCAT_SEPARATOR`, `xsd:decimal` bind coercion), `EXPECTED_LIVE_PASSES` hard gate in the W3C live harness, per-PR `integration` CI job + nightly W3C workflow | §6.6, §13.5 | ✅ Done |
 | WP-BE-PARTITION | Backend | Federation entry point (CDF M5 WP-C2): `translate_partition` — sub-SELECT partition wire shape, subject-IRI canonical-key columns via visitor `extra_projection`, seed-binding pushdown as a trailing `VALUES` clause (rdflib terms + SPARQL-JSON binding dicts, injection-safe serialization), `PartitionProvenance` per-leg stamp (`as_of` executor-owned). CDF confirmed (2026-07-16) the seed pushdown is the CC-11/FR-13 bind-join. **Not adopted (checked 2026-10-22):** CDF calls `api.translate` per leg and writes its bind-join `VALUES` itself, engine-neutrally, so `translate_partition` has no consumer today (see the proposal's status). Contract + decisions in `docs/architecture/proposals/federation-entry-point.md` | proposals/federation-entry-point.md | ✅ Done (no consumer) |
+| WP-LDBC-DATA | Testing | LDBC SNB Interactive v1 Turtle fetch (SHA-256 pinned), normalisation (`directKnows`, skolemisation) and RPT/LPG/PG loader with cross-layout count parity (per class and per relationship) and live-mapping diff | §13.6 | ✅ Done (`tests/ldbc/{datasets,normalize,loader}.py`, `test_ldbc_load_live.py`; dedicated server `docker-compose.ldbc.yml`) |
+| WP-LDBC-CORPUS | Testing + Backend | 21 verbatim GraphDB reads + labelled variants, three mapping fixtures, outcome ledger + per-PR ratchet, fail-closed guards (`dateTime ± duration`, nested `SERVICE`) | §13.6 | 🟡 Corpus, fixtures, ledger and ratchet done; nested-`SERVICE` error mapping and the rdflib issue pending |
+| WP-LDBC-ORACLE | Testing | `pyoxigraph` + LDBC validation-parameter oracles; live execution tier on three layouts | §13.6 | 🟡 pyoxigraph oracle and live tier done; LDBC validation needs WP-LDBC-REPLAY |
+| WP-LDBC-PARAMS | Testing | Official SF0.1 substitution parameters → deterministic bindings (+ one empty-result binding per op) | §13.6 | ✅ Done (`tests/ldbc/params.py`, `params/sf0.1.yml`) |
+| WP-LDBC-EDGENODE | Backend (+ upstream analyzer) | Reified relationship node ↔ edge document mapping; symmetric `directKnows` over `knows` | §13.6 | 🟡 Symmetric `directKnows` done (`c068771`); reified relationships wait on decision D8 |
+| WP-LDBC-POLY | Backend (+ upstream query-core) | Polymorphic domains / multi-typed nodes on PG (Post ∪ Comment, Place, Organisation) | §13.6 | 🟡 Single-class domains, LPG label unions, reverse and symmetric traversal done (`c068771`); PG multi-collection unions wait on decision D9 |
+| WP-LDBC-OPT | Backend | Cross-subject `OPTIONAL` on PG/LPG; `OPTIONAL` bodies with `BIND`/`EXISTS` | §13.6, App. B.2 | ✅ Done (`3327f74`, `6a070b9`: OPTIONAL as a correlated subquery) |
+| WP-LDBC-PATHS | Backend | Property paths over RPT subjects; `*`/`+` over edge collections at LDBC depth | §13.6, §6.6 | 🟡 Paths on RPT in a pure triple store (`e65b072`), zero-hop from values, shared sigil counters (`9c6af74`); `rdf:type` with tag-class nodes in PG/LPG open |
+| WP-LDBC-TEMPORAL | Backend | `xsd:dateTime ± xsd:duration` → `DATE_ADD`; dateTime differences; canonical timestamp encoding | §13.6 | 🟡 `dateTime ± duration` done (`f4bf7a2`); dateTime differences (IC7) pending |
+| WP-LDBC-RPT-ROUTING | Backend | Untyped and constant subjects read the triples table in a pure triple store; paths compose on RPT; constant type-pattern subjects filter on their IRI (silent-wrong fix) | §13.6, §6.6 | ✅ Done (`e65b072`, `9448c37`) |
+| WP-LDBC-REPLAY | Testing | Replay the LDBC update stream on the oracle so the published validation answers apply (they interleave 18,626 updates with the reads) | §13.6 | 📝 Proposed |
+| WP-LDBC-BENCH | Testing | Performance runner + generated `docs/ldbc_results.md` (report-only, fair-use disclaimer) | §13.6, §9.4 | 🟡 Runner and report done (`bench.py`, `report.py`); nightly SF0.1 workflow added (`.github/workflows/ldbc-nightly.yml`), first run pending |
+| WP-LDBC-OPTIMIZE | Backend | Plan-digest-driven optimisation loop per layout | §13.6 | 🟡 Join order done (`4a0455b`); plan-digest triage of the remaining slow reads open |
 | WP-UI-1 | UI | NL "Ask" bar + provenance/telemetry | §10.12 | ✅ Done |
 | WP-UI-2 | UI | Schema-derived / optional-LLM query suggestions (`/nl-samples`) | §7.5, §10.12 | ✅ Done |
 | WP-UI-3 | UI | Graph selector (named-graph scope pill) | §10.13 | ✅ Done |
@@ -435,6 +448,28 @@ AQL panes in `App.tsx`.
   `tests/playwright/perf_*`, `ui/lighthouse.json` + bundle-size gate. These
   require standing up Playwright + a CI perf runner; tracked as a
   follow-up rather than stubbed.
+
+---
+
+## LDBC SNB benchmark — WP-LDBC-* (§13.6) 🟡 In progress
+
+The research, baseline probe, scope decisions (D1–D11), work-package detail,
+sequencing, risks and open questions are in
+[`ldbc_benchmark_plan.md`](ldbc_benchmark_plan.md). That file is the
+authority for the WP-LDBC-* scope; the tracking table above carries status.
+
+- **Phase 0** (harness + baseline, milestone M1): WP-LDBC-DATA,
+  WP-LDBC-CORPUS, WP-LDBC-ORACLE, WP-LDBC-PARAMS. The only translator changes
+  are fail-closed guards.
+- **Phase 1** (correctness, milestone M2: every read except IC13/IC14 matches
+  the oracle on RPT, LPG and PG): WP-LDBC-EDGENODE, WP-LDBC-POLY,
+  WP-LDBC-OPT, WP-LDBC-PATHS, WP-LDBC-TEMPORAL.
+- **Phase 2** (performance): WP-LDBC-BENCH (can start after M1),
+  WP-LDBC-OPTIMIZE.
+- **Phase 3** (optional): cross-transpiler comparison with
+  `arango-cypher-py` on the same load; a hybrid layout.
+
+The status emoji 📝 means *proposed*. Findings so far are in the plan's §3.3.
 
 ---
 
