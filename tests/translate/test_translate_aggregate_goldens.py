@@ -130,3 +130,29 @@ def test_count_distinct_star_is_refused_not_mistranslated() -> None:
             "PREFIX : <http://example/> SELECT (COUNT(DISTINCT *) AS ?c) WHERE { ?s :p ?o }",
             resolver=SchemaResolver.from_turtle(""),
         )
+
+
+def test_every_group_by_term_is_a_collect_key() -> None:
+    """An unprojected GROUP BY variable and an unaliased expression are keys too.
+
+    rdflib synthesises a Sample only for projected GROUP BY variables; keys
+    taken from those alone merged groups (LDBC IC5). Behaviour is
+    cross-validated in ``test_bgp_select_cross.py`` and live in
+    ``tests/integration/test_group_by_keys_live.py``.
+    """
+    result = translate(
+        """
+        PREFIX : <http://example/>
+        SELECT ?t (COUNT(?p) AS ?c)
+        WHERE { ?f :title ?t . ?p :in ?f . ?f :lang ?l }
+        GROUP BY ?t ?f STR(?l)
+        ORDER BY ?f
+        """,
+        resolver=SchemaResolver.from_turtle(""),
+    )
+    lines = [line.strip() for line in result.aql.splitlines()]
+    assert (
+        "COLLECT grp3 = doc1.title, grp4 = NOT_NULL(doc1._uri, doc1._id), grp5 = TO_STRING(doc1.lang) "
+        "WITH COUNT INTO agg6"
+    ) in lines
+    assert "SORT grp4 ASC" in lines

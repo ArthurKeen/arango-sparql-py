@@ -1055,7 +1055,26 @@ class AlgebraVisitor:
         # AGGREGATE expression") — but the samples pass below rebinds each
         # GROUP BY variable to its key alias for the projection.
         pattern_scope = dict(self.state.var_to_expr)
-        group_vars = {str(v) for v in (getattr(group, "expr", None) or []) if isinstance(v, Variable)}
+        group_exprs = list(getattr(group, "expr", None) or [])
+        group_vars = {str(v) for v in group_exprs if isinstance(v, Variable)}
+        # Every GROUP BY term is a COLLECT key, projected or not. rdflib only
+        # synthesises a Sample for the variables the query projects, so keys
+        # taken from the Samples alone dropped the rest: ``GROUP BY ?title
+        # ?forum`` projecting only ?title merged forums that share a title
+        # (LDBC IC5), and ``GROUP BY STR(?t)`` grouped nothing. Translate the
+        # terms the Samples will not cover now, in the pre-COLLECT scope.
+        projected_keys = {str(a.vars) for a in node.A if self._is_group_key_sample(a, group_vars)}
+        extra_keys: list[tuple[str | None, str]] = []  # (variable or None for an expression, AQL)
+        for term in group_exprs:
+            if isinstance(term, Variable):
+                if str(term) in projected_keys or any(v == str(term) for v, _ in extra_keys):
+                    continue
+                attr_expr = pattern_scope.get(str(term))
+                if attr_expr is None:
+                    raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{term}")
+                extra_keys.append((str(term), attr_expr))
+            else:
+                extra_keys.append((None, self._translate_expr(term)))
 
         # Pre-allocate the COLLECT-key aliases for every Aggregate_Sample_
         # (one per GROUP BY variable), and rebind each GROUP BY variable to
@@ -1088,6 +1107,12 @@ class AlgebraVisitor:
             # FOR alias's attribute.
             self.state.var_to_expr[sparql_var] = key_alias
             self.state.var_to_expr[str(agg.res)] = key_alias
+        for sparql_var_or_none, attr_expr in extra_keys:
+            key_alias = self.builder.fresh_alias(prefix="grp")
+            keys.append((key_alias, attr_expr))
+            if sparql_var_or_none is not None:
+                # Unprojected, but HAVING and ORDER BY may still read it.
+                self.state.var_to_expr[sparql_var_or_none] = key_alias
 
         # Real aggregates: everything but the group-key Samples.
         aggregates: list[tuple[str, str]] = []  # (alias, "AGG(expr)")
