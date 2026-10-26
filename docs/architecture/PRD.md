@@ -577,8 +577,16 @@ historically; both are accepted (see `resolver.py`):
 attribute `city` inside the object `address`, or one attribute named exactly
 `address.city`; the mapping says which, never the document's shape. In a CSI
 or wire mapping, `properties.<name>.field` is the literal form and
-`properties.<name>.path` the nested one; a property that sets both, or a
-malformed path, is refused (`MappingError` at import, `SchemaResolutionError`
+`properties.<name>.path` the nested one. A CSI document that uses `path`
+declares `csiVersion` `"1.1"` (and only then, so a reader that knows only
+`"1"` refuses just those documents); the reader accepts `"1"` and `"1.1"`.
+A CSI property mapping is strict in both versions: besides `field` and `path`
+it may hold only the descriptive extras producers write today (`type`,
+`indexed`, `unique`, `required`, `role`, `sentinelValues`, `numericLike`,
+`sampleValues`) or an ignorable `x-` key, and anything else is refused, since
+an ignored location key is how a reader answers from the wrong field
+(`translate/csi.py`). The rest of a CSI document keeps the schema's additive
+rule. A property that sets both forms, or a malformed path, is refused (`MappingError` at import, `SchemaResolutionError`
 for an OWL annotation) rather than falling back to the local name and
 answering empty. The existence check walks the same path the read uses
 (`IS_OBJECT(doc.address) && HAS(doc.address, "city")`,
