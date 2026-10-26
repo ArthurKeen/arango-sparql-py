@@ -570,6 +570,24 @@ historically; both are accepted (see `resolver.py`):
 | `triplesCollection` | `owl:Class` | Name of the RPT-style collection holding this class's triples (defaults to `_triples`) | `RPT`, `RPT_EDGE` |
 | `subjectColumn`, `predicateColumn`, `objectUriColumn`, `objectValueColumn` | `owl:Class` | Override the legacy Foxx column names if a customer renamed them | `RPT`, `RPT_EDGE` |
 | `tenantField`, `tenantEntity` | `owl:Class` | Multi-tenancy scope (see §6.5) | All entity styles |
+| `attributeName` | `owl:DatatypeProperty` | The stored attribute, **one literal name**: a dot is part of it (`"address.city"` is the attribute named exactly that). Absent → the IRI's local name | Every datatype-property read |
+| `attributePath` | `owl:DatatypeProperty` | A value **inside a nested object**, as a JSON array with one name per level (`'["address", "city"]'`); a segment may contain a dot. Never together with `attributeName` | Every datatype-property read (issue #72) |
+
+**A dotted name and a nested path** (issue #72). `address.city` can mean the
+attribute `city` inside the object `address`, or one attribute named exactly
+`address.city`; the mapping says which, never the document's shape. In a CSI
+or wire mapping, `properties.<name>.field` is the literal form and
+`properties.<name>.path` the nested one; a property that sets both, or a
+malformed path, is refused (`MappingError` at import, `SchemaResolutionError`
+for an OWL annotation) rather than falling back to the local name and
+answering empty. The existence check walks the same path the read uses
+(`IS_OBJECT(doc.address) && HAS(doc.address, "city")`,
+`AqlQueryBuilder.attribute_exists`), so the two cannot disagree. Known limits
+of the first version: a list where an object is expected counts as absent;
+and while any property is nested, a variable predicate (`?s ?p ?o`) and a
+negated property path are refused, because their `ATTRIBUTES()` scan sees top-level
+attributes only and would leave nested values out. DESCRIBE lists raw
+attribute names and does not read the mapping, so it is unchanged.
 
 `SchemaResolver` is the only module that reads any of these. Visitors
 call `resolve_class(iri)` and `resolve_property(iri)`; the resolver
@@ -1071,6 +1089,7 @@ deployments.
 | --- | --- | --- |
 | **PG `COLLECTION`** — one OWL class ↔ one ArangoDB collection; datatype properties as top-level attributes | ✅ shipped | `tests/translate/bgp_select.yml` (every case but the `hybrid_collection_emits_type_filter` row) |
 | **LPG `LABEL`** — multi-class collection with `phys:typeField`/`phys:typeValue` discriminator | ✅ shipped | `tests/translate/bgp_select.yml :: hybrid_collection_emits_type_filter` |
+| **Nested property paths** (issue #72) — `phys:attributePath` / CSI `path` reads a value inside a nested object, with an existence check on the same path; `phys:attributeName` / CSI `field` stays one literal name. Required, OPTIONAL, constant-object and join triples; `?s ?p ?o` and negated paths refuse while any property is nested (§6.2) | ✅ shipped | `tests/translate/nested_paths.yml` + `tests/translate/test_translate_nested_paths_goldens.py`; `tests/translate/test_nested_field_paths.py` (mapping validation, refusals); **binding parity** vs pyoxigraph live on ArangoDB in `tests/integration/test_nested_field_paths_live.py` (both shapes, both on one document, list / string / empty object where the object should be) |
 | **PG `DEDICATED_COLLECTION` edges** — OWL `ObjectProperty` resolves to a `phys:edgeCollectionName`; SPARQL traversal lowers to `FOR v, e IN OUTBOUND <s> @@edgeColl`, binding the target vertex's `_uri` to the SPARQL object (so a follow-up `?o a :Person` / `?o :name ?n` joins on `_uri` automatically). Implemented in `visitor.py::_emit_edge_triple` (BGP) and `visit_LeftJoin` (OPTIONAL: the block's matches are a correlated subquery the outer query iterates, padded with one `null` row, so every matching edge is its own solution — `_emit_optional_rows`; it followed the first edge only until issue #48). | ✅ shipped | `tests/translate/edge_traversal.yml` + `tests/translate/test_translate_edge_traversal_goldens.py`; **binding parity** vs pyoxigraph in `tests/cross/test_edge_traversal_cross.py` (`pg_dedicated_edge` arm; OPTIONAL over a multi-edge subject in `OPTIONAL_CASES`) and live on ArangoDB in `tests/integration/test_optional_edges_live.py` |
 | **LPG `GENERIC_WITH_TYPE` edges** — typed-edge traversal with discriminator FILTER (`FILTER e.<typeField> == @<typeValue>`) so multiple relationship types sharing one edge collection stay separated | ✅ shipped | `tests/translate/edge_traversal.yml` (DEDICATED + GENERIC arms exercised in both BGP and OPTIONAL); **binding parity** vs pyoxigraph in `tests/cross/test_edge_traversal_cross.py` (`lpg_generic_edge` arm) |
 | **RPT (`_triples` triple-store)** — read subject/predicate/object rows, `NOT_NULL(object_uri, object_value)` for objects (object properties read the `object_uri` column in the same triples table — no separate edge traversal), `STARTS_WITH(_, "_:")` heuristic for blank nodes | ✅ shipped | `tests/translate/rpt.yml` (type patterns + datatype/object property reads); cross-model binding parity in `tests/cross/test_multimodel_cross.py` (RPT arm + cross-class joins) |
