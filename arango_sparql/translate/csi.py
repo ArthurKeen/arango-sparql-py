@@ -16,6 +16,11 @@ CSI provenance is preserved verbatim under ``metadata["csiProvenance"]``.
 
 See contextual-data-fabric ADR-0001 / M5 implementation-plan WP-A3, and the
 forward producer in r2g (``src/r2g/csi.py``).
+
+Versions: ``"1"`` and ``"1.1"``. 1.1 adds ``path`` to a property mapping (a
+value inside a nested object, issue #72) and is written only by a document
+that uses it. Property mappings are strict in both versions: a key this
+reader does not know is refused, since it could change where a value is read.
 """
 
 from __future__ import annotations
@@ -33,11 +38,71 @@ CSI_SOURCE_KIND = "imported_csi"
 # *physical* relationship spec so the translator knows each edge's endpoints.
 _ENDPOINT_FIELDS = ("fromEntity", "toEntity")
 
+# CSI versions this reader understands. "1.1" adds ``path`` to a property
+# mapping (issue #72); a producer writes it only for a document that uses
+# ``path``, so a reader that knows only "1" refuses just those documents
+# instead of silently reading every nested property as a missing field.
+CSI_VERSIONS = ("1", "1.1")
+
+# What a CSI property mapping (``arangoPhysicalMapping.entities.<E>.properties.
+# <p>``) may hold. The rest of a CSI document keeps the schema's additive rule
+# (unknown fields ride along and are ignored), but a property mapping says
+# where a value is read from, so an unknown key there could change the answer
+# and is refused. Location keys first, then the descriptive extras producers
+# write today (arango-schema-analyzer: indexed, unique; arango-cypher-py's
+# acquisition: type, role, required, sentinelValues, numericLike,
+# sampleValues). A key starting with ``x-`` is an explicitly ignorable extra.
+_PROPERTY_LOCATION_KEYS = ("field", "path")
+_PROPERTY_DESCRIPTIVE_KEYS = (
+    "type",
+    "indexed",
+    "unique",
+    "required",
+    "role",
+    "sentinelValues",
+    "numericLike",
+    "sampleValues",
+)
+_PROPERTY_EXTENSION_PREFIX = "x-"
+
 
 def _require_dict(value: Any, what: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise MappingError(f"CSI {what} must be an object, got {type(value).__name__!r}")
     return value
+
+
+def _check_property_mappings(entity: str, spec: dict[str, Any], version: str) -> None:
+    """Refuse a property mapping this reader could misread (issue #72).
+
+    Every key must be a location key, a known descriptive extra, or an
+    ``x-`` extension; ``path`` needs ``csiVersion`` "1.1".
+    """
+    properties = spec.get("properties")
+    if properties is None:
+        return
+    where = f"arangoPhysicalMapping.entities[{entity!r}].properties"
+    for prop_name, prop_spec in _require_dict(properties, where).items():
+        prop_where = f"{where}[{prop_name!r}]"
+        _require_dict(prop_spec, prop_where)
+        unknown = sorted(
+            str(key)
+            for key in prop_spec
+            if key not in _PROPERTY_LOCATION_KEYS
+            and key not in _PROPERTY_DESCRIPTIVE_KEYS
+            and not str(key).startswith(_PROPERTY_EXTENSION_PREFIX)
+        )
+        if unknown:
+            raise MappingError(
+                f"CSI {prop_where} has unknown key(s) {unknown}: a property mapping may hold "
+                f"{list(_PROPERTY_LOCATION_KEYS + _PROPERTY_DESCRIPTIVE_KEYS)}, or an ignorable "
+                f"extra whose name starts with {_PROPERTY_EXTENSION_PREFIX!r}"
+            )
+        if "path" in prop_spec and version == "1":
+            raise MappingError(
+                f"CSI {prop_where} uses 'path', which needs csiVersion '1.1' (the document says '1'); "
+                f"a reader of version 1 would ignore it and read the wrong field"
+            )
 
 
 def mapping_bundle_from_csi(csi: dict[str, Any] | None) -> MappingBundle:
@@ -61,8 +126,8 @@ def mapping_bundle_from_csi(csi: dict[str, Any] | None) -> MappingBundle:
     csi = _require_dict(csi, "document")
 
     version = csi.get("csiVersion")
-    if version != "1":
-        raise MappingError(f"unsupported csiVersion {version!r} (expected '1')")
+    if version not in CSI_VERSIONS:
+        raise MappingError(f"unsupported csiVersion {version!r} (expected one of {list(CSI_VERSIONS)})")
 
     conceptual = _require_dict(csi.get("conceptualModel") or {}, "conceptualModel")
     physical = _require_dict(csi.get("arangoPhysicalMapping") or {}, "arangoPhysicalMapping")
@@ -93,6 +158,8 @@ def mapping_bundle_from_csi(csi: dict[str, Any] | None) -> MappingBundle:
         name: _require_dict(spec, f"arangoPhysicalMapping.entities[{name!r}]").copy()
         for name, spec in csi_entities.items()
     }
+    for name, spec in entities_out.items():
+        _check_property_mappings(str(name), spec, version)
 
     # Physical relationships pass through + get endpoints grafted on.
     relationships_out: dict[str, Any] = {}

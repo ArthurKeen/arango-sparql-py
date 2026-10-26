@@ -129,12 +129,93 @@ def test_relationship_without_conceptual_entry_omits_endpoints():
     assert rel["edgeCollectionName"] == "placed_by"
 
 
-@pytest.mark.parametrize("bad_version", ["2", 1, None, ""])
+@pytest.mark.parametrize("bad_version", ["2", "1.2", 1, 1.1, None, ""])
 def test_bad_version_rejected(bad_version):
     csi = _forward_csi()
     csi["csiVersion"] = bad_version
     with pytest.raises(MappingError):
         mapping_bundle_from_csi(csi)
+
+
+# ---------------------------------------------------------------------------
+# Issue #72: csiVersion "1.1" carries ``path``; property mappings are strict
+# ---------------------------------------------------------------------------
+
+
+def _with_user_properties(properties: object, version: str = "1") -> dict:
+    csi = _forward_csi()
+    csi["csiVersion"] = version
+    csi["arangoPhysicalMapping"]["entities"]["User"]["properties"] = properties
+    return csi
+
+
+def test_version_1_1_is_accepted_and_carries_a_nested_path():
+    csi = _with_user_properties({"city": {"path": ["address", "city"]}}, version="1.1")
+    resolver = SchemaResolver.from_mapping_bundle(mapping_bundle_from_csi(csi))
+    assert resolver.resolve_property(URIRef(str(_SYNTHETIC_CONCEPT_NS) + "city")).nested_path == (
+        "address",
+        "city",
+    )
+
+
+def test_version_1_1_without_path_is_accepted():
+    # A "1.1" reader must read a "1.1" document that happens to use no 1.1 feature.
+    csi = _with_user_properties({"name": {"field": "name"}}, version="1.1")
+    assert mapping_bundle_from_csi(csi).entities()["User"]["properties"] == {"name": {"field": "name"}}
+
+
+def test_path_in_a_version_1_document_is_refused():
+    # A version-1 reader would ignore ``path`` and read the wrong field, so a
+    # producer must say "1.1"; a document that says "1" and uses it is wrong.
+    csi = _with_user_properties({"city": {"path": ["address", "city"]}}, version="1")
+    with pytest.raises(MappingError, match="needs csiVersion '1.1'"):
+        mapping_bundle_from_csi(csi)
+
+
+@pytest.mark.parametrize("version", ["1", "1.1"])
+def test_known_descriptive_keys_and_x_extensions_are_accepted(version):
+    spec = {
+        "field": "name",
+        "type": "string",
+        "indexed": True,
+        "unique": False,
+        "required": True,
+        "role": "label",
+        "sentinelValues": ["NULL"],
+        "numericLike": False,
+        "sampleValues": ["Ana"],
+        "x-steward": "crm-team",
+    }
+    bundle = mapping_bundle_from_csi(_with_user_properties({"name": spec}, version=version))
+    assert bundle.entities()["User"]["properties"]["name"] == spec
+
+
+@pytest.mark.parametrize("version", ["1", "1.1"])
+def test_unknown_property_mapping_key_is_refused(version):
+    # A misspelled or future location key must not be ignored: ignoring it is
+    # exactly how a reader answers from the wrong field without a word.
+    csi = _with_user_properties({"city": {"field": "city", "pathh": ["address", "city"]}}, version=version)
+    with pytest.raises(MappingError, match=r"unknown key\(s\) \['pathh'\]"):
+        mapping_bundle_from_csi(csi)
+
+
+@pytest.mark.parametrize("bad", ["address.city", ["address", "city"], None])
+def test_property_mapping_that_is_not_an_object_is_refused(bad):
+    with pytest.raises(MappingError, match="must be an object"):
+        mapping_bundle_from_csi(_with_user_properties({"city": bad}))
+
+
+def test_properties_block_that_is_not_an_object_is_refused():
+    with pytest.raises(MappingError, match="must be an object"):
+        mapping_bundle_from_csi(_with_user_properties([{"field": "city"}]))
+
+
+def test_unknown_keys_elsewhere_keep_the_additive_rule():
+    # Only a property mapping is strict; entity and provenance extras ride along.
+    csi = _forward_csi()
+    csi["arangoPhysicalMapping"]["entities"]["User"]["lastValidatedAt"] = "2026-10-26T00:00:00Z"
+    csi["provenance"]["somethingNew"] = {"a": 1}
+    assert mapping_bundle_from_csi(csi).entities()["User"]["lastValidatedAt"] == "2026-10-26T00:00:00Z"
 
 
 def test_non_dict_rejected():

@@ -29,7 +29,7 @@ _PREFIX = f"PREFIX : <{_CONCEPT}>\n"
 
 def _csi(properties: dict[str, Any]) -> dict[str, Any]:
     return {
-        "csiVersion": "1",
+        "csiVersion": "1.1",
         "conceptualModel": {"entities": [{"name": "Person"}], "relationships": []},
         "arangoPhysicalMapping": {
             "entities": {
