@@ -6,10 +6,12 @@ statement about the translator alone. The store lives on disk beside the
 normalised data and is rebuilt only when the data digest changes, so the
 load is paid once per data set.
 
-The oracle works around one pyoxigraph defect: 0.5.9 returns *unbound* for
-many valid ``xsd:dateTime + xsd:duration`` sums (``2012-01-01T00:00:00Z +
-P1D`` is unbound while ``+ P30D`` is not; every sum from 2012-02-01 is),
-and LDBC's 2012 dates hit it, which made the oracle wrong for IC3 and IC4.
+The oracle works around one pyoxigraph defect (0.5.9 to 0.5.13 at least):
+some valid ``xsd:dateTime + xsd:duration`` sums are *unbound*.
+``"2012-01-01T00:00:00Z" + "P1D"`` is unbound, while the equal instant
+``"2012-01-01T00:00:00.000Z" + "P1D"`` and ``"2012-01-01T00:00:00Z" +
+"P30D"`` are not, and a FILTER on such a sum drops rows. LDBC's date
+windows hit it, which made the oracle wrong for IC3 and IC4.
 :func:`fold_date_arithmetic` evaluates the one form those queries use — a
 constant dateTime plus a constant whole-day duration — in Python before the
 query reaches pyoxigraph. The SPARQL meaning is unchanged.
