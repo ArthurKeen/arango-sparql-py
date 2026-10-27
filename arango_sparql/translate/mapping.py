@@ -108,6 +108,52 @@ def is_valid_field_name(name: object) -> bool:
     return isinstance(name, str) and bool(_FIELD_NAME_RE.match(name))
 
 
+def property_field_path(prop_name: str, prop_spec: object) -> tuple[str, ...] | None:
+    """Return the stored location of one mapped property, or ``None``.
+
+    A property spec (``properties.<name>`` on an entity) names where its
+    value is stored in one of two forms, and the form says which meaning
+    is intended (issue #72):
+
+    * ``{"field": "address.city"}`` — one attribute, taken literally. A
+      dot is part of the name, so this is the attribute ``address.city``.
+    * ``{"path": ["address", "city"]}`` — one name per level: ``city``
+      inside the object ``address``. A segment may itself contain a dot.
+
+    Returns a one-element tuple for ``field`` (or a one-segment ``path``),
+    the full tuple for a nested ``path``, and ``None`` when the spec names
+    neither, so the property name doubles as the attribute.
+
+    Raises:
+        MappingError: when both forms are present, or ``path`` is not a
+            non-empty list of valid field names. A malformed path is never
+            ignored: falling back to the property name would read a field
+            that does not exist and return an empty answer without warning.
+    """
+
+    if not isinstance(prop_spec, dict):
+        return None
+    has_field = prop_spec.get("field") is not None
+    raw_path = prop_spec.get("path")
+    if raw_path is None:
+        field_name = prop_spec.get("field")
+        return (field_name,) if isinstance(field_name, str) and field_name else None
+    if has_field:
+        raise MappingError(
+            f"property {prop_name!r} sets both 'field' and 'path'; use 'field' for one "
+            f"attribute (a dot is part of its name) or 'path' for a nested value, not both"
+        )
+    if not isinstance(raw_path, list) or not raw_path:
+        raise MappingError(f"property {prop_name!r} 'path' must be a non-empty list of field names")
+    for segment in raw_path:
+        if not is_valid_field_name(segment):
+            raise MappingError(
+                f"property {prop_name!r} 'path' segment {segment!r} is not a valid field name "
+                f"(a non-empty string of at most 256 characters, no backticks or control characters)"
+            )
+    return tuple(raw_path)
+
+
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
@@ -319,6 +365,12 @@ def _normalise_spec(spec: Any, *, label: str, where: str) -> dict[str, Any]:
                 f"{canonical!r} field (both spellings present)"
             )
         out[canonical] = v
+    # Refuse a malformed property location here, at the boundary, rather
+    # than at translate time (issue #72: ``field`` vs ``path``).
+    properties = out.get("properties")
+    if not is_relationship and isinstance(properties, dict):
+        for prop_name, prop_spec in properties.items():
+            property_field_path(str(prop_name), prop_spec)
     return out
 
 
@@ -455,4 +507,5 @@ __all__ = [
     "is_valid_field_name",
     "mapping_from_wire_dict",
     "mapping_to_wire_dict",
+    "property_field_path",
 ]

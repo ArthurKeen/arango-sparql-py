@@ -145,6 +145,23 @@ def attribute_ref(alias: str, name: str) -> str:
     return f"{alias}.`{name}`"
 
 
+def attribute_path_ref(alias: str, path: tuple[str, ...]) -> str:
+    """AQL access to a value stored *path* levels down: ``alias.address.city``.
+
+    Each segment goes through :func:`attribute_ref` on its own, so a dot
+    inside one segment stays part of that name (``alias.meta.`x.y```) and a
+    one-segment path is exactly ``attribute_ref(alias, name)`` (issue #72).
+    AQL reads null through a missing or non-object level, so under OPTIONAL
+    the value is unbound when any level is absent.
+    """
+    if not path:
+        raise ValueError("attribute path must name at least one field")
+    ref = alias
+    for segment in path:
+        ref = attribute_ref(ref, segment)
+    return ref
+
+
 # Sentinel for distinguishing "bind name absent" from "bind value is None"
 # in :meth:`AqlQueryBuilder.absorb_child`'s collision check. A bare
 # ``in`` test would conflate the two; a sentinel object makes the
@@ -504,6 +521,31 @@ class AqlQueryBuilder:
         """
         self._body_clauses.append(_Clause(_ClauseKind.FILTER, f"FILTER {expression}"))
         return self
+
+    def attribute_exists(self, alias: str, path: tuple[str, ...]) -> str:
+        """Return the AQL test that the value at *path* is stored on *alias*.
+
+        ``HAS()`` tells a missing attribute from a stored ``null``, but sees
+        only one level, so a nested path first requires each enclosing level
+        to be an object (issue #72)::
+
+            ("name",)            -> HAS(doc, "name")
+            ("address", "city")  -> IS_OBJECT(doc.address) && HAS(doc.address, "city")
+
+        A list where an object is expected counts as absent. The final name
+        is bound when it is not an identifier, never spliced into the text.
+        """
+        if not path:
+            raise ValueError("attribute path must name at least one field")
+        *parents, last = path
+        parent = alias
+        conditions: list[str] = []
+        for segment in parents:
+            parent = attribute_ref(parent, segment)
+            conditions.append(f"IS_OBJECT({parent})")
+        name = f'"{last}"' if is_aql_identifier(last) else self.bind(last, hint="attr")
+        conditions.append(f"HAS({parent}, {name})")
+        return " && ".join(conditions)
 
     def create_child(self) -> AqlQueryBuilder:
         """Spawn a child builder seeded with this builder's counter state.
