@@ -402,6 +402,16 @@ AGGREGATE_CASES = [
         "?s a :Person ; :dept ?d ; :age ?a } GROUP BY ?d ?s ORDER BY ?s",
         id="group_by_order_by_unprojected_key",
     ),
+    # A GROUP BY variable the pattern never binds is one unbound key for every
+    # row (vendored ck25-30 writes ?depty for ?dept): it groups nothing.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?typo ?d",
+        id="group_by_never_bound_variable",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?typo ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?typo ?d",
+        id="group_by_never_bound_variable_projected",
+    ),
     # Any aggregate of a GROUP BY variable reads the pre-COLLECT value; the
     # COLLECT key alias inside AGGREGATE is ArangoDB ERR 1512.
     pytest.param(
