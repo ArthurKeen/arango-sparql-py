@@ -286,12 +286,16 @@ What it found, beyond §3.1, §3.2 and §3.4:
   and sub-SELECT restarted its `_path_<n>` counter while seeded with the
   outer bindings, so IC6 joined "friend of a friend" to the outer path's
   tag and returned 0 of 10 groups.
-- **Oracle defects, not translator defects.** pyoxigraph (0.5.9 to 0.5.13)
-  returns unbound for some valid `dateTime + duration` sums
-  (`"2012-01-01T00:00:00Z" + "P1D"` unbound; the equal instant `…00.000Z`, and
-  `+ "P30D"`, not), and a FILTER on such a sum drops rows, so it was wrong for IC3 and IC4
-  while ArangoDB was right (checked row by row); the oracle now folds
-  constant `dateTime + P<n>D` itself (`a17b0a8`). It also returns canonical
+- **Oracle defects, not translator defects.** pyoxigraph (0.5.x up to 0.5.13)
+  returns unbound for some valid `dateTime + duration` sums, and a FILTER on
+  such a sum drops rows, so it was wrong for IC3 and IC4 while ArangoDB was
+  right (checked row by row). The cause is its optimizer: it sorts the
+  operands of `+` by hash, as if `+` were commutative, and its evaluator has
+  no `duration + dateTime` case. Which sums fail depends on operand values and
+  variable names (`"2012-01-01T00:00:00Z" + "P1D"` fails, `+ "P30D"` does
+  not; `?v1 + "P1D"` fails, `?v2 + "P1D"` does not). The oracle folds the
+  constant `dateTime + P<n>D` sums the corpus uses (`a17b0a8`) and refuses
+  any other `+` of a duration literal. It also returns canonical
   dateTime forms (`…38.9Z` for `…38.900Z`), now compared as instants, and
   zero rows for a GROUP BY over no input where the W3C suite
   (`aggregates/agg-empty-group`) and the translator return one empty row.
@@ -356,8 +360,10 @@ What it found, beyond §3.1, §3.2 and §3.4:
 - **ArangoDB:** the IS6 planner error (§3.3) is fixed in 3.12.12; nothing to
   report.
 - **pyoxigraph:** unbound `dateTime + duration` sums (§3.3), still present in
-  0.5.13 (the current release) and not reported yet (oxigraph/oxigraph); the
-  oracle folds constant sums until it is fixed.
+  0.5.13 (the current release). oxigraph's `main` no longer reorders `+`
+  (`a941f10`, a refactor, unreleased); the one-line fix for the `0.5` branch,
+  with a regression test, is prepared but not yet proposed upstream. The
+  oracle folds constant sums until a release carries it.
 
 ---
 
