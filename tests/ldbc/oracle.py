@@ -6,15 +6,22 @@ statement about the translator alone. The store lives on disk beside the
 normalised data and is rebuilt only when the data digest changes, so the
 load is paid once per data set.
 
-The oracle works around one pyoxigraph defect (0.5.9 to 0.5.13 at least):
-some valid ``xsd:dateTime + xsd:duration`` sums are *unbound*.
-``"2012-01-01T00:00:00Z" + "P1D"`` is unbound, while the equal instant
-``"2012-01-01T00:00:00.000Z" + "P1D"`` and ``"2012-01-01T00:00:00Z" +
-"P30D"`` are not, and a FILTER on such a sum drops rows. LDBC's date
-windows hit it, which made the oracle wrong for IC3 and IC4.
-:func:`fold_date_arithmetic` evaluates the one form those queries use — a
+The oracle works around one pyoxigraph defect (0.5.x up to 0.5.13): its
+optimizer sorts the operands of ``+`` by hash, as if ``+`` were
+commutative, and its evaluator computes ``xsd:dateTime + xsd:duration``
+but not ``xsd:duration + xsd:dateTime``. A sum whose operands hash the
+"wrong" way is *unbound*, and a FILTER on it drops rows. Which sums fail
+depends on the operand values and variable names, not on their meaning:
+``"2012-01-01T00:00:00Z" + "P1D"`` is unbound while ``+ "P30D"`` is not.
+LDBC's date windows hit it, which made the oracle wrong for IC3 and IC4.
+oxigraph's main branch no longer reorders ``+`` (a941f10, unreleased); the
+fix for 0.5 is proposed upstream.
+
+:func:`fold_date_arithmetic` evaluates the one form the corpus uses — a
 constant dateTime plus a constant whole-day duration — in Python before the
-query reaches pyoxigraph. The SPARQL meaning is unchanged.
+query reaches pyoxigraph. The SPARQL meaning is unchanged. Any other ``+``
+of a duration literal is refused rather than answered wrongly; a duration
+held in a variable cannot be seen in the text, and no LDBC query has one.
 
 The oracle never touches the network. pyoxigraph executes ``SERVICE`` by
 sending the pattern to the named endpoint over HTTP, and the GraphDB
@@ -57,6 +64,12 @@ _DATE_PLUS_DAYS = re.compile(
     r'"P(?P<days>\d+)D"\^\^xsd:(?:dayTime)?[dD]uration'
 )
 
+#: A ``+`` followed by a duration literal that :func:`fold_date_arithmetic`
+#: left in place: pyoxigraph may answer it wrongly (module docstring).
+_DURATION_SUM = re.compile(
+    r'\+\s*"[^"]*"\^\^(?:xsd:|<http://www\.w3\.org/2001/XMLSchema#)(?:dayTime|yearMonth)?[dD]uration'
+)
+
 #: Part of every cache key: bump when :func:`run`'s rewriting changes, so
 #: answers computed under the old behaviour are recomputed.
 _CACHE_VERSION = 2
@@ -65,8 +78,7 @@ _CACHE_VERSION = 2
 def fold_date_arithmetic(sparql: str) -> str:
     """Replace constant ``dateTime + P<n>D`` sums with the resulting dateTime.
 
-    Works around the pyoxigraph 0.5.9 defect described in the module
-    docstring. Exact: whole days on a UTC instant, as XPath
+    Works around the pyoxigraph defect described in the module docstring. Exact: whole days on a UTC instant, as XPath
     ``op:add-dayTimeDuration-to-dateTime`` defines them.
     """
 
@@ -80,7 +92,19 @@ def fold_date_arithmetic(sparql: str) -> str:
 
 
 class OracleRefused(RuntimeError):
-    """The oracle will not run this query (it would make a network call)."""
+    """The oracle will not run this query (a network call, or an answer it cannot trust)."""
+
+
+def _refuse_untrusted(sparql: str) -> None:
+    """Raise :class:`OracleRefused` for a query the oracle must not answer."""
+    code = _COMMENT_LINE.sub("", sparql)
+    if _SERVICE.search(code):
+        raise OracleRefused("the query uses SERVICE; the oracle never makes network calls")
+    if _DURATION_SUM.search(fold_date_arithmetic(code)):
+        raise OracleRefused(
+            "the query adds a duration the oracle cannot fold, and pyoxigraph may leave such a sum "
+            "unbound (tests/ldbc/oracle.py docstring)"
+        )
 
 
 @dataclass
@@ -120,8 +144,7 @@ def open_store(nt_path: Path, data_sha256: str) -> ox.Store:
 
 def run(store: ox.Store, sparql: str) -> OracleResult:
     """Run a SELECT and return its rows as ``{variable: value}`` (unbound omitted)."""
-    if _SERVICE.search(_COMMENT_LINE.sub("", sparql)):
-        raise OracleRefused("the query uses SERVICE; the oracle never makes network calls")
+    _refuse_untrusted(sparql)
     started = time.perf_counter()
     solutions = store.query(fold_date_arithmetic(sparql))
     columns = [v.value for v in solutions.variables]
@@ -167,8 +190,7 @@ def run_isolated(
     pyoxigraph has no query time limit of its own. The store must already be
     built (:func:`open_store`), so the child only opens it read-only.
     """
-    if _SERVICE.search(_COMMENT_LINE.sub("", sparql)):
-        raise OracleRefused("the query uses SERVICE; the oracle never makes network calls")
+    _refuse_untrusted(sparql)
     ctx = multiprocessing.get_context("fork")
     queue = ctx.Queue()
     proc = ctx.Process(target=_child, args=(str(nt_path), data_sha256, sparql, queue))

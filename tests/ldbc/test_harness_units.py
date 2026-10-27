@@ -174,6 +174,28 @@ def test_constant_date_sums_are_folded_before_pyoxigraph_sees_them() -> None:
     assert oracle.fold_date_arithmetic(untouched) == untouched
 
 
+def test_a_duration_sum_the_fold_cannot_handle_is_refused() -> None:
+    store = ox.Store()
+    prefix = "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+    for sum_ in (
+        '?start + "P1D"^^xsd:duration',
+        '"2012-01-01T00:00:00Z"^^xsd:dateTime + "PT1H"^^xsd:dayTimeDuration',
+        '?start + "P1M"^^<http://www.w3.org/2001/XMLSchema#yearMonthDuration>',
+    ):
+        query = prefix + f"SELECT ?r WHERE {{ VALUES ?start {{ 1 }} BIND({sum_} AS ?r) }}"
+        with pytest.raises(oracle.OracleRefused, match="cannot fold"):
+            oracle.run(store, query)
+    # The folded form runs, and a subtraction is never reordered, so it is not refused.
+    folded = (
+        prefix + 'SELECT ?r WHERE { BIND("2012-01-01T00:00:00Z"^^xsd:dateTime + "P1D"^^xsd:duration AS ?r) }'
+    )
+    assert oracle.run(store, folded).rows == [{"r": "2012-01-02T00:00:00Z"}]
+    minus = (
+        prefix + 'SELECT ?r WHERE { BIND("2012-01-02T00:00:00Z"^^xsd:dateTime - "P1D"^^xsd:duration AS ?r) }'
+    )
+    assert len(oracle.run(store, minus).rows[0]) == 1
+
+
 def test_the_fold_gives_what_pyoxigraph_should_have() -> None:
     """Where pyoxigraph does compute the sum, it agrees with the fold."""
     sparql = (
