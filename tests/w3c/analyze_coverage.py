@@ -573,6 +573,22 @@ def analyze() -> dict[str, CategoryStats]:
     return by_category
 
 
+def _nested_run_env() -> dict[str, str]:
+    """The environment for the nested live run: this process's, with the
+    ArangoDB target pinned to the one this run resolved.
+
+    By the time the live row runs, importing the service app may have
+    loaded a developer's ``.env`` into ``os.environ`` (``load_dotenv()``
+    searches upward), and a nested run reading ``ARANGO_URL`` from there
+    wrote W3C collections to a shared cluster (2026-10-28). Its own
+    ``refuse_remote_target`` check would now stop it; pinning keeps it on
+    the database this run checked.
+    """
+    from tests.integration.conftest import pinned_target_env
+
+    return {**os.environ, **pinned_target_env()}
+
+
 def analyze_live() -> CategoryStats:
     """Run the live-execution suite via pytest and tally pass / xfail.
 
@@ -630,7 +646,7 @@ def analyze_live() -> CategoryStats:
             cwd=repo_root,
             capture_output=True,
             text=True,
-            env=dict(os.environ),  # forward RUN_INTEGRATION + ARANGO_* env vars
+            env=_nested_run_env(),
         )
         summary = (proc.stdout or "") + (proc.stderr or "")
         if proc.returncode != 0:

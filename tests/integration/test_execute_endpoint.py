@@ -31,6 +31,8 @@ from collections.abc import Iterator
 
 import pytest
 
+from tests.integration.conftest import refuse_remote_target
+
 pytestmark = pytest.mark.integration
 
 _ARANGO_HOST = os.getenv("ARANGO_HOST", "localhost")
@@ -123,6 +125,7 @@ def _live_arango() -> Iterator[None]:
     """
     if not _RUN_INTEGRATION:
         pytest.skip("set RUN_INTEGRATION=1 to enable integration tests")
+    refuse_remote_target(_ARANGO_URL)
     if not _arangodb_reachable():
         if not _try_boot_arangodb_via_compose():
             pytest.skip(f"ArangoDB at {_ARANGO_URL} is unreachable and could not be booted")

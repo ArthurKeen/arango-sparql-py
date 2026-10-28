@@ -25,6 +25,7 @@ import socket
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 DEFAULT_ARANGO_HOST = os.getenv("ARANGO_HOST", "localhost")
 # Default host port is 8532, not the canonical 8529, so this
@@ -53,6 +54,52 @@ if _resolved_arango_db == "_system":
     # catalogue database, full stop.
     _resolved_arango_db = "sparql-to-aql"
 DEFAULT_ARANGO_DB = _resolved_arango_db
+
+#: Hosts an integration run may write to without being told otherwise.
+LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+#: Set to ``1`` to let an integration run use a non-loopback ArangoDB.
+ALLOW_REMOTE_ENV = "ARANGO_TEST_ALLOW_REMOTE"
+
+
+def pinned_target_env() -> dict[str, str]:
+    """The ArangoDB target this run resolved, as environment variables.
+
+    For code that reads the target from ``os.environ`` while tests run (a
+    nested pytest, the service app serving a real socket): by then
+    importing the app may have loaded a developer's ``.env`` into the
+    environment (see :func:`refuse_remote_target`).
+    """
+    return {
+        "ARANGO_URL": DEFAULT_ARANGO_URL,
+        "ARANGO_DB": DEFAULT_ARANGO_DB,
+        "ARANGO_TEST_DB": DEFAULT_ARANGO_DB,
+        "ARANGO_USER": DEFAULT_ARANGO_USER,
+        "ARANGO_PASSWORD": DEFAULT_ARANGO_PASSWORD,
+    }
+
+
+class RemoteTestTargetError(RuntimeError):
+    """An integration run resolved a non-loopback ArangoDB without opt-in."""
+
+
+def refuse_remote_target(url: str) -> None:
+    """Refuse to run integration tests against a non-loopback ArangoDB.
+
+    The tests create and drop collections. ``arango_sparql.service.app``
+    calls ``load_dotenv()`` on import, which searches upward from the
+    package and finds a developer's ``.env`` — whose ``ARANGO_URL`` can be a
+    shared cluster. A nested pytest run (the W3C live coverage gate)
+    inherited that and loaded W3C collections into prod.demo (2026-10-28).
+    A remote target now needs ``ARANGO_TEST_ALLOW_REMOTE=1``.
+    """
+    host = urlsplit(url).hostname
+    if host in LOOPBACK_HOSTS or os.getenv(ALLOW_REMOTE_ENV, "").lower() in ("1", "true", "yes"):
+        return
+    raise RemoteTestTargetError(
+        f"integration tests resolved ARANGO_URL host {host!r}, which is not local; they create and "
+        f"drop collections there. Point ARANGO_URL at a local ArangoDB, or set {ALLOW_REMOTE_ENV}=1 "
+        f"if writing to {host!r} is intended (check for a .env the service loaded)."
+    )
 
 
 def ensure_test_database() -> None:
@@ -92,7 +139,10 @@ def integration_enabled() -> bool:
     it here keeps both suites in lockstep on what "integration mode"
     means.
     """
-    return os.getenv("RUN_INTEGRATION", "").lower() in ("1", "true", "yes")
+    if os.getenv("RUN_INTEGRATION", "").lower() not in ("1", "true", "yes"):
+        return False
+    refuse_remote_target(DEFAULT_ARANGO_URL)
+    return True
 
 
 def arangodb_reachable(
