@@ -132,6 +132,19 @@ def emit_path_triple(
     raise UnsupportedSparqlError(f"property path type {type(predicate).__name__!r} is not supported")
 
 
+def _rpt_path_unsupported(visitor: AlgebraVisitor, subject: Any) -> bool:
+    """A path from an RPT-bound subject in a *mixed* mapping.
+
+    Each step's intermediate variable must read the triples table too. In a
+    pure triple store (:meth:`SchemaResolver.triple_store_class`) the visitor
+    routes every unbound intermediate there, so paths compose; in a mapping
+    that mixes RPT with PG or LPG it does not, so the path is refused.
+    """
+    if not (isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class):
+        return False
+    return visitor.resolver.triple_store_class() is None
+
+
 def _emit_sequence_path(
     visitor: AlgebraVisitor,
     subject: Any,
@@ -179,7 +192,7 @@ def _emit_sequence_path(
             visitor._emit_triple((subject, steps[0], obj))
             return
         raise UnsupportedSparqlError("SequencePath has no steps; expected at least one")
-    if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
+    if _rpt_path_unsupported(visitor, subject):
         raise UnsupportedSparqlError("property paths on RPT-mapped subjects are not yet supported")
 
     current_subject: Any = subject
@@ -270,7 +283,7 @@ def _emit_mul_path(
             f"nested property path {type(inner).__name__!r} inside MulPath (':p{mod}') is not supported"
         )
 
-    if isinstance(subject, Variable) and str(subject) in visitor.state.var_to_rpt_class:
+    if _rpt_path_unsupported(visitor, subject):
         raise UnsupportedSparqlError("property paths on RPT-mapped subjects are not yet supported")
 
     max_depth = visitor.resolver.property_path_max_depth
@@ -472,9 +485,29 @@ def _emit_zero_hop_path(
     subject: Any,
     obj: Any,
 ) -> None:
-    """Identity arm for ``:p*`` / ``:p?`` — bind ``?o`` to the same URI as ``?s``."""
-    subject_alias = visitor._ensure_subject_alias(subject)
-    uri_expr = subject_ref(subject_alias)
+    """Identity arm for ``:p*`` / ``:p?`` — bind ``?o`` to the same term as ``?s``.
+
+    SPARQL 1.1 §18.5 (ZeroLengthPath): a zero-length path from a term
+    matches that term, whether or not a document stores it. So a constant
+    subject is the IRI itself, and a subject already bound to a *value* —
+    an earlier triple's object, a sub-select column, a ``VALUES`` row — is
+    that value. Only a subject with no binding at all needs a document to
+    range over.
+    """
+    if isinstance(subject, URIRef):
+        uri_expr = visitor.builder.bind(str(subject), hint="uri")
+    elif (
+        isinstance(subject, Variable)
+        and str(subject) not in visitor.state.var_to_doc_alias
+        and str(subject) in visitor.state.var_to_expr
+    ):
+        uri_expr = visitor.state.var_to_expr[str(subject)]
+    else:
+        uri_expr = subject_ref(visitor._ensure_subject_alias(subject))
+    if not visitor.builder.has_for_clause():
+        # The arm reads no collection (a UNION arm is its own subquery);
+        # give its FILTER/RETURN a scope, as an empty BGP does (``visit_BGP``).
+        visitor.builder.for_inline(visitor.builder.fresh_alias(prefix="empty"), "[1]")
     if isinstance(obj, Variable):
         o_name = str(obj)
         existing = visitor.state.var_to_expr.get(o_name)

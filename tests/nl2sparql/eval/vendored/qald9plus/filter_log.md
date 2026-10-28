@@ -4,26 +4,25 @@
 - train: 408
 - test: 150
 
-**Kept:** 531
-- train: 405
+**Kept:** 532
+- train: 406
 - test: 126
 
-**Dropped:** 27
+**Dropped:** 26
 
 | Reason | Count |
 |--------|-------|
-| non-transpilable | 3 |
+| non-transpilable | 2 |
 | parse-fail | 24 |
 
-**Reconciliation:** kept (531) + dropped (27) = 558 == total input (558).
+**Reconciliation:** kept (532) + dropped (26) = 558 == total input (558).
 
 **Multiple-English-paraphrase questions:** 0 (Task 1's raw pruning already reduced every question to a single `en` entry).
 
 ## Per-reason detail
 
-### non-transpilable (3)
+### non-transpilable (2)
 
-- qald9plus-train-235
 - qald9plus-test-122
 - qald9plus-test-80
 
@@ -56,10 +55,10 @@
 
 ## Statistical power (D-07)
 
-At the kept survivor count (N=531), achieved MDE (alpha=0.05, power=0.80):
+At the kept survivor count (N=532), achieved MDE (alpha=0.05, power=0.80):
 
 | Assumed discordant rate (pi) | achieved_mde |
 |---|---|
-| 0.2 | 0.0544 |
-| 0.25 | 0.0608 |
+| 0.2 | 0.0543 |
+| 0.25 | 0.0607 |
 

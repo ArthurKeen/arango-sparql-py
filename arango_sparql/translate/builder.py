@@ -724,6 +724,21 @@ class AqlQueryBuilder:
         )
         return self
 
+    def open_one_row_scope_first(self, row_alias: str) -> AqlQueryBuilder:
+        """Put ``FOR <row_alias> IN [1]`` before every clause, if there is no FOR.
+
+        A sub-query body whose patterns only read an outer document (a
+        UNION arm ``{ ?s :p ?o }`` with ``?s`` bound outside: ``FILTER
+        HAS(doc1, "p")`` and ``doc1.p``) opens no FOR of its own. The
+        one-row scope goes first so those FILTERs sit inside it.
+        """
+        if self.has_for_clause():
+            return self
+        if not _AQL_IDENT_RE.match(row_alias):
+            raise ValueError(f"invalid FOR alias: {row_alias!r}")
+        self._body_clauses.insert(0, _Clause(_ClauseKind.FOR, f"FOR {row_alias} IN [1]"))
+        return self
+
     def for_values(self, row_alias: str, values_bind: str) -> AqlQueryBuilder:
         """Emit ``FOR <row_alias> IN <values_bind>`` for SPARQL VALUES.
 

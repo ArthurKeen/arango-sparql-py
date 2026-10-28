@@ -185,15 +185,16 @@ def test_sequence_path_composes_with_type_pattern() -> None:
 
 
 def test_property_path_on_rpt_subject_refuses() -> None:
-    """An RPT-mapped subject + property path is explicitly rejected.
+    """An RPT-mapped subject + property path is rejected in a *mixed* mapping.
 
-    The intermediate variables produced by path expansion would
-    need to inherit the RPT class binding so each step reads from
-    the triples table; that wiring is deferred to a follow-up slice.
-    Until then the visitor refuses with a typed error rather than
-    silently emitting wrong AQL — ``.cursor/rules/
-    comprehensiveness-over-simplification.mdc`` mandates "no
-    swallowed errors"."""
+    The intermediate variables produced by path expansion need to read
+    the triples table too. In a mapping that mixes RPT with PG classes
+    nothing routes them there, so the visitor refuses with a typed error
+    rather than silently emitting wrong AQL — ``.cursor/rules/
+    comprehensiveness-over-simplification.mdc`` mandates "no swallowed
+    errors". (In a pure triple store the intermediates do route to the
+    triples table and the path composes: ``rpt.yml ::
+    triple_store_sequence_path``.)"""
     rpt_ttl = """
     @prefix : <http://ex.org/> .
     @prefix owl: <http://www.w3.org/2002/07/owl#> .
@@ -201,6 +202,8 @@ def test_property_path_on_rpt_subject_refuses() -> None:
     :Triples a owl:Class ;
         phys:mappingStyle "RPT" ;
         phys:triplesCollection "_triples" .
+    :Doc a owl:Class ;
+        phys:collectionName "Doc" .
     """
     bundle = MappingBundle(
         physical_mapping={"entities": {}, "relationships": {}},

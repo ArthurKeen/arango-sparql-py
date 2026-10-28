@@ -162,8 +162,8 @@ cases:
       }
     expected_aql: |-
       FOR doc1 IN @@c1_Person
-      FOR doc2 IN @@c1_Person
       FILTER IS_OBJECT(doc1.address) && HAS(doc1.address, "city")
+      FOR doc2 IN @@c1_Person
       FILTER IS_OBJECT(doc2.address) && HAS(doc2.address, "city")
       FILTER doc2.address.city == doc1.address.city
       FILTER (NOT_NULL(doc1._uri, doc1._id) != NOT_NULL(doc2._uri, doc2._id))
