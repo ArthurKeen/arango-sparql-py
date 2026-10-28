@@ -1621,6 +1621,17 @@ class AlgebraVisitor:
             if resolved.style == "RPT":
                 self._emit_rpt_type_pattern(s, o, resolved)
                 return
+            if resolved.style == "UNION":
+                # A supertype (arango-query-core's UNION style): every member
+                # class, read from each member collection (plan D9).
+                members = list(self.resolver.supertype_members(o))
+                if any(m.style == "RPT" for m in members):
+                    raise UnsupportedSparqlError(
+                        f"supertype {str(o)!r} has members stored as RDF triples (RPT); "
+                        f"reading a supertype from the triples table is not supported"
+                    )
+                self._open_classes(s, members, f"supertype {str(o)!r}")
+                return
             alias = self._open_collection(resolved.collection, resolved=resolved)
             if resolved.type_field and resolved.type_value:
                 # Hybrid (multi-class) collection: the mapper emits a
@@ -2286,7 +2297,9 @@ class AlgebraVisitor:
             resolved = self.resolver.resolve_class(prop.range_iri)
         except SchemaResolutionError:
             return None
-        if resolved.style == "RPT":
+        if resolved.style in ("RPT", "UNION"):
+            # A supertype range has no one collection to look the object up
+            # in; the forward plan reads it instead.
             return None
         alias = self._open_collection(resolved.collection, resolved=resolved)
         if resolved.type_field and resolved.type_value:
@@ -2303,6 +2316,16 @@ class AlgebraVisitor:
         self.state.const_subject_alias[str(obj)] = alias
         return alias
 
+    def _concrete_classes(self, class_iris: tuple[str, ...] | list[str]) -> list[ResolvedClass]:
+        """Resolve *class_iris*, a ``UNION`` supertype standing for its members
+        (:meth:`SchemaResolver.supertype_members`), without duplicates."""
+        out: list[ResolvedClass] = []
+        for iri in class_iris:
+            resolved = self.resolver.resolve_class(iri)
+            members = self.resolver.supertype_members(iri) if resolved.style == "UNION" else (resolved,)
+            out.extend(m for m in members if m not in out)
+        return out
+
     def _keep_subject_collections(self, v_alias: str, prop: Any) -> None:
         """Restrict a reverse traversal's vertex to the subject's collections.
 
@@ -2313,7 +2336,7 @@ class AlgebraVisitor:
         strict mapping with no domain has no forward plan to match (it
         refuses the subject), so its vertices stay as the edge finds them.
         """
-        classes = [self.resolver.resolve_class(iri) for iri in self.resolver.domain_classes(prop.iri)]
+        classes = self._concrete_classes(self.resolver.domain_classes(prop.iri))
         if any(c.style == "RPT" for c in classes):
             classes = []  # as _route_by_domain: an RPT domain does not route
         if classes:
@@ -2339,39 +2362,61 @@ class AlgebraVisitor:
         For a subject no type pattern named — a constant IRI, a variable
         bound only to a value, a fresh variable — the property's domain says
         what it is (RDF: every subject of the property belongs to the
-        domain). One class opens that class's collection, with its label
-        test in LPG; a union of LABEL classes in one collection becomes an
-        any-of label test. A union spanning several collections (PG's
-        Post ∪ Comment) reads all of them (:meth:`_route_by_domain_union`,
-        plan decision D9). Returns ``None`` when the domain cannot help
-        (none declared, or an RPT class).
+        domain), read by :meth:`_open_classes`. A ``UNION`` supertype in the
+        domain stands for its members. Returns ``None`` when the domain
+        cannot help (none declared, or an RPT class).
         """
         class_iris = self.resolver.domain_classes(prop.iri)
         if not class_iris:
             return None
-        classes = [self.resolver.resolve_class(iri) for iri in class_iris]
+        classes = self._concrete_classes(class_iris)
         if any(c.style == "RPT" for c in classes):
             return None
+        return self._open_classes(subject, classes, f"the rdfs:domain of {prop.iri!r}")
+
+    def _open_classes(self, subject: Any, classes: list[ResolvedClass], what: str) -> str:
+        """Open the documents of *classes* and bind *subject* to them.
+
+        One collection opens that collection, with its label test in LPG (an
+        any-of test for several LABEL classes sharing it). Classes spanning
+        several collections (PG's Post ∪ Comment) read all of them
+        (:meth:`_open_class_union`, plan decision D9). *what* names the
+        source of the classes in error messages (a domain, a supertype).
+        """
         by_collection: dict[str, list[ResolvedClass]] = {}
         for c in classes:
             by_collection.setdefault(c.collection, []).append(c)
         if len(by_collection) > 1:
-            return self._route_by_domain_union(subject, prop, by_collection)
+            return self._open_class_union(subject, by_collection, what)
         anchor = classes[0]
         alias = self._open_collection(anchor.collection, resolved=anchor)
-        for test in self._domain_class_tests(self.builder, alias, classes, prop):
+        for test in self._class_tests(self.builder, alias, classes, what):
             self.builder.filter_raw(test)
         self._enforce_tenant_scope(alias, anchor)
-        if isinstance(subject, URIRef):
-            uri_bind = self.builder.bind(str(subject), hint="uri")
-            self.builder.filter_raw(subject_matches(alias, uri_bind))
-            self.state.const_subject_alias[str(subject)] = alias
-        else:
-            self._bind_subject(subject, alias)
+        self._bind_opened_subject(subject, alias, matched=False)
         return alias
 
-    def _domain_class_tests(
-        self, builder: AqlQueryBuilder, alias: str, classes: list[ResolvedClass], prop: Any
+    def _bind_opened_subject(self, subject: Any, alias: str, *, matched: bool) -> None:
+        """Tie *subject* to the documents just opened at *alias*.
+
+        A constant subject is one document: joined to its earlier alias, or
+        matched on its IRI here unless *matched* (the union arms already
+        did). A variable binds to the alias.
+        """
+        if not isinstance(subject, URIRef):
+            self._bind_subject(subject, alias)
+            return
+        previous = self.state.const_subject_alias.get(str(subject))
+        if previous is not None:
+            self.builder.filter_raw(f"{subject_ref(alias)} == {subject_ref(previous)}")
+            return
+        if not matched:
+            uri_bind = self.builder.bind(str(subject), hint="uri")
+            self.builder.filter_raw(subject_matches(alias, uri_bind))
+        self.state.const_subject_alias[str(subject)] = alias
+
+    def _class_tests(
+        self, builder: AqlQueryBuilder, alias: str, classes: list[ResolvedClass], what: str
     ) -> list[str]:
         """The class test for a document of *classes*, all in one collection.
 
@@ -2386,7 +2431,7 @@ class AlgebraVisitor:
             or len({(c.type_field, c.type_field_is_array) for c in labelled}) != 1
         ):
             raise UnsupportedSparqlError(
-                f"the rdfs:domain of {prop.iri!r} mixes classes with different type fields in "
+                f"{what} mixes classes with different type fields in "
                 f"collection {classes[0].collection!r}; cannot test the subject's class"
             )
         tests = []
@@ -2396,12 +2441,13 @@ class AlgebraVisitor:
             tests.append(type_predicate(alias, c.type_field, bind, is_array=c.type_field_is_array))
         return [tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")"]
 
-    def _route_by_domain_union(
-        self, subject: Any, prop: Any, by_collection: dict[str, list[ResolvedClass]]
+    def _open_class_union(
+        self, subject: Any, by_collection: dict[str, list[ResolvedClass]], what: str
     ) -> str:
-        """Read a subject whose ``rdfs:domain`` spans several collections from
-        all of them (plan decision D9): LDBC's ``?m :hasCreator ?p`` finds
-        the message in ``Post`` or in ``Comment``.
+        """Read a subject whose classes span several collections from all of
+        them (plan decision D9): LDBC's ``?m :hasCreator ?p`` finds the
+        message in ``Post`` or in ``Comment``, and so does ``?m a :Message``
+        for a ``UNION`` supertype.
 
         One ``FOR … IN UNION(…)`` arm per collection, each with its own class
         test, and for a constant subject its own indexed ``_uri`` match. The
@@ -2413,15 +2459,16 @@ class AlgebraVisitor:
         sharded = sorted({c.collection for c in classes if c.shard_family is not None})
         if sharded:
             raise UnsupportedSparqlError(
-                f"the subject {subject} of {prop.iri!r} can be in several collections, and "
-                f"{sharded} are sharded; reading a subject across shard families is not supported"
+                f"{what} spans several collections, and {sharded} are sharded; reading "
+                f"the subject {subject} across shard families is not supported"
             )
         if len({(c.tenant_field, c.tenant_entity) for c in classes}) > 1:
             raise UnsupportedSparqlError(
-                f"the subject {subject} of {prop.iri!r} can be in classes with different tenant "
-                f"scoping; one tenant filter cannot apply to all of them"
+                f"{what} spans classes with different tenant scoping; one tenant filter "
+                f"cannot apply to the subject {subject} in all of them"
             )
-        uri_bind = self.builder.bind(str(subject), hint="uri") if isinstance(subject, URIRef) else None
+        match_in_arms = isinstance(subject, URIRef) and str(subject) not in self.state.const_subject_alias
+        uri_bind = self.builder.bind(str(subject), hint="uri") if match_in_arms else None
         arm_aqls: list[str] = []
         for collection in sorted(by_collection):
             # One child per arm, as SPARQL UNION arms are built: its scan,
@@ -2430,7 +2477,7 @@ class AlgebraVisitor:
             child = self.builder.create_child()
             inner = child.fresh_alias()
             child.for_(inner, collection)
-            for test in self._domain_class_tests(child, inner, by_collection[collection], prop):
+            for test in self._class_tests(child, inner, by_collection[collection], what):
                 child.filter_raw(test)
             if uri_bind is not None:
                 child.filter_raw(subject_matches(inner, uri_bind))
@@ -2440,10 +2487,7 @@ class AlgebraVisitor:
         self.builder.for_union(alias, arm_aqls, scans_documents=True)
         self._apply_graph_scope(alias)
         self._enforce_tenant_scope(alias, classes[0])
-        if isinstance(subject, URIRef):
-            self.state.const_subject_alias[str(subject)] = alias
-        else:
-            self._bind_subject(subject, alias)
+        self._bind_opened_subject(subject, alias, matched=match_in_arms)
         return alias
 
     def _ensure_subject_alias(self, subject: Any, prop: Any | None = None) -> str:

@@ -61,6 +61,12 @@ _PHYS_NAMESPACES = (
 )
 _LOCAL_NAME_RE = re.compile(r"[#/]([^#/]+)$")
 
+#: ``phys:mappingStyle`` values a class may carry (PRD §6.1). ``LABELS`` is
+#: arango-schema-analyzer's label-array style and ``MULTI_LABEL`` / ``UNION``
+#: are arango-query-core's supertype styles; any other value is refused
+#: rather than read as a plain collection.
+CLASS_MAPPING_STYLES = frozenset({"COLLECTION", "DOCUMENT", "LABEL", "LABELS", "MULTI_LABEL", "RPT", "UNION"})
+
 # Synthetic-IRI namespace used by :meth:`SchemaResolver.from_mapping_bundle`
 # when a :class:`~arango_sparql.translate.mapping.MappingBundle` carries no
 # inline OWL ontology. The choice of ``urn:`` rather than a resolvable
@@ -111,11 +117,14 @@ class ResolvedClass:
     the visitor then emits a test that is correct for both shapes (issue #10;
     ``builder.type_predicate``)."""
     style: str | None = None
-    """One of ``COLLECTION`` / ``LABEL`` / ``RPT`` / ``DOCUMENT``
-    (PRD §6.1) when the OWL ontology declared ``phys:mappingStyle``;
-    ``None`` for legacy mappings that omit the explicit style. The
-    visitor treats ``None`` as ``COLLECTION`` (default PG) — keeps
-    pre-existing ontologies working without mass-annotation."""
+    """One of :data:`CLASS_MAPPING_STYLES` (PRD §6.1) when the OWL ontology
+    declared ``phys:mappingStyle``; ``None`` for legacy mappings that omit
+    the explicit style. The visitor treats ``None`` as ``COLLECTION``
+    (default PG) — keeps pre-existing ontologies working without
+    mass-annotation. ``LABELS`` / ``MULTI_LABEL`` resolve to a label-array
+    test (``type_field`` = ``phys:labelsField``); a ``UNION`` supertype has
+    no collection of its own (``collection == ""``) and is read through
+    :meth:`SchemaResolver.supertype_members`."""
     subject_column: str = "subject_uri"
     predicate_column: str = "predicate"
     object_uri_column: str = "object_uri"
@@ -481,6 +490,42 @@ class SchemaResolver:
     # ------------------------------------------------------------------
     # Class resolution
     # ------------------------------------------------------------------
+    def supertype_members(self, iri: URIRef | str) -> tuple[ResolvedClass, ...]:
+        """The concrete classes a ``UNION`` supertype stands for.
+
+        The same rule as arango-query-core's ``MappingResolver.supertype_members``
+        (its OWL form, ``owl_turtle``, writes the members as ``rdfs:subClassOf``
+        subclasses): members are the declared subclasses, a member that is
+        itself a supertype is flattened, a cycle or a supertype with no members
+        is a mapping error. Ordered by IRI (an RDF graph has no declaration
+        order). ``tests/translate/test_supertype_classes.py`` checks it against
+        arango-query-core's own answer whenever that library is installed.
+        """
+        out: list[ResolvedClass] = []
+
+        def visit(cls: URIRef, path: tuple[str, ...]) -> None:
+            if str(cls) in path:
+                raise SchemaResolutionError(f"supertype cycle: {' -> '.join((*path, str(cls)))}")
+            resolved = self.resolve_class(cls)
+            if resolved.style != "UNION":
+                if not path:
+                    raise SchemaResolutionError(f"class {str(cls)!r} is not a UNION supertype")
+                if resolved not in out:
+                    out.append(resolved)
+                return
+            members = sorted(
+                (m for m in self.ontology.subjects(RDFS.subClassOf, cls) if isinstance(m, URIRef)), key=str
+            )
+            if not members:
+                raise SchemaResolutionError(
+                    f"UNION supertype {str(cls)!r} has no members: declare them with rdfs:subClassOf"
+                )
+            for member in members:
+                visit(member, (*path, str(cls)))
+
+        visit(URIRef(str(iri)), ())
+        return tuple(out)
+
     def resolve_class(self, iri: URIRef | str) -> ResolvedClass:
         key = str(iri)
         cached = self._class_cache.get(key)
@@ -516,6 +561,29 @@ class SchemaResolver:
             )
             self._class_cache[key] = resolved
             return resolved
+        style = self._physical_string(ref, "mappingStyle")
+        if style is not None and style not in CLASS_MAPPING_STYLES:
+            # An unknown style used to read as a plain collection, which is
+            # how arango-query-core's supertypes and the analyzer's LABELS
+            # classes returned wrong rows without an error.
+            raise SchemaResolutionError(
+                f"class {key!r} has phys:mappingStyle {style!r}, which this translator does not "
+                f"support (known: {', '.join(sorted(CLASS_MAPPING_STYLES))})"
+            )
+        if style == "UNION":
+            # A supertype has no collection of its own: the visitor reads its
+            # members. The empty name makes any reader that does not know
+            # supertypes fail when it binds the collection, never scan a
+            # collection named after the class.
+            resolved = ResolvedClass(
+                iri=key,
+                collection="",
+                style=style,
+                tenant_field=self._physical_string(ref, "tenantField"),
+                tenant_entity=self._physical_string(ref, "tenantEntity"),
+            )
+            self._class_cache[key] = resolved
+            return resolved
         physical = self._physical_string(ref, "collectionName")
         if physical is None:
             # Class is declared in the ontology but the mapper did not
@@ -539,7 +607,15 @@ class SchemaResolver:
         type_field = self._physical_string(ref, "typeField")
         type_value = self._physical_string(ref, "typeValue")
         type_field_is_array = parse_flag(self._physical_string(ref, "typeFieldIsArray"))
-        style = self._physical_string(ref, "mappingStyle")
+        if style in ("LABELS", "MULTI_LABEL"):
+            # The analyzer's LABELS and arango-query-core's MULTI_LABEL share
+            # one field set: ``labelValue IN doc[labelsField]``.
+            labels_field = self._physical_string(ref, "labelsField")
+            if labels_field is None:
+                raise SchemaResolutionError(f"{style} class {key!r} has no phys:labelsField")
+            type_field = labels_field
+            type_value = self._physical_string(ref, "labelValue") or local_name(ref)
+            type_field_is_array = True
         # RPT classes default the resolver-visible "collection" to the
         # triples table — that's where the engine reads rows. Inline
         # OWL ontologies that explicitly declare ``phys:mappingStyle
