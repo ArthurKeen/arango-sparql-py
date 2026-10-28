@@ -66,6 +66,55 @@ def _format_for(path: Path) -> Any:
     raise ValueError(f"unsupported RDF file suffix: {suffix!r}")
 
 
+def literal_to_python(literal: Any) -> Any:
+    """Coerce a pyoxigraph ``Literal`` to the Python primitive AQL
+    will round-trip via JSON.
+
+    pyoxigraph 0.3+ exposes a ``Literal.value`` attribute (lexical
+    form) and a ``.datatype`` (a ``NamedNode``). We delegate the
+    XSD → Python coercion to the same map the SRX parser uses so the
+    loader and the comparator stay symmetric — a divergence between
+    the two sides has to come from AQL execution, not from a
+    type-mapping mismatch in our test harness.
+    """
+    text = literal.value
+    datatype = getattr(literal, "datatype", None)
+    if datatype is None:
+        return text
+    dt_iri = datatype.value
+    if dt_iri == "http://www.w3.org/2001/XMLSchema#boolean":
+        return text.strip().lower() == "true"
+    if dt_iri in (
+        "http://www.w3.org/2001/XMLSchema#integer",
+        "http://www.w3.org/2001/XMLSchema#int",
+        "http://www.w3.org/2001/XMLSchema#long",
+        "http://www.w3.org/2001/XMLSchema#short",
+        "http://www.w3.org/2001/XMLSchema#byte",
+        "http://www.w3.org/2001/XMLSchema#nonNegativeInteger",
+        "http://www.w3.org/2001/XMLSchema#nonPositiveInteger",
+        "http://www.w3.org/2001/XMLSchema#positiveInteger",
+        "http://www.w3.org/2001/XMLSchema#negativeInteger",
+        "http://www.w3.org/2001/XMLSchema#unsignedLong",
+        "http://www.w3.org/2001/XMLSchema#unsignedInt",
+        "http://www.w3.org/2001/XMLSchema#unsignedShort",
+        "http://www.w3.org/2001/XMLSchema#unsignedByte",
+    ):
+        try:
+            return int(text)
+        except ValueError:
+            return text
+    if dt_iri in (
+        "http://www.w3.org/2001/XMLSchema#decimal",
+        "http://www.w3.org/2001/XMLSchema#double",
+        "http://www.w3.org/2001/XMLSchema#float",
+    ):
+        try:
+            return float(text)
+        except ValueError:
+            return text
+    return text
+
+
 def oxi_bindings(store: Any, sparql: str) -> list[dict[str, str]]:
     """Run *sparql* against *store* and return SELECT bindings as plain dicts.
 

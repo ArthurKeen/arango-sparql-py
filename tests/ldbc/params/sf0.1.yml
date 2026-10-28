@@ -1,0 +1,176 @@
+scale_factor: '0.1'
+source: LDBC substitution_parameters-sf0.1 (complex reads); derived (short reads)
+bindings:
+  interactive-complex-1:
+  - personId: '30786325579101'
+    firstName: Ian
+  - personId: '24189255811707'
+    firstName: Jun
+  - personId: '26388279067358'
+    firstName: Jun
+  - personId: '99999999999999999'
+    firstName: Ian
+  interactive-complex-10:
+  - personId: '30786325579101'
+    month: '7'
+  - personId: '24189255811707'
+    month: '12'
+  - personId: '26388279067358'
+    month: '7'
+  - personId: '99999999999999999'
+    month: '7'
+  interactive-complex-11:
+  - personId: '30786325579101'
+    countryName: Puerto_Rico
+    workFromYear: '2004'
+  - personId: '24189255811707'
+    countryName: Switzerland
+    workFromYear: '2006'
+  - personId: '26388279067358'
+    countryName: Oman
+    workFromYear: '1998'
+  - personId: '99999999999999999'
+    countryName: Puerto_Rico
+    workFromYear: '2004'
+  interactive-complex-12:
+  - personId: '19791209300143'
+    tagClassName: BasketballPlayer
+  - personId: '10995116278647'
+    tagClassName: Chancellor
+  - personId: '32985348834326'
+    tagClassName: MilitaryUnit
+  - personId: '99999999999999999'
+    tagClassName: BasketballPlayer
+  interactive-complex-13:
+  - person1Id: '32985348833679'
+    person2Id: '26388279067108'
+  - person1Id: '15393162790207'
+    person2Id: '6597069767300'
+  - person1Id: '26388279067108'
+    person2Id: '26388279066795'
+  - person1Id: '99999999999999999'
+    person2Id: '99999999999999999'
+  interactive-complex-14:
+  - person1Id: '32985348833679'
+    person2Id: '2199023256862'
+  - person1Id: '15393162790207'
+    person2Id: '28587302322817'
+  - person1Id: '26388279067108'
+    person2Id: '32985348833679'
+  - person1Id: '99999999999999999'
+    person2Id: '99999999999999999'
+  interactive-complex-2:
+  - personId: '19791209300143'
+    maxDate: '1354060800000'
+  - personId: '10995116278647'
+    maxDate: '1346112000000'
+  - personId: '32985348834326'
+    maxDate: '1334102400000'
+  - personId: '99999999999999999'
+    maxDate: '1354060800000'
+  interactive-complex-3:
+  - personId: '15393162790207'
+    startDate: '1291161600000'
+    durationDays: '30'
+    countryXName: Puerto_Rico
+    countryYName: Republic_of_Macedonia
+  - personId: '32985348833679'
+    startDate: '1298937600000'
+    durationDays: '38'
+    countryXName: Switzerland
+    countryYName: Uruguay
+  - personId: '26388279067108'
+    startDate: '1325376000000'
+    durationDays: '28'
+    countryXName: Oman
+    countryYName: Dominican_Republic
+  - personId: '99999999999999999'
+    startDate: '1291161600000'
+    durationDays: '30'
+    countryXName: Puerto_Rico
+    countryYName: Republic_of_Macedonia
+  interactive-complex-4:
+  - personId: '10995116278874'
+    startDate: '1338508800000'
+    durationDays: '28'
+  - personId: '6597069766964'
+    startDate: '1343779200000'
+    durationDays: '71'
+  - personId: '19791209300151'
+    startDate: '1349049600000'
+    durationDays: '76'
+  - personId: '99999999999999999'
+    startDate: '1338508800000'
+    durationDays: '28'
+  interactive-complex-5:
+  - personId: '15393162790207'
+    minDate: '1344643200000'
+  - personId: '32985348833679'
+    minDate: '1347408000000'
+  - personId: '26388279067108'
+    minDate: '1346544000000'
+  - personId: '99999999999999999'
+    minDate: '1344643200000'
+  interactive-complex-6:
+  - personId: '30786325579101'
+    tagName: Shakira
+  - personId: '24189255811707'
+    tagName: Alberto_Fujimori
+  - personId: '26388279067358'
+    tagName: Mary_Magdalene
+  - personId: '99999999999999999'
+    tagName: Shakira
+  interactive-complex-7:
+  - personId: '26388279067534'
+  - personId: '24189255811566'
+  - personId: '6597069767242'
+  - personId: '99999999999999999'
+  interactive-complex-8:
+  - personId: '2199023256816'
+  - personId: '6597069767242'
+  - personId: '987'
+  - personId: '99999999999999999'
+  interactive-complex-9:
+  - personId: '32985348834013'
+    maxDate: '1346112000000'
+  - personId: '17592186044737'
+    maxDate: '1343433600000'
+  - personId: '30786325579101'
+    maxDate: '1328054400000'
+  - personId: '99999999999999999'
+    maxDate: '1346112000000'
+  interactive-short-1:
+  - personId: '30786325579101'
+  - personId: '24189255811707'
+  - personId: '26388279067358'
+  - personId: '99999999999999999'
+  interactive-short-2:
+  - personId: '30786325579101'
+  - personId: '24189255811707'
+  - personId: '26388279067358'
+  - personId: '99999999999999999'
+  interactive-short-3:
+  - personId: '30786325579101'
+  - personId: '24189255811707'
+  - personId: '26388279067358'
+  - personId: '99999999999999999'
+  interactive-short-4:
+  - messageId: '1030792359243'
+  - messageId: '1099511817181'
+  - messageId: '1030792487635'
+  - messageId: '99999999999999999'
+  interactive-short-5:
+  - messageId: '1030792359243'
+  - messageId: '1099511817181'
+  - messageId: '1030792487635'
+  - messageId: '99999999999999999'
+  interactive-short-6:
+  - messageId: '1030792359243'
+  - messageId: '1099511817181'
+  - messageId: '1030792487635'
+  - messageId: '99999999999999999'
+  interactive-short-7:
+  - messageId: '1030792359243'
+  - messageId: '1099511817181'
+  - messageId: '1030792487635'
+  - messageId: '99999999999999999'
