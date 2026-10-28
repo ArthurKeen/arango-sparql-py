@@ -172,3 +172,62 @@ cases:
       _p1_rdftype: http://www.w3.org/1999/02/22-rdf-syntax-ns#type
       _p2_cls: http://example.org/Fact
       _p3_pred: http://example.org/label
+
+  - name: edge_type_field_named_like_a_keyword
+    # ``phys:typeField`` is a mapping column too: the GENERIC_WITH_TYPE
+    # discriminator FILTER reads it through the same rule.
+    ontology: &edge_type_ontology |
+      @prefix : <http://example.org/> .
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+      @prefix phys: <https://arango.solutions/phys#> .
+      :Person a owl:Class ; phys:mappingStyle "COLLECTION" ; phys:collectionName "Persons" .
+      :knows a owl:ObjectProperty ; rdfs:domain :Person ; rdfs:range :Person ;
+        phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:edgeCollectionName "Rels" ;
+        phys:typeField "graph" ; phys:typeValue "KNOWS" .
+    sparql: |
+      PREFIX : <http://example.org/>
+      SELECT ?a ?b WHERE { ?a a :Person . ?a :knows ?b }
+    expected_aql: |
+      FOR doc1 IN @@c1_Persons
+      FOR v2, e3 IN OUTBOUND doc1 @@c2_Rels
+      FILTER e3.`graph` == @_p1_graph
+      RETURN { a: NOT_NULL(doc1._uri, doc1._id), b: NOT_NULL(v2._uri, v2._id) }
+    expected_bind_vars: {"@c1_Persons": "Persons", "@c2_Rels": "Rels", "_p1_graph": "KNOWS"}
+
+  - name: edge_type_field_named_like_a_keyword_reverse_traversal
+    # The subject is unbound and the object is a document, so the edge is
+    # walked backwards; the discriminator FILTER is quoted on that path too.
+    ontology: *edge_type_ontology
+    sparql: |
+      PREFIX : <http://example.org/>
+      SELECT ?a ?b WHERE { ?b a :Person . ?a :knows ?b }
+    expected_aql: |
+      FOR doc1 IN @@c1_Persons
+      FOR v2, e3 IN INBOUND doc1 @@c2_Rels
+      FILTER e3.`graph` == @_p1_graph
+      FILTER IS_SAME_COLLECTION(@_p2_coll, v2)
+      RETURN { a: NOT_NULL(v2._uri, v2._id), b: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Persons": Persons
+      "@c2_Rels": Rels
+      _p1_graph: KNOWS
+      _p2_coll: Persons
+
+  - name: tenant_field_named_like_a_keyword
+    # ``phys:tenantField`` reaches AQL as the tenant FILTER on every read.
+    ontology: |
+      @prefix : <http://example.org/> .
+      @prefix owl: <http://www.w3.org/2002/07/owl#> .
+      @prefix phys: <https://arango.solutions/phys#> .
+      :Doc a owl:Class ; phys:mappingStyle "COLLECTION" ; phys:collectionName "Docs" ;
+        phys:tenantField "in" ; phys:tenantEntity "Org" .
+    tenant_id: acme
+    sparql: |
+      PREFIX : <http://example.org/>
+      SELECT ?d WHERE { ?d a :Doc }
+    expected_aql: |
+      FOR doc1 IN @@c1_Docs
+      FILTER doc1.`in` == @_p1_tenant
+      RETURN { d: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars: {"@c1_Docs": "Docs", "_p1_tenant": "acme"}

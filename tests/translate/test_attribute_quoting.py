@@ -148,7 +148,9 @@ def test_reserved_names_are_lower_case_and_lexer_shaped() -> None:
         ("FILTER", "`FILTER`"),
     ],
 )
-def test_object_key_quotes_only_what_arangodb_rejects_bare(name: str, key: str) -> None:
+def test_object_key_quotes_reserved_and_lexer_rejected_names(name: str, key: str) -> None:
+    # Every reserved word is quoted, a superset of the keys the server rejects
+    # bare (``{limit: 1}`` parses); quoting one that did not need it is harmless.
     assert object_key(name) == key
 
 

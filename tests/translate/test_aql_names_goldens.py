@@ -2,7 +2,8 @@
 
 The corpus lives in :mod:`aql_names.yml` next to this file. Each case pins the
 exact AQL string and bind-vars dict. A case may carry its own ``ontology``
-(the RPT column case); otherwise the file-level one applies.
+(the mapping-column cases); otherwise the file-level one applies. A case with
+a ``tenant_id`` translates under that tenant (the ``tenantField`` case).
 
 The companion live test (``tests/integration/test_aql_names_live.py``) runs
 the same shapes on ArangoDB against pyoxigraph, and re-validates the keyword
@@ -22,14 +23,15 @@ from arango_sparql.translate.resolver import SchemaResolver
 GOLDEN_PATH = Path(__file__).parent / "aql_names.yml"
 
 
-def _load() -> list[tuple[str, str, str, str, dict]]:
-    """Return ``(name, ontology_ttl, sparql, expected_aql, expected_bind_vars)``."""
+def _load() -> list[tuple[str, str, str, str | None, str, dict]]:
+    """Return ``(name, ontology_ttl, sparql, tenant_id, expected_aql, expected_bind_vars)``."""
     data = yaml.safe_load(GOLDEN_PATH.read_text(encoding="utf-8"))
     return [
         (
             case["name"],
             case.get("ontology", data["ontology"]),
             case["sparql"],
+            case.get("tenant_id"),
             case["expected_aql"].rstrip("\n"),
             case["expected_bind_vars"],
         )
@@ -41,7 +43,7 @@ _CASES = _load()
 
 
 @pytest.mark.parametrize(
-    "name, ontology_ttl, sparql, expected_aql, expected_bind_vars",
+    "name, ontology_ttl, sparql, tenant_id, expected_aql, expected_bind_vars",
     _CASES,
     ids=[c[0] for c in _CASES],
 )
@@ -49,10 +51,11 @@ def test_aql_names_golden(
     name: str,
     ontology_ttl: str,
     sparql: str,
+    tenant_id: str | None,
     expected_aql: str,
     expected_bind_vars: dict,
 ) -> None:
-    result = translate(sparql, resolver=SchemaResolver.from_turtle(ontology_ttl))
+    result = translate(sparql, resolver=SchemaResolver.from_turtle(ontology_ttl), tenant_id=tenant_id)
     assert result.aql == expected_aql, f"{name}: AQL drifted"
     assert result.bind_vars == expected_bind_vars, f"{name}: bind vars drifted"
 

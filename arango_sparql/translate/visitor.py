@@ -2257,7 +2257,7 @@ class AlgebraVisitor:
         ``:livesIn`` rows that happen to ride the same collection."""
         if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
             bind = self.builder.bind(prop.type_value, hint=prop.type_field)
-            self.builder.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+            self.builder.filter_eq(attribute_ref(e_alias, prop.type_field), bind)
 
     def _reverse_traversal_source(self, subject: Any, prop: Any, obj: Any) -> str | None:
         """The alias to traverse ``prop`` backwards from, or ``None``.

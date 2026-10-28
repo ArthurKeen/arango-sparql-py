@@ -1145,7 +1145,7 @@ A name AQL cannot quote is refused, never emitted bare:
 
 The keyword list is ArangoDB's. `tests/integration/test_aql_names_live.py`
 re-validates it against the live server, together with the object-key subset
-the cross-test interpreter refuses. Issues #73, #75 and #76; goldens in
+the cross-test interpreter refuses. PR #73 and issues #75 and #76; goldens in
 `tests/translate/aql_names.yml`.
 
 ### 6.7 Schema warnings (non-fatal)
