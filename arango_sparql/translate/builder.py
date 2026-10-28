@@ -701,6 +701,7 @@ class AqlQueryBuilder:
         arm_aqls: list[str],
         *,
         distinct: bool = False,
+        scans_documents: bool = False,
     ) -> AqlQueryBuilder:
         """Emit ``FOR <row_alias> IN UNION[|_DISTINCT]((<arm1>), …)``.
 
@@ -722,6 +723,10 @@ class AqlQueryBuilder:
           nodes** (ALP); a path of length two that matches several
           walks must contribute each endpoint only once. MulPath /
           AlternativePath therefore pass ``distinct=True``.
+
+        ``scans_documents`` says every arm returns whole documents, never
+        null — a subject read from several collections (plan D9) — so
+        ``row_alias`` counts as a scanned document (:meth:`scanned_aliases`).
 
         Indentation is two spaces per arm line for EXPLAIN-output
         readability, matching :meth:`for_subquery`.
@@ -745,6 +750,8 @@ class AqlQueryBuilder:
                 f"FOR {row_alias} IN {op}(\n{arm_blocks}\n)",
             )
         )
+        if scans_documents:
+            self._scanned_aliases.append(row_alias)
         return self
 
     def has_for_clause(self) -> bool:

@@ -511,6 +511,27 @@ identity can be pasted back as a constant (`<aws_iam_role/0123>`). Known limit:
 a constant subject is still looked up in the default collection, not in the
 collection its `_id` names; and `isIRI()` is false for an `_id` identity.
 
+**Subjects without a type pattern.** SPARQL over a property graph rarely names
+every subject's class (LDBC writes `?m :hasCreator ?p`), so the predicate
+routes the subject (`translate/visitor.py`):
+- an `owl:SymmetricProperty` traverses `ANY`;
+- a subject nothing has bound, with a known object, is reached by walking the
+  edge `INBOUND` from that object (a constant object is looked up in its
+  `rdfs:range` class), keeping only vertices in the subject's domain
+  collections (`_keep_subject_collections`);
+- otherwise the property's `rdfs:domain` opens the subject's collection
+  (`_route_by_domain`): one class opens its collection, with its label test in
+  LPG; an `owl:unionOf` of LABEL classes in one collection is an any-of label
+  test; and a union spanning several collections (PG's Post ∪ Comment) reads
+  every one of them with `FOR … IN UNION((FOR … RETURN …), …)`, each arm
+  carrying its own label test and, for a constant subject, its own indexed
+  `_uri` match (`_route_by_domain_union`, LDBC plan decision D9).
+
+The union refuses, with `E_SPARQL_UNSUPPORTED`, classes that disagree on
+tenant scoping (one tenant filter cannot serve them) and sharded classes.
+Without a domain, a subject reads the default collection, or under
+`strict_subject_resolution` is refused.
+
 **Label fields** (`LABEL` style). The type test depends on the field's shape,
 because each form is served by a different index (`translate/builder.py::
 type_predicate`, issue #10): `phys:typeFieldIsArray true` → `@v IN doc.f`

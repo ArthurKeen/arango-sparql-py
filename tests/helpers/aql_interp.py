@@ -89,6 +89,11 @@ _FOR_CALL_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+([A-Z_][A-Z0-9_]*\(.+\))\s*$")
 # ``FOR row3 IN deduped2``). A bare identifier, so neither the ``@``
 # forms above nor the parenthesised ``_FOR_INLINE_RE`` match it.
 _FOR_LET_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+([A-Za-z_]\w*)\s*$")
+# FOR over a multiset UNION of subquery arms — ``builder.for_union``, here
+# for a subject whose rdfs:domain spans PG collections (plan D9). The opener
+# ``FOR doc3 IN UNION(`` is followed by arms, each a ``(`` line, a complete
+# query and a ``)`` or ``),`` line, and a bare ``)`` closes the union.
+_FOR_UNION_START_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+UNION\(\s*$")
 _LIMIT_RE = re.compile(r"LIMIT\s+(?:(\d+)\s*,\s*)?(\d+)")
 _SORT_RE = re.compile(r"SORT\s+(.+)$")
 # COLLECT clause patterns the visitor emits today:
@@ -851,7 +856,29 @@ def run_aql_subset(
             )
             (post_collect_steps if seen_collect else pre_collect_plan).append(rows_step)
             continue
-        if m := _FOR_TRAVERSAL_RE.match(line):
+        if m := _FOR_UNION_START_RE.match(line):
+            if seen_collect:  # pragma: no cover
+                raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
+            # Parenthesis depth splits the arms: 1 between arms, 0 at the
+            # union's closing ``)``. Arms may nest blocks of their own.
+            union_arms: list[str] = []
+            arm_lines: list[str] = []
+            depth = 1
+            while i < len(lines):
+                arm_line = lines[i]
+                i += 1
+                depth += arm_line.count("(") - arm_line.count(")")
+                if depth == 0:
+                    break
+                if depth == 1 and arm_line.rstrip(",") == ")":
+                    union_arms.append("\n".join(arm_lines[1:]))  # drop the arm's ``(``
+                    arm_lines = []
+                    continue
+                arm_lines.append(arm_line)
+            else:  # pragma: no cover - malformed AQL
+                raise AssertionError("unterminated FOR … IN UNION( in AQL")
+            pre_collect_plan.append(("FOR_UNION", m.group(1), union_arms))
+        elif m := _FOR_TRAVERSAL_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
             v_alias, e_alias, direction, start_alias, edge_var = m.groups()
@@ -945,6 +972,13 @@ def run_aql_subset(
             assert collection is not None
             for doc in docs.get(collection, []):
                 run_plan(idx + 1, {**env, alias: doc}, let_env)
+        elif kind == "FOR_UNION":
+            # Each arm runs as a correlated subquery with this row in scope;
+            # every row of every arm, in arm order, binds the union alias
+            # (AQL ``UNION`` keeps duplicates).
+            for arm in b:
+                for arm_row in run_aql_subset(arm, bind_vars, docs, _outer_env=env, _outer_let=let_env):
+                    run_plan(idx + 1, {**env, a: arm_row}, let_env)
         elif kind == "FOR_VALUES":
             # ``FOR <alias> IN @_pN_values`` — SPARQL VALUES rows (or
             # the federation entry point's seed bindings) bound as a
