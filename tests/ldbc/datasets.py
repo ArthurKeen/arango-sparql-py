@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import logging
 import os
 import shutil
@@ -86,6 +87,15 @@ class DatasetError(RuntimeError):
     """A data set could not be fetched, verified or unpacked."""
 
 
+class TruncatedDownloadError(OSError):
+    """A source ended before the pinned size: a failed transfer, not other data.
+
+    ``http.client`` does not raise for a body shorter than its
+    ``Content-Length`` when it is read in chunks (it returns short), so the
+    size is checked against the pin before the digest.
+    """
+
+
 def cache_root() -> Path:
     """The cache directory: ``$LDBC_CACHE_DIR``, else ``~/.cache/arango-sparql/ldbc``."""
     configured = os.getenv("LDBC_CACHE_DIR")
@@ -114,8 +124,10 @@ def source_urls(archive: Archive) -> list[str]:
 def _download_from(url: str, archive: Archive, dest: Path) -> None:
     """Download *url* to *dest* atomically, verifying *archive*'s digest.
 
-    Raises :class:`OSError` when the source cannot be read (the caller tries
-    the next one) and :class:`DatasetError` when it serves different bytes.
+    Raises :class:`OSError` (including :class:`TruncatedDownloadError`) or
+    :class:`http.client.HTTPException` when the source cannot be read in full
+    (the caller tries the next one), and :class:`DatasetError` when it serves
+    different bytes.
     """
     with tempfile.NamedTemporaryFile(dir=dest.parent, suffix=".part", delete=False) as tmp:
         tmp_path = Path(tmp.name)
@@ -123,9 +135,15 @@ def _download_from(url: str, archive: Archive, dest: Path) -> None:
             logger.info("downloading %s (%d bytes)", url, archive.size_bytes)
             with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S) as response:  # noqa: S310 — pinned URL, digest-checked
                 shutil.copyfileobj(response, tmp, length=1 << 20)
-        except OSError:
+        except (OSError, http.client.HTTPException):
+            # HTTPException covers a chunked body cut short (IncompleteRead),
+            # which is not an OSError.
             tmp_path.unlink(missing_ok=True)
             raise
+    received = tmp_path.stat().st_size
+    if received < archive.size_bytes:
+        tmp_path.unlink(missing_ok=True)
+        raise TruncatedDownloadError(f"{url} ended after {received} of {archive.size_bytes} bytes")
     actual = sha256_of(tmp_path)
     if actual != archive.sha256:
         tmp_path.unlink(missing_ok=True)
@@ -146,7 +164,7 @@ def _download(archive: Archive, dest: Path) -> None:
         try:
             _download_from(url, archive, dest)
             return
-        except OSError as exc:
+        except (OSError, http.client.HTTPException) as exc:
             logger.warning("download of %s failed: %s", url, exc)
             failures.append(f"{url}: {exc}")
     hint = (

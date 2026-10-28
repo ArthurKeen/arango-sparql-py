@@ -63,22 +63,43 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      # Only the oracle's answers are carried between runs; each run saves
-      # a new entry and restores the latest. Entries are keyed by query
-      # text and data digest, so a stale one is never read.
-      - uses: actions/cache@v4
+      # Each cache is restored before the step that fills it and saved
+      # right after that step. actions/cache saves only when the whole job
+      # succeeds, and the LDBC tier is meant to fail on a regression, which
+      # would otherwise throw away a download or hours of oracle answers.
+      #
+      # The pinned archives, keyed by the file holding the pins. Older
+      # entries restore too: fetch() checks each archive against its pin and
+      # re-downloads only a mismatch, so an edit to that file that leaves the
+      # pins alone does not send the job back to LDBC's server.
+      - id: archives
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/arango-sparql/ldbc/archives
+          key: ldbc-archives-${{ hashFiles('tests/ldbc/datasets.py') }}
+          restore-keys: ldbc-archives-
+      - run: bash scripts/fetch_ldbc.sh
+      - if: steps.archives.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/arango-sparql/ldbc/archives
+          key: ${{ steps.archives.outputs.cache-primary-key }}
+      # The oracle's answers: each run saves a new entry and restores the
+      # latest. Entries are keyed by query text and data digest, so a stale
+      # one is never read. Saved even when warming fails part-way, so the
+      # answers it did compute are kept.
+      - uses: actions/cache/restore@v4
         with:
           path: ~/.cache/arango-sparql/ldbc/sf0.1-normalized/oracle-cache
           key: ldbc-oracle-sf0.1-${{ github.run_id }}
           restore-keys: ldbc-oracle-sf0.1-
-      # The pinned archives never change, so the key is the file holding
-      # the pins: a new pin is a new entry, and an old one is never read.
-      - uses: actions/cache@v4
+      - id: warm
+        run: python -m tests.ldbc.oracle --warm --sf 0.1 --jobs 4 --timeout 600
+      - if: always() && steps.warm.outcome != 'skipped'
+        uses: actions/cache/save@v4
         with:
-          path: ~/.cache/arango-sparql/ldbc/archives
-          key: ldbc-archives-${{ hashFiles('tests/ldbc/datasets.py') }}
-      - run: bash scripts/fetch_ldbc.sh
-      - run: python -m tests.ldbc.oracle --warm --sf 0.1 --jobs 4 --timeout 600
+          path: ~/.cache/arango-sparql/ldbc/sf0.1-normalized/oracle-cache
+          key: ldbc-oracle-sf0.1-${{ github.run_id }}
       # Loads the three layouts on first use, then: counts, mappings,
       # domains, and each cell's live outcome against the ledger.
       - run: pytest tests/ldbc -m ldbc -q --tb=short
