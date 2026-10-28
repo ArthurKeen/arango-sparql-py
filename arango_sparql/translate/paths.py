@@ -419,6 +419,10 @@ def _emit_negated_path(
                 f"(nested path forms inside '!(...)' are not supported)"
             )
         negated_iris.append(arm)
+    # Local import, like SYSTEM_ATTRIBUTES_TO_SKIP below.
+    from .variable_predicates import refuse_nested_attribute_scan
+
+    refuse_nested_attribute_scan(visitor, "a negated property path")
     negated_attrs = sorted({visitor.resolver.resolve_property(iri).attribute for iri in negated_iris})
 
     # ---- Open the subject FOR -------------------------------------

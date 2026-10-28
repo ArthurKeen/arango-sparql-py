@@ -156,3 +156,18 @@ def test_every_group_by_term_is_a_collect_key() -> None:
         "WITH COUNT INTO agg6"
     ) in lines
     assert "SORT grp4 ASC" in lines
+
+
+def test_a_group_by_variable_the_pattern_never_binds_is_a_null_key() -> None:
+    """``GROUP BY ?typo ?t``: rdflib's in-scope set lacks ?typo, so it is unbound on every row."""
+    result = translate(
+        """
+        PREFIX : <http://example/>
+        SELECT ?typo ?t (COUNT(?p) AS ?c)
+        WHERE { ?f :title ?t . ?p :in ?f }
+        GROUP BY ?typo ?t
+        """,
+        resolver=SchemaResolver.from_turtle(""),
+    )
+    collect = next(line.strip() for line in result.aql.splitlines() if line.strip().startswith("COLLECT"))
+    assert "= null" in collect and "= doc1.title" in collect

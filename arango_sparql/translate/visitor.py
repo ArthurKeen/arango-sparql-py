@@ -29,6 +29,7 @@ from ..errors import (
 )
 from .builder import (
     AqlQueryBuilder,
+    attribute_path_ref,
     attribute_ref,
     is_aql_identifier,
     subject_in,
@@ -762,7 +763,7 @@ class AlgebraVisitor:
                     [(o_name, prop, prop.edge_collection, subject_alias)], [], None
                 )
             else:
-                value_expr = attribute_ref(subject_alias, prop.attribute)
+                value_expr = attribute_path_ref(subject_alias, prop.field_path)
 
             if is_rebind:
                 # Conditional-add inside a MINUS probe (SPARQL §18.2.5.2):
@@ -1064,15 +1065,26 @@ class AlgebraVisitor:
         # (LDBC IC5), and ``GROUP BY STR(?t)`` grouped nothing. Translate the
         # terms the Samples will not cover now, in the pre-COLLECT scope.
         projected_keys = {str(a.vars) for a in node.A if self._is_group_key_sample(a, group_vars)}
+        # A GROUP BY variable the pattern never binds is unbound on every row,
+        # so it is one constant key (``GROUP BY ?typo ?name`` groups by ?name).
+        # Only rdflib's own in-scope set may say so: a variable the visitor
+        # failed to bind is still refused, never read as null.
+        pattern_vars = getattr(group.p, "_vars", None)
+
+        def group_key_expr(var: str) -> str:
+            attr_expr = pattern_scope.get(var)
+            if attr_expr is not None:
+                return attr_expr
+            if pattern_vars is not None and var not in {str(v) for v in pattern_vars}:
+                return "null"
+            raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{var}")
+
         extra_keys: list[tuple[str | None, str]] = []  # (variable or None for an expression, AQL)
         for term in group_exprs:
             if isinstance(term, Variable):
                 if str(term) in projected_keys or any(v == str(term) for v, _ in extra_keys):
                     continue
-                attr_expr = pattern_scope.get(str(term))
-                if attr_expr is None:
-                    raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{term}")
-                extra_keys.append((str(term), attr_expr))
+                extra_keys.append((str(term), group_key_expr(str(term))))
             else:
                 extra_keys.append((None, self._translate_expr(term)))
 
@@ -1095,11 +1107,8 @@ class AlgebraVisitor:
             # expression (``grp3 = grp2``), which a COLLECT key cannot see.
             key_alias = key_alias_by_var.get(sparql_var)
             if key_alias is None:
-                attr_expr = pattern_scope.get(sparql_var)
-                if attr_expr is None:
-                    raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{sparql_var}")
                 key_alias = self.builder.fresh_alias(prefix="grp")
-                keys.append((key_alias, attr_expr))
+                keys.append((key_alias, group_key_expr(sparql_var)))
                 key_alias_by_var[sparql_var] = key_alias
             sample_remap[str(agg.res)] = key_alias
             # Also rebind the user-facing var: post-COLLECT it must
@@ -1657,7 +1666,7 @@ class AlgebraVisitor:
                 self._emit_edge_triple(s, prop, o, triple)
                 return
             alias = self._ensure_subject_alias(s, prop)
-            attr_path = attribute_ref(alias, prop.attribute)
+            attr_path = attribute_path_ref(alias, prop.field_path)
             if isinstance(o, Variable):
                 # Predicate-existence filter (SPARQL 1.1 §18.5): a
                 # required BGP triple ``?s :p ?o`` only matches when
@@ -1672,15 +1681,10 @@ class AlgebraVisitor:
                 # access. OPTIONAL doesn't enter here — ``visit_LeftJoin``
                 # has its own emission path that bypasses ``_emit_triple``
                 # so optional bindings still get the SPARQL-spec "leave
-                # unbound when missing" semantics.
-                if is_aql_identifier(prop.attribute):
-                    self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
-                else:
-                    # A non-identifier name travels as a bind variable, never
-                    # spliced into the AQL text (attribute_ref above has
-                    # already refused names AQL cannot quote).
-                    attr_bind = self.builder.bind(prop.attribute, hint="attr")
-                    self.builder.filter_raw(f"HAS({alias}, {attr_bind})")
+                # unbound when missing" semantics. A nested value (issue
+                # #72) checks the same path the read above uses, level by
+                # level; a non-identifier name travels as a bind variable.
+                self.builder.filter_raw(self.builder.attribute_exists(alias, prop.field_path))
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
                     if self.resolver.fan_out_list_values:
@@ -1713,7 +1717,7 @@ class AlgebraVisitor:
                     _term_to_python(o),
                     # The hint only decorates the placeholder name; skip it
                     # for a name that is not an identifier (it used to raise).
-                    hint=prop.attribute if is_aql_identifier(prop.attribute) else None,
+                    hint=prop.field_path[-1] if is_aql_identifier(prop.field_path[-1]) else None,
                 )
                 if self.resolver.fan_out_list_values:
                     self.builder.filter_raw(self._value_match_expr(attr_path, bind))

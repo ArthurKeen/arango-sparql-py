@@ -55,6 +55,24 @@ if TYPE_CHECKING:
 SYSTEM_ATTRIBUTES_TO_SKIP: tuple[str, ...] = ("_uri",)
 
 
+def refuse_nested_attribute_scan(visitor: AlgebraVisitor, what: str) -> None:
+    """Refuse an ``ATTRIBUTES()`` scan while any property is stored nested.
+
+    The scan sees a document's top-level attributes only, so a value mapped
+    with ``phys:attributePath`` would be left out of the answer without a
+    warning (issue #72). Refusing is the first-version rule until the scan
+    can include nested values.
+    """
+    nested = visitor.resolver.nested_properties()
+    if nested:
+        shown = ", ".join(nested[:3]) + (", …" if len(nested) > 3 else "")
+        raise UnsupportedSparqlError(
+            f"{what} is not yet supported when a property is stored inside a nested object "
+            f"({shown}): it lists a document's top-level attributes and would leave those "
+            f"values out (issue #72)"
+        )
+
+
 def emit_variable_predicate_triple(
     visitor: AlgebraVisitor,
     subject: Any,
@@ -116,6 +134,7 @@ def emit_variable_predicate_triple(
         return
 
     # ---- PG / LPG / default-collection branch -------------------------
+    refuse_nested_attribute_scan(visitor, "a variable predicate (?s ?p ?o)")
     _emit_attributes_branch(visitor, subject, predicate, obj, triple)
 
 
