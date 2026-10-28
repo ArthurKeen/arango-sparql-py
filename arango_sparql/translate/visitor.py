@@ -29,6 +29,7 @@ from ..errors import (
 )
 from .builder import (
     AqlQueryBuilder,
+    attribute_path_ref,
     attribute_ref,
     is_aql_identifier,
     subject_in,
@@ -762,7 +763,7 @@ class AlgebraVisitor:
                     [(o_name, prop, prop.edge_collection, subject_alias)], [], None
                 )
             else:
-                value_expr = attribute_ref(subject_alias, prop.attribute)
+                value_expr = attribute_path_ref(subject_alias, prop.field_path)
 
             if is_rebind:
                 # Conditional-add inside a MINUS probe (SPARQL §18.2.5.2):
@@ -1665,7 +1666,7 @@ class AlgebraVisitor:
                 self._emit_edge_triple(s, prop, o, triple)
                 return
             alias = self._ensure_subject_alias(s, prop)
-            attr_path = attribute_ref(alias, prop.attribute)
+            attr_path = attribute_path_ref(alias, prop.field_path)
             if isinstance(o, Variable):
                 # Predicate-existence filter (SPARQL 1.1 §18.5): a
                 # required BGP triple ``?s :p ?o`` only matches when
@@ -1680,15 +1681,10 @@ class AlgebraVisitor:
                 # access. OPTIONAL doesn't enter here — ``visit_LeftJoin``
                 # has its own emission path that bypasses ``_emit_triple``
                 # so optional bindings still get the SPARQL-spec "leave
-                # unbound when missing" semantics.
-                if is_aql_identifier(prop.attribute):
-                    self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
-                else:
-                    # A non-identifier name travels as a bind variable, never
-                    # spliced into the AQL text (attribute_ref above has
-                    # already refused names AQL cannot quote).
-                    attr_bind = self.builder.bind(prop.attribute, hint="attr")
-                    self.builder.filter_raw(f"HAS({alias}, {attr_bind})")
+                # unbound when missing" semantics. A nested value (issue
+                # #72) checks the same path the read above uses, level by
+                # level; a non-identifier name travels as a bind variable.
+                self.builder.filter_raw(self.builder.attribute_exists(alias, prop.field_path))
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
                     if self.resolver.fan_out_list_values:
@@ -1721,7 +1717,7 @@ class AlgebraVisitor:
                     _term_to_python(o),
                     # The hint only decorates the placeholder name; skip it
                     # for a name that is not an identifier (it used to raise).
-                    hint=prop.attribute if is_aql_identifier(prop.attribute) else None,
+                    hint=prop.field_path[-1] if is_aql_identifier(prop.field_path[-1]) else None,
                 )
                 if self.resolver.fan_out_list_values:
                     self.builder.filter_raw(self._value_match_expr(attr_path, bind))
