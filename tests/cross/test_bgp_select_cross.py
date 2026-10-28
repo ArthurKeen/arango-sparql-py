@@ -385,6 +385,33 @@ AGGREGATE_CASES = [
         "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?d) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?d",
         id="group_by_count_of_the_group_key",
     ),
+    # Every GROUP BY term is a key, projected or not (LDBC IC5): grouping by
+    # ?d ?s gives one row per person, not one per department, and a GROUP BY
+    # expression with no alias still groups.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?a) AS ?c) WHERE { "
+        "?s a :Person ; :dept ?d ; :age ?a } GROUP BY ?d ?s",
+        id="group_by_unprojected_variable",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY STR(?d)",
+        id="group_by_expression_without_alias",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?a) AS ?c) WHERE { "
+        "?s a :Person ; :dept ?d ; :age ?a } GROUP BY ?d ?s ORDER BY ?s",
+        id="group_by_order_by_unprojected_key",
+    ),
+    # A GROUP BY variable the pattern never binds is one unbound key for every
+    # row (vendored ck25-30 writes ?depty for ?dept): it groups nothing.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?typo ?d",
+        id="group_by_never_bound_variable",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?typo ?d (COUNT(?s) AS ?c) WHERE { ?s a :Person ; :dept ?d } GROUP BY ?typo ?d",
+        id="group_by_never_bound_variable_projected",
+    ),
     # Any aggregate of a GROUP BY variable reads the pre-COLLECT value; the
     # COLLECT key alias inside AGGREGATE is ArangoDB ERR 1512.
     pytest.param(

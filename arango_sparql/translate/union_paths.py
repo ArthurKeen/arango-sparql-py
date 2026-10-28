@@ -221,6 +221,9 @@ def _emit_union_of_arms(
     for driver in arm_drivers:
         cv = _spawn_child(visitor)
         driver(cv)
+        # An arm that only reads an outer document opens no FOR of its own.
+        if not cv.builder.has_for_clause():
+            cv.builder.open_one_row_scope_first(cv.builder.fresh_alias(prefix="empty"))
         unbound_in_some_arm.update(
             name for name in all_vars if name not in cv.state.var_to_expr or name in cv.state.maybe_unbound
         )
@@ -306,12 +309,12 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
       a single AQL parameter no matter how many UNION arms touch
       tenant-scoped collections.
 
-    The two counters on ``BindingState`` (``path_var_counter`` and
-    ``bgp_counter``) are deliberately NOT propagated — they mint
-    internal sigil names (``_path_<n>`` / ``_bn_<bgp>_<label>``)
-    whose scope is intra-arm, and resetting them per child gives
-    deterministic per-arm AQL even when arms re-enter the same
-    visitor code path.
+    The sigil counters (``state.counters``: ``_path_<n>`` /
+    ``_bn_<bgp>_<label>``) are SHARED with the parent, not reset: the
+    child is seeded with the outer bindings, so a child restarting at
+    ``_path_1`` would re-use an outer ``_path_1`` and join unrelated
+    intermediates (LDBC IC6). Sharing keeps every minted name unique in
+    the query and the AQL deterministic.
 
     Counter sharing follows the standard
     :meth:`AqlQueryBuilder.create_child` /
@@ -330,10 +333,23 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         base_iri=visitor.base_iri,
     )
     cv.state.var_to_expr = dict(visitor.state.var_to_expr)
+    cv.state.counters = visitor.state.counters
     # An outer variable an arm re-projects keeps "can be unbound" (#59).
     cv.state.maybe_unbound = set(visitor.state.maybe_unbound)
     cv.state.graph_scope = list(visitor.state.graph_scope)
     cv.state.var_to_rpt_class = dict(visitor.state.var_to_rpt_class)
+    # An outer PG/LPG document stays a document in the arm: AQL subqueries
+    # see outer FOR variables, so a triple from an outer-bound subject
+    # traverses from that document instead of re-reading the subject (a scan
+    # routed by the property's domain, joined back on its IRI). In IS6 the
+    # re-read ran once per path-length arm and tripped an ArangoDB 3.12.9
+    # planner error (ERR 4, "missing variable … for node … TraversalNode").
+    # RPT aliases are triples rows, not documents, and stay out.
+    cv.state.var_to_doc_alias = {
+        name: alias
+        for name, alias in visitor.state.var_to_doc_alias.items()
+        if name not in visitor.state.var_to_rpt_class
+    }
     cv.state.tenant_entity = visitor.state.tenant_entity
     cv.state.tenant_bind_placeholder = visitor.state.tenant_bind_placeholder
     return cv

@@ -361,6 +361,20 @@ BAG_CASES = [
         '?s a :Person ; :name ?n ; :dept ?d . FILTER(?d = "eng") }',
         id="three_property_bgp_with_filter",
     ),
+    # A constant subject is one document, not its whole class: before the
+    # fix, PG and LPG matched ``<x> a :C`` against every member of :C.
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { <http://ex.org/alice> a :Person ; :name ?n }",
+        id="constant_subject_type_and_property",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { <http://ex.org/p1> a :Person ; :name ?n }",
+        id="constant_subject_not_in_the_class",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { <http://ex.org/nobody> a :Person . ?s a :Person ; :name ?n }",
+        id="absent_constant_subject_empties_the_join",
+    ),
 ]
 
 
@@ -454,4 +468,100 @@ def test_cross_class_join_matches_oxigraph_across_models(
 ) -> None:
     actual = _run_model(ontology_ttl, docs_factory, sparql)
     expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert_bindings_equal(expected, actual)
+
+
+# ----------------------------------------------------------------------
+# Pure triple store: subjects no type pattern routed.
+#
+# ``RPT_ONTOLOGY`` maps every class to one triples table, so the resolver
+# treats the database as a triple store (``SchemaResolver.
+# triple_store_class``): a constant subject, a variable bound only as an
+# earlier triple's object, and a fresh variable all read the triples table.
+# Run against the RPT model only — in the PG / LPG / hybrid models an
+# untyped subject is genuinely unroutable.
+# ----------------------------------------------------------------------
+TRIPLE_STORE_CASES = [
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { ?s :name ?n }",
+        id="untyped_subject",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n WHERE { ?prj :title ?t ; :owner ?p . ?p :name ?n }",
+        id="object_reused_as_subject",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { <http://ex.org/p1> :owner/:name ?n }",
+        id="constant_subject_sequence_path",
+    ),
+    pytest.param(
+        'PREFIX : <http://ex.org/> SELECT ?t WHERE { ?prj :owner ?p ; :title ?t . ?p :dept "eng" }',
+        id="join_through_untyped_object",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?n WHERE { ?prj a :Project ; :owner/:name ?n }",
+        id="typed_subject_sequence_path",
+    ),
+]
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("sparql", TRIPLE_STORE_CASES)
+def test_triple_store_untyped_subjects_match_oxigraph(oxi_store: Any, sparql: str) -> None:
+    actual = _run_model(RPT_ONTOLOGY, _rpt_docs, sparql)
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert expected, "the case must have a non-empty answer to prove anything"
+    assert_bindings_equal(expected, actual)
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize(
+    "ontology_ttl,docs_factory",
+    [m for m in MODELS if m.id != "rpt"],
+)
+def test_untyped_subjects_stay_unroutable_outside_a_triple_store(
+    ontology_ttl: str, docs_factory: Any
+) -> None:
+    resolver = SchemaResolver.from_turtle(ontology_ttl)
+    assert resolver.triple_store_class() is None
+
+
+# ----------------------------------------------------------------------
+# OPTIONAL as a correlated subquery (optional_subquery.py): bodies the
+# inline emitter cannot lower — a subject the required side bound only as a
+# value, several triples, a BIND, an inner FILTER — on every model.
+# ----------------------------------------------------------------------
+OPTIONAL_SUBQUERY_CASES = [
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n ?d WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        "OPTIONAL { ?p a :Person ; :name ?n ; :dept ?d } }",
+        id="cross_subject_multi_triple",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?a2 WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        "OPTIONAL { ?p a :Person ; :age ?a . BIND(?a * 2 AS ?a2) } }",
+        id="cross_subject_with_bind",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        'OPTIONAL { ?p a :Person ; :name ?n ; :dept "nowhere" } }',
+        id="cross_subject_never_matches",
+    ),
+    pytest.param(
+        "PREFIX : <http://ex.org/> SELECT ?t ?n WHERE { ?prj a :Project ; :title ?t ; :owner ?p . "
+        "OPTIONAL { ?p a :Person ; :name ?n ; :age ?a FILTER(?a > 35) } }",
+        id="cross_subject_inner_filter",
+    ),
+]
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("ontology_ttl,docs_factory", MODELS)
+@pytest.mark.parametrize("sparql", OPTIONAL_SUBQUERY_CASES)
+def test_optional_subquery_matches_oxigraph(
+    oxi_store: Any, ontology_ttl: str, docs_factory: Any, sparql: str
+) -> None:
+    actual = _run_model(ontology_ttl, docs_factory, sparql)
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert expected
     assert_bindings_equal(expected, actual)

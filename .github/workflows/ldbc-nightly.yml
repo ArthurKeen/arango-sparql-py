@@ -1,0 +1,81 @@
+name: LDBC nightly
+
+# LDBC SNB Interactive v1 at SF0.1 (PRD §13.6, LDBC-8). The per-PR CI
+# runs only the translation ratchet (`tests/ldbc/test_ldbc_ratchet.py`,
+# no data); this job runs the data tier:
+#
+#   * fetch the SHA-256-pinned Turtle and parameters (never vendored);
+#   * warm the pyoxigraph oracle (answers and timeouts are cached across
+#     runs: some shapes take minutes, and a query whose text has not
+#     changed never needs recomputing);
+#   * load RPT, LPG and PG and check counts and mappings against the
+#     model, then check every translating cell's live outcome against the
+#     committed ledger (`test_ldbc_execution.py`);
+#   * run the performance runner and publish its JSON and the generated
+#     report as artifacts. Timings are report-only (§9.4).
+#
+# These are not LDBC Benchmark Results.
+
+on:
+  schedule:
+    # 05:47 UTC daily, after the W3C nightly (05:17).
+    - cron: "47 5 * * *"
+  workflow_dispatch:
+
+jobs:
+  ldbc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    services:
+      arangodb:
+        image: arangodb:3.12
+        env:
+          ARANGO_ROOT_PASSWORD: openSesame
+          # Size ArangoDB's caches to a share of the runner, as
+          # docker-compose.ldbc.yml does locally (the harness also caps
+          # every query's memory).
+          ARANGODB_OVERRIDE_DETECTED_TOTAL_MEMORY: 6G
+        ports:
+          - 28533:8529
+        options: >-
+          --health-cmd "wget -qO- --header='Content-Type: application/json' --post-data '{\"username\":\"root\",\"password\":\"openSesame\"}' http://127.0.0.1:8529/_open/auth >/dev/null 2>&1"
+          --health-interval 3s
+          --health-timeout 2s
+          --health-retries 40
+    env:
+      LDBC_ARANGO_URL: http://localhost:28533
+      LDBC_ARANGO_USER: root
+      LDBC_ARANGO_PASSWORD: openSesame
+      LDBC_SF: "0.1"
+      LDBC_ORACLE_TIMEOUT: "600"
+      RUN_INTEGRATION: "1"
+      RUN_LDBC: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[dev]"
+      # Only the oracle's answers are carried between runs; each run saves
+      # a new entry and restores the latest. Entries are keyed by query
+      # text and data digest, so a stale one is never read.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/arango-sparql/ldbc/sf0.1-normalized/oracle-cache
+          key: ldbc-oracle-sf0.1-${{ github.run_id }}
+          restore-keys: ldbc-oracle-sf0.1-
+      - run: bash scripts/fetch_ldbc.sh
+      - run: python -m tests.ldbc.oracle --warm --sf 0.1 --jobs 4 --timeout 600
+      # Loads the three layouts on first use, then: counts, mappings,
+      # domains, and each cell's live outcome against the ledger.
+      - run: pytest tests/ldbc -m ldbc -q --tb=short
+      - run: python -m tests.ldbc.bench --sf 0.1 --out ldbc-results.json
+      - run: python -m tests.ldbc.report ldbc-results.json --out ldbc-report.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ldbc-sf0.1
+          path: |
+            ldbc-results.json
+            ldbc-report.md
+          if-no-files-found: ignore

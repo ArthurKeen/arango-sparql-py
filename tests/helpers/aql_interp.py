@@ -38,7 +38,7 @@ _FOR_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+@@(\w+)")
 # edges whose ``_from`` equals the start's ``_id`` and binds the target
 # vertex (``v2``) and the edge (``e3``). DEDICATED_COLLECTION emits this
 # bare; GENERIC_WITH_TYPE follows it with a ``FILTER e3.<field> == @x``.
-_FOR_TRAVERSAL_RE = re.compile(r"FOR\s+(\w+)\s*,\s*(\w+)\s+IN\s+OUTBOUND\s+(\w+)\s+@@(\w+)")
+_FOR_TRAVERSAL_RE = re.compile(r"FOR\s+(\w+)\s*,\s*(\w+)\s+IN\s+(OUTBOUND|INBOUND|ANY)\s+(\w+)\s+@@(\w+)")
 _FILTER_RE = re.compile(r"FILTER\s+(.+)$")
 _LET_RE = re.compile(r"LET\s+(\w+)\s*=\s*(.+)$")
 _RETURN_RE = re.compile(r"RETURN(?:\s+(DISTINCT))?\s+\{\s*(.+?)\s*\}\s*$")
@@ -279,6 +279,12 @@ _AQL_BUILTINS: dict[str, Any] = {
     # matches when the predicate is actually present on the subject,
     # so missing-attribute documents must be excluded from the result.
     "HAS": lambda doc, attr: isinstance(doc, dict) and attr in doc,
+    # ``IS_SAME_COLLECTION(name, doc)``: whether the document (or ``_id``
+    # string) lives in collection *name*, as ArangoDB reads its ``_id``.
+    # A reverse traversal keeps its vertices in the subject's collections.
+    "IS_SAME_COLLECTION": lambda name, doc: (
+        (doc.get("_id") if isinstance(doc, dict) else doc or "").split("/", 1)[0] == name
+    ),
     "LOWER": lambda v: None if v is None else str(v).lower(),
     "UPPER": lambda v: None if v is None else str(v).upper(),
     "LENGTH": lambda v: None if v is None else len(v),
@@ -848,8 +854,10 @@ def run_aql_subset(
         if m := _FOR_TRAVERSAL_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
-            v_alias, e_alias, start_alias, edge_var = m.groups()
-            pre_collect_plan.append(("OUTBOUND", (v_alias, e_alias, start_alias), bind_vars[f"@{edge_var}"]))
+            v_alias, e_alias, direction, start_alias, edge_var = m.groups()
+            pre_collect_plan.append(
+                ("TRAVERSE", (v_alias, e_alias, start_alias, direction), bind_vars[f"@{edge_var}"])
+            )
         elif m := _FOR_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
@@ -953,20 +961,29 @@ def run_aql_subset(
             sequence = _eval_expr(b, env, bind_vars, let_env)
             for element in sequence or []:
                 run_plan(idx + 1, {**env, alias: element}, let_env)
-        elif kind == "OUTBOUND":
-            v_alias, e_alias, start_alias = a
+        elif kind == "TRAVERSE":
+            # One-step traversal, as ArangoDB runs it: OUTBOUND follows edges
+            # whose ``_from`` is the start vertex to their ``_to``; INBOUND
+            # the reverse; ANY both, so an edge is found from either end.
+            v_alias, e_alias, start_alias, direction = a
             edge_collection = b
             start_doc = env.get(start_alias)
             start_id = start_doc.get("_id") if isinstance(start_doc, dict) else None
             if start_id is None:  # pragma: no cover - start always bound by a prior FOR
                 return
+            ends = {"OUTBOUND": (("_from", "_to"),), "INBOUND": (("_to", "_from"),)}.get(
+                direction, (("_from", "_to"), ("_to", "_from"))
+            )
             for edge in docs.get(edge_collection, []):
-                if not isinstance(edge, dict) or edge.get("_from") != start_id:
+                if not isinstance(edge, dict):
                     continue
-                target = id_index.get(edge.get("_to"))
-                if target is None:  # dangling edge — no endpoint to bind
-                    continue
-                run_plan(idx + 1, {**env, v_alias: target, e_alias: edge}, let_env)
+                for near, far in ends:
+                    if edge.get(near) != start_id:
+                        continue
+                    target = id_index.get(edge.get(far))
+                    if target is None:  # dangling edge — no endpoint to bind
+                        continue
+                    run_plan(idx + 1, {**env, v_alias: target, e_alias: edge}, let_env)
         elif kind == "FILTER":
             if _eval_filter(a, env, bind_vars, let_env):
                 run_plan(idx + 1, env, let_env)

@@ -29,6 +29,7 @@ from ..errors import (
 )
 from .builder import (
     AqlQueryBuilder,
+    attribute_path_ref,
     attribute_ref,
     is_aql_identifier,
     subject_in,
@@ -42,6 +43,8 @@ from .optional_crosssubject import (
     emit_rpt_cross_subject_optional,
     is_rpt_cross_subject_optional,
 )
+from .optional_subquery import emit_optional_subquery
+from .optional_subquery import needs_subquery as needs_optional_subquery
 from .paths import emit_path_triple
 from .resolver import ResolvedClass, ResolvedProperty, SchemaResolver
 from .subselect import emit_to_multiset
@@ -49,6 +52,14 @@ from .union_paths import emit_union
 from .variable_predicates import emit_variable_predicate_triple
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class _SigilCounters:
+    """Monotone counters behind :attr:`_BindingState.counters`."""
+
+    path: int = 0
+    bgp: int = 0
 
 
 @dataclass
@@ -72,6 +83,14 @@ class _BindingState:
     to a physical document)."""
 
     doc_to_collection: dict[str, str] = field(default_factory=dict)
+    const_subject_alias: dict[str, str] = field(default_factory=dict)
+    """Constant subject IRI → the alias of the document a type pattern
+    opened for it (``<iri> a :C``), so the subject's property triples read
+    that document instead of being refused or re-scanned."""
+    const_subject_rpt_class: dict[str, ResolvedClass] = field(default_factory=dict)
+    """Constant subject IRI → the RPT class a type pattern found it in, so
+    its property triples read that triples table (the constant-subject
+    counterpart of :attr:`var_to_rpt_class`)."""
     """AQL alias → physical collection name. Used to detect duplicate
     FOR clauses and to drive future joins."""
 
@@ -122,16 +141,15 @@ class _BindingState:
 
     distinct: bool = False
 
-    path_var_counter: int = 0
-    bgp_counter: int = 0
-    """Monotone counter for intermediate variables minted during
-    property-path expansion (see :mod:`arango_sparql.translate.paths`).
-    Lives on the binding state — not on the builder — because the
-    expanded variable names (``?_path_<n>``) participate in the
-    SPARQL variable namespace (they can be referenced from sibling
-    triples in the same BGP after they're bound), even though the
-    user can never refer to one explicitly. Reset implicitly on
-    every new visitor instance, so per-query state is isolated."""
+    counters: _SigilCounters = field(default_factory=lambda: _SigilCounters())
+    """Counters for the internal variables the visitor mints
+    (``?_path_<n>`` property-path intermediates, ``?_bn_<bgp>_<label>``
+    blank-node existentials). One instance per query, shared by every
+    child visitor (UNION / OPTIONAL / MINUS / EXISTS / sub-SELECT):
+    a child is seeded with the outer scope's bindings, so a child that
+    restarted at ``_path_1`` re-used an outer ``_path_1`` and joined
+    two unrelated intermediates (LDBC IC6: friend-of-a-friend joined to
+    the tag of the outer ``hasTag/foaf:name`` path)."""
 
     graph_scope: list[Any] = field(default_factory=list)
     """Stack of active SPARQL named-graph scopes. Each entry is the
@@ -647,24 +665,26 @@ class AlgebraVisitor:
         self.visit(node.p1)
 
         p2 = node.p2
-        if getattr(p2, "name", None) != "BGP":
-            # OPTIONAL { OPTIONAL { … } } and OPTIONAL { ?s :p ?o
-            # FILTER(?o) UNION ?s :q ?o } both land here; defer until
-            # we have a corpus example so we don't ship an
-            # ad-hoc semantics for them.
-            raise UnsupportedSparqlError(
-                f"OPTIONAL whose body is {p2.name!r} (not a plain BGP) is not yet supported"
-            )
 
         # RPT-native cross-subject OPTIONAL (ADR-0002 Problem 1, Option
         # A): the OPTIONAL subject is bound only as a *value* by the
         # required side, and we're in RPT mode, so the OPTIONAL is a
-        # plain left-join scan of the triples table. Everything else
-        # (PG/LPG/default cross-subject) still falls through to the
-        # structured rejection below.
-        if is_rpt_cross_subject_optional(self, p2, node):
+        # plain left-join scan of the triples table.
+        if getattr(p2, "name", None) == "BGP" and is_rpt_cross_subject_optional(self, p2, node):
             emit_rpt_cross_subject_optional(self, p2.triples[0], node)
             return
+
+        # Any other shape the inline emitter below cannot lower — a body
+        # that is not a plain BGP, or a triple whose subject the required
+        # side did not open as a document — is the optional pattern run as
+        # a correlated subquery (ADR-0002 Option A, generalised).
+        if needs_optional_subquery(self, p2):
+            emit_optional_subquery(self, node)
+            return
+        if getattr(p2, "name", None) != "BGP":
+            raise UnsupportedSparqlError(
+                f"OPTIONAL whose body is {p2.name!r} (not a plain BGP) is not supported inside a MINUS probe"
+            )
 
         # Walk the optional triples once to collect (var, source_expr)
         # pairs, *without* mutating ``var_to_expr`` yet — the inner
@@ -743,7 +763,7 @@ class AlgebraVisitor:
                     [(o_name, prop, prop.edge_collection, subject_alias)], [], None
                 )
             else:
-                value_expr = attribute_ref(subject_alias, prop.attribute)
+                value_expr = attribute_path_ref(subject_alias, prop.field_path)
 
             if is_rebind:
                 # Conditional-add inside a MINUS probe (SPARQL §18.2.5.2):
@@ -1036,7 +1056,37 @@ class AlgebraVisitor:
         # AGGREGATE expression") — but the samples pass below rebinds each
         # GROUP BY variable to its key alias for the projection.
         pattern_scope = dict(self.state.var_to_expr)
-        group_vars = {str(v) for v in (getattr(group, "expr", None) or []) if isinstance(v, Variable)}
+        group_exprs = list(getattr(group, "expr", None) or [])
+        group_vars = {str(v) for v in group_exprs if isinstance(v, Variable)}
+        # Every GROUP BY term is a COLLECT key, projected or not. rdflib only
+        # synthesises a Sample for the variables the query projects, so keys
+        # taken from the Samples alone dropped the rest: ``GROUP BY ?title
+        # ?forum`` projecting only ?title merged forums that share a title
+        # (LDBC IC5), and ``GROUP BY STR(?t)`` grouped nothing. Translate the
+        # terms the Samples will not cover now, in the pre-COLLECT scope.
+        projected_keys = {str(a.vars) for a in node.A if self._is_group_key_sample(a, group_vars)}
+        # A GROUP BY variable the pattern never binds is unbound on every row,
+        # so it is one constant key (``GROUP BY ?typo ?name`` groups by ?name).
+        # Only rdflib's own in-scope set may say so: a variable the visitor
+        # failed to bind is still refused, never read as null.
+        pattern_vars = getattr(group.p, "_vars", None)
+
+        def group_key_expr(var: str) -> str:
+            attr_expr = pattern_scope.get(var)
+            if attr_expr is not None:
+                return attr_expr
+            if pattern_vars is not None and var not in {str(v) for v in pattern_vars}:
+                return "null"
+            raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{var}")
+
+        extra_keys: list[tuple[str | None, str]] = []  # (variable or None for an expression, AQL)
+        for term in group_exprs:
+            if isinstance(term, Variable):
+                if str(term) in projected_keys or any(v == str(term) for v, _ in extra_keys):
+                    continue
+                extra_keys.append((str(term), group_key_expr(str(term))))
+            else:
+                extra_keys.append((None, self._translate_expr(term)))
 
         # Pre-allocate the COLLECT-key aliases for every Aggregate_Sample_
         # (one per GROUP BY variable), and rebind each GROUP BY variable to
@@ -1057,11 +1107,8 @@ class AlgebraVisitor:
             # expression (``grp3 = grp2``), which a COLLECT key cannot see.
             key_alias = key_alias_by_var.get(sparql_var)
             if key_alias is None:
-                attr_expr = pattern_scope.get(sparql_var)
-                if attr_expr is None:
-                    raise UnsupportedSparqlError(f"GROUP BY references unbound variable ?{sparql_var}")
                 key_alias = self.builder.fresh_alias(prefix="grp")
-                keys.append((key_alias, attr_expr))
+                keys.append((key_alias, group_key_expr(sparql_var)))
                 key_alias_by_var[sparql_var] = key_alias
             sample_remap[str(agg.res)] = key_alias
             # Also rebind the user-facing var: post-COLLECT it must
@@ -1069,6 +1116,12 @@ class AlgebraVisitor:
             # FOR alias's attribute.
             self.state.var_to_expr[sparql_var] = key_alias
             self.state.var_to_expr[str(agg.res)] = key_alias
+        for sparql_var_or_none, attr_expr in extra_keys:
+            key_alias = self.builder.fresh_alias(prefix="grp")
+            keys.append((key_alias, attr_expr))
+            if sparql_var_or_none is not None:
+                # Unprojected, but HAVING and ORDER BY may still read it.
+                self.state.var_to_expr[sparql_var_or_none] = key_alias
 
         # Real aggregates: everything but the group-key Samples.
         aggregates: list[tuple[str, str]] = []  # (alias, "AGG(expr)")
@@ -1459,14 +1512,17 @@ class AlgebraVisitor:
                 self.builder.for_inline(empty_alias, "[1]")
             return
 
-        # Order matters here: a type pattern (``?s a :Person``) carries
-        # the strongest hint about which physical collection ``?s`` lives
-        # in, so we want to visit those first and bind ``?s`` to the
-        # right alias before any sibling property triple opens a fallback
-        # FOR over the default collection. ``rdflib.algebra.translateQuery``
-        # may reorder triples for join optimization, undoing the user's
-        # declaration order; this re-sort is the visitor's defense.
-        for triple in sorted(triples, key=_triple_priority):
+        # Order matters twice over. Routing: a type pattern (``?s a
+        # :Person``) carries the strongest hint about which physical
+        # collection ``?s`` lives in, so it must come before the property
+        # triples of an otherwise-unbound ``?s``. Cost: each triple becomes
+        # a nested FOR, so a triple whose subject is already known (a
+        # constant, an outer binding, an earlier triple's object) should
+        # come before one that scans a whole predicate — LDBC IS1 went from
+        # a 327 k-row scan to an index lookup per step. ``_order_bgp`` does
+        # both; a BGP is a conjunction, so the order never changes answers.
+        bound = set(self.state.var_to_expr) | set(self.state.var_to_doc_alias)
+        for triple in _order_bgp(triples, bound):
             self._emit_triple(triple)
 
     # ------------------------------------------------------------------
@@ -1499,8 +1555,8 @@ class AlgebraVisitor:
         downstream "predicate type unsupported" error than
         silently rewrite to a variable predicate.
         """
-        self.state.bgp_counter += 1
-        bgp_id = self.state.bgp_counter
+        self.state.counters.bgp += 1
+        bgp_id = self.state.counters.bgp
         label_to_var: dict[str, Variable] = {}
 
         def _convert(term: Any) -> Any:
@@ -1535,8 +1591,8 @@ class AlgebraVisitor:
         never collide with what we generate here).
         """
 
-        self.state.path_var_counter += 1
-        return Variable(f"_path_{self.state.path_var_counter}")
+        self.state.counters.path += 1
+        return Variable(f"_path_{self.state.counters.path}")
 
     # ------------------------------------------------------------------
     # Internal: triple-pattern emission
@@ -1578,6 +1634,18 @@ class AlgebraVisitor:
                     type_predicate(alias, resolved.type_field, bind, is_array=resolved.type_field_is_array)
                 )
             self._enforce_tenant_scope(alias, resolved)
+            if isinstance(s, URIRef):
+                # A constant subject is one document, not the whole class:
+                # without this FILTER ``<x> a :C`` matched every member of
+                # :C (one row each) instead of x alone.
+                previous = self.state.const_subject_alias.get(str(s))
+                if previous is not None:
+                    self.builder.filter_raw(f"{subject_ref(alias)} == {subject_ref(previous)}")
+                else:
+                    uri_bind = self.builder.bind(str(s), hint="uri")
+                    self.builder.filter_raw(subject_matches(alias, uri_bind))
+                    self.state.const_subject_alias[str(s)] = alias
+                return
             self._bind_subject(s, alias)
             return
 
@@ -1590,15 +1658,15 @@ class AlgebraVisitor:
             # we don't want to materialise an UNMAPPED-IRI warning
             # for predicates that exist only as triple-store
             # ``predicate`` column values.
-            if isinstance(s, Variable) and str(s) in self.state.var_to_rpt_class:
+            if self._routes_to_triples(s):
                 self._emit_rpt_property_triple(s, p, o, triple)
                 return
             prop = self.resolver.resolve_property(p)
             if prop.is_object_property:
                 self._emit_edge_triple(s, prop, o, triple)
                 return
-            alias = self._ensure_subject_alias(s)
-            attr_path = attribute_ref(alias, prop.attribute)
+            alias = self._ensure_subject_alias(s, prop)
+            attr_path = attribute_path_ref(alias, prop.field_path)
             if isinstance(o, Variable):
                 # Predicate-existence filter (SPARQL 1.1 §18.5): a
                 # required BGP triple ``?s :p ?o`` only matches when
@@ -1613,15 +1681,10 @@ class AlgebraVisitor:
                 # access. OPTIONAL doesn't enter here — ``visit_LeftJoin``
                 # has its own emission path that bypasses ``_emit_triple``
                 # so optional bindings still get the SPARQL-spec "leave
-                # unbound when missing" semantics.
-                if is_aql_identifier(prop.attribute):
-                    self.builder.filter_raw(f'HAS({alias}, "{prop.attribute}")')
-                else:
-                    # A non-identifier name travels as a bind variable, never
-                    # spliced into the AQL text (attribute_ref above has
-                    # already refused names AQL cannot quote).
-                    attr_bind = self.builder.bind(prop.attribute, hint="attr")
-                    self.builder.filter_raw(f"HAS({alias}, {attr_bind})")
+                # unbound when missing" semantics. A nested value (issue
+                # #72) checks the same path the read above uses, level by
+                # level; a non-identifier name travels as a bind variable.
+                self.builder.filter_raw(self.builder.attribute_exists(alias, prop.field_path))
                 existing = self.state.var_to_expr.get(str(o))
                 if existing is None:
                     if self.resolver.fan_out_list_values:
@@ -1654,7 +1717,7 @@ class AlgebraVisitor:
                     _term_to_python(o),
                     # The hint only decorates the placeholder name; skip it
                     # for a name that is not an identifier (it used to raise).
-                    hint=prop.attribute if is_aql_identifier(prop.attribute) else None,
+                    hint=prop.field_path[-1] if is_aql_identifier(prop.field_path[-1]) else None,
                 )
                 if self.resolver.fan_out_list_values:
                     self.builder.filter_raw(self._value_match_expr(attr_path, bind))
@@ -1931,14 +1994,41 @@ class AlgebraVisitor:
         if isinstance(subject, URIRef):
             uri_bind = self.builder.bind(str(subject), hint="uri")
             self.builder.filter_eq(attribute_ref(triples_alias, resolved.subject_column), uri_bind)
+            self.state.const_subject_rpt_class.setdefault(str(subject), resolved)
             return
         raise UnsupportedSparqlError(
             f"RPT type pattern subject term type {type(subject).__name__!r} is not supported"
         )
 
+    def _routes_to_triples(self, subject: Any) -> bool:
+        """Whether ``subject :p ?o`` reads the RPT triples table.
+
+        True for a subject an RPT type pattern already bound, and — when
+        the whole mapping is one triple store
+        (:meth:`SchemaResolver.triple_store_class`) — for any subject no
+        document FOR has bound: a constant IRI, a variable bound only to a
+        value (an earlier triple's object, a ``VALUES`` row), or a variable
+        seen for the first time. In a triple store those triples can only
+        be in the table, so routing there is the one correct reading, not a
+        guess. Records the routing in ``var_to_rpt_class``.
+        """
+        if isinstance(subject, Variable) and str(subject) in self.state.var_to_rpt_class:
+            return True
+        if isinstance(subject, URIRef) and str(subject) in self.state.const_subject_rpt_class:
+            return True
+        store = self.resolver.triple_store_class()
+        if store is None:
+            return False
+        if isinstance(subject, URIRef):
+            return True
+        if isinstance(subject, Variable) and str(subject) not in self.state.var_to_doc_alias:
+            self.state.var_to_rpt_class[str(subject)] = store
+            return True
+        return False
+
     def _emit_rpt_property_triple(
         self,
-        subject: Variable,
+        subject: Variable | URIRef,
         predicate: URIRef,
         obj: Any,
         triple: tuple[Any, Any, Any],
@@ -1961,21 +2051,39 @@ class AlgebraVisitor:
         * Literal object → equality FILTER on ``object_value`` only,
           since RDF literals never live in the URI column.
         """
-        rpt_class = self.state.var_to_rpt_class[str(subject)]
+        if isinstance(subject, URIRef):
+            known = self.state.const_subject_rpt_class.get(str(subject)) or self.resolver.triple_store_class()
+            if known is None:
+                raise AqlEmitError(
+                    f"RPT property triple on constant subject {subject} outside a triple store"
+                )
+            rpt_class = known
+        else:
+            rpt_class = self.state.var_to_rpt_class[str(subject)]
         triples_alias = self._open_collection(rpt_class.collection, resolved=rpt_class)
         # Record the per-class metadata so the OBJECT variable, if
         # bound here, joins through the same column overrides the
         # subject's class declared.
         pred_bind = self.builder.bind(str(predicate), hint="pred")
         self.builder.filter_eq(attribute_ref(triples_alias, rpt_class.predicate_column), pred_bind)
-        # Join on subject URI: the subject's value lives in
-        # ``var_to_expr`` already (set by the type pattern emitter).
-        subj_expr = self.state.var_to_expr.get(str(subject))
-        if subj_expr is None:
-            raise AqlEmitError(f"RPT property triple references unbound subject ?{subject}")
         new_subj_expr = attribute_ref(triples_alias, rpt_class.subject_column)
-        if subj_expr != new_subj_expr:
-            self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
+        if isinstance(subject, URIRef):
+            uri_bind = self.builder.bind(str(subject), hint="uri")
+            self.builder.filter_eq(new_subj_expr, uri_bind)
+        else:
+            # Join on subject URI: the subject's value lives in
+            # ``var_to_expr`` (set by the type pattern emitter, or by an
+            # earlier triple that bound it as an object). A subject seen
+            # for the first time in a triple store binds here, the same
+            # way the type pattern emitter binds it.
+            subj_expr = self.state.var_to_expr.get(str(subject))
+            if subj_expr is None:
+                if self.resolver.triple_store_class() is None:
+                    raise AqlEmitError(f"RPT property triple references unbound subject ?{subject}")
+                self.state.var_to_doc_alias[str(subject)] = triples_alias
+                self.state.var_to_expr[str(subject)] = new_subj_expr
+            elif subj_expr != new_subj_expr:
+                self.builder.filter_raw(f"{new_subj_expr} == {subj_expr}")
         # OBJECT — variable / IRI / literal each take a different shape.
         coalesce_expr = (
             f"NOT_NULL({attribute_ref(triples_alias, rpt_class.object_uri_column)}, "
@@ -2065,17 +2173,42 @@ class AlgebraVisitor:
                 f"edge collection backs this relationship (PRD §6.2)"
             )
 
-        subject_alias = self._ensure_subject_alias(subject)
+        reverse_source = self._reverse_traversal_source(subject, prop, obj)
+        if reverse_source is not None:
+            # The subject is unknown but the object is a document: walk the
+            # edge backwards from it. One edge collection can reach several
+            # subject classes (LDBC ``?m :hasCreator ?p`` finds posts and
+            # comments alike), but it can also reach a copy of the same IRI
+            # in another collection (the W3C loader stores a typed resource
+            # in ``Document`` and in its class collection, each with its own
+            # edges), which duplicated rows (W3C ``sparqldl-07``). So keep
+            # the vertices in the collections the forward plan reads.
+            v_alias = self.builder.fresh_alias(prefix="v")
+            e_alias = self.builder.fresh_alias(prefix="e")
+            self.builder.for_traversal(
+                v_alias,
+                e_alias,
+                reverse_source,
+                prop.edge_collection,
+                direction="ANY" if prop.symmetric else "INBOUND",
+            )
+            self._filter_edge_type(prop, e_alias)
+            self._keep_subject_collections(v_alias, prop)
+            self.state.doc_to_collection[v_alias] = prop.edge_collection
+            self._bind_subject(subject, v_alias)
+            return
+
+        subject_alias = self._ensure_subject_alias(subject, prop)
         v_alias = self.builder.fresh_alias(prefix="v")
         e_alias = self.builder.fresh_alias(prefix="e")
-        self.builder.for_traversal(v_alias, e_alias, subject_alias, prop.edge_collection)
-        # ``GENERIC_WITH_TYPE`` shares one edge collection across many
-        # relationship types; the discriminator FILTER is what keeps an
-        # ``?a :knows ?b`` traversal from also returning ``:worksAt``
-        # / ``:livesIn`` rows that happen to ride the same collection.
-        if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
-            bind = self.builder.bind(prop.type_value, hint=prop.type_field)
-            self.builder.filter_eq(attribute_ref(e_alias, prop.type_field), bind)
+        self.builder.for_traversal(
+            v_alias,
+            e_alias,
+            subject_alias,
+            prop.edge_collection,
+            direction="ANY" if prop.symmetric else "OUTBOUND",
+        )
+        self._filter_edge_type(prop, e_alias)
         # We track the edge alias on the builder for the rare query that
         # references the edge document itself; ``v_alias`` is the
         # traversal vertex and is what binds to the SPARQL object.
@@ -2117,7 +2250,145 @@ class AlgebraVisitor:
             f"object property {prop.iri!r} with non-IRI object is not supported (triple {triple!r})"
         )
 
-    def _ensure_subject_alias(self, subject: Any) -> str:
+    def _filter_edge_type(self, prop: Any, e_alias: str) -> None:
+        """``GENERIC_WITH_TYPE`` shares one edge collection across many
+        relationship types; the discriminator FILTER is what keeps an
+        ``?a :knows ?b`` traversal from also returning ``:worksAt`` /
+        ``:livesIn`` rows that happen to ride the same collection."""
+        if prop.mapping_style == "GENERIC_WITH_TYPE" and prop.type_field and prop.type_value:
+            bind = self.builder.bind(prop.type_value, hint=prop.type_field)
+            self.builder.filter_eq(f"{e_alias}.{prop.type_field}", bind)
+
+    def _reverse_traversal_source(self, subject: Any, prop: Any, obj: Any) -> str | None:
+        """The alias to traverse ``prop`` backwards from, or ``None``.
+
+        Only when the subject is a variable nothing has bound yet: a bound
+        subject is walked forwards as before. The object must be a document:
+        a variable bound to one, or a constant IRI whose ``rdfs:range`` is a
+        single document class, which is opened and filtered on the IRI (an
+        indexed ``_uri`` match).
+        """
+        if not isinstance(subject, Variable):
+            return None
+        name = str(subject)
+        if name in self.state.var_to_doc_alias or name in self.state.var_to_expr:
+            return None
+        if isinstance(obj, Variable):
+            return self.state.var_to_doc_alias.get(str(obj))
+        if not isinstance(obj, URIRef):
+            return None
+        known = self.state.const_subject_alias.get(str(obj))
+        if known is not None:
+            return known
+        if prop.range_iri is None:
+            return None
+        try:
+            resolved = self.resolver.resolve_class(prop.range_iri)
+        except SchemaResolutionError:
+            return None
+        if resolved.style == "RPT":
+            return None
+        alias = self._open_collection(resolved.collection, resolved=resolved)
+        if resolved.type_field and resolved.type_value:
+            type_bind = self.builder.bind(
+                resolved.type_value,
+                hint=resolved.type_field if is_aql_identifier(resolved.type_field) else None,
+            )
+            self.builder.filter_raw(
+                type_predicate(alias, resolved.type_field, type_bind, is_array=resolved.type_field_is_array)
+            )
+        self._enforce_tenant_scope(alias, resolved)
+        uri_bind = self.builder.bind(str(obj), hint="uri")
+        self.builder.filter_raw(subject_matches(alias, uri_bind))
+        self.state.const_subject_alias[str(obj)] = alias
+        return alias
+
+    def _keep_subject_collections(self, v_alias: str, prop: Any) -> None:
+        """Restrict a reverse traversal's vertex to the subject's collections.
+
+        The forward plan reads an untyped subject from its property's
+        ``rdfs:domain`` collections (:meth:`_route_by_domain`), else from the
+        default collection; the reverse walk keeps only vertices there, and
+        applies the tenant FILTER the forward plan's class would have. A
+        strict mapping with no domain has no forward plan to match (it
+        refuses the subject), so its vertices stay as the edge finds them.
+        """
+        classes = [self.resolver.resolve_class(iri) for iri in self.resolver.domain_classes(prop.iri)]
+        if any(c.style == "RPT" for c in classes):
+            classes = []  # as _route_by_domain: an RPT domain does not route
+        if classes:
+            collections = sorted({c.collection for c in classes})
+        elif not self.resolver.strict_subject_resolution:
+            collections = [self.resolver.default_collection]
+        else:
+            return
+        tests = [f"IS_SAME_COLLECTION({self.builder.bind(c, hint='coll')}, {v_alias})" for c in collections]
+        self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        tenant_fields = {(c.tenant_field, c.tenant_entity) for c in classes}
+        if len(tenant_fields) > 1:
+            raise UnsupportedSparqlError(
+                f"the subject of {prop.iri!r} can be in classes with different tenant "
+                f"scoping; a reverse traversal cannot apply one tenant filter to them"
+            )
+        if classes:
+            self._enforce_tenant_scope(v_alias, classes[0])
+
+    def _route_by_domain(self, subject: Any, prop: Any) -> str | None:
+        """Open the collection ``prop``'s ``rdfs:domain`` puts *subject* in.
+
+        For a subject no type pattern named — a constant IRI, a variable
+        bound only to a value, a fresh variable — the property's domain says
+        what it is (RDF: every subject of the property belongs to the
+        domain). One class opens that class's collection, with its label
+        test in LPG; a union of LABEL classes in one collection becomes an
+        any-of label test. A union spanning several collections (PG's
+        Post ∪ Comment) is refused: routing one subject across collections
+        is plan decision D9, not decided yet. Returns ``None`` when the
+        domain cannot help (none declared, or an RPT class).
+        """
+        class_iris = self.resolver.domain_classes(prop.iri)
+        if not class_iris:
+            return None
+        classes = [self.resolver.resolve_class(iri) for iri in class_iris]
+        if any(c.style == "RPT" for c in classes):
+            return None
+        collections = sorted({c.collection for c in classes})
+        if len(collections) > 1:
+            raise UnsupportedSparqlError(
+                f"the subject {subject} of {prop.iri!r} can be in any of the collections "
+                f"{collections} (its rdfs:domain spans them); reading one subject across "
+                f"several collections is not supported yet (plan decision D9)"
+            )
+        anchor = classes[0]
+        alias = self._open_collection(anchor.collection, resolved=anchor)
+        labelled = [c for c in classes if c.type_field and c.type_value]
+        if labelled:
+            if (
+                len(labelled) != len(classes)
+                or len({(c.type_field, c.type_field_is_array) for c in labelled}) != 1
+            ):
+                raise UnsupportedSparqlError(
+                    f"the rdfs:domain of {prop.iri!r} mixes classes with different type fields in "
+                    f"collection {anchor.collection!r}; cannot test the subject's class"
+                )
+            tests = []
+            for c in labelled:
+                assert c.type_field is not None and c.type_value is not None
+                bind = self.builder.bind(
+                    c.type_value, hint=c.type_field if is_aql_identifier(c.type_field) else None
+                )
+                tests.append(type_predicate(alias, c.type_field, bind, is_array=c.type_field_is_array))
+            self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        self._enforce_tenant_scope(alias, anchor)
+        if isinstance(subject, URIRef):
+            uri_bind = self.builder.bind(str(subject), hint="uri")
+            self.builder.filter_raw(subject_matches(alias, uri_bind))
+            self.state.const_subject_alias[str(subject)] = alias
+        else:
+            self._bind_subject(subject, alias)
+        return alias
+
+    def _ensure_subject_alias(self, subject: Any, prop: Any | None = None) -> str:
         """Return the AQL alias whose document is *subject*, opening a
         fresh FOR over the default collection if we haven't seen this
         subject before.
@@ -2144,6 +2415,9 @@ class AlgebraVisitor:
             existing = self.state.var_to_doc_alias.get(str(subject))
             if existing is not None:
                 return existing
+            routed = self._route_by_domain(subject, prop) if prop is not None else None
+            if routed is not None:
+                return routed
             if self.resolver.strict_subject_resolution:
                 raise SchemaResolutionError(
                     f"cannot route subject variable {str(subject)!r} to a "
@@ -2159,6 +2433,12 @@ class AlgebraVisitor:
             self._bind_subject(subject, alias)
             return alias
         if isinstance(subject, URIRef):
+            known = self.state.const_subject_alias.get(str(subject))
+            if known is not None:
+                return known
+            routed = self._route_by_domain(subject, prop) if prop is not None else None
+            if routed is not None:
+                return routed
             if self.resolver.strict_subject_resolution:
                 raise SchemaResolutionError(
                     f"cannot route subject IRI {str(subject)!r} to a collection: "
@@ -2417,8 +2697,17 @@ class AlgebraVisitor:
         of subsequent operands). E.g. ``?a + 1 - 2`` becomes
         ``head=?a, ops=['+', '-'], tail=[1, 2]``.
         """
-        result = self._translate_expr(head)
-        for op, operand in zip(ops, tail, strict=True):
+        pairs = list(zip(ops, tail, strict=True))
+        if pairs and pairs[0][0] == "+" and _is_duration_literal(head):
+            # ``duration + date`` is ``date + duration`` (addition commutes).
+            result = self._date_shift("+", self._translate_expr(pairs[0][1]), head)
+            pairs = pairs[1:]
+        else:
+            result = self._translate_expr(head)
+        for op, operand in pairs:
+            if op in ("+", "-") and _is_duration_literal(operand):
+                result = self._date_shift(op, result, operand)
+                continue
             right = self._translate_expr(operand)
             left_alias = self.builder.fresh_alias(prefix="num")
             right_alias = self.builder.fresh_alias(prefix="num")
@@ -2429,6 +2718,28 @@ class AlgebraVisitor:
                 f"? ({left_alias} {op} {right_alias}) : null)[0]"
             )
         return result
+
+    def _date_shift(self, op: str, date_expr: str, duration: Literal) -> str:
+        """``date ± duration`` as AQL ``DATE_ADD`` / ``DATE_SUBTRACT``.
+
+        XPath's ``op:add-yearMonthDuration-to-dateTime`` family (SPARQL 1.1
+        §17.3 via XPath operators). AQL takes the ISO 8601 duration string
+        itself (``P30D``), so the duration is bound as its lexical form — never
+        as the ``timedelta`` rdflib parses it into, which is not JSON and
+        failed at the driver (LDBC IC3 / IC4).
+
+        Only a string is shifted: AQL reads a number as epoch milliseconds
+        (``DATE_ADD(7, "P1D")`` is a date), where SPARQL's number + duration is
+        a type error. Anything else — and a string that is not a date, for
+        which AQL returns null — yields null, SPARQL's "error → unbound".
+        """
+        duration_bind = self.builder.bind(str(duration), hint="duration")
+        function = "DATE_ADD" if op == "+" else "DATE_SUBTRACT"
+        operand = self.builder.fresh_alias(prefix="dt")
+        return (
+            f"(FOR {operand} IN [{date_expr}] "
+            f"RETURN IS_STRING({operand}) ? {function}({operand}, {duration_bind}) : null)[0]"
+        )
 
     # ------------------------------------------------------------------
     # Internal: projection / RETURN
@@ -2497,31 +2808,58 @@ def _expression_variable_names(node: Any) -> set[str]:
     return out
 
 
-def _triple_priority(triple: tuple[Any, Any, Any]) -> tuple[int, int]:
-    """Sort key for BGP triples — lower = visit earlier.
+def _term_known(term: Any, bound: set[str]) -> bool:
+    """A constant, or a variable some earlier pattern already bound."""
+    if isinstance(term, Variable):
+        return str(term) in bound
+    return isinstance(term, (URIRef, Literal))
 
-    Order:
-      0. Type patterns (``?s a :Class``) — bind subjects to physical
-         collections first.
-      1. Triples whose subject is a Variable — these can reuse a prior
-         alias when sorted after a type pattern bound the same subject.
-         Property-path predicates (``Path`` instances) also land here:
-         a ``?s :p/:q ?o`` against an already-bound ``?s`` is the
-         common shape (e.g. type pattern + path-on-the-subject), and
-         we want the path desugaring to see the same binding state a
-         plain ``?s :name ?n`` would.
-      2. Triples whose subject is a URI — they always open a fresh FOR.
-    """
+
+def _join_rank(triple: tuple[Any, Any, Any], bound: set[str]) -> int:
+    """Lower = emit earlier. See :func:`_order_bgp`."""
     s, p, o = triple
-    if isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef):
-        primary = 0
-    elif isinstance(s, Variable):
-        primary = 1
-    else:
-        primary = 2
-    # Stable secondary so two triples with the same primary preserve
-    # rdflib's order — keeps golden output deterministic.
-    return (primary, 0)
+    is_type = isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef)
+    subject_known = _term_known(s, bound)
+    if is_type:
+        return 0 if subject_known else 2
+    if subject_known:
+        return 1
+    if _term_known(o, bound):
+        return 3
+    return 4
+
+
+def _order_bgp(triples: list[tuple[Any, Any, Any]], bound: set[str]) -> list[tuple[Any, Any, Any]]:
+    """Greedy, binding-aware order for a BGP's triples.
+
+    Each step takes the lowest-ranked remaining triple, then counts its
+    variables as bound:
+
+      0. a type check on a subject already known (a filter, nothing more);
+      1. a triple whose subject is known — a constant, a variable bound by an
+         outer pattern, or the object of a triple already emitted — so the
+         nested FOR is an index lookup, and chains (person → city → id)
+         follow themselves;
+      2. a type pattern on an unknown subject — it anchors the subject to its
+         class's collection (which PG / LPG routing needs before that
+         subject's property triples) at the cost of a class scan;
+      3. a triple whose object is known (a reverse lookup);
+      4. anything else.
+
+    Ties keep rdflib's order, so output stays deterministic. Property-path
+    triples rank like plain ones; their desugaring sees the same bindings.
+    """
+    bound = set(bound)
+    remaining = list(enumerate(triples))
+    ordered: list[tuple[Any, Any, Any]] = []
+    while remaining:
+        best = min(remaining, key=lambda item: (_join_rank(item[1], bound), item[0]))
+        remaining.remove(best)
+        ordered.append(best[1])
+        for term in best[1]:
+            if isinstance(term, Variable):
+                bound.add(str(term))
+    return ordered
 
 
 def _is_empty_bgp(node: Any) -> bool:
@@ -2578,13 +2916,38 @@ def _walk_for_bgp_triples(node: Any, out: list[tuple[Any, Any, Any]]) -> None:
             _walk_for_bgp_triples(child, out)
 
 
+#: XSD duration datatypes (XSD 1.1 §3.3.6, §3.4.26, §3.4.27).
+_DURATION_TYPES = frozenset(
+    {
+        "http://www.w3.org/2001/XMLSchema#duration",
+        "http://www.w3.org/2001/XMLSchema#dayTimeDuration",
+        "http://www.w3.org/2001/XMLSchema#yearMonthDuration",
+    }
+)
+
+
+def _is_duration_literal(term: Any) -> bool:
+    return isinstance(term, Literal) and term.datatype is not None and str(term.datatype) in _DURATION_TYPES
+
+
 def _term_to_python(term: Any) -> Any:
     """Convert an rdflib Literal/URIRef into a JSON-safe Python value.
 
     Literals use ``Literal.toPython()`` so xsd:integer/xsd:decimal/
     xsd:dateTime round-trip through ArangoDB as the right primitive
     type rather than as their lexical form.
+
+    A duration has no JSON form AQL can compare or return with SPARQL's
+    semantics (``P1D`` equals ``PT24H``); it is supported only as the
+    operand of ``date ± duration`` (:meth:`AlgebraVisitor._date_shift`),
+    and refused anywhere else rather than bound as a ``timedelta`` the
+    driver cannot serialise.
     """
+    if _is_duration_literal(term):
+        raise UnsupportedSparqlError(
+            f"an xsd:duration value ({term}) is supported only when added to or "
+            "subtracted from a date or dateTime"
+        )
     if isinstance(term, Literal):
         value = term.toPython()
         # ``xsd:decimal`` round-trips through rdflib as

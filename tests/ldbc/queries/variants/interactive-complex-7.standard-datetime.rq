@@ -1,0 +1,54 @@
+# Variant of interactive-complex-7.rq (ldbc/ldbc_snb_interactive_v1_impls@11db98c,
+# graphdb/queries), Apache-2.0. Labelled variant per
+# docs/architecture/ldbc_benchmark_plan.md decision D3; the verbatim
+# file is never edited.
+#
+# Change: ofn:minutesBetween (an Ontotext function) is replaced by standard
+# SPARQL 1.1 arithmetic. SPARQL cannot subtract dateTimes, so each date is
+# turned into a day number (the proleptic Gregorian day count, from YEAR,
+# MONTH and DAY) and the minutes are FLOOR(milliseconds apart / 60000), as
+# LDBC defines minutesLatency. All timestamps in the data are UTC.
+# Nothing else changes.
+
+PREFIX snvoc: <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/>
+PREFIX sn: <http://www.ldbc.eu/ldbc_socialnet/1.0/data/>
+PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+
+select ?liker ?firstName ?lastName ?recentDate ?likedMessage ?content ?latency ?is_new where {
+    {
+        select ?liker (min(?message) as ?likedMessage) ?recentDate where {
+            {
+                select ?liker (max(?ldt) as ?recentDate) where {
+                    ?message snvoc:hasCreator sn:pers%personId% .
+                    ?liker snvoc:likes ?lk .
+                    ?lk snvoc:hasPost|snvoc:hasComment ?message .
+                    ?lk snvoc:creationDate ?ldt .
+                } group by ?liker
+            }
+            ?liker snvoc:likes ?lk .
+            ?lk snvoc:creationDate ?recentDate .
+            ?lk snvoc:hasPost|snvoc:hasComment ?message .
+        } group by ?liker ?recentDate
+    }
+    ?liker snvoc:firstName ?firstName .
+    ?liker snvoc:lastName ?lastName .
+    ?likedMessage snvoc:content|snvoc:imageFile ?content .
+    ?likedMessage snvoc:creationDate ?creationDate .
+
+    bind(year(?creationDate) - if(month(?creationDate) <= 2, 1, 0) as ?cy) .
+    bind(if(month(?creationDate) > 2, month(?creationDate) - 3, month(?creationDate) + 9) as ?cm) .
+    bind(365 * ?cy + floor(?cy / 4) - floor(?cy / 100) + floor(?cy / 400)
+         + floor((153 * ?cm + 2) / 5) + day(?creationDate) as ?cday) .
+    bind(year(?recentDate) - if(month(?recentDate) <= 2, 1, 0) as ?ry) .
+    bind(if(month(?recentDate) > 2, month(?recentDate) - 3, month(?recentDate) + 9) as ?rm) .
+    bind(365 * ?ry + floor(?ry / 4) - floor(?ry / 100) + floor(?ry / 400)
+         + floor((153 * ?rm + 2) / 5) + day(?recentDate) as ?rday) .
+    bind((?rday - ?cday) * 86400000
+         + ((hours(?recentDate) - hours(?creationDate)) * 3600
+            + (minutes(?recentDate) - minutes(?creationDate)) * 60
+            + (seconds(?recentDate) - seconds(?creationDate))) * 1000 as ?latencyMs) .
+    bind(xsd:integer(floor(?latencyMs / 60000)) as ?latency) .
+    bind(not exists { sn:pers%personId% snvoc:directKnows ?liker } as ?is_new )
+}
+order by desc (?recentDate) ?liker
+limit 20

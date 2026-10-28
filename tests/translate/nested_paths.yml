@@ -1,0 +1,172 @@
+# Golden corpus for properties stored inside a nested object (issue #72).
+#
+# Contract — the mapping says which meaning a dotted name has:
+#   * ``phys:attributeName "address.city"`` is ONE attribute whose name
+#     contains a dot: ``HAS(doc, @attr)`` and ``doc.`address.city```.
+#   * ``phys:attributePath '["address", "city"]'`` is ``city`` inside the
+#     object ``address``. The existence check walks the same path the read
+#     uses: every enclosing level must be an object (``IS_OBJECT``), then
+#     ``HAS`` on the last level. A list where an object is expected counts
+#     as absent. A segment may itself contain a dot.
+#   * Under OPTIONAL the read alone is enough: AQL reads null through a
+#     missing or non-object level, which is SPARQL's "unbound".
+#   * A one-segment path is a plain attribute, exactly like attributeName.
+
+ontology: |
+  @prefix : <http://ex.org/> .
+  @prefix owl: <http://www.w3.org/2002/07/owl#> .
+  @prefix phys: <https://arango.solutions/phys#> .
+
+  :Person a owl:Class ; phys:collectionName "Person" .
+  :name a owl:DatatypeProperty .
+  :city a owl:DatatypeProperty ; phys:attributePath '["address", "city"]' .
+  :dottedCity a owl:DatatypeProperty ; phys:attributeName "address.city" .
+  :zip a owl:DatatypeProperty ; phys:attributePath '["address", "geo", "zip"]' .
+  :region a owl:DatatypeProperty ; phys:attributePath '["meta", "region.code"]' .
+  :homeAddress a owl:DatatypeProperty ; phys:attributePath '["address"]' .
+
+cases:
+  - name: nested_required
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?c WHERE {
+        ?s a :Person ; :city ?c .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER IS_OBJECT(doc1.address) && HAS(doc1.address, "city")
+      RETURN { c: doc1.address.city }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: literal_dotted_name_unchanged
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?c WHERE {
+        ?s a :Person ; :dottedCity ?c .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, @_p1_attr)
+      RETURN { c: doc1.`address.city` }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_attr": "address.city"
+
+  - name: both_shapes_in_one_query
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?nested ?literal WHERE {
+        ?s a :Person ; :city ?nested ; :dottedCity ?literal .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER IS_OBJECT(doc1.address) && HAS(doc1.address, "city")
+      FILTER HAS(doc1, @_p1_attr)
+      RETURN { nested: doc1.address.city, literal: doc1.`address.city` }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_attr": "address.city"
+
+  - name: three_levels
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?z WHERE {
+        ?s a :Person ; :zip ?z .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER IS_OBJECT(doc1.address) && IS_OBJECT(doc1.address.geo) && HAS(doc1.address.geo, "zip")
+      RETURN { z: doc1.address.geo.zip }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: segment_containing_a_dot
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?r WHERE {
+        ?s a :Person ; :region ?r .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER IS_OBJECT(doc1.meta) && HAS(doc1.meta, @_p1_attr)
+      RETURN { r: doc1.meta.`region.code` }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_attr": "region.code"
+
+  - name: one_segment_path_is_a_plain_attribute
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a WHERE {
+        ?s a :Person ; :homeAddress ?a .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "address")
+      RETURN { a: doc1.address }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: nested_literal_object
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s WHERE {
+        ?s a :Person ; :city "Lisbon" .
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER doc1.address.city == @_p1_city
+      RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1_city": "Lisbon"
+
+  - name: nested_optional
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?c WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :city ?c }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      RETURN { n: doc1.name, c: doc1.address.city }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+
+  - name: nested_optional_with_filter
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n ?c WHERE {
+        ?s a :Person ; :name ?n .
+        OPTIONAL { ?s :city ?c FILTER(?c != "Porto") }
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER HAS(doc1, "name")
+      LET opt2 = ((doc1.address.city != null && (doc1.address.city != @_p1)) ? doc1.address.city : null)
+      RETURN { n: doc1.name, c: opt2 }
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "_p1": "Porto"
+
+  - name: nested_join_to_another_subject
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?a ?b WHERE {
+        ?a a :Person ; :city ?c .
+        ?b a :Person ; :city ?c .
+        FILTER(?a != ?b)
+      }
+    expected_aql: |-
+      FOR doc1 IN @@c1_Person
+      FILTER IS_OBJECT(doc1.address) && HAS(doc1.address, "city")
+      FOR doc2 IN @@c1_Person
+      FILTER IS_OBJECT(doc2.address) && HAS(doc2.address, "city")
+      FILTER doc2.address.city == doc1.address.city
+      FILTER (NOT_NULL(doc1._uri, doc1._id) != NOT_NULL(doc2._uri, doc2._id))
+      RETURN { a: NOT_NULL(doc1._uri, doc1._id), b: NOT_NULL(doc2._uri, doc2._id) }
+    expected_bind_vars:
+      "@c1_Person": "Person"

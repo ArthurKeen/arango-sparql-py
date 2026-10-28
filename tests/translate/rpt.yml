@@ -141,3 +141,163 @@ cases:
       "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
       "_p2_cls": "http://ex.org/Doc"
       "_p3_pred": "http://ex.org/title"
+
+  # --- Pure triple store: subjects no type pattern routed ---------------
+  # The file-level ontology maps every class to one triples table, so the
+  # mapping is a pure triple store (SchemaResolver.triple_store_class). A
+  # subject that no ``?s a :C`` bound — a constant IRI, a variable bound
+  # only as an earlier triple's object, or a fresh variable — reads the
+  # triples table too: its triples cannot be anywhere else. LDBC SNB's
+  # reference SPARQL relies on this throughout (PRD §13.6).
+
+  - name: triple_store_untyped_variable_subject
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?n WHERE { ?s :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_pred
+      RETURN { s: doc1.subject_uri, n: NOT_NULL(doc1.object_uri, doc1.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_pred": "http://ex.org/name"
+
+  - name: triple_store_constant_subject
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?n WHERE { <http://ex.org/alice> :name ?n }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_pred
+      FILTER doc1.subject_uri == @_p2_uri
+      RETURN { n: NOT_NULL(doc1.object_uri, doc1.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_pred": "http://ex.org/name"
+      "_p2_uri": "http://ex.org/alice"
+
+  - name: triple_store_object_reused_as_subject
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?c WHERE { ?s a :Person ; :knows ?f . ?f :name ?c }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == doc1.subject_uri
+      FOR doc3 IN @@c1__triples
+      FILTER doc3.predicate == @_p4_pred
+      FILTER doc3.subject_uri == NOT_NULL(doc2.object_uri, doc2.object_value)
+      RETURN { s: doc1.subject_uri, c: NOT_NULL(doc3.object_uri, doc3.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+      "_p3_pred": "http://ex.org/knows"
+      "_p4_pred": "http://ex.org/name"
+
+  - name: triple_store_sequence_path
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?c WHERE { ?s a :Person ; :knows/:name ?c }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == doc1.subject_uri
+      FOR doc3 IN @@c1__triples
+      FILTER doc3.predicate == @_p4_pred
+      FILTER doc3.subject_uri == NOT_NULL(doc2.object_uri, doc2.object_value)
+      RETURN { s: doc1.subject_uri, c: NOT_NULL(doc3.object_uri, doc3.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+      "_p3_pred": "http://ex.org/knows"
+      "_p4_pred": "http://ex.org/name"
+
+  # A zero-length path step (``:p*``'s identity arm) binds the object to the
+  # subject's *term* (SPARQL 1.1 §18.5 ZeroLengthPath): an earlier triple's
+  # object value, or the constant itself — no document needed for either.
+  - name: triple_store_zero_or_more_from_a_value
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?s ?r WHERE { ?s a :Person ; :knows ?f . ?f :knows? ?r }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_rdftype
+      FILTER doc1.object_uri == @_p2_cls
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == doc1.subject_uri
+      FOR row5 IN UNION_DISTINCT(
+      (
+        FOR empty3 IN [1]
+        RETURN { r: NOT_NULL(doc2.object_uri, doc2.object_value) }
+      ),
+      (
+        FOR doc4 IN @@c2__triples
+        FILTER doc4.predicate == @_p4_pred
+        FILTER doc4.subject_uri == NOT_NULL(doc2.object_uri, doc2.object_value)
+        RETURN { r: NOT_NULL(doc4.object_uri, doc4.object_value) }
+      )
+      )
+      RETURN { s: doc1.subject_uri, r: row5.r }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_rdftype": "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+      "_p2_cls": "http://ex.org/Person"
+      "_p3_pred": "http://ex.org/knows"
+      "@c2__triples": "_triples"
+      "_p4_pred": "http://ex.org/knows"
+
+  - name: triple_store_zero_or_more_from_a_constant
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?r WHERE { <http://ex.org/alice> :knows? ?r }
+    expected_aql: |-
+      FOR row3 IN UNION_DISTINCT(
+      (
+        FOR empty1 IN [1]
+        RETURN { r: @_p1_uri }
+      ),
+      (
+        FOR doc2 IN @@c1__triples
+        FILTER doc2.predicate == @_p2_pred
+        FILTER doc2.subject_uri == @_p3_uri
+        RETURN { r: NOT_NULL(doc2.object_uri, doc2.object_value) }
+      )
+      )
+      RETURN { r: row3.r }
+    expected_bind_vars:
+      "_p1_uri": "http://ex.org/alice"
+      "@c1__triples": "_triples"
+      "_p2_pred": "http://ex.org/knows"
+      "_p3_uri": "http://ex.org/alice"
+
+  # Join order (visitor._order_bgp): a triple whose subject is known comes
+  # first, and its object then makes the next triple's subject known, so the
+  # chain is followed by index lookups. rdflib hands these two triples over in
+  # the opposite order; emitted that way, the first FOR scanned every ``:id``
+  # row (LDBC IS1: 327 k rows) before the constant subject applied.
+  - name: triple_store_constant_subject_chain_is_followed
+    sparql: |
+      PREFIX : <http://ex.org/>
+      SELECT ?id WHERE { <http://ex.org/alice> :city ?c . ?c :id ?id }
+    expected_aql: |-
+      FOR doc1 IN @@c1__triples
+      FILTER doc1.predicate == @_p1_pred
+      FILTER doc1.subject_uri == @_p2_uri
+      FOR doc2 IN @@c1__triples
+      FILTER doc2.predicate == @_p3_pred
+      FILTER doc2.subject_uri == NOT_NULL(doc1.object_uri, doc1.object_value)
+      RETURN { id: NOT_NULL(doc2.object_uri, doc2.object_value) }
+    expected_bind_vars:
+      "@c1__triples": "_triples"
+      "_p1_pred": "http://ex.org/city"
+      "_p2_uri": "http://ex.org/alice"
+      "_p3_pred": "http://ex.org/id"

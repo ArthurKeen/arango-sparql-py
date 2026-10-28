@@ -33,10 +33,10 @@
         "neg-inverse-arm-negated-path": true,
         "neg-service-federation": true,
         "neg-offset-without-limit": true,
-        "neg-optional-nonvariable-object": true,
+        "neg-federated-service": true,
         "neg-optional-variable-predicate": true,
         "neg-avg-distinct-aggregate": true,
-        "neg-optional-union-body": true,
+        "neg-update-delete": true,
         "neg-absent-weather-forecast": true,
         "neg-absent-shipping-carrier": true,
         "neg-absent-inventory-warehouse": true

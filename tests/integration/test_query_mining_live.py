@@ -151,8 +151,15 @@ class _ReadingLLM:
         p, k = self._person, self._knows
         head = f"PREFIX : <{ns}>\n"
         if "Who knows whom" in user:
-            if "rdf:type" not in user:  # first draft: untyped, refused by strict subject routing
-                sparql = head + f"SELECT ?a ?b WHERE {{ ?a :{k} ?b }}"
+            if "was rejected" not in user:
+                # First draft: refused. It used to be an untyped ``?a :knows
+                # ?b``, refused by strict subject routing until the translator
+                # routed a subject by its property's domain (LDBC work); a
+                # federated SERVICE is a permanent non-goal (PRD §2), so this
+                # refusal cannot go stale the same way.
+                sparql = (
+                    head + f"SELECT ?a ?b WHERE {{ SERVICE <http://example.org/sparql> {{ ?a :{k} ?b }} }}"
+                )
             else:
                 sparql = head + f"SELECT ?a ?b WHERE {{ ?a a :{p} ; :{k} ?b }}"
         elif "Everyone's name" in user:
@@ -219,7 +226,7 @@ def test_each_example_passed_by_the_right_rule(db: Any, mined: dict[str, Any]) -
     stored = _stored(db)
     assert stored["Who knows whom"]["verification"]["verdict"] == "same_vertices"  # edges, by their endpoints
     assert stored["Who knows whom"]["verification"]["resources"] == 4
-    assert stored["Who knows whom"]["verification"]["attempts"] == 2  # typed after the routing feedback
+    assert stored["Who knows whom"]["verification"]["attempts"] == 2  # redrafted after the refusal
     assert stored["Everyone's name"]["verification"]["verdict"] == "same_values"
     assert stored["Everyone's name"]["verification"]["attempts"] == 2  # the short first draft was fed back
     canvas = stored["From a selected person: who they know"]
@@ -231,7 +238,7 @@ def test_the_rejected_drafts_were_told_why(mined: dict[str, Any]) -> None:
     retry = next(p for p in mined["llm"].prompts if "Everyone's name" in p and "was rejected" in p)
     assert "its results differ from the saved query's (values differ" in retry
     retry = next(p for p in mined["llm"].prompts if "Who knows whom" in p and "was rejected" in p)
-    assert "the SPARQL does not translate: cannot route subject variable 'a'" in retry
+    assert "the SPARQL does not translate:" in retry and "ServiceGraphPattern" in retry
     assert "Use only the classes" not in retry  # that hint is for undeclared names only
 
 

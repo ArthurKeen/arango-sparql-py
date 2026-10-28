@@ -13,6 +13,10 @@ attaches three annotation properties under the ``phys:`` namespace:
   collections — used to emit the type test (``builder.type_predicate``):
   ``doc.<typeField> == <typeValue>`` for a scalar field, ``<typeValue> IN
   doc.<typeField>`` for an array of labels (``phys:typeFieldIsArray``).
+- ``phys:attributeName "..."`` on an ``owl:DatatypeProperty`` → the stored
+  attribute, one literal name (a dot is part of it); or
+  ``phys:attributePath '["address", "city"]'`` → a value inside a nested
+  object, one segment per level (issue #72). Never both.
 
 The resolver normalizes every spelling of the physical IRI seen in the
 wild so callers do not have to care which mapper version produced the
@@ -28,15 +32,18 @@ graph directly so the lookup surface stays narrow and cacheable.
 
 from __future__ import annotations
 
+import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any
 from urllib.parse import quote
 
 from rdflib import OWL, RDF, RDFS, Graph, Literal, Namespace, URIRef
+from rdflib.collection import Collection
 
 from ..errors import SchemaResolutionError
 from .builder import parse_flag
+from .mapping import MappingError, property_field_path
 
 if TYPE_CHECKING:
     from .mapping import MappingBundle
@@ -164,6 +171,12 @@ class ResolvedProperty:
     * ``GENERIC_WITH_TYPE`` → the same traversal plus
       ``FILTER e.<type_field> == @<type_value>`` so we don't bleed in
       sibling edge types riding the same shared collection.
+
+    For a datatype property stored inside a nested object (issue #72,
+    ``phys:attributePath``), ``nested_path`` holds one name per level and
+    ``attribute`` is its first segment, the top-level attribute that
+    contains the value. Readers use :attr:`field_path`, never
+    ``attribute`` alone, so a nested value is never read from the top level.
     """
 
     iri: str
@@ -175,6 +188,26 @@ class ResolvedProperty:
     type_value: str | None = None
     domain_iri: str | None = None
     range_iri: str | None = None
+    symmetric: bool = False
+    """``owl:SymmetricProperty``: ``a p b`` holds exactly when ``b p a`` does.
+
+    For an edge-backed property this means each pair is stored once, in
+    either direction, and the visitor traverses ``ANY`` (LDBC's ``knows``
+    stored once, read as the symmetric ``directKnows``; plan decision D10).
+    An edge collection that stores both directions must not be declared
+    symmetric: ``ANY`` would return each pair twice."""
+
+    nested_path: tuple[str, ...] | None = None
+
+    @property
+    def field_path(self) -> tuple[str, ...]:
+        """Where the value is stored: one name per level, top level first."""
+        return self.nested_path if self.nested_path is not None else (self.attribute,)
+
+
+#: The ``iri`` of the class :meth:`SchemaResolver.triple_store_class` returns:
+#: it stands for "any subject of the triple store", not an OWL class.
+TRIPLE_STORE_IRI = "urn:arango-sparql:triple-store"
 
 
 @dataclass
@@ -315,6 +348,11 @@ class SchemaResolver:
     :meth:`attribute_uri_map`; ``None`` until first use."""
     _edge_properties: tuple[ResolvedProperty, ...] | None = field(default=None)
     """Lazily-built object-property mappings backed by edge collections."""
+    _triple_store_class: ResolvedClass | None = field(default=None)
+    """Cached result of :meth:`triple_store_class`."""
+    _triple_store_checked: bool = field(default=False)
+    _nested_properties: tuple[str, ...] | None = field(default=None)
+    """Lazily-built IRIs of datatype properties stored in a nested object."""
     _shard_family_by_collection: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Reverse index: physical collection name → the shard family
     tuple it belongs to. Built once in :meth:`__post_init__` so
@@ -611,6 +649,13 @@ class SchemaResolver:
         # Absent the annotation, the local name doubles as the attribute —
         # the long-standing behavior for identity-named mappings.
         attribute = self._physical_string(ref, "attributeName") or local_name(ref)
+        # ``phys:attributePath`` (issue #72) is a JSON array naming a value
+        # inside a nested object, one segment per level. It takes the place
+        # of ``phys:attributeName``, whose dots are part of one literal name.
+        path = self._attribute_path(ref, key)
+        nested_path = path if path is not None and len(path) > 1 else None
+        if path is not None:
+            attribute = path[0]
         resolved = ResolvedProperty(
             iri=key,
             attribute=attribute,
@@ -621,9 +666,55 @@ class SchemaResolver:
             type_value=type_value,
             domain_iri=domain_iri,
             range_iri=range_iri,
+            symmetric=is_object and (ref, RDF.type, OWL.SymmetricProperty) in self.ontology,
+            nested_path=nested_path,
         )
         self._property_cache[key] = resolved
         return resolved
+
+    def _attribute_path(self, ref: URIRef, key: str) -> tuple[str, ...] | None:
+        """Read ``phys:attributePath`` on *ref*: ``None`` when absent, else
+        its segments (one segment is a plain attribute, like attributeName).
+
+        A malformed annotation raises rather than falling back to the local
+        name, which would read a field that does not exist and answer empty.
+        """
+        raw = self._physical_string(ref, "attributePath")
+        if raw is None:
+            return None
+        if self._physical_string(ref, "attributeName") is not None:
+            raise SchemaResolutionError(
+                f"property {key!r} declares both phys:attributeName and phys:attributePath; "
+                f"declare one (attributeName is one literal name, attributePath a nested value)"
+            )
+        try:
+            segments = json.loads(raw)
+            path = property_field_path(key, {"path": segments})
+        except (ValueError, MappingError) as exc:
+            raise SchemaResolutionError(
+                f"property {key!r} has a malformed phys:attributePath {raw!r}: expected a "
+                f'JSON array of field names such as ["address", "city"] ({exc})'
+            ) from exc
+        assert path is not None  # property_field_path returns a tuple for a non-None path
+        return path
+
+    def nested_properties(self) -> tuple[str, ...]:
+        """Return the IRIs of datatype properties stored in a nested object.
+
+        Emitters that enumerate a document's top-level attributes
+        (``ATTRIBUTES()``: variable predicates, negated property paths) cannot
+        see these values, so they refuse while this is non-empty rather than
+        return an answer that silently leaves them out (issue #72).
+        """
+        if self._nested_properties is not None:
+            return self._nested_properties
+        nested = [
+            str(subject)
+            for subject in sorted(set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str)
+            if isinstance(subject, URIRef) and self.resolve_property(subject).nested_path is not None
+        ]
+        self._nested_properties = tuple(nested)
+        return self._nested_properties
 
     # ------------------------------------------------------------------
     # Reverse property index (attribute name → predicate IRI)
@@ -659,7 +750,12 @@ class SchemaResolver:
         for subject in sorted(set(self.ontology.subjects(RDF.type, OWL.DatatypeProperty)), key=str):
             if not isinstance(subject, URIRef):
                 continue
-            attribute = self.resolve_property(subject).attribute
+            prop = self.resolve_property(subject)
+            if prop.nested_path is not None:
+                # Its top-level attribute holds the enclosing object, not this
+                # value; keying it here would bind ?p to the wrong predicate.
+                continue
+            attribute = prop.attribute
             existing = mapping.get(attribute)
             if existing is not None:
                 self._warn_schema(
@@ -676,6 +772,65 @@ class SchemaResolver:
             mapping[attribute] = str(subject)
         self._attribute_uri_map = mapping
         return mapping
+
+    def domain_classes(self, property_iri: str) -> tuple[str, ...]:
+        """The class IRIs ``rdfs:domain`` gives *property_iri*: one class, or
+        the members of an ``owl:unionOf``. Empty when no domain is declared
+        (or it is something else, such as an intersection).
+
+        The visitor routes a subject that no type pattern names by it: in
+        RDF a domain means every subject of the property *is* of that class.
+        """
+        domain = self.ontology.value(URIRef(property_iri), RDFS.domain)
+        if isinstance(domain, URIRef):
+            return (str(domain),)
+        if domain is None:
+            return ()
+        members = self.ontology.value(domain, OWL.unionOf)
+        if members is None:
+            return ()
+        return tuple(str(m) for m in Collection(self.ontology, members) if isinstance(m, URIRef))
+
+    def triple_store_class(self) -> ResolvedClass | None:
+        """The triples table, when the whole mapping is one triple store.
+
+        When every ``owl:Class`` in the ontology is ``RPT``-style on the
+        same triples collection with the same columns, the database is a
+        pure triple store: any subject's triples can only be in that table.
+        The visitor then reads a subject that no type pattern routed (a
+        constant IRI, or a variable bound only to a value) from the triples
+        table instead of refusing it, which is how SPARQL over a triple
+        store normally reads (``?m :hasCreator ?p`` with no ``?m a :C``).
+
+        Returns ``None`` for any other mapping, including a hybrid one that
+        mixes RPT with PG or LPG classes: there an untyped subject could
+        live in several places, so it stays unroutable (and, under
+        ``strict_subject_resolution``, raises).
+        """
+        if self._triple_store_checked:
+            return self._triple_store_class
+        self._triple_store_checked = True
+        classes = sorted(
+            (c for c in self.ontology.subjects(RDF.type, OWL.Class) if isinstance(c, URIRef)), key=str
+        )
+        resolved = [self.resolve_class(c) for c in classes]
+        if not resolved or any(r.style != "RPT" for r in resolved):
+            return None
+
+        def layout(r: ResolvedClass) -> tuple[str, ...]:
+            return (
+                r.collection,
+                r.subject_column,
+                r.predicate_column,
+                r.object_uri_column,
+                r.object_value_column,
+                str(r.tenant_field),
+            )
+
+        if len({layout(r) for r in resolved}) != 1:
+            return None
+        self._triple_store_class = replace(resolved[0], iri=TRIPLE_STORE_IRI)
+        return self._triple_store_class
 
     def edge_properties(self) -> tuple[ResolvedProperty, ...]:
         """Return edge-backed object properties in deterministic IRI order.
@@ -858,9 +1013,15 @@ def _synthesize_graph_from_bundle(bundle: MappingBundle) -> Graph:
                 p_iri = _synthetic_iri(prop_name)
                 g.add((p_iri, RDF.type, OWL.DatatypeProperty))
                 g.add((p_iri, RDFS.domain, iri))
-                field = prop_spec.get("field") if isinstance(prop_spec, dict) else None
-                if isinstance(field, str) and field and field != prop_name:
-                    g.add((p_iri, _SYNTHETIC_PHYS_NS["attributeName"], Literal(field)))
+                # ``field`` is one literal name; ``path`` names a value inside
+                # a nested object, one segment per level (issue #72).
+                location = property_field_path(prop_name, prop_spec)
+                if location is None:
+                    continue
+                if len(location) > 1:
+                    g.add((p_iri, _SYNTHETIC_PHYS_NS["attributePath"], Literal(json.dumps(list(location)))))
+                elif location[0] != prop_name:
+                    g.add((p_iri, _SYNTHETIC_PHYS_NS["attributeName"], Literal(location[0])))
 
     for rtype, spec in bundle.relationships().items():
         if not isinstance(rtype, str) or not rtype:

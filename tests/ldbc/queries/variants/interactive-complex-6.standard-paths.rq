@@ -1,0 +1,34 @@
+# Variant of interactive-complex-6.rq (ldbc/ldbc_snb_interactive_v1_impls@11db98c,
+# graphdb/queries), Apache-2.0. Labelled variant per
+# docs/architecture/ldbc_benchmark_plan.md decision D3; the verbatim
+# file is never edited.
+#
+# Change: GraphDB's path search (SERVICE <http://www.ontotext.com/path#search>)
+# is replaced by standard SPARQL 1.1: a UNION of the 1- and 2-hop directKnows
+# paths, excluding the start person (?dst is a friend or a friend of a friend). Nothing else changes.
+
+PREFIX sn: <http://www.ldbc.eu/ldbc_socialnet/1.0/data/>
+PREFIX path: <http://www.ontotext.com/path#>
+PREFIX snvoc: <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/>
+PREFIX foaf: <http://xmlns.com/foaf/0.1/>
+SELECT ?tagname (count (distinct ?post) as ?count)
+WHERE {
+    VALUES (?src) {
+        (sn:pers%personId%)
+    }
+    ?post a snvoc:Post .
+    ?post snvoc:hasTag/foaf:name "%tagName%" .
+    ?post snvoc:hasTag ?tag .
+    ?tag foaf:name ?tagname .
+    ?post snvoc:hasCreator ?dst .
+    filter(?tagname != "%tagName%")
+    {
+        ?src snvoc:directKnows ?dst .
+    } UNION {
+        ?src snvoc:directKnows/snvoc:directKnows ?dst .
+        FILTER (?dst != ?src)
+    }
+}
+group by ?tagname
+order by desc(?count) ?tagname
+limit 10

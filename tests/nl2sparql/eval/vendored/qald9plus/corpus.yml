@@ -1863,6 +1863,11 @@ cases:
   nl: What is the population of Cairo?
   expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbr: <http://dbpedia.org/resource/>
     SELECT ?pop WHERE { dbr:Cairo dbo:populationTotal ?pop }'
+- name: qald9plus-train-235
+  nl: Is Frank Herbert still alive?
+  expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX res: <http://dbpedia.org/resource/>
+    ASK WHERE { OPTIONAL { res:Frank_Herbert dbo:deathDate ?date } FILTER ( ! bound(?date)
+    ) }'
 - name: qald9plus-train-236
   nl: What is the last work of Dan Brown?
   expected: 'PREFIX dbo: <http://dbpedia.org/ontology/> PREFIX dbp: <http://dbpedia.org/property/>
