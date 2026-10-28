@@ -4,7 +4,12 @@ name: LDBC nightly
 # runs only the translation ratchet (`tests/ldbc/test_ldbc_ratchet.py`,
 # no data); this job runs the data tier:
 #
-#   * fetch the SHA-256-pinned Turtle and parameters (never vendored);
+#   * fetch the SHA-256-pinned Turtle and parameters (never vendored).
+#     The archives are cached by their pins, so LDBC's server is asked
+#     once, not nightly. LDBC's server refused this runner with HTTP 403
+#     (2026-10-28), so the first fetch needs the repository variable
+#     LDBC_DATASET_MIRROR: a base URL serving the archives at LDBC's paths.
+#     A mirror's file must still match the pin (tests/ldbc/datasets.py);
 #   * warm the pyoxigraph oracle (answers and timeouts are cached across
 #     runs: some shapes take minutes, and a query whose text has not
 #     changed never needs recomputing);
@@ -50,6 +55,8 @@ jobs:
       LDBC_ORACLE_TIMEOUT: "600"
       RUN_INTEGRATION: "1"
       RUN_LDBC: "1"
+      # Empty when the variable is unset; the fetch then asks LDBC only.
+      LDBC_DATASET_MIRROR: ${{ vars.LDBC_DATASET_MIRROR }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -64,6 +71,12 @@ jobs:
           path: ~/.cache/arango-sparql/ldbc/sf0.1-normalized/oracle-cache
           key: ldbc-oracle-sf0.1-${{ github.run_id }}
           restore-keys: ldbc-oracle-sf0.1-
+      # The pinned archives never change, so the key is the file holding
+      # the pins: a new pin is a new entry, and an old one is never read.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/arango-sparql/ldbc/archives
+          key: ldbc-archives-${{ hashFiles('tests/ldbc/datasets.py') }}
       - run: bash scripts/fetch_ldbc.sh
       - run: python -m tests.ldbc.oracle --warm --sf 0.1 --jobs 4 --timeout 600
       # Loads the three layouts on first use, then: counts, mappings,
