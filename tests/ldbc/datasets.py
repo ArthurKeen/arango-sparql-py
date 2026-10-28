@@ -3,7 +3,15 @@
 Nothing here is vendored (AGENTS.md *Off-limits*; plan decision D6): each
 archive is downloaded once, checked against a pinned SHA-256, unpacked
 into a cache directory and reused. ``scripts/fetch_ldbc.sh`` is the
-command-line entry point; CI caches the directory with ``actions/cache``.
+command-line entry point; CI caches the downloaded archives with
+``actions/cache``, keyed by this file (which holds the pins).
+
+``$LDBC_DATASET_MIRROR`` names a base URL tried before LDBC's own server, with
+each archive at the same path below it as below :data:`BASE_URL`. A mirror's
+file must hash to the same pin, so a mirror can make a fetch possible but can
+never change the data. The nightly CI job needs one: LDBC's server answered
+the GitHub-hosted runner with HTTP 403 (2026-10-28) while serving the same
+archive to a workstation.
 
 Usage::
 
@@ -15,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import logging
 import os
 import shutil
@@ -24,6 +33,7 @@ import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +42,9 @@ BASE_URL = "https://datasets.ldbcouncil.org"
 #: Read timeout for one network read, in seconds. Large archives stream in
 #: chunks, so this bounds a stall, not the whole download.
 DOWNLOAD_TIMEOUT_S = 120.0
+
+#: Environment variable naming a mirror base URL (see the module docstring).
+MIRROR_ENV = "LDBC_DATASET_MIRROR"
 
 
 @dataclass(frozen=True)
@@ -74,6 +87,15 @@ class DatasetError(RuntimeError):
     """A data set could not be fetched, verified or unpacked."""
 
 
+class TruncatedDownloadError(OSError):
+    """A source ended before the pinned size: a failed transfer, not other data.
+
+    ``http.client`` does not raise for a body shorter than its
+    ``Content-Length`` when it is read in chunks (it returns short), so the
+    size is checked against the pin before the digest.
+    """
+
+
 def cache_root() -> Path:
     """The cache directory: ``$LDBC_CACHE_DIR``, else ``~/.cache/arango-sparql/ldbc``."""
     configured = os.getenv("LDBC_CACHE_DIR")
@@ -90,26 +112,67 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _download(archive: Archive, dest: Path) -> None:
-    """Download *archive* to *dest* atomically, verifying its digest."""
-    dest.parent.mkdir(parents=True, exist_ok=True)
+def source_urls(archive: Archive) -> list[str]:
+    """Where to fetch *archive* from, in order: the mirror (when
+    ``$LDBC_DATASET_MIRROR`` is set), then LDBC's own URL."""
+    mirror = os.getenv(MIRROR_ENV, "").strip().rstrip("/")
+    if not mirror:
+        return [archive.url]
+    return [f"{mirror}{urlsplit(archive.url).path}", archive.url]
+
+
+def _download_from(url: str, archive: Archive, dest: Path) -> None:
+    """Download *url* to *dest* atomically, verifying *archive*'s digest.
+
+    Raises :class:`OSError` (including :class:`TruncatedDownloadError`) or
+    :class:`http.client.HTTPException` when the source cannot be read in full
+    (the caller tries the next one), and :class:`DatasetError` when it serves
+    different bytes.
+    """
     with tempfile.NamedTemporaryFile(dir=dest.parent, suffix=".part", delete=False) as tmp:
         tmp_path = Path(tmp.name)
         try:
-            logger.info("downloading %s (%d bytes)", archive.url, archive.size_bytes)
-            with urllib.request.urlopen(archive.url, timeout=DOWNLOAD_TIMEOUT_S) as response:  # noqa: S310 — pinned https URL
+            logger.info("downloading %s (%d bytes)", url, archive.size_bytes)
+            with urllib.request.urlopen(url, timeout=DOWNLOAD_TIMEOUT_S) as response:  # noqa: S310 — pinned URL, digest-checked
                 shutil.copyfileobj(response, tmp, length=1 << 20)
-        except OSError as exc:
+        except (OSError, http.client.HTTPException):
+            # HTTPException covers a chunked body cut short (IncompleteRead),
+            # which is not an OSError.
             tmp_path.unlink(missing_ok=True)
-            raise DatasetError(f"download of {archive.url} failed: {exc}") from exc
+            raise
+    received = tmp_path.stat().st_size
+    if received < archive.size_bytes:
+        tmp_path.unlink(missing_ok=True)
+        raise TruncatedDownloadError(f"{url} ended after {received} of {archive.size_bytes} bytes")
     actual = sha256_of(tmp_path)
     if actual != archive.sha256:
         tmp_path.unlink(missing_ok=True)
+        # A source serving other bytes is a fault to fix, not a reason to
+        # quietly try the next source.
         raise DatasetError(
-            f"SHA-256 mismatch for {archive.url}: expected {archive.sha256}, got {actual}. "
-            "The upstream file changed; re-pin it only after checking why."
+            f"SHA-256 mismatch for {url}: expected {archive.sha256}, got {actual}. "
+            "The file at that source changed; re-pin it only after checking why."
         )
     tmp_path.replace(dest)
+
+
+def _download(archive: Archive, dest: Path) -> None:
+    """Download *archive* to *dest* from the first source that serves it."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    failures: list[str] = []
+    for url in source_urls(archive):
+        try:
+            _download_from(url, archive, dest)
+            return
+        except (OSError, http.client.HTTPException) as exc:
+            logger.warning("download of %s failed: %s", url, exc)
+            failures.append(f"{url}: {exc}")
+    hint = (
+        ""
+        if os.getenv(MIRROR_ENV, "").strip()
+        else f" Set {MIRROR_ENV} to a mirror that serves the pinned archives at the same paths."
+    )
+    raise DatasetError(f"download of {archive.url} failed from every source ({'; '.join(failures)}).{hint}")
 
 
 def _unpack(archive_path: Path, into: Path) -> None:
