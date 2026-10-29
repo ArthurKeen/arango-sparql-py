@@ -60,21 +60,23 @@ def test_an_lpg_union_domain_is_an_any_of_label_test() -> None:
 
 def test_a_pg_union_domain_reads_each_collection() -> None:
     # Plan D9: ?m is a Post or a Comment, so both collections are scanned and
-    # the traversal starts from either kind of document.
+    # the traversal starts from either kind of document. The arms pass _id
+    # handles, not documents: AQL materialises each UNION argument.
     assert _aql(PG_ONTOLOGY, "SELECT ?m ?n WHERE { ?m :hasCreator ?p . ?p :firstName ?n }") == (
-        "FOR doc3 IN UNION(\n"
+        "FOR ref3 IN UNION(\n"
         "(\n"
         "  FOR doc1 IN @@c1_Comment\n"
-        "  RETURN doc1\n"
+        "  RETURN doc1._id\n"
         "),\n"
         "(\n"
         "  FOR doc2 IN @@c2_Post\n"
-        "  RETURN doc2\n"
+        "  RETURN doc2._id\n"
         ")\n"
         ")\n"
-        "FOR v4, e5 IN OUTBOUND doc3 @@c3_has_creator\n"
-        'FILTER HAS(v4, "firstName")\n'
-        "RETURN { m: NOT_NULL(doc3._uri, doc3._id), n: v4.firstName }"
+        "LET doc4 = DOCUMENT(ref3)\n"
+        "FOR v5, e6 IN OUTBOUND doc4 @@c3_has_creator\n"
+        'FILTER HAS(v5, "firstName")\n'
+        "RETURN { m: NOT_NULL(doc4._uri, doc4._id), n: v5.firstName }"
     )
 
 
@@ -100,7 +102,7 @@ def test_a_constant_subject_in_a_pg_union_domain_is_looked_up_in_each_collection
 
 
 def test_a_pg_union_row_counts_as_a_scanned_document() -> None:
-    # Every union row is a whole document, never null, so COUNT(?m) counts
-    # rows (issue #46) as it would for a single-collection scan.
+    # Every document read back from a union handle exists, so COUNT(?m)
+    # counts rows (issue #46) as it would for a single-collection scan.
     aql = _aql(PG_ONTOLOGY, "SELECT (COUNT(?m) AS ?n) WHERE { ?m :content ?c }")
-    assert aql.endswith("COLLECT WITH COUNT INTO agg4\nRETURN { n: agg4 }")
+    assert aql.endswith("COLLECT WITH COUNT INTO agg5\nRETURN { n: agg5 }")

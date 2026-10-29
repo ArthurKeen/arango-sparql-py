@@ -584,6 +584,22 @@ class AqlQueryBuilder:
         self._body_clauses.append(_Clause(_ClauseKind.LET, f"LET {alias} = {expression}"))
         return self
 
+    def let_document(self, alias: str, id_expr: str) -> AqlQueryBuilder:
+        """Emit ``LET <alias> = DOCUMENT(<id_expr>)``: the document a handle
+        names, bound like a scanned one.
+
+        A union over several collections (plan D9) passes ``_id``s rather
+        than whole documents, because AQL materialises each ``UNION``
+        argument; this reads each document back. It counts as a scanned
+        document (:meth:`scanned_aliases`): the handle came from a scan of
+        the same snapshot, so the document exists.
+        """
+        if not _AQL_IDENT_RE.match(alias):
+            raise ValueError(f"invalid LET alias: {alias!r}")
+        self._body_clauses.append(_Clause(_ClauseKind.LET, f"LET {alias} = DOCUMENT({id_expr})"))
+        self._scanned_aliases.append(alias)
+        return self
+
     def filter_raw(self, expression: str) -> AqlQueryBuilder:
         """Emit a raw ``FILTER <expression>``.
 
