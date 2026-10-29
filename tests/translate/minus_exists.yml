@@ -47,7 +47,7 @@ cases:
       FILTER HAS(doc1, "name")
       LET minus_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
@@ -166,7 +166,7 @@ cases:
       FILTER HAS(doc1, "name")
       LET exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
@@ -193,7 +193,7 @@ cases:
       FILTER HAS(doc1, "name")
       LET not_exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Document
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
@@ -255,7 +255,7 @@ cases:
       FOR doc1 IN @@c1_Person
       LET minus_probe3 = LENGTH((
         FOR doc2 IN @@c2_Person
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER HAS(doc2, "email")
         LIMIT 1
         RETURN 1
@@ -275,7 +275,7 @@ cases:
       FOR doc1 IN @@c1_Person
       LET not_exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Person
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER HAS(doc2, "email")
         LIMIT 1
         RETURN 1
@@ -295,7 +295,7 @@ cases:
       FOR doc1 IN @@c1_Person
       LET exists_probe3 = LENGTH((
         FOR doc2 IN @@c2_Person
-        FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER HAS(doc2, "email")
         LIMIT 1
         RETURN 1
@@ -329,7 +329,7 @@ cases:
       FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
       LET minus_probe9 = LENGTH((
         FOR doc4 IN @@c3_Person
-        FILTER NOT_NULL(doc4._uri, doc4._id) == NOT_NULL(doc1._uri, doc1._id)
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc4._uri == NOT_NULL(doc1._uri, doc1._id) || (doc4._uri == null && doc4._id == NOT_NULL(doc1._uri, doc1._id))))
         FILTER HAS(doc4, "email")
         LET optsub7 = (
           FOR v5, e6 IN OUTBOUND doc4 @@c4_knows

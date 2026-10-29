@@ -514,7 +514,11 @@ emitter builds identity through the one helper, so an edge's target vertex and a
 separately-bound subject compare the same expression. A constant subject is
 matched exactly — `doc._uri == @iri`, or `doc._id == @iri` for a document with no
 `_uri` — in a form that keeps both indexes usable (`subject_matches`). A result
-identity can be pasted back as a constant (`<aws_iam_role/0123>`). Known limit:
+identity can be pasted back as a constant (`<aws_iam_role/0123>`). A scan
+joined to a value computed at run time (a sub-select column, a VALUES row, a
+probe's outer row) uses the same index-friendly form, guarded against a null
+value, which `NOT_NULL(...) ==` never matched (`subject_matches_value`); for a
+subject read across several collections it runs inside each arm. Known limit:
 a constant subject is still looked up in the default collection, not in the
 collection its `_id` names; and `isIRI()` is false for an `_id` identity.
 
@@ -537,6 +541,13 @@ routes the subject (`translate/visitor.py`):
 
 The union refuses, with `E_SPARQL_UNSUPPORTED`, classes that disagree on
 tenant scoping (one tenant filter cannot serve them) and sharded classes.
+Known limit: AQL materialises every `UNION` argument, so an *unconstrained*
+subject (no constant IRI, no known value to match inside the arms) holds
+every member document in memory: 157 MB peak for LDBC SF0.1's 287k
+messages, past a 1 GB query cap near SF1. Reading `_id` handles back with
+`DOCUMENT()` was tried and is worse inside an aggregating sub-query (LDBC
+IC3: 164 MB to over the cap). The planned fix is arms that return only the
+attributes the query reads.
 Without a domain, a subject reads the default collection, or under
 `strict_subject_resolution` is refused.
 

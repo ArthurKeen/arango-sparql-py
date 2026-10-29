@@ -28,7 +28,7 @@ def test_a_cross_subject_optional_with_a_bind_is_a_padded_subquery() -> None:
         'FILTER HAS(doc1, "title")\n'
         "LET optsub6 = (\n"
         "  FOR doc2 IN @@c2_Person\n"
-        "  FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.owner\n"
+        "  FILTER (doc1.owner != null && (doc2._uri == doc1.owner || (doc2._uri == null && doc2._id == doc1.owner)))\n"
         '  FILTER HAS(doc2, "age")\n'
         "  LET bv5 = (FOR num3 IN [doc2.age] FOR num4 IN [@_p1] RETURN IS_NUMBER(num3) && IS_NUMBER(num4) "
         "? (num3 * num4) : null)[0]\n"

@@ -94,9 +94,6 @@ _FOR_LET_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+([A-Za-z_]\w*)\s*$")
 # ``FOR doc3 IN UNION(`` is followed by arms, each a ``(`` line, a complete
 # query and a ``)`` or ``),`` line, and a bare ``)`` closes the union.
 _FOR_UNION_START_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+UNION\(\s*$")
-# ``LET doc5 = DOCUMENT(ref4)`` — reads back the document a union of ``_id``
-# handles names (``builder.let_document``). Bound like a scanned document.
-_LET_DOCUMENT_RE = re.compile(r"LET\s+(\w+)\s*=\s*DOCUMENT\((\w+)\)\s*$")
 _LIMIT_RE = re.compile(r"LIMIT\s+(?:(\d+)\s*,\s*)?(\d+)")
 _SORT_RE = re.compile(r"SORT\s+(.+)$")
 # COLLECT clause patterns the visitor emits today:
@@ -922,8 +919,6 @@ def run_aql_subset(
                 line[len("COLLECT") :]
             )
             seen_collect = True
-        elif (m := _LET_DOCUMENT_RE.match(line)) and not seen_collect:
-            pre_collect_plan.append(("LET_DOCUMENT", m.group(1), m.group(2)))
         elif m := _LET_RE.match(line):
             alias, expr = m.groups()
             step: tuple[str, str, str | None] = ("LET", expr.strip(), alias)
@@ -983,14 +978,7 @@ def run_aql_subset(
             # (AQL ``UNION`` keeps duplicates).
             for arm in b:
                 for arm_row in run_aql_subset(arm, bind_vars, docs, _outer_env=env, _outer_let=let_env):
-                    # An arm returning a handle (``RETURN doc2._id``) yields a
-                    # scalar row; a whole document yields the document.
-                    value = arm_row["_scalar"] if set(arm_row) == {"_scalar"} else arm_row
-                    run_plan(idx + 1, {**env, a: value}, let_env)
-        elif kind == "LET_DOCUMENT":
-            # DOCUMENT(handle): the document an ``_id`` names, bound like a
-            # scanned document so attribute reads resolve against it.
-            run_plan(idx + 1, {**env, a: id_index.get(env.get(b))}, let_env)
+                    run_plan(idx + 1, {**env, a: arm_row}, let_env)
         elif kind == "FOR_VALUES":
             # ``FOR <alias> IN @_pN_values`` — SPARQL VALUES rows (or
             # the federation entry point's seed bindings) bound as a
