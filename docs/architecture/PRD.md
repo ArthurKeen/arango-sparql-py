@@ -2845,8 +2845,9 @@ GRAPH-through-UNION fix (v0.14), a batch of three correctness gaps
 cluster (v0.17). What then remained as "9 algebra XFAILs" was
 re-examined and found to be entirely **out of scope**: **7 federation**
 (`ServiceGraphPattern` ×4 + `OPTIONAL`-body-`ServiceGraphPattern` ×1 +
-2 `SparqlParse` recursion failures that are themselves deeply-nested
-SERVICE queries) and **2 result-format serialization tests**
+2 nested-SERVICE queries on which rdflib's parser recurses without bound,
+reported as `E_SPARQL_UNSUPPORTED` rather than as a parse error since the
+query is valid: `translate/parser.py`, RDFLib/rdflib#3082) and **2 result-format serialization tests**
 (`tvs02` TSV / `jsonres02` JSON — siblings of the already-excluded CSV
 result-format suite; their `OPTIONAL` query is incidental). Neither
 class is a translation test, so `analyze_coverage.py` now counts them
