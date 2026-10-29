@@ -366,9 +366,10 @@ What it found, beyond §3.1, §3.2 and §3.4:
 
 - **rdflib:** unbounded recursion on nested `SERVICE` (`parseQuery`, 7.6.0).
   Already reported (RDFLib/rdflib#2136, #3082) and fixed on rdflib's main by
-  RDFLib/rdflib#3608 (merged 2026-10-22), not yet released. On our side, map
-  the `RecursionError` to a stable `E_SPARQL_UNSUPPORTED` that names
-  `SERVICE` (WP-LDBC-CORPUS) until a release carries the fix.
+  RDFLib/rdflib#3608 (merged 2026-10-22), not yet released. On our side the
+  `RecursionError` now maps to a stable `E_SPARQL_UNSUPPORTED` that names
+  nested `SERVICE` (`translate/parser.py`, with an upstream marker) instead of
+  a parse error, until a release carries the fix.
 - **LDBC:** IC3's alias reuse is not portable SPARQL 1.1. Not reported: LDBC
   removed the SPARQL implementations from `ldbc_snb_interactive_v1_impls`
   (issue #163), so the pinned commit `11db98c` is the last SPARQL reference.
@@ -548,7 +549,8 @@ green on its own (incremental over atomic).
   - `xsd:dateTime ± xsd:duration` raises `E_SPARQL_UNSUPPORTED` instead of
     lowering to `null` (§3.2).
   - The nested-`SERVICE` `RecursionError` maps to a stable error that names
-    `SERVICE`. File the rdflib issue.
+    `SERVICE` (done 2026-10-29). The rdflib issue already existed
+    (RDFLib/rdflib#3082); the fix is #3608.
   - Any further `translates_wrong` cell the faithful-mapping ledger exposes.
 - **Acceptance:** the ratchet runs in under 5 s, and the ledger reproduces §3.1
   with faithful mappings.

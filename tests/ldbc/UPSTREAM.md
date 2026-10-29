@@ -57,6 +57,11 @@ why.
   Interactive v1 Turtle serialisation (`social_network-sf{SF}-Turtle.tar.zst`,
   Datagen v1.0.0), and the official substitution parameters. URLs and SHA-256
   pins are in `datasets.py`. Nothing is vendored.
+- **Mirror:** `LDBC_DATASET_MIRROR` names a base URL tried first, serving each
+  archive at the same path as on `datasets.ldbcouncil.org`; its file must
+  match the same pin. The nightly job reads it from the repository variable
+  of that name, because LDBC's server answered the GitHub-hosted runner with
+  HTTP 403 on 2026-10-28.
 - **Data quirk:** the Turtle gives the country and the continent "Australia" the
   same IRI (`dbpedia:Australia`, typed both `Country` and `Continent`), where
   the CSV export has two entities. LPG keeps both labels; PG keeps the node in
