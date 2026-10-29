@@ -32,3 +32,20 @@ def test_empty_string_raises() -> None:
 def test_garbage_raises() -> None:
     with pytest.raises(SparqlParseError):
         parse_sparql("THIS IS NOT SPARQL")
+
+
+def test_nested_service_is_unsupported_not_a_parse_error() -> None:
+    # Valid SPARQL that rdflib's parser recurses on without bound
+    # (RDFLib/rdflib#3082, fixed by #3608, unreleased): the query is not at
+    # fault, so it must not be reported as malformed (LDBC IC13/IC14 use it).
+    from arango_sparql.errors import UnsupportedSparqlError
+
+    query = "SELECT * WHERE { SERVICE <http://a.example/> { SERVICE <http://b.example/> { ?s ?p ?o } } }"
+    with pytest.raises(UnsupportedSparqlError, match="nested SERVICE") as caught:
+        parse_sparql(query)
+    assert caught.value.code == "E_SPARQL_UNSUPPORTED"
+    assert not isinstance(caught.value, SparqlParseError)
+
+
+def test_a_single_service_block_still_parses() -> None:
+    parse_sparql("SELECT * WHERE { SERVICE <http://a.example/> { ?s ?p ?o } }")

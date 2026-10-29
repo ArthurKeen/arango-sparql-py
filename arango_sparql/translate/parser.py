@@ -26,7 +26,7 @@ from rdflib import URIRef, Variable
 from rdflib.plugins.sparql.algebra import translateQuery
 from rdflib.plugins.sparql.parser import parseQuery
 
-from ..errors import SparqlParseError
+from ..errors import SparqlParseError, UnsupportedSparqlError
 
 # NOTE (known issue — see .planning/phases/04-.../deferred-items.md):
 # rdflib's SPARQL grammar uses module-level singleton pyparsing
@@ -80,12 +80,23 @@ def parse_sparql(query: str) -> ParsedSparql:
     ------
     SparqlParseError
         If ``rdflib`` cannot parse the input string.
+    UnsupportedSparqlError
+        If ``rdflib``'s parser recurses without bound on valid SPARQL
+        (nested ``SERVICE`` blocks): not the query's fault, so not a parse
+        error.
     """
     if not isinstance(query, str) or not query.strip():
         raise SparqlParseError("SPARQL query must be a non-empty string")
     try:
         parsed = parseQuery(query)
         translated = translateQuery(parsed)
+    except RecursionError as exc:
+        # upstream: RDFLib/rdflib#3082 — remove when an rdflib release includes RDFLib/rdflib#3608
+        raise UnsupportedSparqlError(
+            "the query is valid SPARQL, but rdflib's parser recurses without bound on it, as it does "
+            "on nested SERVICE blocks (RDFLib/rdflib#3082, fixed on rdflib's main branch by #3608 "
+            "and not yet released), so it cannot be translated"
+        ) from exc
     except Exception as exc:
         raise SparqlParseError(f"failed to parse SPARQL: {exc}") from exc
     explicit = _extract_explicit_projection(parsed)
