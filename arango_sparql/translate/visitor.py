@@ -2439,7 +2439,9 @@ class AlgebraVisitor:
         walking an edge backwards from it beats scanning every possible
         subject (LDBC: ``?m :hasCreator ?fr`` with ``?fr`` from a sub-select
         scanned every message). ``None`` when the object cannot be found
-        that way.
+        that way. The range is trusted as where the object is stored, as
+        :meth:`_route_by_domain` trusts the domain: an object stored outside
+        it is not found (PRD §6.1).
         """
         if isinstance(obj, Variable):
             name = str(obj)
