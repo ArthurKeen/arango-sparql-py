@@ -94,6 +94,11 @@ uv run python main.py
 # 4. (optional) Stand up ArangoDB for /execute round-trips
 docker compose up -d
 
+# 5. (optional) Integration tests, against that local ArangoDB only: a
+#    non-local ARANGO_URL (e.g. from a .env) is refused unless
+#    ARANGO_TEST_ALLOW_REMOTE=1
+RUN_INTEGRATION=1 uv run pytest -q -m integration
+
 # 5. (optional) Translate a query from the CLI
 uv run arango-sparql-py translate \
   --sparql 'PREFIX : <http://ex.org/> SELECT ?s WHERE { ?s a :Person }' \

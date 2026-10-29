@@ -20,11 +20,13 @@ can ``pytest.skip(...)`` cleanly.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import socket
 import subprocess
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 DEFAULT_ARANGO_HOST = os.getenv("ARANGO_HOST", "localhost")
 # Default host port is 8532, not the canonical 8529, so this
@@ -53,6 +55,76 @@ if _resolved_arango_db == "_system":
     # catalogue database, full stop.
     _resolved_arango_db = "sparql-to-aql"
 DEFAULT_ARANGO_DB = _resolved_arango_db
+
+
+def is_loopback_host(host: str | None) -> bool:
+    """Whether *host* names this machine: ``localhost`` (any case, with or
+    without the trailing dot) or a loopback IP literal (all of
+    ``127.0.0.0/8``, ``::1`` in any spelling)."""
+    if not host:
+        return False
+    if host.rstrip(".").lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+#: Set to ``1`` to let an integration run use a non-loopback ArangoDB.
+ALLOW_REMOTE_ENV = "ARANGO_TEST_ALLOW_REMOTE"
+
+
+#: ``ARANGO_DB`` as it was when this module was imported, before anything
+#: imported the service app (whose ``load_dotenv()`` can set it).
+_ARANGO_DB_AT_IMPORT = os.environ.get("ARANGO_DB")
+
+
+def pinned_target_env() -> dict[str, str | None]:
+    """The ArangoDB target this run resolved, as environment variables
+    (``None``: unset).
+
+    For code that reads the target from ``os.environ`` while tests run (a
+    nested pytest, the service app serving a real socket): by then
+    importing the app may have loaded a developer's ``.env`` into the
+    environment (see :func:`refuse_remote_target`). The URL and credentials
+    decide where data goes, so they are pinned. ``ARANGO_DB`` (the service's
+    own database, which its background schema warm reads) goes back to its
+    value before any ``.env`` was loaded rather than to the test database:
+    pinning it there let a warm started by an earlier test replace the
+    schema mid-test in CI (``test_sparqlwrapper_ask_returns_boolean``).
+    """
+    return {
+        "ARANGO_URL": DEFAULT_ARANGO_URL,
+        "ARANGO_TEST_DB": DEFAULT_ARANGO_DB,
+        "ARANGO_USER": DEFAULT_ARANGO_USER,
+        "ARANGO_PASSWORD": DEFAULT_ARANGO_PASSWORD,
+        "ARANGO_DB": _ARANGO_DB_AT_IMPORT,
+    }
+
+
+class RemoteTestTargetError(RuntimeError):
+    """An integration run resolved a non-loopback ArangoDB without opt-in."""
+
+
+def refuse_remote_target(url: str) -> None:
+    """Refuse to run integration tests against a non-loopback ArangoDB.
+
+    The tests create and drop collections. ``arango_sparql.service.app``
+    calls ``load_dotenv()`` on import, which searches upward from the
+    package and finds a developer's ``.env`` — whose ``ARANGO_URL`` can be a
+    shared cluster. A nested pytest run (the W3C live coverage gate)
+    inherited that and loaded W3C collections into prod.demo (2026-10-28).
+    A remote target now needs ``ARANGO_TEST_ALLOW_REMOTE=1``.
+    """
+    host = urlsplit(url).hostname
+    if is_loopback_host(host) or os.getenv(ALLOW_REMOTE_ENV, "").lower() in ("1", "true", "yes"):
+        return
+    raise RemoteTestTargetError(
+        f"integration tests resolved ARANGO_URL host {host!r}, which is not local; they create and "
+        f"drop collections there. Point ARANGO_URL at a local ArangoDB, or set {ALLOW_REMOTE_ENV}=1 "
+        f"if writing to {host!r} is intended (check for a .env the service loaded)."
+    )
 
 
 def ensure_test_database() -> None:
@@ -92,7 +164,10 @@ def integration_enabled() -> bool:
     it here keeps both suites in lockstep on what "integration mode"
     means.
     """
-    return os.getenv("RUN_INTEGRATION", "").lower() in ("1", "true", "yes")
+    if os.getenv("RUN_INTEGRATION", "").lower() not in ("1", "true", "yes"):
+        return False
+    refuse_remote_target(DEFAULT_ARANGO_URL)
+    return True
 
 
 def arangodb_reachable(

@@ -10,7 +10,11 @@ globs:
 ## Frameworks
 - `pytest` is the only test runner. Use `pytest -q -ra` locally.
 - Markers (declared in `pyproject.toml`):
-  - `integration` — requires a running ArangoDB.
+  - `integration` — requires a running ArangoDB, and a local one: a
+    non-loopback `ARANGO_URL` is refused unless `ARANGO_TEST_ALLOW_REMOTE=1`
+    (`tests/integration/conftest.py::refuse_remote_target`). The service's
+    `load_dotenv()` can pull a developer's `.env` cluster into the test
+    process; code that reads the target at run time uses `pinned_target_env()`.
   - `w3c` — W3C SPARQL 1.1 DAWG harness.
   - `cross` — cross-validation against `pyoxigraph` as the reference
     triplestore (the SPARQL analog of the Cypher project's `cross`/Neo4j

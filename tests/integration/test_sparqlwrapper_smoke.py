@@ -158,6 +158,22 @@ def _live_server(_seeded_collection: list[dict]) -> Iterator[int]:
     import uvicorn
 
     from arango_sparql.service import app
+    from tests.integration.conftest import pinned_target_env
+
+    # The app reads its ArangoDB target from the environment, which by now
+    # may hold a developer's .env (importing the app loads it): pin it to the
+    # database this run seeded, or the server talks to that .env's cluster.
+    with pytest.MonkeyPatch.context() as env:
+        for name, value in pinned_target_env().items():
+            if value is None:
+                env.delenv(name, raising=False)
+            else:
+                env.setenv(name, value)
+        yield from _serve(app)
+
+
+def _serve(app: object) -> Iterator[int]:
+    import uvicorn
 
     config = uvicorn.Config(app, host="127.0.0.1", port=0, log_level="warning")
     server = uvicorn.Server(config)
