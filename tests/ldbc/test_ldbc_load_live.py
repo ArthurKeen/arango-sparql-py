@@ -218,7 +218,9 @@ def test_declared_domains_match_the_data(ldbc_db: Callable[[str], Any]) -> None:
             {vocab.CLASS_BY_IRI[c].name for c in combo if c in vocab.CLASS_BY_IRI} for combo in combinations
         ]
         # An untyped subject is a reified relationship's node (``_:knows`` carries
-        # creationDate): an edge attribute in PG and LPG, never routed as a node.
+        # creationDate): an edge in PG and LPG, reached through its entry
+        # predicate or the relationship the fixtures add to the domain (plan D8),
+        # so it is not among the node classes checked here.
         reified_attributes = {a for r in vocab.REIFIED for a in r.attributes}
         if predicate in reified_attributes:
             named = [classes for classes in named if classes]

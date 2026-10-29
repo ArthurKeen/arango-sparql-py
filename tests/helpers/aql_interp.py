@@ -93,7 +93,7 @@ _FOR_LET_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+([A-Za-z_]\w*)\s*$")
 # for a subject whose rdfs:domain spans PG collections (plan D9). The opener
 # ``FOR doc3 IN UNION(`` is followed by arms, each a ``(`` line, a complete
 # query and a ``)`` or ``),`` line, and a bare ``)`` closes the union.
-_FOR_UNION_START_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+UNION\(\s*$")
+_FOR_UNION_START_RE = re.compile(r"FOR\s+(\w+)\s+IN\s+(UNION|UNION_DISTINCT)\(\s*$")
 _LIMIT_RE = re.compile(r"LIMIT\s+(?:(\d+)\s*,\s*)?(\d+)")
 _SORT_RE = re.compile(r"SORT\s+(.+)$")
 # COLLECT clause patterns the visitor emits today:
@@ -877,7 +877,7 @@ def run_aql_subset(
                 arm_lines.append(arm_line)
             else:  # pragma: no cover - malformed AQL
                 raise AssertionError("unterminated FOR … IN UNION( in AQL")
-            pre_collect_plan.append(("FOR_UNION", m.group(1), union_arms))
+            pre_collect_plan.append(("FOR_UNION", m.group(1), (union_arms, m.group(2) == "UNION_DISTINCT")))
         elif m := _FOR_TRAVERSAL_RE.match(line):
             if seen_collect:  # pragma: no cover
                 raise AssertionError(f"FOR after COLLECT not supported: {line!r}")
@@ -975,9 +975,17 @@ def run_aql_subset(
         elif kind == "FOR_UNION":
             # Each arm runs as a correlated subquery with this row in scope;
             # every row of every arm, in arm order, binds the union alias
-            # (AQL ``UNION`` keeps duplicates).
-            for arm in b:
+            # (AQL ``UNION`` keeps duplicates, ``UNION_DISTINCT`` the first of
+            # equal rows).
+            arms, distinct = b
+            seen: set[str] = set()
+            for arm in arms:
                 for arm_row in run_aql_subset(arm, bind_vars, docs, _outer_env=env, _outer_let=let_env):
+                    if distinct:
+                        key = repr(sorted(arm_row.items())) if isinstance(arm_row, dict) else repr(arm_row)
+                        if key in seen:
+                            continue
+                        seen.add(key)
                     run_plan(idx + 1, {**env, a: arm_row}, let_env)
         elif kind == "FOR_VALUES":
             # ``FOR <alias> IN @_pN_values`` — SPARQL VALUES rows (or

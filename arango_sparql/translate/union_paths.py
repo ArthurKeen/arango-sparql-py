@@ -218,9 +218,22 @@ def _emit_union_of_arms(
     # Variables some arm does not bind (it projects ``null``) or binds to a
     # value that can itself be unbound: unbound in some rows of the union.
     unbound_in_some_arm: set[str] = set()
+    # A variable every binding arm bound to a reified relationship's edge
+    # stays a relationship node outside (plan D8); one an arm bound to
+    # anything else does not.
+    arm_relationships: dict[str, set[str]] = {}
+    not_relationship: set[str] = set()
     for driver in arm_drivers:
         cv = _spawn_child(visitor)
         driver(cv)
+        for name in all_vars:
+            if name not in cv.state.var_to_expr or name in visitor.state.var_to_expr:
+                continue
+            rels = cv.state.relationship_nodes.get(name)
+            if rels:
+                arm_relationships.setdefault(name, set()).update(rels)
+            else:
+                not_relationship.add(name)
         # An arm that only reads an outer document opens no FOR of its own.
         if not cv.builder.has_for_clause():
             cv.builder.open_one_row_scope_first(cv.builder.fresh_alias(prefix="empty"))
@@ -255,6 +268,8 @@ def _emit_union_of_arms(
         new_expr = attribute_ref(row_alias, var_name)
         existing = visitor.state.var_to_expr.get(var_name)
         if existing is None:
+            if var_name in arm_relationships and var_name not in not_relationship:
+                visitor.state.relationship_nodes[var_name] = arm_relationships[var_name]
             visitor.state.var_to_expr[var_name] = new_expr
             if var_name in unbound_in_some_arm:
                 visitor.state.maybe_unbound.add(var_name)
@@ -350,6 +365,11 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         for name, alias in visitor.state.var_to_doc_alias.items()
         if name not in visitor.state.var_to_rpt_class
     }
+    # A reified relationship's edge bound outside stays one inside, so an
+    # exit predicate in an arm (LDBC ``?lk :hasPost|:hasComment ?m``)
+    # reaches its far vertex (plan D8).
+    cv.state.reified_edges = dict(visitor.state.reified_edges)
+    cv.state.relationship_nodes = {name: set(rels) for name, rels in visitor.state.relationship_nodes.items()}
     cv.state.tenant_entity = visitor.state.tenant_entity
     cv.state.tenant_bind_placeholder = visitor.state.tenant_bind_placeholder
     return cv

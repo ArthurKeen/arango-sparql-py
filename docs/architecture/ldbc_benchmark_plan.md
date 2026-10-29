@@ -742,9 +742,12 @@ M1 ─► WP-LDBC-EDGENODE ⚡ ─┬─ WP-LDBC-OPT ──────┐
 
 ## 10. Open questions for review
 
-1. **D8, reified relationships.** Approve the "relationship node ↔ edge document"
-   construct, and propose its vocabulary upstream in `arango-schema-analyzer`?
-   This is the largest design choice in the plan.
+1. **D8, reified relationships.** *Decided 2026-10-29:* the relationship node
+   is the edge document. RDF 1.2's RDF-star is the same construct (a reifier
+   node), so only the query syntax differs; the LDBC n-ary form ships now
+   (`phys:reifiedEdge` entry, `phys:edgeTargetOf` exits; PRD §6.1) and SPARQL
+   1.2 syntax maps onto it once rdflib parses it. `rdf:Statement` is not
+   accepted. The vocabulary is proposed upstream in `arango-schema-analyzer`.
 2. **D9, polymorphism.** Share one upstream model with the sister plan's
    supertype work (`arango-query-core`), or keep the SPARQL resolver
    self-contained?

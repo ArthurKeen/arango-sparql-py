@@ -96,13 +96,17 @@ def test_committed_mapping_matches_the_generator(layout: str) -> None:
 
 
 @pytest.mark.parametrize("layout", ["lpg", "pg"])
-def test_unmappable_relationships_fail_closed_in_pg_and_lpg(layout: str) -> None:
+def test_a_reified_relationship_node_is_its_edge_in_pg_and_lpg(layout: str) -> None:
+    # Plan D8: ?k is the knows edge (its _uri is the node's IRI), its
+    # creationDate the edge's attribute, ?f the vertex the same walk reaches.
     query = (
         "PREFIX snvoc: <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/> "
-        "SELECT ?k WHERE { ?p a snvoc:Person ; snvoc:knows ?k }"
+        "SELECT ?k ?f ?d WHERE { ?p a snvoc:Person ; snvoc:knows ?k . ?k snvoc:hasPerson ?f ; snvoc:creationDate ?d }"
     )
-    with pytest.raises(SchemaResolutionError, match="no phys:edgeCollectionName"):
-        translate(query, resolver=mappings.resolver(layout))  # type: ignore[arg-type]
+    aql = translate(query, resolver=mappings.resolver(layout)).aql  # type: ignore[arg-type]
+    assert aql.count(" IN OUTBOUND ") == 1
+    assert "k: NOT_NULL(e3._uri, e3._id)" in aql
+    assert 'HAS(e3, "creationDate")' in aql
 
 
 @pytest.mark.parametrize("layout", ["rpt", "lpg", "pg"])

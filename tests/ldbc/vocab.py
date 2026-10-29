@@ -161,6 +161,16 @@ REIFIED: tuple[ReifiedRelationship, ...] = (
 )
 REIFIED_BY_ENTRY = {r.entry: r for r in REIFIED}
 
+#: The class every target of an exit predicate belongs to, where there is
+#: one (plan D8). ``hasOrganisation`` reaches a University from ``studyAt``
+#: and a Company from ``workAt``, so it declares none: the edge it follows
+#: already ends at the right kind of node.
+EXIT_RANGES: dict[str, str] = {
+    HAS_PERSON: "Person",
+    SNVOC + "hasPost": "Post",
+    SNVOC + "hasComment": "Comment",
+}
+
 #: Datatype properties of nodes, and the document attribute each one is
 #: stored under in PG and LPG (the IRI's local name). ``snvoc:url`` points
 #: at untyped IRIs (``http://dbpedia.org/resource/…``); it is a value, not
@@ -206,7 +216,8 @@ def local_name(iri: str) -> str:
 #: Turtle (2026-10-24) and checked against the loaded data by
 #: ``test_ldbc_load_live.py``. Declared as ``rdfs:domain`` (a class, or an
 #: ``owl:unionOf``) so the translator can route a subject no type pattern
-#: names. Reified relationships are absent: PG and LPG cannot map them yet.
+#: names. A reified relationship's entry predicate declares the domain of its
+#: source (plan D8).
 _ALL_NODES = tuple(c.name for c in NODE_CLASSES)
 DOMAINS: dict[str, tuple[str, ...]] = {
     SNVOC + "id": _ALL_NODES,
@@ -237,4 +248,9 @@ DOMAINS: dict[str, tuple[str, ...]] = {
     SNVOC + "isPartOf": ("City", "Country"),
     RDFS + "subClassOf": ("TagClass",),
     DIRECT_KNOWS: ("Person",),
+    KNOWS: ("Person",),
+    SNVOC + "hasMember": ("Forum",),
+    SNVOC + "likes": ("Person",),
+    SNVOC + "studyAt": ("Person",),
+    SNVOC + "workAt": ("Person",),
 }
