@@ -12,13 +12,13 @@ constant object can be looked up and the edge walked backwards from it; every
 predicate declares the ``rdfs:domain`` measured on the data
 (``vocab.DOMAINS``), so a subject no type pattern names can be routed.
 
-What the translator cannot map yet must **fail closed** (plan §5.2): in PG
-and LPG, the reified relationships (plan D8) and the links out of a
-relationship node are declared ``owl:ObjectProperty`` with no edge
-collection, so a query that uses them raises ``SchemaResolutionError``.
-Leaving them undeclared would be worse: the resolver reads an undeclared
-predicate as a document attribute that does not exist, which returns no
-rows instead of an error.
+A relationship that carries data is a node in the Turtle
+(``?p snvoc:knows ?k . ?k snvoc:hasPerson ?f ; snvoc:creationDate ?d``) and an
+edge with attributes in PG and LPG (plan D8). Its entry predicate declares
+``phys:reifiedEdge`` on that edge collection — its object is the edge, whose
+``_uri`` the loader sets to the node's IRI — and each exit predicate declares
+``phys:edgeTargetOf`` the entries it leaves (``hasPerson`` leaves ``knows`` and
+``hasMember``), with the target's class as ``rdfs:range`` where there is one.
 """
 
 from __future__ import annotations
@@ -45,8 +45,8 @@ _HEADER = """\
 
 """
 
-#: Predicates PG and LPG cannot map yet (plan D8): they must fail closed.
-_UNMAPPED_IN_PG_LPG: tuple[str, ...] = tuple(
+#: Reified relationships' entry and exit predicates (plan D8).
+_REIFIED_PREDICATES: tuple[str, ...] = tuple(
     sorted({r.entry for r in vocab.REIFIED} | {exit_ for r in vocab.REIFIED for exit_ in r.exits})
 )
 
@@ -106,7 +106,7 @@ def render(layout: Layout) -> str:
     lines.append("")
     if layout == "rpt":
         object_properties = sorted(
-            {r.iri for r in _plain_relationships()} | set(_UNMAPPED_IN_PG_LPG) | {vocab.DIRECT_KNOWS}
+            {r.iri for r in _plain_relationships()} | set(_REIFIED_PREDICATES) | {vocab.DIRECT_KNOWS}
         )
         lines.extend(
             f'<{iri}> a owl:ObjectProperty ; phys:mappingStyle "RPT_EDGE" .' for iri in object_properties
@@ -129,9 +129,33 @@ def render(layout: Layout) -> str:
                     f'<{rel.iri}> a {kinds} ; phys:edgeCollectionName "{rel.pg_collection}" ; '
                     f'phys:mappingStyle "DEDICATED_COLLECTION"{range_} .'
                 )
-        lines.append("# Not mappable yet (plan D8): declared with no edge collection so they fail closed.")
-        lines.extend(f"<{iri}> a owl:ObjectProperty ." for iri in _UNMAPPED_IN_PG_LPG)
+        lines.append("# Relationships that carry data (plan D8): the node is the edge.")
+        lines.extend(_reified_relationships(layout))
     return _HEADER.format(layout=layout) + "\n".join(lines) + "\n"
+
+
+def _reified_relationships(layout: Layout) -> list[str]:
+    """Entry predicates as reified edges, exit predicates as their targets."""
+    lines = []
+    for rel in vocab.REIFIED:
+        if layout == "lpg":
+            storage = (
+                f'phys:edgeCollectionName "{LPG_EDGES}" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; '
+                f'phys:typeField "type" ; phys:typeValue "{rel.name}"'
+            )
+        else:
+            storage = (
+                f'phys:edgeCollectionName "{rel.pg_collection}" ; phys:mappingStyle "DEDICATED_COLLECTION"'
+            )
+        lines.append(
+            f'<{rel.entry}> a owl:ObjectProperty ; {storage} ; phys:reifiedEdge "true"{_domain(rel.entry)} .'
+        )
+    for exit_ in sorted({e for r in vocab.REIFIED for e in r.exits}):
+        entries = " , ".join(f"<{r.entry}>" for r in vocab.REIFIED if exit_ in r.exits)
+        range_ = vocab.EXIT_RANGES.get(exit_)
+        range_ttl = f" ; rdfs:range <{vocab.CLASS_BY_NAME[range_].iri}>" if range_ else ""
+        lines.append(f"<{exit_}> a owl:ObjectProperty ; phys:edgeTargetOf {entries}{range_ttl} .")
+    return lines
 
 
 def path(layout: Layout) -> Path:

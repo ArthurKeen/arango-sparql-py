@@ -49,13 +49,13 @@
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/isPartOf> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "IS_PART_OF" ; rdfs:domain [ owl:unionOf ( <http://dbpedia.org/ontology/City> <http://dbpedia.org/ontology/Country> ) ] .
 <http://www.w3.org/2000/01/rdf-schema#subClassOf> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "IS_SUBCLASS_OF" ; rdfs:range <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/TagClass> ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/TagClass> .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/directKnows> a owl:ObjectProperty, owl:SymmetricProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "KNOWS" ; rdfs:range <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
-# Not mappable yet (plan D8): declared with no edge collection so they fail closed.
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasComment> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasMember> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasOrganisation> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPerson> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPost> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/knows> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/likes> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/studyAt> a owl:ObjectProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/workAt> a owl:ObjectProperty .
+# Relationships that carry data (plan D8): the node is the edge.
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/knows> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "KNOWS" ; phys:reifiedEdge "true" ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasMember> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "HAS_MEMBER" ; phys:reifiedEdge "true" ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Forum> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/likes> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "LIKES" ; phys:reifiedEdge "true" ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/studyAt> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "STUDY_AT" ; phys:reifiedEdge "true" ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/workAt> a owl:ObjectProperty ; phys:edgeCollectionName "edges" ; phys:mappingStyle "GENERIC_WITH_TYPE" ; phys:typeField "type" ; phys:typeValue "WORK_AT" ; phys:reifiedEdge "true" ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasComment> a owl:ObjectProperty ; phys:edgeTargetOf <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/likes> ; rdfs:range <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasOrganisation> a owl:ObjectProperty ; phys:edgeTargetOf <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/studyAt> , <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/workAt> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPerson> a owl:ObjectProperty ; phys:edgeTargetOf <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/knows> , <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasMember> ; rdfs:range <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPost> a owl:ObjectProperty ; phys:edgeTargetOf <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/likes> ; rdfs:range <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> .

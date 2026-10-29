@@ -8,8 +8,8 @@ interactive-short-2	verbatim	rpt	translates		executes	matches_oracle
 interactive-short-2	verbatim	lpg	translates		executes	matches_oracle	
 interactive-short-2	verbatim	pg	translates		executes	matches_oracle	
 interactive-short-3	verbatim	rpt	translates		executes	matches_oracle	
-interactive-short-3	verbatim	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/knows' has no phys:edgeCollectionName annotation; the OWL ontology mus…			
-interactive-short-3	verbatim	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/knows' has no phys:edgeCollectionName annotation; the OWL ontology mus…			
+interactive-short-3	verbatim	lpg	translates				
+interactive-short-3	verbatim	pg	translates				
 interactive-short-4	verbatim	rpt	translates		executes	matches_oracle	
 interactive-short-4	verbatim	lpg	translates		executes	matches_oracle	
 interactive-short-4	verbatim	pg	translates		executes	matches_oracle	
@@ -26,8 +26,8 @@ interactive-complex-1	verbatim	rpt	out_of_subset	GraphDB path search (SERVICE <h
 interactive-complex-1	verbatim	lpg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-1	verbatim	pg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-1	standard-paths	rpt	translates		executes	oracle_unavailable	binding 3: OracleTimeout: no answer within 600s (cached)
-interactive-complex-1	standard-paths	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/studyAt' has no phys:edgeCollectionName annotation; the OWL ontology m…			
-interactive-complex-1	standard-paths	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/studyAt' has no phys:edgeCollectionName annotation; the OWL ontology m…			
+interactive-complex-1	standard-paths	lpg	translates				
+interactive-complex-1	standard-paths	pg	translates				
 interactive-complex-2	verbatim	rpt	translates		executes	matches_oracle	
 interactive-complex-2	verbatim	lpg	translates		executes	matches_oracle	
 interactive-complex-2	verbatim	pg	translates		executes	matches_oracle	
@@ -41,8 +41,8 @@ interactive-complex-4	verbatim	rpt	translates		executes	matches_oracle
 interactive-complex-4	verbatim	lpg	translates		executes	matches_oracle	
 interactive-complex-4	verbatim	pg	translates		executes	matches_oracle	
 interactive-complex-5	verbatim	rpt	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #98: IndexNode] [node #106: SubqueryStartNode] [node #102: IndexNode] [node #71: Calculation…
-interactive-complex-5	verbatim	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPerson' has no phys:edgeCollectionName annotation; the OWL ontology…			
-interactive-complex-5	verbatim	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPerson' has no phys:edgeCollectionName annotation; the OWL ontology…			
+interactive-complex-5	verbatim	lpg	translates				
+interactive-complex-5	verbatim	pg	translates				
 interactive-complex-6	verbatim	rpt	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-6	verbatim	lpg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-6	verbatim	pg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
@@ -50,11 +50,11 @@ interactive-complex-6	standard-paths	rpt	translates		executes	matches_oracle
 interactive-complex-6	standard-paths	lpg	translates		executes	matches_oracle	
 interactive-complex-6	standard-paths	pg	translates		executes	matches_oracle	
 interactive-complex-7	verbatim	rpt	out_of_subset	Ontotext function ofn:minutesBetween (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: function 'http://www.ontotext.com/sparql/functions/minutesBetween' called with 2 arguments; only unary XSD constructor casts are suppor…)			
-interactive-complex-7	verbatim	lpg	out_of_subset	Ontotext function ofn:minutesBetween (E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPost' has no phys:edgeCollectionName annotation; the OWL ontology m…)			
-interactive-complex-7	verbatim	pg	out_of_subset	Ontotext function ofn:minutesBetween (E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPost' has no phys:edgeCollectionName annotation; the OWL ontology m…)			
+interactive-complex-7	verbatim	lpg	out_of_subset	Ontotext function ofn:minutesBetween (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: function 'http://www.ontotext.com/sparql/functions/minutesBetween' called with 2 arguments; only unary XSD constructor casts are suppor…)			
+interactive-complex-7	verbatim	pg	out_of_subset	Ontotext function ofn:minutesBetween (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: function 'http://www.ontotext.com/sparql/functions/minutesBetween' called with 2 arguments; only unary XSD constructor casts are suppor…)			
 interactive-complex-7	standard-datetime	rpt	translates		timeout		binding 2: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #576: IndexNode] [node #17: CalculationNode] [node #703: SubqueryEndNode] [node #700: Subque…
-interactive-complex-7	standard-datetime	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPost' has no phys:edgeCollectionName annotation; the OWL ontology m…			
-interactive-complex-7	standard-datetime	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasPost' has no phys:edgeCollectionName annotation; the OWL ontology m…			
+interactive-complex-7	standard-datetime	lpg	translates				
+interactive-complex-7	standard-datetime	pg	translates				
 interactive-complex-8	verbatim	rpt	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #55: IndexNode] [node #54: IndexNode] [node #57: MaterializeNode] [node #18: CalculationNode…
 interactive-complex-8	verbatim	lpg	translates		executes	matches_oracle	
 interactive-complex-8	verbatim	pg	translates		executes	matches_oracle	
@@ -68,8 +68,8 @@ interactive-complex-11	verbatim	rpt	out_of_subset	GraphDB path search (SERVICE <
 interactive-complex-11	verbatim	lpg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-11	verbatim	pg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-11	standard-paths	rpt	translates		executes	matches_oracle	
-interactive-complex-11	standard-paths	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasOrganisation' has no phys:edgeCollectionName annotation; the OWL on…			
-interactive-complex-11	standard-paths	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: object property 'http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasOrganisation' has no phys:edgeCollectionName annotation; the OWL on…			
+interactive-complex-11	standard-paths	lpg	translates				
+interactive-complex-11	standard-paths	pg	translates				
 interactive-complex-12	verbatim	rpt	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #437: IndexNode] [node #436: IndexNode] [node #501: MaterializeNode] [node #510: SubquerySta…
 interactive-complex-12	verbatim	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: cannot route subject variable 'tag' to a collection: it has no rdf:type constraint to map it to a class, and strict subject resolution i…			
 interactive-complex-12	verbatim	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: cannot route subject variable 'tag' to a collection: it has no rdf:type constraint to map it to a class, and strict subject resolution i…			

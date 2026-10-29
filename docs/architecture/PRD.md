@@ -494,6 +494,28 @@ Relationship styles, attached to OWL `owl:ObjectProperty`:
 | `GENERIC_WITH_TYPE` | **LPG-typed edge** | One shared edge collection holding multiple relationship types, discriminated by a `typeField` | `FOR v, e IN OUTBOUND doc @@edgeColl FILTER e.<typeField> == @typeValue` |
 | `RPT_EDGE` | **RDF object property** | An object-property triple in the `_triples` collection (`object_uri` populated, `object_value` null) | Same as `RPT` entity read; the predicate IRI carries the relationship semantics |
 
+**Relationships that carry data** (LDBC plan decision D8). RDF reifies a
+relationship with its own data as a node — LDBC writes `?p :knows ?k . ?k
+:hasPerson ?f ; :creationDate ?d` — while a property graph stores it as one
+edge with attributes. Both styles above map it with two annotations:
+- `phys:reifiedEdge "true"` on the **entry** predicate (`:knows`, which also
+  carries `edgeCollectionName`): in `?s :knows ?k` the object `?k` is the edge
+  document itself, so `?k`'s identity is the edge's `_uri` (the node's IRI)
+  and `?k :creationDate ?d` reads the edge's attribute;
+- `phys:edgeTargetOf <entry>` (repeatable) on each **exit** predicate
+  (`:hasPerson` leaves `:knows` and `:hasMember`): in `?k :hasPerson ?f`, `?f`
+  is the vertex at the edge's `_to` end, taken from the same traversal, and
+  an `rdfs:range` keeps only vertices of that class (`:likes` reaches a Post
+  by `:hasPost` and a Comment by `:hasComment`).
+
+A triple about a relationship node waits for its entry triple in the join
+order (`translate/visitor.py::_order_bgp`). An exit whose node is not bound
+by an entry in the same group pattern is refused (`E_SPARQL_UNSUPPORTED`);
+an exit that does not belong to the bound edge's relationship matches
+nothing, as in RDF. The construct is the RDF 1.2 one (a reifier node that is
+the edge), so SPARQL 1.2's `<< ?a :knows ?b >>` / `{| |}` syntax can map onto
+it once rdflib parses SPARQL 1.2; until then that syntax is a parse error.
+
 **Collection names** reach AQL only as `@@` bind parameters, so any valid
 ArangoDB name is accepted — including hyphens (`IAM-TERRAFORM-DOCS-DEMO_Relations`
 on prod.demo) and extended names; only an empty name, one containing `/` or a
@@ -594,6 +616,8 @@ historically; both are accepted (see `resolver.py`):
 | `mappingStyle` | `owl:Class` (entity styles) or `owl:ObjectProperty` (relationship styles) | One of the style IDs from §6.1 | `SchemaResolver.resolve_class` / `resolve_property` to dispatch the read pattern |
 | `collectionName` | `owl:Class` | Document-collection name | All four entity styles (`COLLECTION`, `LABEL`, `RPT` reads from a *triples* collection still need a name, `DOCUMENT`) |
 | `edgeCollectionName` | `owl:ObjectProperty` | Edge-collection name | `DEDICATED_COLLECTION`, `GENERIC_WITH_TYPE` |
+| `reifiedEdge` | `owl:ObjectProperty` | `"true"`: the property's object is the edge document itself (a relationship that carries data; §6.1) | Entry predicates of reified relationships |
+| `edgeTargetOf` | `owl:ObjectProperty` | IRI of a reified entry predicate (repeatable): this property leads from that relationship's edge to its `_to` vertex | Exit predicates of reified relationships |
 | `typeField` | `owl:Class` *or* `owl:ObjectProperty` | Discriminator field name (e.g. `type`) | `LABEL`, `GENERIC_WITH_TYPE` |
 | `typeValue` | `owl:Class` *or* `owl:ObjectProperty` | Discriminator value (e.g. `Person`) | `LABEL`, `GENERIC_WITH_TYPE` |
 | `labelsField`, `labelValue` | `owl:Class` | The label-array field, and this class's label in it | `LABELS`, `MULTI_LABEL` |

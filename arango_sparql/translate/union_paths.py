@@ -350,6 +350,10 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
         for name, alias in visitor.state.var_to_doc_alias.items()
         if name not in visitor.state.var_to_rpt_class
     }
+    # A reified relationship's edge bound outside stays one inside, so an
+    # exit predicate in an arm (LDBC ``?lk :hasPost|:hasComment ?m``)
+    # reaches its far vertex (plan D8).
+    cv.state.reified_edges = dict(visitor.state.reified_edges)
     cv.state.tenant_entity = visitor.state.tenant_entity
     cv.state.tenant_bind_placeholder = visitor.state.tenant_bind_placeholder
     return cv

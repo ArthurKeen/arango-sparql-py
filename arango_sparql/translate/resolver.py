@@ -208,6 +208,18 @@ class ResolvedProperty:
 
     nested_path: tuple[str, ...] | None = None
 
+    reified_edge: bool = False
+    """``phys:reifiedEdge "true"``: the relationship's instances are edge
+    documents (LDBC plan decision D8). In ``?s p ?k`` the object ``?k`` is the
+    edge itself — the node that stands for the relationship and carries its
+    data (``?k :creationDate ?d`` reads the edge's attribute) — not the vertex
+    at its far end, which an exit predicate (:attr:`edge_target_of`) reaches."""
+
+    edge_target_of: tuple[str, ...] = ()
+    """``phys:edgeTargetOf <entry>`` (repeatable): in ``?k p ?o``, ``?k`` is an
+    edge of one of these reified relationships and ``?o`` is the vertex at its
+    ``_to`` end (LDBC's ``snvoc:hasPerson`` for ``knows`` and ``hasMember``)."""
+
     @property
     def field_path(self) -> tuple[str, ...]:
         """Where the value is stored: one name per level, top level first."""
@@ -744,7 +756,14 @@ class SchemaResolver:
             range_iri=range_iri,
             symmetric=is_object and (ref, RDF.type, OWL.SymmetricProperty) in self.ontology,
             nested_path=nested_path,
+            reified_edge=is_object and parse_flag(self._physical_string(ref, "reifiedEdge")) is True,
+            edge_target_of=tuple(self._physical_iris(ref, "edgeTargetOf")) if is_object else (),
         )
+        if resolved.reified_edge and resolved.edge_collection is None:
+            raise SchemaResolutionError(
+                f"object property {key!r} is a reified edge (phys:reifiedEdge) but has no "
+                f"phys:edgeCollectionName: its instances must be edge documents"
+            )
         self._property_cache[key] = resolved
         return resolved
 
@@ -959,6 +978,23 @@ class SchemaResolver:
             if value is not None:
                 return str(value)
         return None
+
+    def is_reified_entry(self, iri: URIRef | str) -> bool:
+        """Whether *iri* is an object property declared ``phys:reifiedEdge``:
+        its object is a relationship node stored as an edge (plan D8). Reads
+        the annotation only, so it resolves (and warns about) nothing."""
+        return parse_flag(self._physical_string(URIRef(str(iri)), "reifiedEdge")) is True
+
+    def _physical_iris(self, subject: URIRef, predicate_local: str) -> list[str]:
+        """Every IRI value of ``phys:<predicate_local>`` on ``subject``, in IRI
+        order, under any physical-IRI spelling."""
+        found = {
+            str(value)
+            for ns in _PHYS_NAMESPACES
+            for value in self.ontology.objects(subject, ns[predicate_local])
+            if isinstance(value, URIRef)
+        }
+        return sorted(found)
 
     def _first_object(self, subject: URIRef, predicate: URIRef) -> str | None:
         value = self.ontology.value(subject=subject, predicate=predicate)

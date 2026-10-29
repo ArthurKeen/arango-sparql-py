@@ -83,6 +83,11 @@ class _BindingState:
     to a physical document)."""
 
     doc_to_collection: dict[str, str] = field(default_factory=dict)
+    reified_edges: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """Edge alias bound to a reified relationship's node (LDBC plan D8) →
+    ``(relationship IRI, alias of the vertex at its far end)``, so an exit
+    predicate (``?k :hasPerson ?f``) reaches the vertex its entry predicate's
+    traversal already found."""
     const_subject_alias: dict[str, str] = field(default_factory=dict)
     """Constant subject IRI → the alias of the document a type pattern
     opened for it (``<iri> a :C``), so the subject's property triples read
@@ -1522,7 +1527,14 @@ class AlgebraVisitor:
         # a 327 k-row scan to an index lookup per step. ``_order_bgp`` does
         # both; a BGP is a conjunction, so the order never changes answers.
         bound = set(self.state.var_to_expr) | set(self.state.var_to_doc_alias)
-        for triple in _order_bgp(triples, bound):
+        # A relationship node (D8) is bound by its entry triple
+        # (``?p :knows ?k``); its exit and attribute triples wait for it.
+        relationship_nodes = {
+            str(o)
+            for _s, p, o in triples
+            if isinstance(o, Variable) and isinstance(p, URIRef) and self.resolver.is_reified_entry(p)
+        }
+        for triple in _order_bgp(triples, bound, relationship_nodes):
             self._emit_triple(triple)
 
     # ------------------------------------------------------------------
@@ -1673,6 +1685,9 @@ class AlgebraVisitor:
                 self._emit_rpt_property_triple(s, p, o, triple)
                 return
             prop = self.resolver.resolve_property(p)
+            if prop.edge_target_of:
+                self._emit_edge_exit(s, prop, o)
+                return
             if prop.is_object_property:
                 self._emit_edge_triple(s, prop, o, triple)
                 return
@@ -2184,6 +2199,10 @@ class AlgebraVisitor:
                 f"edge collection backs this relationship (PRD §6.2)"
             )
 
+        if prop.reified_edge:
+            # D8: the object is an edge, not a vertex to walk back from.
+            self._emit_reified_entry(subject, prop, obj)
+            return
         reverse_source = self._reverse_traversal_source(subject, prop, obj)
         if reverse_source is not None:
             # The subject is unknown but the object is a document: walk the
@@ -2220,45 +2239,101 @@ class AlgebraVisitor:
             direction="ANY" if prop.symmetric else "OUTBOUND",
         )
         self._filter_edge_type(prop, e_alias)
-        # We track the edge alias on the builder for the rare query that
-        # references the edge document itself; ``v_alias`` is the
-        # traversal vertex and is what binds to the SPARQL object.
+        # ``v_alias`` is the traversal vertex and is what binds to the SPARQL
+        # object (a reified relationship binds the edge instead:
+        # :meth:`_emit_reified_entry`).
         self.state.doc_to_collection[v_alias] = prop.edge_collection
-        target_uri_expr = subject_ref(v_alias)
+        self._bind_vertex_object(obj, v_alias, prop, triple)
 
+    def _emit_reified_entry(self, subject: Any, prop: Any, obj: Any) -> None:
+        """``?s p ?k`` for a reified relationship ``p`` (LDBC plan decision D8).
+
+        RDF reifies a relationship that carries data as a node: LDBC writes
+        ``?p :knows ?k . ?k :hasPerson ?f ; :creationDate ?d``. In ArangoDB
+        that node is the edge document (its ``_uri`` is the node's IRI, its
+        attributes the node's data), so ``?k`` binds to the traversal's edge,
+        not its far vertex; the far vertex is recorded for an exit predicate
+        (:meth:`_emit_edge_exit`), and ``?k :creationDate ?d`` reads the edge
+        through the ordinary attribute path.
+        """
+        subject_alias = self._ensure_subject_alias(subject, prop)
+        v_alias = self.builder.fresh_alias(prefix="v")
+        e_alias = self.builder.fresh_alias(prefix="e")
+        self.builder.for_traversal(
+            v_alias,
+            e_alias,
+            subject_alias,
+            prop.edge_collection,
+            direction="ANY" if prop.symmetric else "OUTBOUND",
+        )
+        self._filter_edge_type(prop, e_alias)
+        self.state.reified_edges[e_alias] = (prop.iri, v_alias)
+        self._bind_vertex_object(obj, e_alias, prop)
+
+    def _emit_edge_exit(self, subject: Any, prop: Any, obj: Any) -> None:
+        """``?k p ?o`` for an exit predicate of reified relationships (D8):
+        ``?o`` is the vertex at the far end of the edge ``?k`` is bound to.
+
+        ``?k`` must already be bound to such an edge by its entry predicate
+        (the join order puts the triple whose subject is known first). An
+        exit that does not belong to that edge's relationship matches
+        nothing, as in RDF; a declared ``rdfs:range`` keeps only vertices of
+        that class (LDBC ``likes`` reaches a Post by ``hasPost`` and a
+        Comment by ``hasComment``).
+        """
+        e_alias = self.state.var_to_doc_alias.get(str(subject)) if isinstance(subject, Variable) else None
+        found = self.state.reified_edges.get(e_alias) if e_alias is not None else None
+        if found is None:
+            raise UnsupportedSparqlError(
+                f"{prop.iri!r} leads from a relationship node to its target, so its subject "
+                f"{subject} must be bound by the relationship's entry predicate (one of "
+                f"{', '.join(prop.edge_target_of)}) in the same group pattern"
+            )
+        relationship, v_alias = found
+        if relationship not in prop.edge_target_of:
+            # No such triple in RDF: no rows, but the object stays bound so
+            # it can still be projected.
+            self.builder.filter_raw("false")
+        elif prop.range_iri is not None:
+            classes = self._concrete_classes((prop.range_iri,))
+            tests = []
+            for collection in sorted({c.collection for c in classes}):
+                members = [c for c in classes if c.collection == collection]
+                coll = f"IS_SAME_COLLECTION({self.builder.bind(collection, hint='coll')}, {v_alias})"
+                label = self._class_tests(self.builder, v_alias, members, f"the rdfs:range of {prop.iri!r}")
+                tests.append(coll if not label else f"({coll} && {label[0]})")
+            self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        self._bind_vertex_object(obj, v_alias, prop)
+
+    def _bind_vertex_object(self, obj: Any, alias: str, prop: Any, triple: Any = None) -> None:
+        """Bind the object of an edge-backed triple to the document at *alias*.
+
+        A fresh variable takes the document, so a follow-up ``?o a :Person``
+        or ``?o :name ?n`` reuses it instead of opening an unrelated FOR. A
+        variable already bound (a type pattern placed first, another edge
+        landing on it) or a constant IRI is matched on its identity, which
+        keeps the join from becoming a cross product. A literal object of an
+        object property only matches if the literal *is* the IRI, which is
+        ill-defined for documents, so it is refused.
+        """
+        target = subject_ref(alias)
         if isinstance(obj, Variable):
-            o_name = str(obj)
-            existing_alias = self.state.var_to_doc_alias.get(o_name)
-            existing_expr = self.state.var_to_expr.get(o_name)
+            name = str(obj)
+            existing_alias = self.state.var_to_doc_alias.get(name)
+            existing_expr = self.state.var_to_expr.get(name)
             if existing_alias is None and existing_expr is None:
-                # First time we see ``?o`` — treat ``v_alias`` as ``?o``'s
-                # subject document so a follow-up ``?o a :Person`` /
-                # ``?o :name ?n`` reuses this alias instead of opening a
-                # new (unrelated) FOR over the default collection.
-                self._bind_subject(obj, v_alias)
+                self._bind_subject(obj, alias)
                 return
-            # Object var already bound (typically by a prior type
-            # pattern like ``?b a :Person`` placed BEFORE the edge
-            # triple, or by another edge that landed on ``?b``). Emit
-            # an equality filter on ``_uri`` so the cross-product gets
-            # pruned to the SPARQL join semantics, mirroring the
-            # ``_bind_subject`` branch for repeat type patterns.
-            existing_uri_expr = subject_ref(existing_alias) if existing_alias else existing_expr
-            if existing_uri_expr != target_uri_expr:
-                self.builder.filter_raw(f"{target_uri_expr} == {existing_uri_expr}")
+            existing = subject_ref(existing_alias) if existing_alias else existing_expr
+            if existing != target:
+                self.builder.filter_raw(f"{target} == {existing}")
             return
-
         if isinstance(obj, URIRef):
-            bind = self.builder.bind(str(obj), hint="uri")
-            self.builder.filter_raw(subject_matches(v_alias, bind))
+            self.builder.filter_raw(subject_matches(alias, self.builder.bind(str(obj), hint="uri")))
             return
-
-        # SPARQL technically allows literal objects on object properties
-        # (``?s :rel "foo"``), but RDF semantics make the triple match
-        # iff the literal IS the IRI — vanishingly rare in practice and
-        # ill-defined for our document model. Refuse for now.
+        where = f" (triple {triple!r})" if triple is not None else ""
         raise UnsupportedSparqlError(
-            f"object property {prop.iri!r} with non-IRI object is not supported (triple {triple!r})"
+            f"object property {prop.iri!r} with non-IRI object is not supported{where}"
         )
 
     def _filter_edge_type(self, prop: Any, e_alias: str) -> None:
@@ -2930,11 +3005,13 @@ def _term_known(term: Any, bound: set[str]) -> bool:
     return isinstance(term, (URIRef, Literal))
 
 
-def _join_rank(triple: tuple[Any, Any, Any], bound: set[str]) -> int:
+def _join_rank(triple: tuple[Any, Any, Any], bound: set[str], relationship_nodes: set[str]) -> int:
     """Lower = emit earlier. See :func:`_order_bgp`."""
     s, p, o = triple
     is_type = isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef)
     subject_known = _term_known(s, bound)
+    if not subject_known and isinstance(s, Variable) and str(s) in relationship_nodes:
+        return 5
     if is_type:
         return 0 if subject_known else 2
     if subject_known:
@@ -2944,7 +3021,9 @@ def _join_rank(triple: tuple[Any, Any, Any], bound: set[str]) -> int:
     return 4
 
 
-def _order_bgp(triples: list[tuple[Any, Any, Any]], bound: set[str]) -> list[tuple[Any, Any, Any]]:
+def _order_bgp(
+    triples: list[tuple[Any, Any, Any]], bound: set[str], relationship_nodes: set[str] | None = None
+) -> list[tuple[Any, Any, Any]]:
     """Greedy, binding-aware order for a BGP's triples.
 
     Each step takes the lowest-ranked remaining triple, then counts its
@@ -2959,7 +3038,10 @@ def _order_bgp(triples: list[tuple[Any, Any, Any]], bound: set[str]) -> list[tup
          class's collection (which PG / LPG routing needs before that
          subject's property triples) at the cost of a class scan;
       3. a triple whose object is known (a reverse lookup);
-      4. anything else.
+      4. anything else;
+      5. a triple about a relationship node (D8) not bound yet: its entry
+         triple (``?p :knows ?k``) binds it to an edge, which its exit and
+         attribute triples need.
 
     Ties keep rdflib's order, so output stays deterministic. Property-path
     triples rank like plain ones; their desugaring sees the same bindings.
@@ -2968,7 +3050,9 @@ def _order_bgp(triples: list[tuple[Any, Any, Any]], bound: set[str]) -> list[tup
     remaining = list(enumerate(triples))
     ordered: list[tuple[Any, Any, Any]] = []
     while remaining:
-        best = min(remaining, key=lambda item: (_join_rank(item[1], bound), item[0]))
+        best = min(
+            remaining, key=lambda item: (_join_rank(item[1], bound, relationship_nodes or set()), item[0])
+        )
         remaining.remove(best)
         ordered.append(best[1])
         for term in best[1]:
