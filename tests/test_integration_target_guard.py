@@ -101,4 +101,6 @@ def test_the_nested_run_env_pins_the_target(monkeypatch: pytest.MonkeyPatch) -> 
     assert env["ARANGO_URL"] == integration.DEFAULT_ARANGO_URL
     assert env["ARANGO_TEST_DB"] == integration.DEFAULT_ARANGO_DB
     assert env["ARANGO_PASSWORD"] == integration.DEFAULT_ARANGO_PASSWORD
-    assert env["ARANGO_DB"] == integration.DEFAULT_ARANGO_DB
+    # ARANGO_DB goes back to its value before any .env was loaded, not to
+    # the test database (the service's background schema warm reads it).
+    assert env.get("ARANGO_DB") == integration._ARANGO_DB_AT_IMPORT

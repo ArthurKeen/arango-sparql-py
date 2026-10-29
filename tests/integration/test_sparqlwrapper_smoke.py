@@ -165,7 +165,10 @@ def _live_server(_seeded_collection: list[dict]) -> Iterator[int]:
     # database this run seeded, or the server talks to that .env's cluster.
     with pytest.MonkeyPatch.context() as env:
         for name, value in pinned_target_env().items():
-            env.setenv(name, value)
+            if value is None:
+                env.delenv(name, raising=False)
+            else:
+                env.setenv(name, value)
         yield from _serve(app)
 
 

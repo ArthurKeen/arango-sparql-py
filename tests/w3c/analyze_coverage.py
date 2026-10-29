@@ -586,7 +586,11 @@ def _nested_run_env() -> dict[str, str]:
     """
     from tests.integration.conftest import pinned_target_env
 
-    return {**os.environ, **pinned_target_env()}
+    env = {**os.environ, **{k: v for k, v in pinned_target_env().items() if v is not None}}
+    for name, value in pinned_target_env().items():
+        if value is None:
+            env.pop(name, None)
+    return env
 
 
 def analyze_live() -> CategoryStats:

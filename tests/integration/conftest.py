@@ -75,20 +75,31 @@ def is_loopback_host(host: str | None) -> bool:
 ALLOW_REMOTE_ENV = "ARANGO_TEST_ALLOW_REMOTE"
 
 
-def pinned_target_env() -> dict[str, str]:
-    """The ArangoDB target this run resolved, as environment variables.
+#: ``ARANGO_DB`` as it was when this module was imported, before anything
+#: imported the service app (whose ``load_dotenv()`` can set it).
+_ARANGO_DB_AT_IMPORT = os.environ.get("ARANGO_DB")
+
+
+def pinned_target_env() -> dict[str, str | None]:
+    """The ArangoDB target this run resolved, as environment variables
+    (``None``: unset).
 
     For code that reads the target from ``os.environ`` while tests run (a
     nested pytest, the service app serving a real socket): by then
     importing the app may have loaded a developer's ``.env`` into the
-    environment (see :func:`refuse_remote_target`).
+    environment (see :func:`refuse_remote_target`). The URL and credentials
+    decide where data goes, so they are pinned. ``ARANGO_DB`` (the service's
+    own database, which its background schema warm reads) goes back to its
+    value before any ``.env`` was loaded rather than to the test database:
+    pinning it there let a warm started by an earlier test replace the
+    schema mid-test in CI (``test_sparqlwrapper_ask_returns_boolean``).
     """
     return {
         "ARANGO_URL": DEFAULT_ARANGO_URL,
-        "ARANGO_DB": DEFAULT_ARANGO_DB,
         "ARANGO_TEST_DB": DEFAULT_ARANGO_DB,
         "ARANGO_USER": DEFAULT_ARANGO_USER,
         "ARANGO_PASSWORD": DEFAULT_ARANGO_PASSWORD,
+        "ARANGO_DB": _ARANGO_DB_AT_IMPORT,
     }
 
 
