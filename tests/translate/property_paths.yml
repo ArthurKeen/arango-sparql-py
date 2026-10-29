@@ -46,7 +46,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
+      FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))
       FILTER HAS(doc2, "q")
       RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc2.q }
     expected_bind_vars:
@@ -65,10 +65,10 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
+      FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))
       FILTER HAS(doc2, "q")
       FOR doc3 IN @@c1_Document
-      FILTER NOT_NULL(doc3._uri, doc3._id) == doc2.q
+      FILTER (doc2.q != null && (doc3._uri == doc2.q || (doc3._uri == null && doc3._id == doc2.q)))
       FILTER HAS(doc3, "r")
       RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc3.r }
     expected_bind_vars:
@@ -89,7 +89,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
+      FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))
       FILTER doc2.q == @_p1_q
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
@@ -108,7 +108,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
+      FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))
       FILTER doc2.q == @_p1_q
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
@@ -166,7 +166,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
+      FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))
       FILTER HAS(doc2, "q")
       RETURN { s: doc2.q, o: NOT_NULL(doc1._uri, doc1._id) }
     expected_bind_vars:
@@ -231,7 +231,7 @@ cases:
         FOR doc2 IN @@c2_Document
         FILTER HAS(doc2, "p")
         FOR doc3 IN @@c2_Document
-        FILTER NOT_NULL(doc3._uri, doc3._id) == doc2.p
+        FILTER (doc2.p != null && (doc3._uri == doc2.p || (doc3._uri == null && doc3._id == doc2.p)))
         FILTER HAS(doc3, "p")
         RETURN { o: doc3.p, s: NOT_NULL(doc2._uri, doc2._id) }
       )
@@ -262,7 +262,7 @@ cases:
         FOR doc3 IN @@c3_Document
         FILTER HAS(doc3, "p")
         FOR doc4 IN @@c3_Document
-        FILTER NOT_NULL(doc4._uri, doc4._id) == doc3.p
+        FILTER (doc3.p != null && (doc4._uri == doc3.p || (doc4._uri == null && doc4._id == doc3.p)))
         FILTER HAS(doc4, "p")
         RETURN { o: doc4.p, s: NOT_NULL(doc3._uri, doc3._id) }
       )
@@ -286,7 +286,7 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "p")
       FOR doc2 IN @@c1_Document
-      FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p
+      FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))
       FILTER HAS(doc2, "q")
       FILTER HAS(doc1, "name")
       RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc2.q, n: doc1.name }

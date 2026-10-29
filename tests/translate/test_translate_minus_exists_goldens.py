@@ -126,7 +126,11 @@ def test_minus_multiple_shared_vars() -> None:
         resolver=resolver,
     )
     # Inner block must constrain both shared variables.
-    assert "FILTER NOT_NULL(doc2._uri, doc2._id) == NOT_NULL(doc1._uri, doc1._id)" in result.aql
+    shared_s = "NOT_NULL(doc1._uri, doc1._id)"
+    assert (
+        f"FILTER ({shared_s} != null && (doc2._uri == {shared_s} || (doc2._uri == null && doc2._id == {shared_s})))"
+        in result.aql
+    )
     assert "FILTER doc2.nickname == doc1.name" in result.aql
 
 

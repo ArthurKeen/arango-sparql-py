@@ -34,6 +34,7 @@ from .builder import (
     is_aql_identifier,
     subject_in,
     subject_matches,
+    subject_matches_value,
     subject_ref,
     type_predicate,
 )
@@ -2476,9 +2477,13 @@ class AlgebraVisitor:
 
         A constant subject is one document: joined to its earlier alias, or
         matched on its IRI here unless *matched* (the union arms already
-        did). A variable binds to the alias.
+        did). A variable binds to the alias; one the union arms already
+        matched to its value just records the alias.
         """
         if not isinstance(subject, URIRef):
+            if matched:
+                self.state.var_to_doc_alias[str(subject)] = alias
+                return
             self._bind_subject(subject, alias)
             return
         previous = self.state.const_subject_alias.get(str(subject))
@@ -2531,11 +2536,14 @@ class AlgebraVisitor:
         a union of shard families is not built yet.
 
         AQL materialises every ``UNION`` argument before the outer ``FOR``
-        runs. Arms narrowed to one IRI return their few documents whole; an
-        unconstrained subject's arms return ``_id`` handles only and each
-        document is read back with ``DOCUMENT()``. On the LDBC SF0.1 PG data
-        (287k messages) that cut peak query memory from 157 MB to 14 MB, for
-        about 0.7 s more; whole documents would pass the 1 GB cap near SF1.
+        runs, so the arms carry the subject's match whenever there is one (a
+        constant IRI, a known value) and return only those documents. An
+        unconstrained subject's arms hold every member document in memory
+        (157 MB peak for LDBC SF0.1's 287k messages; PRD §6.1 known limit).
+        Returning ``_id`` handles and reading each back with ``DOCUMENT()``
+        was tried and is worse inside an aggregating sub-query, where the
+        copies ``DOCUMENT()`` returns are held: LDBC IC3 went from 164 MB to
+        over the 1 GB cap.
         """
         classes = [c for members in by_collection.values() for c in members]
         sharded = sorted({c.collection for c in classes if c.shard_family is not None})
@@ -2549,8 +2557,18 @@ class AlgebraVisitor:
                 f"{what} spans classes with different tenant scoping; one tenant filter "
                 f"cannot apply to the subject {subject} in all of them"
             )
-        match_in_arms = isinstance(subject, URIRef) and str(subject) not in self.state.const_subject_alias
-        uri_bind = self.builder.bind(str(subject), hint="uri") if match_in_arms else None
+        if isinstance(subject, URIRef):
+            match_in_arms = str(subject) not in self.state.const_subject_alias
+            match_value = self.builder.bind(str(subject), hint="uri") if match_in_arms else None
+        else:
+            # A variable that already has a value (a sub-select column, a
+            # VALUES row) but no document: match it inside each arm too. AQL
+            # materialises each UNION arm, so a filter after the union
+            # would first copy every document of every member collection.
+            name = str(subject)
+            prior = self.state.var_to_expr.get(name)
+            match_in_arms = prior is not None and name not in self.state.var_to_doc_alias
+            match_value = prior if match_in_arms else None
         arm_aqls: list[str] = []
         for collection in sorted(by_collection):
             # One child per arm, as SPARQL UNION arms are built: its scan,
@@ -2561,18 +2579,16 @@ class AlgebraVisitor:
             child.for_(inner, collection)
             for test in self._class_tests(child, inner, by_collection[collection], what):
                 child.filter_raw(test)
-            if uri_bind is not None:
-                child.filter_raw(subject_matches(inner, uri_bind))
-            child.return_scalar(inner if uri_bind is not None else f"{inner}._id")
+            if match_value is not None:
+                child.filter_raw(
+                    subject_matches(inner, match_value)
+                    if isinstance(subject, URIRef)
+                    else subject_matches_value(inner, match_value)
+                )
+            child.return_scalar(inner)
             arm_aqls.append(self.builder.absorb_child(child))
-        if uri_bind is not None:
-            alias = self.builder.fresh_alias()
-            self.builder.for_union(alias, arm_aqls, scans_documents=True)
-        else:
-            handle = self.builder.fresh_alias(prefix="ref")
-            self.builder.for_union(handle, arm_aqls)
-            alias = self.builder.fresh_alias()
-            self.builder.let_document(alias, handle)
+        alias = self.builder.fresh_alias()
+        self.builder.for_union(alias, arm_aqls, scans_documents=True)
         self._apply_graph_scope(alias)
         self._enforce_tenant_scope(alias, classes[0])
         self._bind_opened_subject(subject, alias, matched=match_in_arms)
@@ -2676,7 +2692,9 @@ class AlgebraVisitor:
             if prior_expr is None:
                 self.state.var_to_expr[name] = new_expr
             elif prior_expr != new_expr:
-                self.builder.filter_raw(f"{new_expr} == {prior_expr}")
+                # Index-friendly and null-safe (``subject_matches_value``):
+                # the ``NOT_NULL(...) == value`` form hid both indexes.
+                self.builder.filter_raw(subject_matches_value(alias, prior_expr))
             return
         if existing_alias == alias:
             return
