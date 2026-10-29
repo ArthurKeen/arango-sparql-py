@@ -478,6 +478,13 @@ ArangoDB database typically uses one or, increasingly, a mix of several
 | `LABEL` | **LPG** — Labeled Property Graph | One shared document collection holding multiple OWL classes, discriminated by a `typeField` (e.g. `type`, `_type`, `entityType`, `label`) — or by an **array** of labels (r2g's `labels: ["Person","Customer"]`) | `FOR doc IN @@coll FILTER doc.<typeField> == @typeValue` (scalar), `FILTER @typeValue IN doc.<typeField>` (array), see *Label fields* below |
 | `RPT` | **RDF / Resource-style triples** | A triple-row collection (the legacy Foxx default was `_triples`) with `subject_uri`, `predicate`, `object_uri`, `object_value` columns and `_:` prefix for blank nodes | `FOR t IN @@triples FILTER t.predicate == @p AND t.subject_uri == @s` plus `NOT_NULL(t.object_uri, t.object_value)` to bind the object |
 | `DOCUMENT` | Plain document | Document collection with no class-discriminator field; OWL class derived from collection name only | Same as `COLLECTION` |
+| `LABELS` / `MULTI_LABEL` | **Label array** — arango-schema-analyzer's `LABELS`, arango-query-core's `MULTI_LABEL` (one field set) | A shared collection whose `labelsField` holds every label of a node; the class is one of them (`labelValue`, default the class's local name) | `FOR doc IN @@coll FILTER @labelValue IN doc.<labelsField>` |
+| `UNION` | **Supertype** — arango-query-core's style (LDBC's `Message` = `Post` ∪ `Comment`) | No collection of its own: its members are its `rdfs:subClassOf` subclasses, nested supertypes flattened (a cycle, or no members, is a mapping error) | Every member: one collection with an any-of label test, or `FOR doc IN UNION((FOR … IN @@member1 …), …)` across collections (LDBC plan D9) |
+
+Any other `phys:mappingStyle` on a class is refused (`E_SCHEMA_RESOLVE`), not
+read as a plain collection: that is how the three styles above used to return
+wrong rows with no error — a supertype scanned a collection named after it, a
+label-array class had no label test (`translate/resolver.py::CLASS_MAPPING_STYLES`).
 
 Relationship styles, attached to OWL `owl:ObjectProperty`:
 
@@ -525,7 +532,8 @@ routes the subject (`translate/visitor.py`):
   test; and a union spanning several collections (PG's Post ∪ Comment) reads
   every one of them with `FOR … IN UNION((FOR … RETURN …), …)`, each arm
   carrying its own label test and, for a constant subject, its own indexed
-  `_uri` match (`_route_by_domain_union`, LDBC plan decision D9).
+  `_uri` match (`_open_class_union`, LDBC plan decision D9). A `UNION`
+  supertype in the domain stands for its members.
 
 The union refuses, with `E_SPARQL_UNSUPPORTED`, classes that disagree on
 tenant scoping (one tenant filter cannot serve them) and sharded classes.
@@ -588,6 +596,7 @@ historically; both are accepted (see `resolver.py`):
 | `edgeCollectionName` | `owl:ObjectProperty` | Edge-collection name | `DEDICATED_COLLECTION`, `GENERIC_WITH_TYPE` |
 | `typeField` | `owl:Class` *or* `owl:ObjectProperty` | Discriminator field name (e.g. `type`) | `LABEL`, `GENERIC_WITH_TYPE` |
 | `typeValue` | `owl:Class` *or* `owl:ObjectProperty` | Discriminator value (e.g. `Person`) | `LABEL`, `GENERIC_WITH_TYPE` |
+| `labelsField`, `labelValue` | `owl:Class` | The label-array field, and this class's label in it | `LABELS`, `MULTI_LABEL` |
 | `triplesCollection` | `owl:Class` | Name of the RPT-style collection holding this class's triples (defaults to `_triples`) | `RPT`, `RPT_EDGE` |
 | `subjectColumn`, `predicateColumn`, `objectUriColumn`, `objectValueColumn` | `owl:Class` | Override the legacy Foxx column names if a customer renamed them | `RPT`, `RPT_EDGE` |
 | `tenantField`, `tenantEntity` | `owl:Class` | Multi-tenancy scope (see §6.5) | All entity styles |
