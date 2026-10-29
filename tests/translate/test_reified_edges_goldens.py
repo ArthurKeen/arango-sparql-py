@@ -78,3 +78,16 @@ def test_a_reified_relationship_needs_an_edge_collection() -> None:
     )
     with pytest.raises(SchemaResolutionError, match="edgeCollectionName"):
         resolver.resolve_property(EX + "studyAt")
+
+
+def test_an_exit_with_a_known_object_walks_its_relationship_backwards() -> None:
+    # LDBC IC5's ?mem :hasPerson ?fr with ?fr known: look the person up, walk
+    # knows edges INBOUND (edge and source in one step), instead of reading
+    # every person forwards and comparing each friend.
+    assert _aql("SELECT ?p ?f WHERE { VALUES ?f { :bob } ?p :knows ?k . ?k :hasPerson ?f }") == (
+        "FOR row1 IN @_p1_values\n"
+        "FOR doc2 IN @@c1_Person\n"
+        "FILTER (row1.f != null && (doc2._uri == row1.f || (doc2._uri == null && doc2._id == row1.f)))\n"
+        "FOR v3, e4 IN INBOUND doc2 @@c2_knows\n"
+        "RETURN { p: NOT_NULL(v3._uri, v3._id), f: row1.f }"
+    )

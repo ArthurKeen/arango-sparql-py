@@ -509,7 +509,11 @@ edge with attributes. Both styles above map it with two annotations:
   by `:hasPost` and a Comment by `:hasComment`).
 
 A triple about a relationship node waits for its entry triple in the join
-order (`translate/visitor.py::_order_bgp`). A node bound to an edge inside
+order (`translate/visitor.py::_order_bgp`) — except an exit whose object is
+known (`?mem :hasPerson ?fr`): it walks the relationship whose entry triple
+is in the same BGP backwards from that object, binding the edge and its
+source vertex, which the entry triple then takes (LDBC IC5 reads every
+forum's members otherwise). A node bound to an edge inside
 UNION arms is, afterwards, only its IRI; it is read back from the edges of
 the relationships that bound it in every arm, and otherwise (a node only a
 VALUES row names) from the edges of a relationship its data property's
@@ -554,9 +558,12 @@ every subject's class (LDBC writes `?m :hasCreator ?p`), so the predicate
 routes the subject (`translate/visitor.py`):
 - an `owl:SymmetricProperty` traverses `ANY`;
 - a subject nothing has bound, with a known object, is reached by walking the
-  edge `INBOUND` from that object (a constant object is looked up in its
-  `rdfs:range` class), keeping only vertices in the subject's domain
-  collections (`_keep_subject_collections`);
+  edge `INBOUND` from that object, keeping only vertices in the subject's
+  domain collections (`_keep_subject_collections`). An object known only as
+  a constant IRI or a value (a VALUES row, a sub-select column) is first
+  looked up in its `rdfs:range` class by an indexed `_uri` match
+  (`_object_document`): reading every possible subject forwards and
+  comparing would scan, say, every message per friend;
 - otherwise the property's `rdfs:domain` opens the subject's collection
   (`_route_by_domain`): one class opens its collection, with its label test in
   LPG; an `owl:unionOf` of LABEL classes in one collection is an any-of label

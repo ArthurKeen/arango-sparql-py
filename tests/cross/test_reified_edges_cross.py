@@ -198,6 +198,25 @@ CASES = [
     pytest.param(
         "SELECT ?k ?d WHERE { VALUES ?k { :k2 :l3 } ?k :creationDate ?d }", id="node_known_only_by_value"
     ),
+    # The exit's object is known, so the relationship is walked backwards
+    # from it (LDBC IC5's ?mem :hasPerson ?fr): the edge and its source in
+    # one step, instead of reading every subject forwards.
+    pytest.param(
+        "SELECT ?p ?d WHERE { ?p :knows ?k . ?k :hasPerson :bob ; :creationDate ?d }",
+        id="backwards_from_a_constant",
+    ),
+    pytest.param(
+        "SELECT ?p ?f WHERE { VALUES ?f { :bob :alice } ?p :knows ?k . ?k :hasPerson ?f }",
+        id="backwards_from_a_value",
+    ),
+    pytest.param(
+        'SELECT ?p WHERE { ?f :firstName "Bob" . ?p :knows ?k . ?k :hasPerson ?f }',
+        id="backwards_from_a_document",
+    ),
+    pytest.param(
+        "SELECT ?p ?m WHERE { VALUES ?m { :post1 } ?p :likes ?lk . ?lk :hasPost ?m }",
+        id="backwards_with_a_range",
+    ),
 ]
 
 

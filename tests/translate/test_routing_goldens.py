@@ -126,3 +126,17 @@ def test_a_value_bound_subject_in_a_pg_union_is_matched_inside_each_arm() -> Non
         'FILTER HAS(doc4, "content")\n'
         "RETURN { m: row1.m, c: doc4.content }"
     )
+
+
+def test_a_value_bound_object_is_looked_up_and_walked_inbound() -> None:
+    # The object is known only by its value (VALUES, a sub-select column):
+    # looked up in its range by _uri, then the edge walked backwards, instead
+    # of every message read forwards from hasCreator's domain.
+    assert _aql(PG_ONTOLOGY, "SELECT ?m WHERE { VALUES ?p { :bob } ?m :hasCreator ?p }") == (
+        "FOR row1 IN @_p1_values\n"
+        "FOR doc2 IN @@c1_Person\n"
+        "FILTER (row1.p != null && (doc2._uri == row1.p || (doc2._uri == null && doc2._id == row1.p)))\n"
+        "FOR v3, e4 IN INBOUND doc2 @@c2_has_creator\n"
+        "FILTER (IS_SAME_COLLECTION(@_p2_coll, v3) || IS_SAME_COLLECTION(@_p3_coll, v3))\n"
+        "RETURN { m: NOT_NULL(v3._uri, v3._id) }"
+    )
