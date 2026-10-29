@@ -123,18 +123,17 @@ def test_a_supertype_without_members_is_a_mapping_error() -> None:
 def test_a_supertype_type_pattern_reads_every_member_collection() -> None:
     # Before: FOR doc1 IN @@c1_Message, a collection that does not exist.
     assert _aql(UNION_TTL, "SELECT ?m WHERE { ?m a :Message }") == (
-        "FOR ref3 IN UNION(\n"
+        "FOR doc3 IN UNION(\n"
         "(\n"
         "  FOR doc1 IN @@c1_Comment\n"
-        "  RETURN doc1._id\n"
+        "  RETURN doc1\n"
         "),\n"
         "(\n"
         "  FOR doc2 IN @@c2_Post\n"
-        "  RETURN doc2._id\n"
+        "  RETURN doc2\n"
         ")\n"
         ")\n"
-        "LET doc4 = DOCUMENT(ref3)\n"
-        "RETURN { m: NOT_NULL(doc4._uri, doc4._id) }"
+        "RETURN { m: NOT_NULL(doc3._uri, doc3._id) }"
     )
 
 

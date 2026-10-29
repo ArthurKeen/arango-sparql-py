@@ -2461,12 +2461,14 @@ class AlgebraVisitor:
         a union of shard families is not built yet.
 
         AQL materialises every ``UNION`` argument before the outer ``FOR``
-        runs. Arms narrowed to one IRI or one known value return their few
-        documents whole; an unconstrained subject's arms return ``_id``
-        handles only and each
-        document is read back with ``DOCUMENT()``. On the LDBC SF0.1 PG data
-        (287k messages) that cut peak query memory from 157 MB to 14 MB, for
-        about 0.7 s more; whole documents would pass the 1 GB cap near SF1.
+        runs, so the arms carry the subject's match whenever there is one (a
+        constant IRI, a known value) and return only those documents. An
+        unconstrained subject's arms hold every member document in memory
+        (157 MB peak for LDBC SF0.1's 287k messages; PRD §6.1 known limit).
+        Returning ``_id`` handles and reading each back with ``DOCUMENT()``
+        was tried and is worse inside an aggregating sub-query, where the
+        copies ``DOCUMENT()`` returns are held: LDBC IC3 went from 164 MB to
+        over the 1 GB cap.
         """
         classes = [c for members in by_collection.values() for c in members]
         sharded = sorted({c.collection for c in classes if c.shard_family is not None})
@@ -2508,16 +2510,10 @@ class AlgebraVisitor:
                     if isinstance(subject, URIRef)
                     else subject_matches_value(inner, match_value)
                 )
-            child.return_scalar(inner if match_value is not None else f"{inner}._id")
+            child.return_scalar(inner)
             arm_aqls.append(self.builder.absorb_child(child))
-        if match_value is not None:
-            alias = self.builder.fresh_alias()
-            self.builder.for_union(alias, arm_aqls, scans_documents=True)
-        else:
-            handle = self.builder.fresh_alias(prefix="ref")
-            self.builder.for_union(handle, arm_aqls)
-            alias = self.builder.fresh_alias()
-            self.builder.let_document(alias, handle)
+        alias = self.builder.fresh_alias()
+        self.builder.for_union(alias, arm_aqls, scans_documents=True)
         self._apply_graph_scope(alias)
         self._enforce_tenant_scope(alias, classes[0])
         self._bind_opened_subject(subject, alias, matched=match_in_arms)

@@ -541,6 +541,13 @@ routes the subject (`translate/visitor.py`):
 
 The union refuses, with `E_SPARQL_UNSUPPORTED`, classes that disagree on
 tenant scoping (one tenant filter cannot serve them) and sharded classes.
+Known limit: AQL materialises every `UNION` argument, so an *unconstrained*
+subject (no constant IRI, no known value to match inside the arms) holds
+every member document in memory: 157 MB peak for LDBC SF0.1's 287k
+messages, past a 1 GB query cap near SF1. Reading `_id` handles back with
+`DOCUMENT()` was tried and is worse inside an aggregating sub-query (LDBC
+IC3: 164 MB to over the cap). The planned fix is arms that return only the
+attributes the query reads.
 Without a domain, a subject reads the default collection, or under
 `strict_subject_resolution` is refused.
 
