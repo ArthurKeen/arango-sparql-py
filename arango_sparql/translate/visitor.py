@@ -90,6 +90,14 @@ class _BindingState:
     afterwards only by its IRI is read from those relationships' edges rather
     than routed by a data property's domain, which may not name them."""
     reified_edges: dict[str, tuple[str, str]] = field(default_factory=dict)
+    reified_sources: dict[str, str] = field(default_factory=dict)
+    """Edge alias found by walking a reified relationship backwards from its
+    exit's object → alias of the edge's source vertex, which the entry
+    triple then binds its subject to (plan D8)."""
+    bgp_entries: dict[str, set[str]] = field(default_factory=dict)
+    """In the BGP being emitted: relationship node variable → the reified
+    entry predicates whose object it is. Lets an exit with a known object
+    walk the right relationship backwards before its entry is emitted."""
     """Edge alias bound to a reified relationship's node (LDBC plan D8) →
     ``(relationship IRI, alias of the vertex at its far end)``, so an exit
     predicate (``?k :hasPerson ?f``) reaches the vertex its entry predicate's
@@ -1535,13 +1543,17 @@ class AlgebraVisitor:
         bound = set(self.state.var_to_expr) | set(self.state.var_to_doc_alias)
         # A relationship node (D8) is bound by its entry triple
         # (``?p :knows ?k``); its exit and attribute triples wait for it.
-        relationship_nodes = {
-            str(o)
-            for _s, p, o in triples
-            if isinstance(o, Variable) and isinstance(p, URIRef) and self.resolver.is_reified_entry(p)
-        }
-        for triple in _order_bgp(triples, bound, relationship_nodes):
-            self._emit_triple(triple)
+        entries: dict[str, set[str]] = {}
+        for _s, p, o in triples:
+            if isinstance(o, Variable) and isinstance(p, URIRef) and self.resolver.is_reified_entry(p):
+                entries.setdefault(str(o), set()).add(str(p))
+        exits = {str(p) for _s, p, _o in triples if isinstance(p, URIRef) and self.resolver.is_edge_exit(p)}
+        outer_entries, self.state.bgp_entries = self.state.bgp_entries, entries
+        try:
+            for triple in _order_bgp(triples, bound, set(entries), exits):
+                self._emit_triple(triple)
+        finally:
+            self.state.bgp_entries = outer_entries
 
     # ------------------------------------------------------------------
     # Internal: property-path intermediate-variable minting
@@ -2262,6 +2274,15 @@ class AlgebraVisitor:
         (:meth:`_emit_edge_exit`), and ``?k :creationDate ?d`` reads the edge
         through the ordinary attribute path.
         """
+        bound_edge = self.state.var_to_doc_alias.get(str(obj)) if isinstance(obj, Variable) else None
+        source = self.state.reified_sources.get(bound_edge) if bound_edge is not None else None
+        if bound_edge is not None and source is not None:
+            # The exit walked this edge backwards already: its source is the
+            # subject. Another relationship's edge is no ``prop`` triple.
+            if self.state.reified_edges[bound_edge][0] != prop.iri:
+                self.builder.filter_raw("false")
+            self._bind_vertex_object(subject, source, prop)
+            return
         subject_alias = self._ensure_subject_alias(subject, prop)
         v_alias = self.builder.fresh_alias(prefix="v")
         e_alias = self.builder.fresh_alias(prefix="e")
@@ -2291,6 +2312,8 @@ class AlgebraVisitor:
         """
         e_alias = self.state.var_to_doc_alias.get(str(subject)) if isinstance(subject, Variable) else None
         found = self.state.reified_edges.get(e_alias) if e_alias is not None else None
+        if found is None and e_alias is None and self._walk_exit_backwards(subject, prop, obj):
+            return
         if found is None:
             raise UnsupportedSparqlError(
                 f"{prop.iri!r} leads from a relationship node to its target, so its subject "
@@ -2312,6 +2335,45 @@ class AlgebraVisitor:
                 tests.append(coll if not label else f"({coll} && {label[0]})")
             self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
         self._bind_vertex_object(obj, v_alias, prop)
+
+    def _walk_exit_backwards(self, node: Any, prop: Any, obj: Any) -> bool:
+        """``?k p ?o`` with ``?k`` not bound yet and ``?o`` known: walk the
+        relationship backwards from ``?o`` (LDBC IC5's ``?mem :hasPerson
+        ?fr`` with ``?fr`` from a sub-select), binding ``?k`` to the edge and
+        recording its source vertex for the entry triple (``?forum
+        :hasMember ?mem``), which the same BGP must hold. Forwards, every
+        forum would be read and its members compared to ``?fr``.
+
+        ``False`` when that cannot be done (no single relationship, or the
+        object cannot be found as a document); the caller then refuses.
+        """
+        if not isinstance(node, Variable) or str(node) in self.state.var_to_expr:
+            return False
+        relationships = set(prop.edge_target_of) & self.state.bgp_entries.get(str(node), set())
+        if len(relationships) != 1:
+            return False
+        target = self._object_document(obj, prop.range_iri)
+        if target is None:
+            return False
+        relationship = self.resolver.resolve_property(next(iter(relationships)))
+        assert relationship.edge_collection is not None  # reified: resolver guarantees it
+        src_alias = self.builder.fresh_alias(prefix="v")
+        e_alias = self.builder.fresh_alias(prefix="e")
+        self.builder.for_traversal(
+            src_alias,
+            e_alias,
+            target,
+            relationship.edge_collection,
+            direction="ANY" if relationship.symmetric else "INBOUND",
+        )
+        self._filter_edge_type(relationship, e_alias)
+        self.state.reified_edges[e_alias] = (relationship.iri, target)
+        self.state.reified_sources[e_alias] = src_alias
+        self.state.relationship_nodes.setdefault(str(node), set()).add(relationship.iri)
+        self._bind_subject(node, e_alias)
+        if isinstance(obj, Variable) and str(obj) not in self.state.var_to_doc_alias:
+            self.state.var_to_doc_alias[str(obj)] = target
+        return True
 
     def _bind_vertex_object(self, obj: Any, alias: str, prop: Any, triple: Any = None) -> None:
         """Bind the object of an edge-backed triple to the document at *alias*.
@@ -2357,27 +2419,49 @@ class AlgebraVisitor:
         """The alias to traverse ``prop`` backwards from, or ``None``.
 
         Only when the subject is a variable nothing has bound yet: a bound
-        subject is walked forwards as before. The object must be a document:
-        a variable bound to one, or a constant IRI whose ``rdfs:range`` is a
-        single document class, which is opened and filtered on the IRI (an
-        indexed ``_uri`` match).
+        subject is walked forwards as before. The object must be found as a
+        document (:meth:`_object_document`).
         """
         if not isinstance(subject, Variable):
             return None
         name = str(subject)
         if name in self.state.var_to_doc_alias or name in self.state.var_to_expr:
             return None
+        return self._object_document(obj, prop.range_iri)
+
+    def _object_document(self, obj: Any, range_iri: str | None) -> str | None:
+        """The alias of the document a known object is, opening it if needed.
+
+        A variable bound to a document is that document. A variable known
+        only by its value (a sub-select column, a VALUES row, a UNION row) or
+        a constant IRI is looked up in the property's ``rdfs:range`` class,
+        when that is a single document class, by an indexed ``_uri`` match:
+        walking an edge backwards from it beats scanning every possible
+        subject (LDBC: ``?m :hasCreator ?fr`` with ``?fr`` from a sub-select
+        scanned every message). ``None`` when the object cannot be found
+        that way. The range is trusted as where the object is stored, as
+        :meth:`_route_by_domain` trusts the domain: an object stored outside
+        it is not found (PRD §6.1).
+        """
         if isinstance(obj, Variable):
-            return self.state.var_to_doc_alias.get(str(obj))
-        if not isinstance(obj, URIRef):
+            name = str(obj)
+            alias = self.state.var_to_doc_alias.get(name)
+            if alias is not None:
+                return alias
+            value = self.state.var_to_expr.get(name)
+            if value is None:
+                return None
+        elif isinstance(obj, URIRef):
+            known = self.state.const_subject_alias.get(str(obj))
+            if known is not None:
+                return known
+            value = None
+        else:
             return None
-        known = self.state.const_subject_alias.get(str(obj))
-        if known is not None:
-            return known
-        if prop.range_iri is None:
+        if range_iri is None:
             return None
         try:
-            resolved = self.resolver.resolve_class(prop.range_iri)
+            resolved = self.resolver.resolve_class(range_iri)
         except SchemaResolutionError:
             return None
         if resolved.style in ("RPT", "UNION"):
@@ -2394,6 +2478,11 @@ class AlgebraVisitor:
                 type_predicate(alias, resolved.type_field, type_bind, is_array=resolved.type_field_is_array)
             )
         self._enforce_tenant_scope(alias, resolved)
+        if value is not None:
+            # The variable keeps its value expression; its document is this.
+            self.builder.filter_raw(subject_matches_value(alias, value))
+            self.state.var_to_doc_alias[str(obj)] = alias
+            return alias
         uri_bind = self.builder.bind(str(obj), hint="uri")
         self.builder.filter_raw(subject_matches(alias, uri_bind))
         self.state.const_subject_alias[str(obj)] = alias
@@ -3048,13 +3137,16 @@ def _term_known(term: Any, bound: set[str]) -> bool:
     return isinstance(term, (URIRef, Literal))
 
 
-def _join_rank(triple: tuple[Any, Any, Any], bound: set[str], relationship_nodes: set[str]) -> int:
+def _join_rank(
+    triple: tuple[Any, Any, Any], bound: set[str], relationship_nodes: set[str], exits: set[str]
+) -> int:
     """Lower = emit earlier. See :func:`_order_bgp`."""
     s, p, o = triple
     is_type = isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef)
     subject_known = _term_known(s, bound)
     if not subject_known and isinstance(s, Variable) and str(s) in relationship_nodes:
-        return 5
+        # An exit with a known object walks its relationship backwards.
+        return 3 if str(p) in exits and _term_known(o, bound) else 5
     if is_type:
         return 0 if subject_known else 2
     if subject_known:
@@ -3065,7 +3157,10 @@ def _join_rank(triple: tuple[Any, Any, Any], bound: set[str], relationship_nodes
 
 
 def _order_bgp(
-    triples: list[tuple[Any, Any, Any]], bound: set[str], relationship_nodes: set[str] | None = None
+    triples: list[tuple[Any, Any, Any]],
+    bound: set[str],
+    relationship_nodes: set[str] | None = None,
+    exits: set[str] | None = None,
 ) -> list[tuple[Any, Any, Any]]:
     """Greedy, binding-aware order for a BGP's triples.
 
@@ -3084,7 +3179,9 @@ def _order_bgp(
       4. anything else;
       5. a triple about a relationship node (D8) not bound yet: its entry
          triple (``?p :knows ?k``) binds it to an edge, which its exit and
-         attribute triples need.
+         attribute triples need — except an exit whose object is known
+         (``?m :hasPerson ?fr``), which ranks 3: it walks the relationship
+         backwards from the object, binding the edge and its source.
 
     Ties keep rdflib's order, so output stays deterministic. Property-path
     triples rank like plain ones; their desugaring sees the same bindings.
@@ -3094,7 +3191,11 @@ def _order_bgp(
     ordered: list[tuple[Any, Any, Any]] = []
     while remaining:
         best = min(
-            remaining, key=lambda item: (_join_rank(item[1], bound, relationship_nodes or set()), item[0])
+            remaining,
+            key=lambda item: (
+                _join_rank(item[1], bound, relationship_nodes or set(), exits or set()),
+                item[0],
+            ),
         )
         remaining.remove(best)
         ordered.append(best[1])

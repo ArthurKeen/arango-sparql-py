@@ -985,6 +985,11 @@ class SchemaResolver:
         the annotation only, so it resolves (and warns about) nothing."""
         return parse_flag(self._physical_string(URIRef(str(iri)), "reifiedEdge")) is True
 
+    def is_edge_exit(self, iri: URIRef | str) -> bool:
+        """Whether *iri* declares ``phys:edgeTargetOf``: an exit predicate of
+        reified relationships (plan D8). Reads the annotation only."""
+        return bool(self._physical_iris(URIRef(str(iri)), "edgeTargetOf"))
+
     def relationship_edge_class(self, iri: URIRef | str) -> ResolvedClass:
         """The edge documents of a reified relationship, as a class (plan D8).
 

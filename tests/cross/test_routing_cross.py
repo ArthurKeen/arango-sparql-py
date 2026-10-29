@@ -198,6 +198,9 @@ CASES = [
     pytest.param("SELECT ?c WHERE { :comm1 :content ?c }", id="union_domain_constant_subject"),
     pytest.param("SELECT ?m ?n WHERE { ?m :hasCreator ?p . ?p :firstName ?n }", id="union_domain_then_edge"),
     pytest.param("SELECT (COUNT(?m) AS ?n) WHERE { ?m :content ?c }", id="union_domain_count"),
+    # The object is known only by its value: looked up in its range and the
+    # edge walked backwards, instead of every message read forwards.
+    pytest.param("SELECT ?m WHERE { VALUES ?p { :bob :dan } ?m :hasCreator ?p }", id="reverse_from_a_value"),
     # A property path inside an OPTIONAL goes to the correlated subquery
     # (optional_subquery.py); the inline emitter reads one attribute or edge.
     pytest.param(
