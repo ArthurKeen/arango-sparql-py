@@ -276,7 +276,13 @@ What it found, beyond §3.1, §3.2 and §3.4:
   `owl:SymmetricProperty` traverses `ANY` (decision D10), an unbound subject
   with a known object is reached by an `INBOUND` traversal, and a constant
   or value-bound subject opens its `rdfs:domain` class (an LPG union is an
-  any-of label test). A PG union across collections still refuses (D9).
+  any-of label test). A PG union across collections reads each collection
+  (D9, approved 2026-10-28): `FOR … IN UNION(…)`, one arm per collection with
+  the constant subject's `_uri` match inside each arm. Live on PG: IS4, IS5,
+  IC3 (no-alias-reuse) and IC4 now match the oracle (4 → 8 PG cells); IS2,
+  IC8, IC9 and IC10 run but exceed the 3 GB query cap because the plan scans
+  every message before walking `hasCreator` back from the person (join order,
+  WP-LDBC-OPTIMIZE); IS6 runs but the oracle times out.
 - **Fixed — OPTIONAL as a correlated subquery** (`3327f74`, `6a070b9`):
   ADR-0002 Option A generalised from one triple to any pattern (several
   triples, paths, BIND, an inner FILTER). Two NL-eval fixtures asserted the
@@ -598,8 +604,8 @@ The M1 ledger sets the final order. These are the gaps known today:
   - every query that reaches messages through `hasCreator` on an untyped
     variable: IS2, IS5, IS7, IC2–IC10, IC12 and IC14;
   - IS4–IS7, which take a message ID that may name a Post or a Comment. A
-    constant subject is looked up in one collection today (PRD §6.1, known
-    limit).
+    constant subject routed by a union domain is now matched in each member
+    collection (D9).
 
 #### WP-LDBC-OPT: `OPTIONAL` on collection layouts (M)
 - **Scope:**

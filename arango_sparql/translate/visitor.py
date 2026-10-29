@@ -2342,9 +2342,9 @@ class AlgebraVisitor:
         domain). One class opens that class's collection, with its label
         test in LPG; a union of LABEL classes in one collection becomes an
         any-of label test. A union spanning several collections (PG's
-        Post ∪ Comment) is refused: routing one subject across collections
-        is plan decision D9, not decided yet. Returns ``None`` when the
-        domain cannot help (none declared, or an RPT class).
+        Post ∪ Comment) reads all of them (:meth:`_route_by_domain_union`,
+        plan decision D9). Returns ``None`` when the domain cannot help
+        (none declared, or an RPT class).
         """
         class_iris = self.resolver.domain_classes(prop.iri)
         if not class_iris:
@@ -2352,37 +2352,108 @@ class AlgebraVisitor:
         classes = [self.resolver.resolve_class(iri) for iri in class_iris]
         if any(c.style == "RPT" for c in classes):
             return None
-        collections = sorted({c.collection for c in classes})
-        if len(collections) > 1:
-            raise UnsupportedSparqlError(
-                f"the subject {subject} of {prop.iri!r} can be in any of the collections "
-                f"{collections} (its rdfs:domain spans them); reading one subject across "
-                f"several collections is not supported yet (plan decision D9)"
-            )
+        by_collection: dict[str, list[ResolvedClass]] = {}
+        for c in classes:
+            by_collection.setdefault(c.collection, []).append(c)
+        if len(by_collection) > 1:
+            return self._route_by_domain_union(subject, prop, by_collection)
         anchor = classes[0]
         alias = self._open_collection(anchor.collection, resolved=anchor)
-        labelled = [c for c in classes if c.type_field and c.type_value]
-        if labelled:
-            if (
-                len(labelled) != len(classes)
-                or len({(c.type_field, c.type_field_is_array) for c in labelled}) != 1
-            ):
-                raise UnsupportedSparqlError(
-                    f"the rdfs:domain of {prop.iri!r} mixes classes with different type fields in "
-                    f"collection {anchor.collection!r}; cannot test the subject's class"
-                )
-            tests = []
-            for c in labelled:
-                assert c.type_field is not None and c.type_value is not None
-                bind = self.builder.bind(
-                    c.type_value, hint=c.type_field if is_aql_identifier(c.type_field) else None
-                )
-                tests.append(type_predicate(alias, c.type_field, bind, is_array=c.type_field_is_array))
-            self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        for test in self._domain_class_tests(self.builder, alias, classes, prop):
+            self.builder.filter_raw(test)
         self._enforce_tenant_scope(alias, anchor)
         if isinstance(subject, URIRef):
             uri_bind = self.builder.bind(str(subject), hint="uri")
             self.builder.filter_raw(subject_matches(alias, uri_bind))
+            self.state.const_subject_alias[str(subject)] = alias
+        else:
+            self._bind_subject(subject, alias)
+        return alias
+
+    def _domain_class_tests(
+        self, builder: AqlQueryBuilder, alias: str, classes: list[ResolvedClass], prop: Any
+    ) -> list[str]:
+        """The class test for a document of *classes*, all in one collection.
+
+        Nothing when the collection holds only those classes (PG); an any-of
+        label test when they are LABEL classes sharing a type field (LPG).
+        """
+        labelled = [c for c in classes if c.type_field and c.type_value]
+        if not labelled:
+            return []
+        if (
+            len(labelled) != len(classes)
+            or len({(c.type_field, c.type_field_is_array) for c in labelled}) != 1
+        ):
+            raise UnsupportedSparqlError(
+                f"the rdfs:domain of {prop.iri!r} mixes classes with different type fields in "
+                f"collection {classes[0].collection!r}; cannot test the subject's class"
+            )
+        tests = []
+        for c in labelled:
+            assert c.type_field is not None and c.type_value is not None
+            bind = builder.bind(c.type_value, hint=c.type_field if is_aql_identifier(c.type_field) else None)
+            tests.append(type_predicate(alias, c.type_field, bind, is_array=c.type_field_is_array))
+        return [tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")"]
+
+    def _route_by_domain_union(
+        self, subject: Any, prop: Any, by_collection: dict[str, list[ResolvedClass]]
+    ) -> str:
+        """Read a subject whose ``rdfs:domain`` spans several collections from
+        all of them (plan decision D9): LDBC's ``?m :hasCreator ?p`` finds
+        the message in ``Post`` or in ``Comment``.
+
+        One ``FOR … IN UNION(…)`` arm per collection, each with its own class
+        test, and for a constant subject its own indexed ``_uri`` match. The
+        tenant and named-graph filters apply to the union row, so the
+        classes must agree on tenant scoping. Sharded classes are refused:
+        a union of shard families is not built yet.
+
+        AQL materialises every ``UNION`` argument before the outer ``FOR``
+        runs. Arms narrowed to one IRI return their few documents whole; an
+        unconstrained subject's arms return ``_id`` handles only and each
+        document is read back with ``DOCUMENT()``. On the LDBC SF0.1 PG data
+        (287k messages) that cut peak query memory from 157 MB to 14 MB, for
+        about 0.7 s more; whole documents would pass the 1 GB cap near SF1.
+        """
+        classes = [c for members in by_collection.values() for c in members]
+        sharded = sorted({c.collection for c in classes if c.shard_family is not None})
+        if sharded:
+            raise UnsupportedSparqlError(
+                f"the subject {subject} of {prop.iri!r} can be in several collections, and "
+                f"{sharded} are sharded; reading a subject across shard families is not supported"
+            )
+        if len({(c.tenant_field, c.tenant_entity) for c in classes}) > 1:
+            raise UnsupportedSparqlError(
+                f"the subject {subject} of {prop.iri!r} can be in classes with different tenant "
+                f"scoping; one tenant filter cannot apply to all of them"
+            )
+        uri_bind = self.builder.bind(str(subject), hint="uri") if isinstance(subject, URIRef) else None
+        arm_aqls: list[str] = []
+        for collection in sorted(by_collection):
+            # One child per arm, as SPARQL UNION arms are built: its scan,
+            # its class test and, for a constant subject, its indexed
+            # ``_uri`` match, so each collection's index serves the lookup.
+            child = self.builder.create_child()
+            inner = child.fresh_alias()
+            child.for_(inner, collection)
+            for test in self._domain_class_tests(child, inner, by_collection[collection], prop):
+                child.filter_raw(test)
+            if uri_bind is not None:
+                child.filter_raw(subject_matches(inner, uri_bind))
+            child.return_scalar(inner if uri_bind is not None else f"{inner}._id")
+            arm_aqls.append(self.builder.absorb_child(child))
+        if uri_bind is not None:
+            alias = self.builder.fresh_alias()
+            self.builder.for_union(alias, arm_aqls, scans_documents=True)
+        else:
+            handle = self.builder.fresh_alias(prefix="ref")
+            self.builder.for_union(handle, arm_aqls)
+            alias = self.builder.fresh_alias()
+            self.builder.let_document(alias, handle)
+        self._apply_graph_scope(alias)
+        self._enforce_tenant_scope(alias, classes[0])
+        if isinstance(subject, URIRef):
             self.state.const_subject_alias[str(subject)] = alias
         else:
             self._bind_subject(subject, alias)

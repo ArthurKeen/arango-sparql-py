@@ -15,8 +15,8 @@ same facts:
   collection reaches every subject class by itself (posts *and* comments).
 * **Domain routing**: a constant, value-bound or fresh subject is opened in
   the collection its property's ``rdfs:domain`` names; a union of LPG
-  labels becomes an any-of label test. A union across PG collections is
-  refused (plan decision D9).
+  labels becomes an any-of label test, and a union across PG collections
+  reads each of them (plan decision D9).
 
 PG and LPG stores and the RDF data all derive from :data:`PEOPLE`,
 :data:`MESSAGES` and :data:`KNOWS`, so they cannot drift.
@@ -189,6 +189,15 @@ CASES = [
     pytest.param("SELECT ?p ?n WHERE { ?p :firstName ?n }", id="single_domain_fresh_subject"),
     pytest.param("SELECT ?n WHERE { :dan :firstName ?n }", id="single_domain_constant_subject"),
     pytest.param("SELECT ?p WHERE { :comm2 :replyOf ?p }", id="edge_from_a_constant_routed_by_domain"),
+    # Plan D9: Post ∪ Comment is one any-of label test in LPG and a union of
+    # the two collections in PG.
+    pytest.param(
+        "SELECT ?m ?c WHERE { VALUES ?m { :post2 :comm1 } ?m :content ?c }", id="union_domain_value_bound"
+    ),
+    pytest.param("SELECT ?m ?c WHERE { ?m :content ?c }", id="union_domain_fresh_subject"),
+    pytest.param("SELECT ?c WHERE { :comm1 :content ?c }", id="union_domain_constant_subject"),
+    pytest.param("SELECT ?m ?n WHERE { ?m :hasCreator ?p . ?p :firstName ?n }", id="union_domain_then_edge"),
+    pytest.param("SELECT (COUNT(?m) AS ?n) WHERE { ?m :content ?c }", id="union_domain_count"),
     # A property path inside an OPTIONAL goes to the correlated subquery
     # (optional_subquery.py); the inline emitter reads one attribute or edge.
     pytest.param(
@@ -217,7 +226,11 @@ def test_a_union_domain_in_lpg_is_an_any_of_label_test(oxi_store: Any) -> None:
     assert_bindings_equal(expected, _run(LPG_ONTOLOGY, _lpg_docs, sparql))
 
 
-def test_a_union_domain_across_pg_collections_fails_closed() -> None:
-    sparql = "PREFIX : <http://ex.org/>\nSELECT ?c WHERE { VALUES ?m { :post2 :comm1 } ?m :content ?c }"
-    with pytest.raises(UnsupportedSparqlError, match="plan decision D9"):
-        translate(sparql, resolver=_strict(PG_ONTOLOGY))
+def test_a_pg_union_across_tenant_scopes_fails_closed() -> None:
+    ttl = PG_ONTOLOGY.replace(
+        ':Post a owl:Class ; phys:collectionName "Post" .',
+        ':Post a owl:Class ; phys:collectionName "Post" ; phys:tenantField "org" .',
+    )
+    sparql = "PREFIX : <http://ex.org/>\nSELECT ?c WHERE { ?m :content ?c }"
+    with pytest.raises(UnsupportedSparqlError, match="different tenant scoping"):
+        translate(sparql, resolver=_strict(ttl), tenant_id="t1")
