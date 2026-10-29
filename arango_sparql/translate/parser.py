@@ -81,9 +81,10 @@ def parse_sparql(query: str) -> ParsedSparql:
     SparqlParseError
         If ``rdflib`` cannot parse the input string.
     UnsupportedSparqlError
-        If ``rdflib``'s parser recurses without bound on valid SPARQL
-        (nested ``SERVICE`` blocks): not the query's fault, so not a parse
-        error.
+        If ``rdflib``'s parser exceeds Python's recursion limit: deeply
+        nested groups or expressions, and always a ``SERVICE`` nested in a
+        ``SERVICE``. That says nothing about whether the query is valid, so
+        it is not reported as malformed either.
     """
     if not isinstance(query, str) or not query.strip():
         raise SparqlParseError("SPARQL query must be a non-empty string")
@@ -93,9 +94,10 @@ def parse_sparql(query: str) -> ParsedSparql:
     except RecursionError as exc:
         # upstream: RDFLib/rdflib#3082 — remove when an rdflib release includes RDFLib/rdflib#3608
         raise UnsupportedSparqlError(
-            "the query is valid SPARQL, but rdflib's parser recurses without bound on it, as it does "
-            "on nested SERVICE blocks (RDFLib/rdflib#3082, fixed on rdflib's main branch by #3608 "
-            "and not yet released), so it cannot be translated"
+            "the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it "
+            "cannot be translated. Deeply nested groups or expressions do this, and a SERVICE nested "
+            "in a SERVICE always does (RDFLib/rdflib#3082, fixed on rdflib's main branch by #3608, "
+            "not yet released)"
         ) from exc
     except Exception as exc:
         raise SparqlParseError(f"failed to parse SPARQL: {exc}") from exc
