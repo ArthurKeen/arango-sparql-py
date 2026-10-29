@@ -563,7 +563,11 @@ routes the subject (`translate/visitor.py`):
   a constant IRI or a value (a VALUES row, a sub-select column) is first
   looked up in its `rdfs:range` class by an indexed `_uri` match
   (`_object_document`): reading every possible subject forwards and
-  comparing would scan, say, every message per friend;
+  comparing would scan, say, every message per friend. The declared range is
+  trusted as where the object is stored, as the domain is for subjects: an
+  object stored outside its range class is not found, so the triple matches
+  nothing for it. A mapping the schema analyzer builds agrees with its data
+  (ranges come from the edges' `_to` collections); a hand-written one must;
 - otherwise the property's `rdfs:domain` opens the subject's collection
   (`_route_by_domain`): one class opens its collection, with its label test in
   LPG; an `owl:unionOf` of LABEL classes in one collection is an any-of label
