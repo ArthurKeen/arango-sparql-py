@@ -36,7 +36,7 @@ Layout = Literal["rpt", "lpg", "pg"]
 LAYOUTS: tuple[Layout, ...] = ("rpt", "lpg", "pg")
 
 #: Bump when what the loader writes changes, so a loaded database is rebuilt.
-LOADER_VERSION = 1
+LOADER_VERSION = 2  # 2: _uri indexes on reified-relationship edges (plan D8)
 
 #: Documents per ``import_bulk`` call.
 BATCH_SIZE = 20_000
@@ -359,7 +359,9 @@ _PG_VERTEX_INDEXES: dict[str, list[list[str]]] = {
 }
 _LPG_INDEXES: dict[str, list[list[str]]] = {
     LPG_NODES: [["_uri"], ["labels[*]"], ["type"], ["id"], ["firstName"], ["name"], ["creationDate"]],
-    LPG_EDGES: [["type"], ["_from", "type"], ["_to", "type"]],
+    # ``_uri``: a relationship node known only by its IRI is matched among
+    # the edges (plan D8).
+    LPG_EDGES: [["type"], ["_from", "type"], ["_to", "type"], ["_uri"]],
 }
 _RPT_INDEXES: dict[str, list[list[str]]] = {
     RPT_COLLECTION: [
@@ -370,12 +372,17 @@ _RPT_INDEXES: dict[str, list[list[str]]] = {
 }
 
 
+#: A reified relationship's edges keep the node's IRI as ``_uri`` (plan D8),
+#: matched like a vertex's when the node is known only by its IRI.
+_PG_REIFIED_EDGE_INDEXES: dict[str, list[list[str]]] = {r.pg_collection: [["_uri"]] for r in vocab.REIFIED}
+
+
 def indexes_for(layout: Layout) -> dict[str, list[list[str]]]:
     if layout == "rpt":
         return _RPT_INDEXES
     if layout == "lpg":
         return _LPG_INDEXES
-    return _PG_VERTEX_INDEXES
+    return {**_PG_VERTEX_INDEXES, **_PG_REIFIED_EDGE_INDEXES}
 
 
 # ---------------------------------------------------------------------------

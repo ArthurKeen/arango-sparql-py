@@ -57,22 +57,28 @@ _RELATIONSHIP_ATTRIBUTES: tuple[str, ...] = tuple(
 )
 
 
-def _domain(iri: str) -> str:
-    """`` ; rdfs:domain …`` for a predicate with a measured domain, else ``""``."""
-    names = vocab.DOMAINS.get(iri)
-    if not names:
+def _domain(iri: str, layout: Layout | None = None) -> str:
+    """`` ; rdfs:domain …`` for a predicate with a measured domain, else ``""``.
+
+    In PG and LPG a relationship's own data (``creationDate`` on a ``knows``
+    node) also has that relationship in its domain, so a node known only by
+    its IRI is read from the relationship's edges (plan D8).
+    """
+    members = [f"<{vocab.CLASS_BY_NAME[n].iri}>" for n in vocab.DOMAINS.get(iri, ())]
+    if layout in ("pg", "lpg"):
+        members += [f"<{r.entry}>" for r in vocab.REIFIED if iri in r.attributes]
+    if not members:
         return ""
-    classes = [f"<{vocab.CLASS_BY_NAME[n].iri}>" for n in names]
-    if len(classes) == 1:
-        return f" ; rdfs:domain {classes[0]}"
-    return f" ; rdfs:domain [ owl:unionOf ( {' '.join(classes)} ) ]"
+    if len(members) == 1:
+        return f" ; rdfs:domain {members[0]}"
+    return f" ; rdfs:domain [ owl:unionOf ( {' '.join(members)} ) ]"
 
 
 def _datatype_properties(layout: Layout) -> list[str]:
     # The RDF layout needs no domains: in a pure triple store every subject
     # reads the triples table (SchemaResolver.triple_store_class).
     return [
-        f"<{iri}> a owl:DatatypeProperty{'' if layout == 'rpt' else _domain(iri)} ."
+        f"<{iri}> a owl:DatatypeProperty{'' if layout == 'rpt' else _domain(iri, layout)} ."
         for iri in (*vocab.DATATYPE_PROPERTIES, *_RELATIONSHIP_ATTRIBUTES)
     ]
 

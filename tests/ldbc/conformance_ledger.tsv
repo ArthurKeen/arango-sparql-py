@@ -8,8 +8,8 @@ interactive-short-2	verbatim	rpt	translates		executes	matches_oracle
 interactive-short-2	verbatim	lpg	translates		executes	matches_oracle	
 interactive-short-2	verbatim	pg	translates		executes	matches_oracle	
 interactive-short-3	verbatim	rpt	translates		executes	matches_oracle	
-interactive-short-3	verbatim	lpg	translates				
-interactive-short-3	verbatim	pg	translates				
+interactive-short-3	verbatim	lpg	translates		executes	translates_wrong	binding 0: expected 9 rows, got 0; missing [{'creationDate': ('datetime', '2012-06-05T12:59:00.016000+00:00'), 'friendFirstName': ('str', 'Peter'), 'friendLastN
+interactive-short-3	verbatim	pg	translates		executes	translates_wrong	binding 0: expected 9 rows, got 0; missing [{'creationDate': ('datetime', '2012-06-05T12:59:00.016000+00:00'), 'friendFirstName': ('str', 'Peter'), 'friendLastN
 interactive-short-4	verbatim	rpt	translates		executes	matches_oracle	
 interactive-short-4	verbatim	lpg	translates		executes	matches_oracle	
 interactive-short-4	verbatim	pg	translates		executes	matches_oracle	
@@ -26,8 +26,8 @@ interactive-complex-1	verbatim	rpt	out_of_subset	GraphDB path search (SERVICE <h
 interactive-complex-1	verbatim	lpg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-1	verbatim	pg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-1	standard-paths	rpt	translates		executes	oracle_unavailable	binding 3: OracleTimeout: no answer within 600s (cached)
-interactive-complex-1	standard-paths	lpg	translates				
-interactive-complex-1	standard-paths	pg	translates				
+interactive-complex-1	standard-paths	lpg	translates		executes	oracle_unavailable	binding 3: OracleTimeout: no answer within 600s (cached)
+interactive-complex-1	standard-paths	pg	translates		executes	oracle_unavailable	binding 3: OracleTimeout: no answer within 600s (cached)
 interactive-complex-2	verbatim	rpt	translates		executes	matches_oracle	
 interactive-complex-2	verbatim	lpg	translates		executes	matches_oracle	
 interactive-complex-2	verbatim	pg	translates		executes	matches_oracle	
@@ -41,8 +41,8 @@ interactive-complex-4	verbatim	rpt	translates		executes	matches_oracle
 interactive-complex-4	verbatim	lpg	translates		executes	matches_oracle	
 interactive-complex-4	verbatim	pg	translates		executes	matches_oracle	
 interactive-complex-5	verbatim	rpt	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #98: IndexNode] [node #106: SubqueryStartNode] [node #102: IndexNode] [node #71: Calculation…
-interactive-complex-5	verbatim	lpg	translates				
-interactive-complex-5	verbatim	pg	translates				
+interactive-complex-5	verbatim	lpg	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #70: TraversalNode] [node #73: CalculationNode] [node #74: FilterNode] [node #110: SubqueryE…
+interactive-complex-5	verbatim	pg	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #52: TraversalNode] [node #53: CalculationNode] [node #54: FilterNode] [node #86: SubqueryEn…
 interactive-complex-6	verbatim	rpt	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-6	verbatim	lpg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-6	verbatim	pg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
@@ -53,8 +53,8 @@ interactive-complex-7	verbatim	rpt	out_of_subset	Ontotext function ofn:minutesBe
 interactive-complex-7	verbatim	lpg	out_of_subset	Ontotext function ofn:minutesBetween (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: function 'http://www.ontotext.com/sparql/functions/minutesBetween' called with 2 arguments; only unary XSD constructor casts are suppor…)			
 interactive-complex-7	verbatim	pg	out_of_subset	Ontotext function ofn:minutesBetween (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: function 'http://www.ontotext.com/sparql/functions/minutesBetween' called with 2 arguments; only unary XSD constructor casts are suppor…)			
 interactive-complex-7	standard-datetime	rpt	translates		timeout		binding 2: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #576: IndexNode] [node #17: CalculationNode] [node #703: SubqueryEndNode] [node #700: Subque…
-interactive-complex-7	standard-datetime	lpg	translates				
-interactive-complex-7	standard-datetime	pg	translates				
+interactive-complex-7	standard-datetime	lpg	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #19: TraversalNode] [node #44: CalculationNode] [node #45: FilterNode] [node #37: Calculatio…
+interactive-complex-7	standard-datetime	pg	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #13: TraversalNode] [node #36: CalculationNode] [node #37: FilterNode] [node #29: Calculatio…
 interactive-complex-8	verbatim	rpt	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #55: IndexNode] [node #54: IndexNode] [node #57: MaterializeNode] [node #18: CalculationNode…
 interactive-complex-8	verbatim	lpg	translates		executes	matches_oracle	
 interactive-complex-8	verbatim	pg	translates		executes	matches_oracle	
@@ -68,8 +68,8 @@ interactive-complex-11	verbatim	rpt	out_of_subset	GraphDB path search (SERVICE <
 interactive-complex-11	verbatim	lpg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-11	verbatim	pg	out_of_subset	GraphDB path search (SERVICE <http://www.ontotext.com/path#search>) (E_SPARQL_UNSUPPORTED UnsupportedSparqlError: the SPARQL parser (rdflib) went past Python's recursion limit on this query, so it cannot be translated. Deeply nested groups or expres…)			
 interactive-complex-11	standard-paths	rpt	translates		executes	matches_oracle	
-interactive-complex-11	standard-paths	lpg	translates				
-interactive-complex-11	standard-paths	pg	translates				
+interactive-complex-11	standard-paths	lpg	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #54: TraversalNode] [node #57: CalculationNode] [node #58: FilterNode] [node #117: SubqueryE…
+interactive-complex-11	standard-paths	pg	translates		executes	matches_oracle	
 interactive-complex-12	verbatim	rpt	translates		timeout		binding 0: AQLQueryExecuteError: [HTTP 410][ERR 1500] AQL: query killed [node #437: IndexNode] [node #436: IndexNode] [node #501: MaterializeNode] [node #510: SubquerySta…
 interactive-complex-12	verbatim	lpg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: cannot route subject variable 'tag' to a collection: it has no rdf:type constraint to map it to a class, and strict subject resolution i…			
 interactive-complex-12	verbatim	pg	fails_closed	E_SCHEMA_RESOLVE SchemaResolutionError: cannot route subject variable 'tag' to a collection: it has no rdf:type constraint to map it to a class, and strict subject resolution i…			

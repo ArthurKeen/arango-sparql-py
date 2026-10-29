@@ -2393,10 +2393,18 @@ class AlgebraVisitor:
         return alias
 
     def _concrete_classes(self, class_iris: tuple[str, ...] | list[str]) -> list[ResolvedClass]:
-        """Resolve *class_iris*, a ``UNION`` supertype standing for its members
-        (:meth:`SchemaResolver.supertype_members`), without duplicates."""
+        """Resolve *class_iris*, without duplicates: a ``UNION`` supertype
+        stands for its members (:meth:`SchemaResolver.supertype_members`), a
+        reified relationship for its edges
+        (:meth:`SchemaResolver.relationship_edge_class`, plan D8)."""
         out: list[ResolvedClass] = []
         for iri in class_iris:
+            if self.resolver.is_reified_entry(iri):
+                # A reified relationship in a domain (D8): its edges.
+                edge_class = self.resolver.relationship_edge_class(iri)
+                if edge_class not in out:
+                    out.append(edge_class)
+                continue
             resolved = self.resolver.resolve_class(iri)
             members = self.resolver.supertype_members(iri) if resolved.style == "UNION" else (resolved,)
             out.extend(m for m in members if m not in out)

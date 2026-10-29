@@ -22,7 +22,7 @@
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/lastName> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/gender> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/birthday> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/creationDate> a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Forum> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> ) ] .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/creationDate> a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Forum> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/knows> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/likes> ) ] .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/locationIP> a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> ) ] .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/browserUsed> a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> ) ] .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/content> a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> ) ] .
@@ -35,9 +35,9 @@
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/email> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> .
 <http://xmlns.com/foaf/0.1/name> a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Tag> <http://dbpedia.org/ontology/City> <http://dbpedia.org/ontology/Country> <http://dbpedia.org/ontology/Continent> <http://dbpedia.org/ontology/University> <http://dbpedia.org/ontology/Company> ) ] .
 <http://www.w3.org/2000/01/rdf-schema#label> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/TagClass> .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/classYear> a owl:DatatypeProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/joinDate> a owl:DatatypeProperty .
-<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/workFrom> a owl:DatatypeProperty .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/classYear> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/studyAt> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/joinDate> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasMember> .
+<http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/workFrom> a owl:DatatypeProperty ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/workAt> .
 
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/hasCreator> a owl:ObjectProperty ; phys:edgeCollectionName "has_creator" ; phys:mappingStyle "DEDICATED_COLLECTION" ; rdfs:range <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Person> ; rdfs:domain [ owl:unionOf ( <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Post> <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> ) ] .
 <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/replyOf> a owl:ObjectProperty ; phys:edgeCollectionName "reply_of" ; phys:mappingStyle "DEDICATED_COLLECTION" ; rdfs:domain <http://www.ldbc.eu/ldbc_socialnet/1.0/vocabulary/Comment> .

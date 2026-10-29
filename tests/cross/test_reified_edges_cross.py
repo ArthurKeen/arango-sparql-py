@@ -110,7 +110,9 @@ _COMMON = """
 @prefix phys: <https://arango.solutions/phys#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 :firstName a owl:DatatypeProperty ; rdfs:domain :Person .
-:creationDate a owl:DatatypeProperty .
+# A relationship's data has the relationship as its domain (arango-query-core's
+# convention), so a node known only by its IRI is found among the edges.
+:creationDate a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( :knows :likes ) ] .
 :hasPerson a owl:ObjectProperty ; phys:edgeTargetOf :knows ; rdfs:range :Person .
 :hasPost a owl:ObjectProperty ; phys:edgeTargetOf :likes ; rdfs:range :Post .
 :hasComment a owl:ObjectProperty ; phys:edgeTargetOf :likes ; rdfs:range :Comment .
@@ -185,6 +187,17 @@ CASES = [
         id="filter_on_edge_data",
     ),
     pytest.param("SELECT (COUNT(?lk) AS ?n) WHERE { ?p :likes ?lk }", id="count_relationship_nodes"),
+    # LDBC IS3: the node is bound inside UNION arms, so afterwards it is only a
+    # value; its data is read from the edges the domain names. This returned
+    # no rows (a silent wrong answer) before the domain could name them.
+    pytest.param(
+        "SELECT ?f ?d WHERE { { :alice :knows ?k . ?k :hasPerson ?f } UNION "
+        "{ ?f :knows ?k . ?k :hasPerson :alice } ?k :creationDate ?d }",
+        id="node_bound_in_union_arms",
+    ),
+    pytest.param(
+        "SELECT ?k ?d WHERE { VALUES ?k { :k2 :l3 } ?k :creationDate ?d }", id="node_known_only_by_value"
+    ),
 ]
 
 
