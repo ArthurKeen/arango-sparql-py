@@ -123,6 +123,21 @@ def subject_matches(alias: str, rhs: str) -> str:
     return f"({alias}._uri == {rhs} || ({alias}._uri == null && {alias}._id == {rhs}))"
 
 
+def subject_matches_value(alias: str, value: str) -> str:
+    """``subject_ref(alias) == value`` for a *value* computed at run time.
+
+    Index-friendly like :func:`subject_matches`, and null-safe: the
+    ``NOT_NULL(...)`` form never matches a null value (a document always
+    has an ``_id``), while :func:`subject_matches` alone would match every
+    document without a ``_uri`` when *value* is null (an unbound OPTIONAL
+    column, say). Joining a fresh scan to a value-bound variable (a
+    sub-select column, a VALUES row, a probe's outer row) in the
+    ``NOT_NULL`` form scanned the whole collection for each outer row; LDBC
+    IS2 exceeded the query memory cap that way.
+    """
+    return f"({value} != null && {subject_matches(alias, value)})"
+
+
 def subject_in(alias: str, values: str) -> str:
     """``subject_ref(alias) IN values``, index-friendly like :func:`subject_matches`."""
     return f"({alias}._uri IN {values} || ({alias}._uri == null && {alias}._id IN {values}))"

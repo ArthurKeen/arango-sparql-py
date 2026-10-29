@@ -280,9 +280,18 @@ What it found, beyond §3.1, §3.2 and §3.4:
   (D9, approved 2026-10-28): `FOR … IN UNION(…)`, one arm per collection with
   the constant subject's `_uri` match inside each arm. Live on PG: IS4, IS5,
   IC3 (no-alias-reuse) and IC4 now match the oracle (4 → 8 PG cells); IS2,
-  IC8, IC9 and IC10 run but exceed the 3 GB query cap because the plan scans
-  every message before walking `hasCreator` back from the person (join order,
-  WP-LDBC-OPTIMIZE); IS6 runs but the oracle times out.
+  IC8, IC9 and IC10 ran but exceeded the 3 GB query cap; IS6 runs but the
+  oracle times out.
+- **Fixed — performance: value-bound joins hid both indexes** (2026-10-29). A
+  fresh scan joined to a variable that already had a value (a sub-select
+  column, a VALUES row, a MINUS / EXISTS probe's outer row) filtered on
+  `NOT_NULL(doc._uri, doc._id) == value`, scanning the whole collection per
+  outer row; across a PG union the filter sat after the materialised `UNION`.
+  The join is now `value != null && (doc._uri == value || (doc._uri == null
+  && doc._id == value))` (`builder.subject_matches_value`), inside each union
+  arm. IS2 (PG) went from the memory cap to 10 rows in 0.03 s; IS2 and IC8
+  (PG) and IC3 (LPG) now match the oracle (all layouts 28 → 31, none wrong).
+  IC9 (PG) still exceeds the cap and IC10 times out.
 - **Fixed — OPTIONAL as a correlated subquery** (`3327f74`, `6a070b9`):
   ADR-0002 Option A generalised from one triple to any pattern (several
   triples, paths, BIND, an inner FILTER). Two NL-eval fixtures asserted the

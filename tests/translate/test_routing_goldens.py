@@ -104,3 +104,25 @@ def test_a_pg_union_row_counts_as_a_scanned_document() -> None:
     # rows (issue #46) as it would for a single-collection scan.
     aql = _aql(PG_ONTOLOGY, "SELECT (COUNT(?m) AS ?n) WHERE { ?m :content ?c }")
     assert aql.endswith("COLLECT WITH COUNT INTO agg4\nRETURN { n: agg4 }")
+
+
+def test_a_value_bound_subject_in_a_pg_union_is_matched_inside_each_arm() -> None:
+    # AQL materialises each UNION arm, so a match after the union would copy
+    # every Post and Comment first (LDBC IS2 hit the memory cap that way).
+    assert _aql(PG_ONTOLOGY, "SELECT ?m ?c WHERE { VALUES ?m { :post2 :comm1 } ?m :content ?c }") == (
+        "FOR row1 IN @_p1_values\n"
+        "FOR doc4 IN UNION(\n"
+        "(\n"
+        "  FOR doc2 IN @@c1_Comment\n"
+        "  FILTER (row1.m != null && (doc2._uri == row1.m || (doc2._uri == null && doc2._id == row1.m)))\n"
+        "  RETURN doc2\n"
+        "),\n"
+        "(\n"
+        "  FOR doc3 IN @@c2_Post\n"
+        "  FILTER (row1.m != null && (doc3._uri == row1.m || (doc3._uri == null && doc3._id == row1.m)))\n"
+        "  RETURN doc3\n"
+        ")\n"
+        ")\n"
+        'FILTER HAS(doc4, "content")\n'
+        "RETURN { m: row1.m, c: doc4.content }"
+    )

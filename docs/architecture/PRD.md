@@ -514,7 +514,11 @@ emitter builds identity through the one helper, so an edge's target vertex and a
 separately-bound subject compare the same expression. A constant subject is
 matched exactly — `doc._uri == @iri`, or `doc._id == @iri` for a document with no
 `_uri` — in a form that keeps both indexes usable (`subject_matches`). A result
-identity can be pasted back as a constant (`<aws_iam_role/0123>`). Known limit:
+identity can be pasted back as a constant (`<aws_iam_role/0123>`). A scan
+joined to a value computed at run time (a sub-select column, a VALUES row, a
+probe's outer row) uses the same index-friendly form, guarded against a null
+value, which `NOT_NULL(...) ==` never matched (`subject_matches_value`); for a
+subject read across several collections it runs inside each arm. Known limit:
 a constant subject is still looked up in the default collection, not in the
 collection its `_id` names; and `isIRI()` is false for an `_id` identity.
 

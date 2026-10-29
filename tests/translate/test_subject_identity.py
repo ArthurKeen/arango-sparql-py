@@ -8,8 +8,10 @@ edges, constants).
 
 from __future__ import annotations
 
+import pytest
+
 from arango_sparql.api import translate
-from arango_sparql.translate.builder import subject_in, subject_matches, subject_ref
+from arango_sparql.translate.builder import subject_in, subject_matches, subject_matches_value, subject_ref
 from arango_sparql.translate.resolver import SchemaResolver
 
 _TTL = """
@@ -53,3 +55,35 @@ def test_edge_target_and_bound_object_compare_the_same_identity() -> None:
 def test_constant_subject_uses_the_exact_match_form() -> None:
     aql = _aql("SELECT ?n WHERE { <Assets/a2> :name ?n . }", default_collection="Assets")
     assert "._uri == @" in aql and "._uri == null && " in aql and "._id == @" in aql
+
+
+def _matches(expr_for: str, value: object, doc: dict) -> bool:
+    """Run ``FILTER <expr>`` over one document with the interpreter."""
+    from tests.helpers.aql_interp import run_aql_subset
+
+    aql = f"FOR doc1 IN @@c1\nFILTER {expr_for}\nRETURN {{ s: doc1._id }}"
+    return bool(run_aql_subset(aql, {"@c1": "D", "_v": value}, {"D": [doc]}))
+
+
+def test_a_value_join_never_matches_a_null_value() -> None:
+    # The run-time value of a join can be null (an unbound OPTIONAL column).
+    # NOT_NULL(...) == null never matches (a document has an _id); the
+    # index-friendly form must not match every document without a _uri.
+    no_uri = {"_id": "D/a"}
+    assert not _matches(f"{subject_ref('doc1')} == @_v", None, no_uri)
+    assert _matches(subject_matches("doc1", "@_v"), None, no_uri)  # why the guard exists
+    assert not _matches(subject_matches_value("doc1", "@_v"), None, no_uri)
+
+
+@pytest.mark.parametrize(
+    "doc, value, expected",
+    [
+        ({"_id": "D/a"}, "D/a", True),
+        ({"_id": "D/a", "_uri": "http://ex.org/a"}, "http://ex.org/a", True),
+        ({"_id": "D/a", "_uri": "http://ex.org/a"}, "D/a", False),  # identity is the _uri
+        ({"_id": "D/a"}, "D/b", False),
+    ],
+)
+def test_a_value_join_agrees_with_subject_identity(doc: dict, value: str, expected: bool) -> None:
+    assert _matches(subject_matches_value("doc1", "@_v"), value, doc) is expected
+    assert _matches(f"{subject_ref('doc1')} == @_v", value, doc) is expected

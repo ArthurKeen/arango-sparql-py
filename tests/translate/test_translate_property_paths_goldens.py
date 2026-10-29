@@ -174,7 +174,7 @@ def test_sequence_path_composes_with_type_pattern() -> None:
         "FOR doc1 IN @@c1_Person\n"
         'FILTER HAS(doc1, "p")\n'
         "FOR doc2 IN @@c2_Document\n"
-        "FILTER NOT_NULL(doc2._uri, doc2._id) == doc1.p\n"
+        "FILTER (doc1.p != null && (doc2._uri == doc1.p || (doc2._uri == null && doc2._id == doc1.p)))\n"
         'FILTER HAS(doc2, "q")\n'
         "RETURN { s: NOT_NULL(doc1._uri, doc1._id), o: doc2.q }"
     ), result.aql
