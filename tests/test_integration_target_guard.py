@@ -17,9 +17,30 @@ from tests.integration import conftest as integration
 from tests.w3c import analyze_coverage
 
 
-@pytest.mark.parametrize("url", ["http://localhost:8532", "http://127.0.0.1:28529", "http://[::1]:8529"])
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://localhost:8532",
+        "http://LOCALHOST:8532",
+        "http://localhost.:8532",
+        "http://127.0.0.1:28529",
+        "http://127.0.0.2:8529",
+        "http://[::1]:8529",
+        "http://[0:0:0:0:0:0:0:1]:8529",
+    ],
+)
 def test_a_loopback_target_is_allowed(url: str) -> None:
     integration.refuse_remote_target(url)
+
+
+@pytest.mark.parametrize(
+    "url",
+    ["http://10.0.0.5:8529", "http://localhost.example.com:8529", "http://[2001:db8::1]:8529", "http://"],
+)
+def test_a_non_loopback_target_is_refused(monkeypatch: pytest.MonkeyPatch, url: str) -> None:
+    monkeypatch.delenv(integration.ALLOW_REMOTE_ENV, raising=False)
+    with pytest.raises(integration.RemoteTestTargetError):
+        integration.refuse_remote_target(url)
 
 
 def test_a_remote_target_is_refused_with_how_to_fix(monkeypatch: pytest.MonkeyPatch) -> None:

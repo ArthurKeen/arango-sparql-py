@@ -20,6 +20,7 @@ can ``pytest.skip(...)`` cleanly.
 
 from __future__ import annotations
 
+import ipaddress
 import os
 import socket
 import subprocess
@@ -55,8 +56,21 @@ if _resolved_arango_db == "_system":
     _resolved_arango_db = "sparql-to-aql"
 DEFAULT_ARANGO_DB = _resolved_arango_db
 
-#: Hosts an integration run may write to without being told otherwise.
-LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
+
+def is_loopback_host(host: str | None) -> bool:
+    """Whether *host* names this machine: ``localhost`` (any case, with or
+    without the trailing dot) or a loopback IP literal (all of
+    ``127.0.0.0/8``, ``::1`` in any spelling)."""
+    if not host:
+        return False
+    if host.rstrip(".").lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 #: Set to ``1`` to let an integration run use a non-loopback ArangoDB.
 ALLOW_REMOTE_ENV = "ARANGO_TEST_ALLOW_REMOTE"
 
@@ -93,7 +107,7 @@ def refuse_remote_target(url: str) -> None:
     A remote target now needs ``ARANGO_TEST_ALLOW_REMOTE=1``.
     """
     host = urlsplit(url).hostname
-    if host in LOOPBACK_HOSTS or os.getenv(ALLOW_REMOTE_ENV, "").lower() in ("1", "true", "yes"):
+    if is_loopback_host(host) or os.getenv(ALLOW_REMOTE_ENV, "").lower() in ("1", "true", "yes"):
         return
     raise RemoteTestTargetError(
         f"integration tests resolved ARANGO_URL host {host!r}, which is not local; they create and "
