@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from rdflib import RDF, Literal, URIRef, Variable
 
-from arango_sparql.translate.visitor import _order_bgp
+from arango_sparql.translate.visitor import _iter_bgp_order, _join_rank, _order_bgp
 
 EX = "http://ex.org/"
 
@@ -53,6 +53,39 @@ def test_a_known_object_is_preferred_over_a_blind_scan() -> None:
     scan = _t("?m", "content", "?c")
     reverse = _t("?m", "creator", "alice")
     assert _order_bgp([scan, reverse], set()) == [reverse, scan]
+
+
+def test_ranks_put_a_backward_walk_between_known_subjects_and_type_scans() -> None:
+    creator = _t("?m", "creator", "?f")
+    is_post = _t("?m", "a", "Post")
+    assert _join_rank(is_post, {"m"}, set(), set()) == 0  # a class test, no scan
+    assert _join_rank(creator, {"f"}, set(), set(), {creator}) == 2  # walk back from ?f
+    assert _join_rank(is_post, set(), set(), set()) == 3  # a scan of the class
+    assert _join_rank(creator, {"f"}, set(), set()) == 4  # ?f known, but no walk
+
+
+def test_a_walkable_edge_comes_before_the_type_scan_it_narrows() -> None:
+    # LDBC IC10: walk hasCreator back from each friend, then test the posts.
+    is_post = _t("?m", "a", "Post")
+    creator = _t("?m", "creator", "?f")
+    assert _order_bgp([is_post, creator], {"f"}, walkable={creator}) == [creator, is_post]
+    # Not walkable (no range to find ?f in): the class anchors ?m first.
+    assert _order_bgp([is_post, creator], {"f"}) == [is_post, creator]
+
+
+def test_walkability_is_asked_again_after_each_emitted_triple() -> None:
+    # Whether ?f is a document is only known once the triple binding it is emitted.
+    named = _t("alice", "friend", "?f")
+    is_post = _t("?m", "a", "Post")
+    creator = _t("?m", "creator", "?f")
+    emitted: list = []
+
+    def can_walk(triple) -> bool:  # noqa: ANN001 — an rdflib triple
+        return triple == creator and named in emitted
+
+    for triple in _iter_bgp_order([named, is_post, creator], set(), can_walk=can_walk):
+        emitted.append(triple)
+    assert emitted == [named, creator, is_post]
 
 
 def test_outer_bindings_count_as_known() -> None:
