@@ -84,6 +84,11 @@ class _BindingState:
     to a physical document)."""
 
     doc_to_collection: dict[str, str] = field(default_factory=dict)
+    relationship_nodes: dict[str, set[str]] = field(default_factory=dict)
+    """SPARQL variable → the reified relationships whose entry predicate bound
+    it to an edge (plan D8). Carried out of UNION arms, so a node known
+    afterwards only by its IRI is read from those relationships' edges rather
+    than routed by a data property's domain, which may not name them."""
     reified_edges: dict[str, tuple[str, str]] = field(default_factory=dict)
     """Edge alias bound to a reified relationship's node (LDBC plan D8) →
     ``(relationship IRI, alias of the vertex at its far end)``, so an exit
@@ -2269,6 +2274,8 @@ class AlgebraVisitor:
         )
         self._filter_edge_type(prop, e_alias)
         self.state.reified_edges[e_alias] = (prop.iri, v_alias)
+        if isinstance(obj, Variable):
+            self.state.relationship_nodes.setdefault(str(obj), set()).add(prop.iri)
         self._bind_vertex_object(obj, e_alias, prop)
 
     def _emit_edge_exit(self, subject: Any, prop: Any, obj: Any) -> None:
@@ -2629,6 +2636,16 @@ class AlgebraVisitor:
             existing = self.state.var_to_doc_alias.get(str(subject))
             if existing is not None:
                 return existing
+            relationships = self.state.relationship_nodes.get(str(subject))
+            if relationships:
+                # A relationship node known only by its IRI (bound to an edge
+                # inside UNION arms, LDBC IS3): its edges, whatever the data
+                # property's domain says (plan D8).
+                return self._open_classes(
+                    subject,
+                    [self.resolver.relationship_edge_class(r) for r in sorted(relationships)],
+                    f"the relationship node {subject}",
+                )
             routed = self._route_by_domain(subject, prop) if prop is not None else None
             if routed is not None:
                 return routed

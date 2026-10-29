@@ -225,3 +225,25 @@ def test_an_exit_without_its_entry_is_refused(ttl: str) -> None:
     sparql = "PREFIX : <http://ex.org/>\nSELECT ?f WHERE { ?k :hasPerson ?f }"
     with pytest.raises(UnsupportedSparqlError, match="entry predicate"):
         translate(sparql, resolver=_resolver(ttl))
+
+
+@pytest.mark.cross
+@pytest.mark.parametrize("ttl,docs", MODELS)
+def test_a_node_bound_in_union_arms_is_read_from_its_edges_whatever_the_domain(
+    oxi_store: Any, ttl: str, docs: Any
+) -> None:
+    # #98 review: an analyzer-built mapping does not name the relationship in
+    # creationDate's domain (arango-schema-analyzer#41). The entry predicate
+    # in the arms already says ?k is a knows node, so its edges are read; the
+    # domain alone routed it to vertices and answered with no rows.
+    ttl = ttl.replace(
+        ":creationDate a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( :knows :likes ) ] .",
+        ":creationDate a owl:DatatypeProperty ; rdfs:domain [ owl:unionOf ( :Person :Post :Comment ) ] .",
+    )
+    sparql = (
+        "PREFIX : <http://ex.org/>\nSELECT ?f ?d WHERE { { :alice :knows ?k . ?k :hasPerson ?f } UNION "
+        "{ ?f :knows ?k . ?k :hasPerson :alice } ?k :creationDate ?d }"
+    )
+    expected = [normalize_oxi_row(r) for r in oxi_bindings(oxi_store, sparql)]
+    assert len(expected) == 2
+    assert_bindings_equal(expected, _run(ttl, docs, sparql))

@@ -509,10 +509,15 @@ edge with attributes. Both styles above map it with two annotations:
   by `:hasPost` and a Comment by `:hasComment`).
 
 A triple about a relationship node waits for its entry triple in the join
-order (`translate/visitor.py::_order_bgp`). An exit whose node is not bound
-by an entry in the same group pattern is refused (`E_SPARQL_UNSUPPORTED`);
-an exit that does not belong to the bound edge's relationship matches
-nothing, as in RDF. The construct is the RDF 1.2 one (a reifier node that is
+order (`translate/visitor.py::_order_bgp`). A node bound to an edge inside
+UNION arms is, afterwards, only its IRI; it is read back from the edges of
+the relationships that bound it in every arm, and otherwise (a node only a
+VALUES row names) from the edges of a relationship its data property's
+`rdfs:domain` lists (arango-query-core's convention: the relationship is the
+domain of its own data). An exit whose node is not bound by an entry in the
+same group pattern is refused (`E_SPARQL_UNSUPPORTED`), and so is one inside
+an OPTIONAL body, which does not inherit the bound edges; an exit that does
+not belong to the bound edge's relationship matches nothing, as in RDF. The construct is the RDF 1.2 one (a reifier node that is
 the edge), so SPARQL 1.2's `<< ?a :knows ?b >>` / `{| |}` syntax can map onto
 it once rdflib parses SPARQL 1.2; until then that syntax is a parse error.
 
