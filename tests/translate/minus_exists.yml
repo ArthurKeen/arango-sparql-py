@@ -46,14 +46,18 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       LET minus_probe3 = LENGTH((
-        FOR empty2 IN [1]
-        FILTER doc1.hidden == @_p1_hidden
+        FOR doc2 IN @@c2_Document
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
       ))
       FILTER minus_probe3 == 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
-    expected_bind_vars: {"@c1_Document": "Document", "_p1_hidden": true}
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_hidden": true
 
   - name: minus_disjoint_vars_is_noop
     # SPARQL 1.1 §8.3.4 specifies MINUS as a no-op when the two
@@ -161,14 +165,18 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       LET exists_probe3 = LENGTH((
-        FILTER doc1.hidden == @_p1_hidden
-        FOR empty2 IN [1]
+        FOR doc2 IN @@c2_Document
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
       ))
       FILTER exists_probe3 > 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
-    expected_bind_vars: {"@c1_Document": "Document", "_p1_hidden": true}
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_hidden": true
 
   - name: not_exists_shared_subject
     # ``FILTER NOT EXISTS { … }`` — the EXISTS recipe with the
@@ -184,14 +192,18 @@ cases:
       FOR doc1 IN @@c1_Document
       FILTER HAS(doc1, "name")
       LET not_exists_probe3 = LENGTH((
-        FILTER doc1.hidden == @_p1_hidden
-        FOR empty2 IN [1]
+        FOR doc2 IN @@c2_Document
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER doc2.hidden == @_p1_hidden
         LIMIT 1
         RETURN 1
       ))
       FILTER not_exists_probe3 == 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
-    expected_bind_vars: {"@c1_Document": "Document", "_p1_hidden": true}
+    expected_bind_vars:
+      "@c1_Document": "Document"
+      "@c2_Document": "Document"
+      "_p1_hidden": true
 
   - name: not_exists_disjoint_vars
     # NOT EXISTS does NOT inherit MINUS's disjoint-vars short-cut
@@ -242,14 +254,17 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       LET minus_probe3 = LENGTH((
-        FOR empty2 IN [1]
-        FILTER HAS(doc1, "email")
+        FOR doc2 IN @@c2_Person
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER HAS(doc2, "email")
         LIMIT 1
         RETURN 1
       ))
       FILTER minus_probe3 == 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
-    expected_bind_vars: {"@c1_Person": "Person"}
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
 
   - name: not_exists_typed_shared_subject
     ontology: *person_ontology
@@ -259,14 +274,17 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       LET not_exists_probe3 = LENGTH((
-        FILTER HAS(doc1, "email")
-        FOR empty2 IN [1]
+        FOR doc2 IN @@c2_Person
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER HAS(doc2, "email")
         LIMIT 1
         RETURN 1
       ))
       FILTER not_exists_probe3 == 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
-    expected_bind_vars: {"@c1_Person": "Person"}
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
 
   - name: exists_typed_shared_subject
     ontology: *person_ontology
@@ -276,14 +294,17 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       LET exists_probe3 = LENGTH((
-        FILTER HAS(doc1, "email")
-        FOR empty2 IN [1]
+        FOR doc2 IN @@c2_Person
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc2._uri == NOT_NULL(doc1._uri, doc1._id) || (doc2._uri == null && doc2._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER HAS(doc2, "email")
         LIMIT 1
         RETURN 1
       ))
       FILTER exists_probe3 > 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id) }
-    expected_bind_vars: {"@c1_Person": "Person"}
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_Person": "Person"
 
   # ---- OPTIONAL re-binding an edge variable inside MINUS (issue #52) -
   # The re-bound ``?f`` must match *some* edge target (or there is no
@@ -306,20 +327,26 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FOR v2, e3 IN OUTBOUND doc1 @@c2_knows
-      LET minus_probe8 = LENGTH((
-        FILTER HAS(doc1, "email")
-        LET optsub6 = (
-          FOR v4, e5 IN OUTBOUND doc1 @@c3_knows
-          RETURN {f0: NOT_NULL(v4._uri, v4._id)}
+      LET minus_probe9 = LENGTH((
+        FOR doc4 IN @@c3_Person
+        FILTER (NOT_NULL(doc1._uri, doc1._id) != null && (doc4._uri == NOT_NULL(doc1._uri, doc1._id) || (doc4._uri == null && doc4._id == NOT_NULL(doc1._uri, doc1._id))))
+        FILTER HAS(doc4, "email")
+        LET optsub7 = (
+          FOR v5, e6 IN OUTBOUND doc4 @@c4_knows
+          RETURN {f0: NOT_NULL(v5._uri, v5._id)}
         )
-        FOR optrow7 IN (LENGTH(optsub6) > 0 ? optsub6 : [null])
-        FILTER (optrow7.f0 == null || NOT_NULL(v2._uri, v2._id) == null || optrow7.f0 == NOT_NULL(v2._uri, v2._id))
+        FOR optrow8 IN (LENGTH(optsub7) > 0 ? optsub7 : [null])
+        FILTER (optrow8.f0 == null || NOT_NULL(v2._uri, v2._id) == null || optrow8.f0 == NOT_NULL(v2._uri, v2._id))
         LIMIT 1
         RETURN 1
       ))
-      FILTER minus_probe8 == 0
+      FILTER minus_probe9 == 0
       RETURN { s: NOT_NULL(doc1._uri, doc1._id), f: NOT_NULL(v2._uri, v2._id) }
-    expected_bind_vars: {"@c1_Person": "Person", "@c2_knows": "knows", "@c3_knows": "knows"}
+    expected_bind_vars:
+      "@c1_Person": "Person"
+      "@c2_knows": "knows"
+      "@c3_Person": "Person"
+      "@c4_knows": "knows"
 
   - name: construct_where_single_triple
     # ``CONSTRUCT WHERE { ?s :name ?n }`` — SPARQL 1.1 §16.2.1

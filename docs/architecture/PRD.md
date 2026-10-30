@@ -589,24 +589,6 @@ attributes the query reads.
 Without a domain, a subject reads the default collection, or under
 `strict_subject_resolution` is refused.
 
-**Join order and class tests** (`translate/visitor.py::_iter_bgp_order`). A
-BGP's triples are emitted one at a time, cheapest first given what is bound:
-a type pattern on a document already read; a triple whose subject is known;
-an edge that can be walked backwards from its object *now* (the object is a
-document, or a constant or value found in the property's single-class
-`rdfs:range`); a type pattern on an unknown subject (a class scan); then the
-rest. So `?m a :Post ; :hasCreator ?f` with `?f` read walks `hasCreator`
-from each `?f` instead of scanning every post (LDBC IC10). With no range to
-find the object in, the type pattern comes first, so the subject is read
-from its class, never the default collection. A type pattern on a document
-already read is a test on that document (`_check_class`):
-`IS_SAME_COLLECTION` plus the label test, either omitted when the document
-was opened on, or a FILTER already keeps it to, collections the class's
-unlabelled members cover; a `UNION` supertype tests its members. RPT and
-sharded classes still open the class. `MINUS` / `EXISTS` probes inherit the
-outer query's documents, so they walk from them rather than rescanning their
-collections and joining on identity.
-
 **Label fields** (`LABEL` style). The type test depends on the field's shape,
 because each form is served by a different index (`translate/builder.py::
 type_predicate`, issue #10): `phys:typeFieldIsArray true` → `@v IN doc.f`

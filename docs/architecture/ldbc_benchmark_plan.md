@@ -292,20 +292,6 @@ What it found, beyond §3.1, §3.2 and §3.4:
   arm. IS2 (PG) went from the memory cap to 10 rows in 0.03 s; IS2 and IC8
   (PG) and IC3 (LPG) now match the oracle (all layouts 28 → 31, none wrong).
   IC9 (PG) still exceeds the cap and IC10 times out.
-- **Fixed — performance: IC10 rescanned what it had already read**
-  (2026-10-29). Three causes, all in the plan, none in the answers: a type
-  pattern on a subject already read (`?f a :Person` after `?f` was reached)
-  opened the class again and joined it back on identity; `?m a :Post ;
-  :hasCreator ?f` scanned every post per friend instead of walking
-  `hasCreator` backwards from the friend; and `MINUS` / `EXISTS` probes
-  rescanned the outer subject's collection. Now a type pattern on a known
-  document is a class test on it, an edge walkable from a known object ranks
-  before the type scan (only when a walk is possible: with no `rdfs:range`
-  the type pattern still anchors the subject), and probes read the outer
-  documents. IC10 (PG and LPG) went from a timeout to matching the oracle
-  (all layouts 35 → 37, none wrong). Still timing out: IC7 (all layouts),
-  IC5 / IC8 / IC10 / IC12 on RPT; IC9 (RPT and LPG time out, PG exceeds the
-  memory cap; not re-run here).
 - **Fixed — OPTIONAL as a correlated subquery** (`3327f74`, `6a070b9`):
   ADR-0002 Option A generalised from one triple to any pattern (several
   triples, paths, BIND, an inner FILTER). Two NL-eval fixtures asserted the
