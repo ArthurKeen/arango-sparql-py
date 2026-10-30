@@ -368,6 +368,10 @@ def _spawn_child(visitor: AlgebraVisitor) -> AlgebraVisitor:
     # A reified relationship's edge bound outside stays one inside, so an
     # exit predicate in an arm (LDBC ``?lk :hasPost|:hasComment ?m``)
     # reaches its far vertex (plan D8).
+    # Which collection each outer alias was opened on, so a type pattern
+    # on an outer document needs no collection test there.
+    cv.state.doc_to_collection = dict(visitor.state.doc_to_collection)
+    cv.state.vertex_collections = dict(visitor.state.vertex_collections)
     cv.state.reified_edges = dict(visitor.state.reified_edges)
     cv.state.relationship_nodes = {name: set(rels) for name, rels in visitor.state.relationship_nodes.items()}
     cv.state.tenant_entity = visitor.state.tenant_entity

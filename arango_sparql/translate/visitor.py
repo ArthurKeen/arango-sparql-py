@@ -15,6 +15,7 @@ from __future__ import annotations
 import datetime
 import decimal
 import logging
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -84,6 +85,10 @@ class _BindingState:
     to a physical document)."""
 
     doc_to_collection: dict[str, str] = field(default_factory=dict)
+    vertex_collections: dict[str, frozenset[str]] = field(default_factory=dict)
+    """Traversal vertex alias → the collections a FILTER already keeps it to
+    (:meth:`AlgebraVisitor._keep_subject_collections`). A type pattern on the
+    vertex naming those collections needs no second test."""
     relationship_nodes: dict[str, set[str]] = field(default_factory=dict)
     """SPARQL variable → the reified relationships whose entry predicate bound
     it to an edge (plan D8). Carried out of UNION arms, so a node known
@@ -94,6 +99,10 @@ class _BindingState:
     """Edge alias found by walking a reified relationship backwards from its
     exit's object → alias of the edge's source vertex, which the entry
     triple then binds its subject to (plan D8)."""
+    bgp_typed: set[str] = field(default_factory=set)
+    """In the BGP being emitted: variables with a type pattern (``?s a :C``).
+    A subject reached by walking an edge backwards before its type pattern
+    is placed by that pattern's class test, not by the default collection."""
     bgp_entries: dict[str, set[str]] = field(default_factory=dict)
     """In the BGP being emitted: relationship node variable → the reified
     entry predicates whose object it is. Lets an exit with a known object
@@ -1548,12 +1557,29 @@ class AlgebraVisitor:
             if isinstance(o, Variable) and isinstance(p, URIRef) and self.resolver.is_reified_entry(p):
                 entries.setdefault(str(o), set()).add(str(p))
         exits = {str(p) for _s, p, _o in triples if isinstance(p, URIRef) and self.resolver.is_edge_exit(p)}
+        edges = {str(p) for _s, p, _o in triples if isinstance(p, URIRef) and self.resolver.is_edge_backed(p)}
+        typed = {
+            str(s)
+            for s, p, o in triples
+            if isinstance(s, Variable) and p == RDF.type and isinstance(o, URIRef)
+        }
         outer_entries, self.state.bgp_entries = self.state.bgp_entries, entries
+        outer_typed, self.state.bgp_typed = self.state.bgp_typed, typed
         try:
-            for triple in _order_bgp(triples, bound, set(entries), exits):
+            # Emitted as chosen: whether an edge can be walked backwards
+            # depends on what the triples emitted so far bound (a document,
+            # or only a value), which only the visitor's state knows.
+            for triple in _iter_bgp_order(
+                triples,
+                bound,
+                set(entries),
+                exits,
+                lambda t: str(t[1]) in edges and self._can_walk_back(t),
+            ):
                 self._emit_triple(triple)
         finally:
             self.state.bgp_entries = outer_entries
+            self.state.bgp_typed = outer_typed
 
     # ------------------------------------------------------------------
     # Internal: property-path intermediate-variable minting
@@ -1650,6 +1676,9 @@ class AlgebraVisitor:
             resolved = self.resolver.resolve_class(o)
             if resolved.style == "RPT":
                 self._emit_rpt_type_pattern(s, o, resolved)
+                return
+            known = self._known_document(s)
+            if known is not None and self._check_class(known, o, resolved):
                 return
             if resolved.style == "UNION":
                 # A supertype (arango-query-core's UNION style): every member
@@ -2044,6 +2073,86 @@ class AlgebraVisitor:
             f"RPT type pattern subject term type {type(subject).__name__!r} is not supported"
         )
 
+    def _can_walk_back(self, triple: tuple[Any, Any, Any]) -> bool:
+        """Whether an edge triple can be walked backwards from its object now:
+        the object is a document, or its value or IRI can be looked up in the
+        property's ``rdfs:range`` (a single document class). Otherwise a type
+        pattern on the subject must come first: the forward plan would read
+        an untyped subject from its domain or the default collection."""
+        _s, p, o = triple
+        if isinstance(o, Variable):
+            name = str(o)
+            if name in self.state.var_to_doc_alias:
+                return True
+            if name not in self.state.var_to_expr:
+                return False
+        elif isinstance(o, URIRef):
+            if str(o) in self.state.const_subject_alias:
+                return True
+        else:
+            return False
+        range_iri = self.resolver.resolve_property(p).range_iri
+        if range_iri is None:
+            return False
+        try:
+            resolved = self.resolver.resolve_class(range_iri)
+        except SchemaResolutionError:
+            return False
+        return resolved.style not in ("RPT", "UNION")
+
+    def _known_document(self, subject: Any) -> str | None:
+        """The alias of the document a subject already is: a variable bound
+        to a (non-triples-row) document, or a constant IRI opened before."""
+        if isinstance(subject, Variable):
+            name = str(subject)
+            if name in self.state.var_to_rpt_class:
+                return None
+            return self.state.var_to_doc_alias.get(name)
+        if isinstance(subject, URIRef):
+            return self.state.const_subject_alias.get(str(subject))
+        return None
+
+    def _check_class(self, alias: str, class_iri: Any, resolved: ResolvedClass) -> bool:
+        """``?s a :C`` with ``?s`` already a document: test that document.
+
+        Opening ``:C``'s collection again and joining it on identity read the
+        whole class per row (an unindexed ``NOT_NULL(…) ==`` join); the
+        document is in ``:C`` exactly when it is in ``:C``'s collection
+        (``IS_SAME_COLLECTION``, skipped when the alias was opened on that
+        collection or a FILTER already keeps it there) and carries its label. A ``UNION`` supertype tests its
+        members. ``False`` (the caller opens the class as before) for a
+        sharded class or members that disagree on tenant scoping.
+        """
+        classes = (
+            list(self.resolver.supertype_members(class_iri)) if resolved.style == "UNION" else [resolved]
+        )
+        if any(c.style == "RPT" or c.shard_family is not None for c in classes):
+            return False
+        if len({(c.tenant_field, c.tenant_entity) for c in classes}) > 1:
+            return False
+        # Where the document can be: the collection it was opened on, or those
+        # a FILTER kept a traversal vertex to. Inside the class's unlabelled
+        # members (PG), it is in the class already: no test, and nothing bound.
+        known = self.state.vertex_collections.get(alias)
+        if known is None and alias in self.state.doc_to_collection:
+            known = frozenset({self.state.doc_to_collection[alias]})
+        unlabelled = {c.collection for c in classes if not (c.type_field and c.type_value)}
+        tests: list[str] = []
+        if known is None or not known <= unlabelled:
+            for c in classes:
+                parts = []
+                if known != {c.collection}:
+                    parts.append(
+                        f"IS_SAME_COLLECTION({self.builder.bind(c.collection, hint='coll')}, {alias})"
+                    )
+                parts += self._class_tests(self.builder, alias, [c], f"class {str(class_iri)!r}")
+                tests.append(parts[0] if len(parts) == 1 else "(" + " && ".join(parts) + ")")
+        if tests:
+            self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        self._apply_graph_scope(alias)
+        self._enforce_tenant_scope(alias, classes[0])
+        return True
+
     def _routes_to_triples(self, subject: Any) -> bool:
         """Whether ``subject :p ?o`` reads the RPT triples table.
 
@@ -2241,8 +2350,7 @@ class AlgebraVisitor:
                 direction="ANY" if prop.symmetric else "INBOUND",
             )
             self._filter_edge_type(prop, e_alias)
-            self._keep_subject_collections(v_alias, prop)
-            self.state.doc_to_collection[v_alias] = prop.edge_collection
+            self._keep_subject_collections(v_alias, prop, subject)
             self._bind_subject(subject, v_alias)
             return
 
@@ -2259,8 +2367,8 @@ class AlgebraVisitor:
         self._filter_edge_type(prop, e_alias)
         # ``v_alias`` is the traversal vertex and is what binds to the SPARQL
         # object (a reified relationship binds the edge instead:
-        # :meth:`_emit_reified_entry`).
-        self.state.doc_to_collection[v_alias] = prop.edge_collection
+        # :meth:`_emit_reified_entry`). Its collection is not known, so it is
+        # not recorded in ``doc_to_collection``: a class test on it stays.
         self._bind_vertex_object(obj, v_alias, prop, triple)
 
     def _emit_reified_entry(self, subject: Any, prop: Any, obj: Any) -> None:
@@ -2506,7 +2614,7 @@ class AlgebraVisitor:
             out.extend(m for m in members if m not in out)
         return out
 
-    def _keep_subject_collections(self, v_alias: str, prop: Any) -> None:
+    def _keep_subject_collections(self, v_alias: str, prop: Any, subject: Any = None) -> None:
         """Restrict a reverse traversal's vertex to the subject's collections.
 
         The forward plan reads an untyped subject from its property's
@@ -2521,12 +2629,17 @@ class AlgebraVisitor:
             classes = []  # as _route_by_domain: an RPT domain does not route
         if classes:
             collections = sorted({c.collection for c in classes})
+        elif isinstance(subject, Variable) and str(subject) in self.state.bgp_typed:
+            # The subject's type pattern, emitted next as a class test on this
+            # vertex, places it; the default collection would not.
+            return
         elif not self.resolver.strict_subject_resolution:
             collections = [self.resolver.default_collection]
         else:
             return
         tests = [f"IS_SAME_COLLECTION({self.builder.bind(c, hint='coll')}, {v_alias})" for c in collections]
         self.builder.filter_raw(tests[0] if len(tests) == 1 else "(" + " || ".join(tests) + ")")
+        self.state.vertex_collections[v_alias] = frozenset(collections)
         tenant_fields = {(c.tenant_field, c.tenant_entity) for c in classes}
         if len(tenant_fields) > 1:
             raise UnsupportedSparqlError(
@@ -3138,22 +3251,27 @@ def _term_known(term: Any, bound: set[str]) -> bool:
 
 
 def _join_rank(
-    triple: tuple[Any, Any, Any], bound: set[str], relationship_nodes: set[str], exits: set[str]
+    triple: tuple[Any, Any, Any],
+    bound: set[str],
+    relationship_nodes: set[str],
+    exits: set[str],
+    walkable: set[tuple[Any, Any, Any]] | None = None,
 ) -> int:
     """Lower = emit earlier. See :func:`_order_bgp`."""
     s, p, o = triple
     is_type = isinstance(p, URIRef) and p == RDF.type and isinstance(o, URIRef)
     subject_known = _term_known(s, bound)
-    if not subject_known and isinstance(s, Variable) and str(s) in relationship_nodes:
-        # An exit with a known object walks its relationship backwards.
-        return 3 if str(p) in exits and _term_known(o, bound) else 5
     if is_type:
-        return 0 if subject_known else 2
+        return 0 if subject_known else 3
     if subject_known:
         return 1
-    if _term_known(o, bound):
-        return 3
-    return 4
+    object_known = _term_known(o, bound)
+    if isinstance(s, Variable) and str(s) in relationship_nodes:
+        # An exit with a known object walks its relationship backwards.
+        return 2 if str(p) in exits and object_known else 6
+    if object_known:
+        return 2 if triple in (walkable or set()) else 4
+    return 5
 
 
 def _order_bgp(
@@ -3161,48 +3279,69 @@ def _order_bgp(
     bound: set[str],
     relationship_nodes: set[str] | None = None,
     exits: set[str] | None = None,
+    walkable: set[tuple[Any, Any, Any]] | None = None,
 ) -> list[tuple[Any, Any, Any]]:
+    """:func:`_iter_bgp_order` with a fixed set of *walkable* triples."""
+    return list(_iter_bgp_order(triples, bound, relationship_nodes, exits, (walkable or set()).__contains__))
+
+
+def _iter_bgp_order(
+    triples: list[tuple[Any, Any, Any]],
+    bound: set[str],
+    relationship_nodes: set[str] | None = None,
+    exits: set[str] | None = None,
+    can_walk: Callable[[tuple[Any, Any, Any]], bool] | None = None,
+) -> Iterator[tuple[Any, Any, Any]]:
     """Greedy, binding-aware order for a BGP's triples.
 
     Each step takes the lowest-ranked remaining triple, then counts its
     variables as bound:
 
-      0. a type check on a subject already known (a filter, nothing more);
+      0. a type check on a subject already known — a test on that document
+         (:meth:`AlgebraVisitor._check_class`), nothing more;
       1. a triple whose subject is known — a constant, a variable bound by an
          outer pattern, or the object of a triple already emitted — so the
          nested FOR is an index lookup, and chains (person → city → id)
          follow themselves;
-      2. a type pattern on an unknown subject — it anchors the subject to its
-         class's collection (which PG / LPG routing needs before that
+      2. a walk backwards from a known object: an edge-backed triple that can
+         be walked from its object now (*can_walk*: the object is a document,
+         or its value or IRI can be looked up in the property's single-class
+         ``rdfs:range``; ``?post :hasCreator ?foaf`` with ``?foaf`` known), or a reified
+         relationship's exit (``?mem :hasPerson ?fr``, which binds the edge
+         and its source). It comes before a type scan of the subject: the
+         walk reaches few documents, and the type pattern then only tests
+         them (LDBC IC10 scanned every post per friend the other way round);
+      3. a type pattern on an unknown subject — it anchors the subject to its
+         class's collection (which PG / LPG / RPT routing needs before that
          subject's property triples) at the cost of a class scan;
-      3. a triple whose object is known (a reverse lookup);
-      4. anything else;
-      5. a triple about a relationship node (D8) not bound yet: its entry
-         triple (``?p :knows ?k``) binds it to an edge, which its exit and
-         attribute triples need — except an exit whose object is known
-         (``?m :hasPerson ?fr``), which ranks 3: it walks the relationship
-         backwards from the object, binding the edge and its source.
+      4. a triple whose object is known but that cannot be walked (an
+         attribute, a triples-table predicate): a reverse lookup;
+      5. anything else;
+      6. a triple about a relationship node (D8) not bound yet: its entry
+         triple (``?p :knows ?k``) binds it to an edge, which its other exit
+         and attribute triples need.
 
     Ties keep rdflib's order, so output stays deterministic. Property-path
     triples rank like plain ones; their desugaring sees the same bindings.
+    Lazy: *can_walk* is asked again before each choice, after the caller
+    has emitted the previous triple.
     """
     bound = set(bound)
     remaining = list(enumerate(triples))
-    ordered: list[tuple[Any, Any, Any]] = []
     while remaining:
+        walkable = {t for _i, t in remaining if can_walk is not None and can_walk(t)}
         best = min(
             remaining,
             key=lambda item: (
-                _join_rank(item[1], bound, relationship_nodes or set(), exits or set()),
+                _join_rank(item[1], bound, relationship_nodes or set(), exits or set(), walkable),
                 item[0],
             ),
         )
         remaining.remove(best)
-        ordered.append(best[1])
+        yield best[1]
         for term in best[1]:
             if isinstance(term, Variable):
                 bound.add(str(term))
-    return ordered
 
 
 def _is_empty_bgp(node: Any) -> bool:
