@@ -956,18 +956,6 @@ def run_aql_subset(
     # edge's ``_to`` handle (``"Person/alice"``) resolves to the target
     # vertex regardless of which vertex collection holds it — exactly
     # how ArangoDB resolves a traversal endpoint by document handle.
-    # ArangoDB gives every document an ``_id`` (``<collection>/<key>``); a
-    # fixture that omits it gets one here, so ``IS_SAME_COLLECTION`` and
-    # handle lookups read documents the way the server would. Copies, so the
-    # caller's fixtures are not changed; the first run has no outer scope.
-    if _outer_env is None:
-        docs = {
-            coll: [
-                {**d, "_id": f"{coll}/{d.get('_key', i)}"} if isinstance(d, dict) and "_id" not in d else d
-                for i, d in enumerate(coll_docs)
-            ]
-            for coll, coll_docs in docs.items()
-        }
     id_index: dict[Any, dict[str, Any]] = {
         d["_id"]: d for coll_docs in docs.values() for d in coll_docs if isinstance(d, dict) and "_id" in d
     }

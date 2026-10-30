@@ -244,19 +244,6 @@ def _translate_probe(
     # against the outer's expressions (the SPARQL compatibility
     # check, expressed in AQL).
     child_visitor.state.var_to_expr = dict(visitor.state.var_to_expr)
-    # An outer document stays a document in the probe: the probe is an AQL
-    # subquery, which sees outer FOR variables, so its triples read that
-    # document instead of re-finding it from its value (a scan routed by a
-    # domain, joined back on identity). RPT aliases are triples rows, not
-    # documents, and stay out, as in UNION arms (union_paths._spawn_child).
-    child_visitor.state.var_to_doc_alias = {
-        name: alias
-        for name, alias in visitor.state.var_to_doc_alias.items()
-        if name not in visitor.state.var_to_rpt_class
-    }
-    child_visitor.state.doc_to_collection = dict(visitor.state.doc_to_collection)
-    child_visitor.state.vertex_collections = dict(visitor.state.vertex_collections)
-    child_visitor.state.reified_edges = dict(visitor.state.reified_edges)
     # Shared, so names minted inside the probe never collide with the
     # outer scope's ``_path_<n>`` / ``_bn_…`` (see _BindingState.counters).
     child_visitor.state.counters = visitor.state.counters
@@ -267,10 +254,6 @@ def _translate_probe(
         child_visitor.state.optional_rebind_sink = []
 
     child_visitor.visit(inner_pattern)
-    # A probe that only reads outer documents opens no FOR of its own; give
-    # it a one-row scope, as union_paths does for such an arm.
-    if not child_builder.has_for_clause():
-        child_builder.open_one_row_scope_first(child_builder.fresh_alias(prefix="empty"))
 
     sink = child_visitor.state.optional_rebind_sink or []
     if overlap_var_names is not None and sink:

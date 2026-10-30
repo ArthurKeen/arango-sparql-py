@@ -985,15 +985,6 @@ class SchemaResolver:
         the annotation only, so it resolves (and warns about) nothing."""
         return parse_flag(self._physical_string(URIRef(str(iri)), "reifiedEdge")) is True
 
-    def is_edge_backed(self, iri: URIRef | str) -> bool:
-        """Whether *iri* is read by walking an edge collection (not an RDF
-        triples table, not a reified relationship's entry): a known object
-        can be walked from. Reads the annotations only."""
-        ref = URIRef(str(iri))
-        if self._physical_string(ref, "edgeCollectionName") is None:
-            return False
-        return self._physical_string(ref, "mappingStyle") != "RPT_EDGE" and not self.is_reified_entry(ref)
-
     def is_edge_exit(self, iri: URIRef | str) -> bool:
         """Whether *iri* declares ``phys:edgeTargetOf``: an exit predicate of
         reified relationships (plan D8). Reads the annotation only."""

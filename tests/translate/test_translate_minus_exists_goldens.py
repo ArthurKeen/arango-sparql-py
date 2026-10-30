@@ -112,23 +112,26 @@ def test_minus_exists_golden(
 
 def test_minus_multiple_shared_vars() -> None:
     """Both ``?s`` and ``?n`` are shared between outer and MINUS
-    right side; the inner probe must constrain BOTH.
+    right side; the inner probe must emit TWO equality FILTERs,
+    one per shared variable, before its own triple-level FILTERs.
 
-    ``?s`` is an outer document, which the probe reads directly (it is an
-    AQL subquery, so outer FOR variables are in scope): the same document,
-    so ``?s`` is equal by construction. ``?n`` is an outer value: an
-    equality FILTER. A sloppy implementation that only seeded the first
-    variable would drop that FILTER and silently remove outer rows that
-    matched on ``?s`` alone (regardless of ``?n``)."""
+    Regression coverage for ``_translate_probe``'s
+    ``var_to_expr`` pre-seeding loop: a sloppy implementation
+    that only seeded the first variable would emit a single
+    FILTER and silently drop outer rows that matched on
+    ``?s`` alone (regardless of ``?n``)."""
     resolver = SchemaResolver.from_turtle("", default_collection="Document")
     result = translate(
         "PREFIX : <http://ex.org/> SELECT ?s ?n WHERE { ?s :name ?n MINUS { ?s :nickname ?n } }",
         resolver=resolver,
     )
-    # Inner block must constrain both shared variables: ?s by reading the
-    # outer document itself, ?n by an equality FILTER.
-    assert 'FILTER HAS(doc1, "nickname")' in result.aql
-    assert "FILTER doc1.nickname == doc1.name" in result.aql
+    # Inner block must constrain both shared variables.
+    shared_s = "NOT_NULL(doc1._uri, doc1._id)"
+    assert (
+        f"FILTER ({shared_s} != null && (doc2._uri == {shared_s} || (doc2._uri == null && doc2._id == {shared_s})))"
+        in result.aql
+    )
+    assert "FILTER doc2.nickname == doc1.name" in result.aql
 
 
 def test_not_exists_in_compound_filter() -> None:

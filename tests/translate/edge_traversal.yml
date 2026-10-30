@@ -75,11 +75,10 @@ cases:
       "_p1_type": "worksAt"
 
   - name: edge_then_object_typed_pattern
-    # ``?a :knows ?b . ?b a :Person`` — ?b is scanned once (its type
-    # pattern, then its name), and ``knows`` is walked INBOUND from it
-    # rather than scanning Person a second time for ?a and joining
-    # (``_join_rank`` rank 2). ``?a a :Person`` is then a collection
-    # test on the walked vertex (``knows`` declares no domain to place it).
+    # ``?a :knows ?b . ?b a :Person`` — the object var ?b is bound
+    # twice (once by the type pattern, once by the traversal). The
+    # type pattern is visited first per ``_triple_priority`` so the
+    # traversal emits a FILTER joining on ``v._uri``.
     sparql: |
       PREFIX : <http://ex.org/>
       SELECT ?a ?b ?n WHERE {
@@ -91,13 +90,13 @@ cases:
     expected_aql: |-
       FOR doc1 IN @@c1_Person
       FILTER HAS(doc1, "name")
-      FOR v2, e3 IN INBOUND doc1 @@c2_knows
-      FILTER IS_SAME_COLLECTION(@_p1_coll, v2)
-      RETURN { a: NOT_NULL(v2._uri, v2._id), b: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
+      FOR doc2 IN @@c1_Person
+      FOR v3, e4 IN OUTBOUND doc2 @@c2_knows
+      FILTER NOT_NULL(v3._uri, v3._id) == NOT_NULL(doc1._uri, doc1._id)
+      RETURN { a: NOT_NULL(doc2._uri, doc2._id), b: NOT_NULL(doc1._uri, doc1._id), n: doc1.name }
     expected_bind_vars:
       "@c1_Person": "Person"
       "@c2_knows": "knows"
-      "_p1_coll": "Person"
 
   - name: uri_subject_edge
     # ``<:alice> :knows ?b`` — URI subjects open a default-collection

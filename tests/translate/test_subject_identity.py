@@ -46,21 +46,10 @@ def test_projected_subject_uses_the_identity() -> None:
 
 
 def test_edge_target_and_bound_object_compare_the_same_identity() -> None:
-    # Both ends bound in one group, the edge in the next: the traversal
-    # vertex is joined to the already-bound ?a with the SAME identity
-    # expression on both sides — not _uri on one and _id on the other.
-    aql = _aql("SELECT ?o ?a WHERE { { ?a a :Asset . ?o a :Owner } { ?o :owns ?a } }")
-    assert "FILTER NOT_NULL(v3._uri, v3._id) == NOT_NULL(doc1._uri, doc1._id)" in aql
-
-
-def test_one_group_walks_back_from_the_typed_object_instead_of_joining() -> None:
-    # In one group the planner walks ``owns`` backwards from ?a rather than
-    # scanning Owners and joining; ?o a :Owner is then the domain filter the
-    # walk already applied, not a second collection test.
     aql = _aql("SELECT ?o ?a WHERE { ?a a :Asset . ?o a :Owner ; :owns ?a . }")
-    assert "FOR v2, e3 IN INBOUND doc1 @@c2_owns" in aql
-    assert aql.count(" IN @@c") == 1  # Assets is the only collection scanned
-    assert aql.count("IS_SAME_COLLECTION") == 1
+    # The traversal vertex is joined to the already-bound ?a with the SAME
+    # identity expression on both sides — not _uri on one and _id on the other.
+    assert "FILTER NOT_NULL(v3._uri, v3._id) == NOT_NULL(doc1._uri, doc1._id)" in aql
 
 
 def test_constant_subject_uses_the_exact_match_form() -> None:
